@@ -70,7 +70,7 @@ public:
       SOUT(usage);
       exit(0);
     }
-    reads_fname_list = find_per_thread_files(reads_fnames, "", false);
+    reads_fname_list = find_per_rank_files(reads_fnames, "", false);
     args("-c") >> ctgs_fname;
     args("-f") >> ctg_depths_fname;
     args("-k") >> kmer_len;

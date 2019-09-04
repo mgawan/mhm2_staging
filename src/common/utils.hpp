@@ -232,8 +232,8 @@ inline int check_dir(const char *path)
 #define MAX_RANKS_PER_DIR 1000
 
 // replaces the given path with a rank based path, inserting a rank-based directory
-// example:  get_rank_path("path/to/file_output_data.txt", rank) -> "path/to/per_thread/<rankdir>/<rank>/file_output_data.txt"
-// of if rank == -1, "path/to/per_thread/file_output_data.txt"
+// example:  get_rank_path("path/to/file_output_data.txt", rank) -> "path/to/per_rank/<rankdir>/<rank>/file_output_data.txt"
+// of if rank == -1, "path/to/per_rank/file_output_data.txt"
 inline bool get_rank_path(string &fname, int rank)
 {
   char buf[MAX_FILE_PATH];
@@ -254,18 +254,18 @@ inline bool get_rank_path(string &fname, int rank)
   }
   if (rank < 0) {
     if (lastslash) {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "%s/per_thread/%s", buf, lastslash + 1);
+      snprintf(newPath, MAX_FILE_PATH*2+50, "%s/per_rank/%s", buf, lastslash + 1);
       checkDirs = 1;
     } else {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "per_thread/%s", buf);
+      snprintf(newPath, MAX_FILE_PATH*2+50, "per_rank/%s", buf);
       checkDirs = 1;
     }
   } else {
     if (lastslash) {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "%s/per_thread/%08d/%08d/%s", buf, rank / MAX_RANKS_PER_DIR, rank, lastslash + 1);
+      snprintf(newPath, MAX_FILE_PATH*2+50, "%s/per_rank/%08d/%08d/%s", buf, rank / MAX_RANKS_PER_DIR, rank, lastslash + 1);
       checkDirs = 3;
     } else {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "per_thread/%08d/%08d/%s", rank / MAX_RANKS_PER_DIR, rank, buf);
+      snprintf(newPath, MAX_FILE_PATH*2+50, "per_rank/%08d/%08d/%s", rank / MAX_RANKS_PER_DIR, rank, buf);
       checkDirs = 3;
     }
   }
@@ -288,7 +288,7 @@ inline bool get_rank_path(string &fname, int rank)
   return true;
 }
 
-inline std::vector<string> find_per_thread_files(string &fname_list, const string &ext)
+inline std::vector<string> find_per_rank_files(string &fname_list, const string &ext)
 {
   std::vector<string> full_fnames;
   auto fnames = split(fname_list, ',');

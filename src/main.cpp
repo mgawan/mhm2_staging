@@ -44,6 +44,9 @@ int main(int argc, char **argv)
 
   auto options = make_shared<Options>();
   options->load(argc, argv);
+
+  // first merge reads - the results will go in the per_rank directory
+  
   /*
   auto my_cardinality = estimate_cardinality(options);
   Kmer::set_k(options->kmer_len);
