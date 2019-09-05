@@ -39,7 +39,7 @@ int main(int argc, char **argv)
   SOUT(KRED, "DEBUG mode - expect low performance\n", KNORM);
 #endif
 
-  SOUT("MHM version XXX, date\n");
+  SOUT("MHM version ", MHM_VERSION, "\n");
   double start_mem_free = get_free_mem_gb();
   SOUT("Initial free memory on node 0: ", start_mem_free, "GB\n");
 

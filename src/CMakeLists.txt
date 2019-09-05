@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 project(MHM)
 
-FIND_PACKAGE(ZLIB 1.2.3 REQUIRED)
+find_package(ZLIB 1.2.3 REQUIRED)
 include_directories(BEFORE ${ZLIB_INCLUDE_DIRECTORIES})
-GET_FILENAME_COMPONENT(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
-LINK_DIRECTORIES(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
-MESSAGE("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
+get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
+link_directories(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
+message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
 
 # all c++ must be at least c++14
 set(CMAKE_CXX_STANDARD 14)
@@ -24,3 +24,37 @@ add_executable(mhm main.cpp merge_reads.cpp)
 
 target_link_libraries(mhm ${ZLIB_LIBRARIES})
 #install(TARGETS mhm DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+
+# Set up version
+find_package(Git)
+if (GIT_FOUND)
+    # Get the current working branch
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_BRANCH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    # Get the latest abbreviated commit hash of the working branch
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} log -1 --format=%h
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_COMMIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    execute_process(
+        COMMAND bash -c "${GIT_EXECUTABLE} diff --quiet --exit-code || echo dirty"
+        OUTPUT_VARIABLE GIT_DIFF
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} tag
+        OUTPUT_VARIABLE GIT_TAG
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+    string(TIMESTAMP _timestamp)
+    add_definitions("-DMHM_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}-${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) ${_timestamp}\"")
+else()
+    string(TIMESTAMP _timestamp)
+    add_definitions("-DMHM_VERSION=\"${GIT_COMMIT_HASH}-${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) ${_timestamp}\"")
+endif()    
