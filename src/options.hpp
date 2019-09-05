@@ -34,8 +34,6 @@ private:
   
 public:
   vector<string> reads_fname_list;
-  string ctgs_fname;
-  string ctg_depths_fname;
   int kmer_len = 99;
   int prev_kmer_len = 0;
   int qual_offset = 33;
@@ -47,9 +45,6 @@ public:
   
   void load(int argc, char **argv) {
     string usage = string(argv[0]) + "\n" +
-      "-r    readsfile       Files containing merged and unmerged reads in FASTQ format (comma separated)\n" + 
-      "-c    ctgsfile        Optional file containing contigs in FASTA format\n" +
-      "-f    depthsfile      Optional file containing contig depths\n" +
       "-r    readsfile       Files containing merged and unmerged reads in FASTQ format (comma separated)\n" + 
       "-k    kmerlen         kmer length\n" +
       "-p    prevkmerlen     prev kmer length used for generating contigs (optional)\n" +
@@ -70,9 +65,7 @@ public:
       SOUT(usage);
       exit(0);
     }
-    reads_fname_list = find_per_rank_files(reads_fnames, "", false);
-    args("-c") >> ctgs_fname;
-    args("-f") >> ctg_depths_fname;
+    reads_fname_list = split(reads_fnames, ',');
     args("-k") >> kmer_len;
     args("-p") >> prev_kmer_len;
     args("-Q") >> qual_offset;
@@ -85,8 +78,6 @@ public:
       cout << KLBLUE << "----\n";
       cout << "MHM options:\n";
       cout << "  (-r) reads files:           " << reads_fnames << endl;
-      if (ctgs_fname != "") cout << "  (-c) contigs file:          " << ctgs_fname << endl;
-      if (ctg_depths_fname != "") cout << "  (-f) contig depths file:    " << ctg_depths_fname << endl;
       cout << "  (-k) kmer length:           " << kmer_len << endl;
       if (prev_kmer_len) cout << "  (-p) prev kmer length:      " << prev_kmer_len << endl;
       cout << "  (-Q) quality offset:        " << qual_offset << endl;

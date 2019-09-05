@@ -64,9 +64,8 @@ inline void logger(ostream &stream, bool fail, bool serial, T first, Params... p
   logger(cerr, true, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 
 
-extern ofstream _dbgstream;
-
 #ifdef DEBUG
+extern ofstream _dbgstream;
 #define DBG(...) do { if (_dbgstream) { logger(_dbgstream, false, false, ##__VA_ARGS__); _dbgstream << std::flush; } } while(0)
 #else
 #define DBG(...)
@@ -293,21 +292,21 @@ inline std::vector<string> find_per_rank_files(string &fname_list, const string 
   std::vector<string> full_fnames;
   auto fnames = split(fname_list, ',');
   for (auto fname : fnames) {
-      // first check for gzip file
-      fname += ext;
-      get_rank_path(fname, upcxx::rank_me());
-      string gz_fname = fname + ".gz";
-      struct stat stbuf;
-      if (stat(gz_fname.c_str(), &stbuf) == 0) {
-        // gzip file exists
-        SOUT("Found compressed file '", gz_fname, "'\n");
-        fname = gz_fname;
-      } else {
-        // no gz file - look for plain file
-        if (stat(fname.c_str(), &stbuf) != 0)
-          SDIE("File '", fname, "' cannot be accessed (either .gz or not): ", strerror(errno), "\n");
-      }
-      full_fnames.push_back(fname);
+    // first check for gzip file
+    fname += ext;
+    get_rank_path(fname, upcxx::rank_me());
+    string gz_fname = fname + ".gz";
+    struct stat stbuf;
+    if (stat(gz_fname.c_str(), &stbuf) == 0) {
+      // gzip file exists
+      SOUT("Found compressed file '", gz_fname, "'\n");
+      fname = gz_fname;
+    } else {
+      // no gz file - look for plain file
+      if (stat(fname.c_str(), &stbuf) != 0)
+        SDIE("File '", fname, "' cannot be accessed (either .gz or not): ", strerror(errno), "\n");
+    }
+    full_fnames.push_back(fname);
   }
   return full_fnames;
 }
@@ -430,6 +429,13 @@ static string get_size_str(int64_t sz)
   else if (sz >= ONE_MB) return to_string(sz / ONE_MB) + "MB";
   else if (sz >= 1024) return to_string(sz / 1024) + "KB";
   else return to_string(sz) + "B";
+}
+
+static string remove_file_ext(const string &fname)
+{
+  size_t lastdot = fname.find_last_of(".");
+  if (lastdot == std::string::npos) return fname;
+  return fname.substr(0, lastdot); 
 }
 
 #endif

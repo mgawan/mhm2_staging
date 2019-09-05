@@ -20,6 +20,7 @@ ofstream _dbgstream;
 
 #include "common/utils.hpp"
 #include "options.hpp"
+#include "merge_reads.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -46,7 +47,7 @@ int main(int argc, char **argv)
   options->load(argc, argv);
 
   // first merge reads - the results will go in the per_rank directory
-  
+  merge_reads(options->reads_fname_list, options->qual_offset);
   /*
   auto my_cardinality = estimate_cardinality(options);
   Kmer::set_k(options->kmer_len);
@@ -97,7 +98,6 @@ int main(int argc, char **argv)
   SOUT("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), "\n"); 
   barrier();
 */
-  DBG("test debugging\n");
 #ifdef DEBUG
   _dbgstream.flush();
   _dbgstream.close();
