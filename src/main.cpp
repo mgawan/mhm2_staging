@@ -21,6 +21,7 @@ ofstream _dbgstream;
 #include "common/utils.hpp"
 #include "options.hpp"
 #include "merge_reads.hpp"
+#include "kcount/kcount.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -36,24 +37,25 @@ int main(int argc, char **argv)
   string dbg_fname = "dbg" + to_string(curr_t) + ".log"; 
   get_rank_path(dbg_fname, rank_me());
   _dbgstream.open(dbg_fname);
-  SOUT(KRED, "DEBUG mode - expect low performance\n", KNORM);
 #endif
 
   SOUT("MHM version ", MHM_VERSION, "\n");
   double start_mem_free = get_free_mem_gb();
   SOUT("Initial free memory on node 0: ", start_mem_free, "GB\n");
+  SOUT("Running on ", rank_n(), " ranks\n");
 
   auto options = make_shared<Options>();
   options->load(argc, argv);
 
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
-  /*
+
   auto my_cardinality = estimate_cardinality(options);
   Kmer::set_k(options->kmer_len);
   dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
                                 options->dynamic_min_depth, options->use_bloom);
   barrier();
+  /*
   if (options->use_bloom) {
     count_kmers(options, kmer_dht, BLOOM_SET_PASS);
     if (options->ctgs_fname != "") {

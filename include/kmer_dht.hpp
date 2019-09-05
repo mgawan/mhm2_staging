@@ -9,7 +9,7 @@
 #include <stdarg.h>
 #include <upcxx/upcxx.hpp>
 
-#include "bytell_hash_map.hpp"
+#include "../common/bytell_hash_map.hpp"
 #include "progressbar.hpp"
 #include "utils.hpp"
 #include "kmer.hpp"

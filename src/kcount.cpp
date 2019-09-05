@@ -286,6 +286,7 @@ void add_ctg_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer
   }
 }
 
+/*
 int kcount_main(int argc, char **argv)
 {
   SOUT("max kmer size ", MAX_KMER_SIZE, "\n");
@@ -366,4 +367,4 @@ int kcount_main(int argc, char **argv)
   
   return 0;
 }
-
+*/
