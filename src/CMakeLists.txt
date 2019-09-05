@@ -43,7 +43,7 @@ if (GIT_FOUND)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
     execute_process(
-        COMMAND bash -c "${GIT_EXECUTABLE} diff --quiet --exit-code || echo dirty"
+        COMMAND bash -c "${GIT_EXECUTABLE} diff --quiet --exit-code || echo -dirty"
         OUTPUT_VARIABLE GIT_DIFF
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
@@ -53,8 +53,8 @@ if (GIT_FOUND)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
     string(TIMESTAMP _timestamp)
-    add_definitions("-DMHM_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}-${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) ${_timestamp}\"")
+    add_definitions("-DMHM_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) ${_timestamp}\"")
 else()
     string(TIMESTAMP _timestamp)
-    add_definitions("-DMHM_VERSION=\"${GIT_COMMIT_HASH}-${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) ${_timestamp}\"")
+    add_definitions("-DMHM_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) ${_timestamp}\"")
 endif()    
