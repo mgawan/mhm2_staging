@@ -20,8 +20,8 @@ using namespace upcxx;
 #define DEBUG
 #endif
 
-#include "zstr/src/zstr.hpp"
-#include "common/utils.hpp"
+#include "zstr.hpp"
+#include "utils.hpp"
 #include "fastq.hpp"
 
 

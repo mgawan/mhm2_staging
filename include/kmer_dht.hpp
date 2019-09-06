@@ -9,14 +9,13 @@
 #include <stdarg.h>
 #include <upcxx/upcxx.hpp>
 
-#include "../common/bytell_hash_map.hpp"
+#include "bytell_hash_map.hpp"
 #include "progressbar.hpp"
 #include "utils.hpp"
 #include "kmer.hpp"
 #include "bloom.hpp"
 #include "zstr.hpp"
 #include "histogram_dht.hpp"
-#include "upc_allocator.hpp"
 #include "aggr_store.hpp"
 
 using std::vector;
@@ -30,6 +29,7 @@ using std::make_pair;
 using std::shared_ptr;
 using std::swap;
 using std::array;
+using std::endl;
 
 using upcxx::intrank_t;
 using upcxx::rank_me;
@@ -118,9 +118,9 @@ struct KmerCounts {
 };
   
 #ifdef USE_BYTELL
-using kmer_map_t = ska::bytell_hash_map<Kmer, KmerCounts, KmerHash, KmerEqual, UPCAllocator<pair<const Kmer, KmerCounts> > >;
+using kmer_map_t = ska::bytell_hash_map<Kmer, KmerCounts, KmerHash, KmerEqual>;
 #else
-using kmer_map_t = std::unordered_map<Kmer, KmerCounts, KmerHash, KmerEqual, UPCAllocator<pair<const Kmer, KmerCounts> > >;
+using kmer_map_t = std::unordered_map<Kmer, KmerCounts, KmerHash, KmerEqual>;
 #endif
 
 class KmerDHT {
@@ -529,9 +529,9 @@ public:
   // KMERCHARS LR N
   // where L is left extension and R is right extension, one char, either X, F or A, C, G, T
   // where N is the count of the kmer frequency
-  void dump_kmers(int k, bool cached_io) {
+  void dump_kmers(int k) {
     Timer timer(__func__);
-    string dump_fname = string(cached_io ? "/dev/shm/" : "./");
+    string dump_fname = string("./");
     dump_fname += "ALL_INPUTS.fofn-" + to_string(k) + ".ufx.bin";
     dump_fname += ".gz";
     get_rank_path(dump_fname, rank_me());

@@ -10,11 +10,9 @@
 #include <upcxx/upcxx.hpp>
 
 #include "utils.hpp"
-#include "options_kcount.hpp"
+#include "kcount.hpp"
 #include "progressbar.hpp"
 #include "kmer_dht.hpp"
-#include "kcount.h"
-#include "dbjg_traversal.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -23,7 +21,7 @@ static const int QUAL_CUTOFF = 20;
 
 extern ofstream _dbgstream;
 
-uint64_t estimate_cardinality(shared_ptr<OptionsKcount> options)
+uint64_t estimate_cardinality(shared_ptr<Options> options)
 {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -77,7 +75,7 @@ uint64_t estimate_cardinality(shared_ptr<OptionsKcount> options)
   return my_cardinality;
 }
 
-void count_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
+void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
 {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -168,8 +166,9 @@ void count_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer_d
     progbar.done();
     kmer_dht->flush_updates(pass_type);
     maxReadLength = reduce_one(maxReadLength, op_max, 0).wait();
+    SOUT("Detected maxReadLength of ", maxReadLength, " for ", reads_fname, "\n");
+    /*
     if (!rank_me()) {
-      SOUT("Detected maxReadLength of ", maxReadLength, " for ", reads_fname, "\n");
       string maxFile = reads_fname;
       size_t pos = maxFile.find_last_of('/');
       if (pos != string::npos) maxFile = maxFile.substr(pos+1);
@@ -178,6 +177,7 @@ void count_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer_d
         write_num_file(maxFile, maxReadLength);
       }
     }
+    */
   }
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads), max read length ", max_read_len, "\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
@@ -189,10 +189,11 @@ void count_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer_d
   if (pass_type != BLOOM_SET_PASS) SOUT("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
 }
 
-void add_ctg_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer_dht, bool use_bloom, int pass_num_mask)
+void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, bool use_bloom, int pass_num_mask)
 {
+  /*
   Timer timer(__func__);
-  string ctgs_fname = options->cached_io ? "/dev/shm/" : "./";
+  string ctgs_fname = "./";
   ctgs_fname += options->ctgs_fname;
   get_rank_path(ctgs_fname, rank_me());
   // first pass over ctgs file - count the number of kmers
@@ -231,7 +232,7 @@ void add_ctg_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer
   // second pass over contigs file - insert the new kmers into the dht
   if ((pass_num_mask&2) == 2) {
     // read all the kmer depths from the binary depths file
-    string depths_fname(options->cached_io ? "/dev/shm/" : "./");
+    string depths_fname("./");
     depths_fname += options->ctg_depths_fname;
     get_rank_path(depths_fname, rank_me());
     zstr::ifstream depths_file(depths_fname, std::ios::binary);
@@ -284,6 +285,7 @@ void add_ctg_kmers(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer
     SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
     free(prefix_buf);
   }
+  */
 }
 
 /*

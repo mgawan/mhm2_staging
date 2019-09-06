@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <upcxx/upcxx.hpp>
 
-#include "common/utils.hpp"
+#include "utils.hpp"
 #include "argh.h"
 
 using std::cout;

@@ -10,7 +10,6 @@
 #include <upcxx/upcxx.hpp>
 
 #include "utils.hpp"
-#include "options_kcount.hpp"
 #include "progressbar.hpp"
 #include "kmer_dht.hpp"
 #include "dbjg_traversal.hpp"
@@ -177,7 +176,7 @@ bool traverse_right(int kmer_len, dist_object<KmerDHT> &kmer_dht, Kmer &kmer, gl
   return true;
 }
 
-void traverse_debruijn_graph(shared_ptr<OptionsKcount> options, dist_object<KmerDHT> &kmer_dht)
+void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
   // allocate space for biggest possible uutig in global storage
@@ -269,14 +268,14 @@ void traverse_debruijn_graph(shared_ptr<OptionsKcount> options, dist_object<Kmer
   barrier();
   ad.destroy();
   {
-    string uutigs_fname = string(options->cached_io ? "/dev/shm/" : "./");
+    string uutigs_fname = "./";
     //uutigs_fname += "UUtigs-" + to_string(options->kmer_len) + ".fasta.gz";
     uutigs_fname += "UUtigs_contigs-" + to_string(options->kmer_len) + ".fasta.gz";
     get_rank_path(uutigs_fname, rank_me());
     zstr::ofstream uutigs_file(uutigs_fname);
     ostringstream uutigs_out_buf;
     
-    string depths_fname = string(options->cached_io ? "/dev/shm/" : "./");
+    string depths_fname = "./";
     //depths_fname += "UUtigs-" + to_string(options->kmer_len) + ".depths.gz";
     depths_fname += "merDepth_UUtigs_contigs-" + to_string(options->kmer_len) + ".txt.gz";
     get_rank_path(depths_fname, rank_me());
@@ -312,14 +311,14 @@ void traverse_debruijn_graph(shared_ptr<OptionsKcount> options, dist_object<Kmer
     // print some metafiles used in downstream steps
     auto tot_num_kmers = kmer_dht->get_num_kmers();
     if (!rank_me()) {
-      string count_fname = (options->cached_io ? "/dev/shm/" : "./");
+      string count_fname = "./";
       count_fname += "nUUtigs_contigs-" + to_string(options->kmer_len) + ".txt";
       get_rank_path(count_fname, -1);
       ofstream count_file(count_fname);
       count_file << tot_num_kmers << endl;
     }
     {
-      string my_count_fname = (options->cached_io ? "/dev/shm/" : "./");
+      string my_count_fname = "./";
       my_count_fname += "myUUtigs_contigs-" + to_string(options->kmer_len) + ".txt";
       get_rank_path(my_count_fname, rank_me());
       ofstream my_count_file(my_count_fname);

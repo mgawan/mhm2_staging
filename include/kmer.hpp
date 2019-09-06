@@ -157,13 +157,13 @@ namespace std
         }
     };
     /*
-    template<> struct equal_to<Kmer::MERARR> {
-        typedef std::size_t result_type;
-        result_type operator()(const Kmer::MERARR &km1, const Kmer::MERARR &km2) const
-        {
-            return km1 == km2;
-        }
-    };
+      template<> struct equal_to<Kmer::MERARR> {
+      typedef std::size_t result_type;
+      result_type operator()(const Kmer::MERARR &km1, const Kmer::MERARR &km2) const
+      {
+      return km1 == km2;
+      }
+      };
     */        
 };
 
