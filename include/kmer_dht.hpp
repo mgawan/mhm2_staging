@@ -128,13 +128,13 @@ private:
 
   // total bytes for k = 51: 16+18+18=52
   struct MerarrAndExt {
-    Kmer::MERARR merarr;
+    Kmer::MerArray merarr;
     char left_ext, right_ext;
     uint16_t count;
   };
 
   dist_object<kmer_map_t> kmers;
-  AggrStore<Kmer::MERARR> kmer_store_bloom;
+  AggrStore<Kmer::MerArray> kmer_store_bloom;
   AggrStore<MerarrAndExt> kmer_store;
   // The first bloom filter stores all kmers and is used to check for single occurrences to filter out
   dist_object<BloomFilter> bloom_filter1;
@@ -177,7 +177,7 @@ private:
   dist_object<InsertKmer> insert_kmer;
 
   struct BloomSet {
-    void operator()(Kmer::MERARR &merarr, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(Kmer::MerArray &merarr, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
       Kmer new_kmer(merarr);
@@ -190,7 +190,7 @@ private:
   dist_object<BloomSet> bloom_set;
 
   struct CtgBloomSet {
-    void operator()(Kmer::MERARR &merarr, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(Kmer::MerArray &merarr, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
       Kmer new_kmer(merarr);
       bloom_filter2->add(new_kmer.getBytes(), new_kmer.getNumBytes());
@@ -398,7 +398,7 @@ public:
 
   int32_t get_visited(Kmer &kmer) {
     return rpc(get_kmer_target_rank(kmer),
-               [](Kmer::MERARR merarr, dist_object<kmer_map_t> &kmers) -> int32_t {
+               [](Kmer::MerArray merarr, dist_object<kmer_map_t> &kmers) -> int32_t {
                  Kmer kmer(merarr);
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return -2;

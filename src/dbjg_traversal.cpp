@@ -45,7 +45,7 @@ static void abort_walk(dist_object<WalkStatus> &walk_status, bool walk_drop, int
 
 static int num_conflicts = 0;
 
-static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MERARR &merarr, char ext,
+static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &merarr, char ext,
                           TraverseDirn dirn, dist_object<WalkStatus> &walk_status, int32_t walk_len, int64_t sum_depths,
                           intrank_t start_rank, global_ptr<char> uutig, bool revisit_allowed, char prev_ext, int32_t start_walk_us)
 {

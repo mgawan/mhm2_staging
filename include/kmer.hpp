@@ -36,7 +36,7 @@
 class Kmer {
   
 public:
-  typedef std::array<uint64_t, N_LONGS> MERARR;
+  typedef std::array<uint64_t, N_LONGS> MerArray;
   
 private:
   const uint64_t twin_table[256] = {
@@ -74,7 +74,7 @@ private:
     0xD0, 0x90, 0x50, 0x10, 0xC0, 0x80, 0x40, 0x00
   };
 
-  MERARR longs;
+  MerArray longs;
   
 public:
 
@@ -93,7 +93,7 @@ public:
     set_kmer(s);
   }
   
-  explicit Kmer(const MERARR &arr) {
+  explicit Kmer(const MerArray &arr) {
     assert(Kmer::k > 0);
     std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
   }
@@ -286,7 +286,7 @@ public:
 // ABAB: return the raw data packed in an std::array
 // this preserves the lexicographical order on k-mers
 // i.e. A.toString() < B.toString <=> A.getArray() < B.getArray()
-  const MERARR &getArray() const {
+  const MerArray &getArray() const {
     return longs;
   }
   
@@ -336,10 +336,10 @@ namespace std
       return km.hash();
     }
   };
-  template<> struct hash<Kmer::MERARR>{
+  template<> struct hash<Kmer::MerArray>{
     typedef std::size_t result_type;
-    result_type operator()(const Kmer::MERARR & km) const {
-      return MurmurHash3_x64_64((const void *)km.data(), sizeof(Kmer::MERARR));
+    result_type operator()(const Kmer::MerArray & km) const {
+      return MurmurHash3_x64_64((const void *)km.data(), sizeof(Kmer::MerArray));
     }
   };
 };
