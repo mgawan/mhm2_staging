@@ -109,14 +109,14 @@ public:
   Timer(const string &name) {
     t = std::chrono::high_resolution_clock::now();
     this->name = name;
-    SOUT(KLCYAN, "--- Timing ", name, " ---\n", KNORM);
+    SOUT(KLCYAN, "--- ", name, " ---\n", KNORM);
   }
   ~Timer() {
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
-    DBG(KLCYAN, "--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
+    DBG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
     upcxx::barrier();
     t_elapsed = std::chrono::high_resolution_clock::now() - t;
-    SOUT(KLCYAN, "--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
+    SOUT(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
   }
 };
 

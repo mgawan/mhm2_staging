@@ -21,7 +21,7 @@ static const int QUAL_CUTOFF = 20;
 
 extern ofstream _dbgstream;
 
-uint64_t estimate_cardinality(shared_ptr<Options> options)
+uint64_t estimate_cardinality(unsigned kmer_len, vector<string> reads_fname_list)
 {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -30,7 +30,7 @@ uint64_t estimate_cardinality(shared_ptr<Options> options)
   string read_record[4];
   int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
-  for (auto const &reads_fname : options->reads_fname_list) {
+  for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
     int64_t records_processed = 0;
     bool isCompressed = hasEnding(merged_reads_fname, ".gz");
@@ -53,8 +53,8 @@ uint64_t estimate_cardinality(shared_ptr<Options> options)
       if (records_processed++ > 100000) break; // do not read the entire data set for just an estimate
       if (done) break;
       num_reads++;
-      if (read_record[1].length() < options->kmer_len) continue;
-      num_kmers += read_record[1].length() - options->kmer_len + 1;
+      if (read_record[1].length() < kmer_len) continue;
+      num_kmers += read_record[1].length() - kmer_len + 1;
     }
     total_records_processed += records_processed;
     estimated_total_records += records_processed * fileSize / reads_file.zstr_tellg();
@@ -76,7 +76,7 @@ uint64_t estimate_cardinality(shared_ptr<Options> options)
   return my_cardinality;
 }
 
-void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
+void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_list, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
 {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -90,9 +90,9 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
-  char special = options->qual_offset + 2;
+  char special = qual_offset + 2;
   IntermittentTimer t_io("reads IO");
-  for (auto const &reads_fname : options->reads_fname_list) {
+  for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
     int64_t bytes_read = 0;
     zstr::ifstream reads_file(merged_reads_fname);
@@ -122,7 +122,7 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
       string seq = move(read_record[1]);
       string quals = move(read_record[3]);
       num_reads++;
-      if (seq.length() < options->kmer_len) continue;
+      if (seq.length() < kmer_len) continue;
       if (seq.length() > max_read_len) max_read_len = seq.length();
 
       // split into kmers
@@ -132,7 +132,7 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
       // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
       size_t foundBadQual = quals.find_first_of(special);
       if (foundBadQual == string::npos) foundBadQual = seq.length();   // remember that the last valid position is length()-1
-      int foundBadQualKmer = foundBadQual - options->kmer_len + 1;
+      int foundBadQualKmer = foundBadQual - kmer_len + 1;
       assert( (int) kmers.size() >= foundBadQualKmer );
 
       // skip kmers that contain an N
@@ -141,7 +141,7 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
 
       for (int i = 0; i < kmers.size(); i++) {
         // skip kmers that contain an N
-        if (i + options->kmer_len > foundN) {
+        if (i + kmer_len > foundN) {
           i = foundN; // skip
           // find the next N
           foundN = seq.find_first_of('N', foundN+1);
@@ -149,12 +149,12 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
           continue;
         }
         char left_base = '0';
-        if (i > 0 && quals[i - 1] >= options->qual_offset + QUAL_CUTOFF) {
+        if (i > 0 && quals[i - 1] >= qual_offset + QUAL_CUTOFF) {
           left_base = seq[i - 1];
         }
         char right_base = '0';
-        if (i + options->kmer_len < seq.length() && quals[i + options->kmer_len] >= options->qual_offset + QUAL_CUTOFF) {
-          right_base = seq[i + options->kmer_len];
+        if (i + kmer_len < seq.length() && quals[i + kmer_len] >= qual_offset + QUAL_CUTOFF) {
+          right_base = seq[i + kmer_len];
         }
         int count = (i < foundBadQualKmer) ? 1 : 0;
         kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
@@ -181,7 +181,7 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
   /*
   Timer timer(__func__);
   string ctgs_fname = "./";
-  ctgs_fname += options->ctgs_fname;
+  ctgs_fname += ctgs_fname;
   get_rank_path(ctgs_fname, rank_me());
   // first pass over ctgs file - count the number of kmers
   if ((pass_num_mask&1) == 1) {
@@ -196,15 +196,15 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
       getline(ctgs_file, seq);
       if (seq == "") break;
       bytes_read += cname.length() + seq.length();
-      int64_t num_mers = seq.length() - options->kmer_len - 1;
+      int64_t num_mers = seq.length() - kmer_len - 1;
       if (num_mers < 0) num_mers = 0;
-      kmer_dht->num_prev_mers_from_ctgs += seq.length() - options->prev_kmer_len + 1;
-      if (use_bloom && seq.length() >= options->kmer_len) {
+      kmer_dht->num_prev_mers_from_ctgs += seq.length() - prev_kmer_len + 1;
+      if (use_bloom && seq.length() >= kmer_len) {
         auto kmers = Kmer::getKmers(seq);
-        if (kmers.size() != seq.length() - options->kmer_len + 1)
-          DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - options->kmer_len + 1), " '", seq, "'");
-        for (int i = 1; i < seq.length() - options->kmer_len; i++) {
-          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + options->kmer_len], 1, CTG_BLOOM_SET_PASS);
+        if (kmers.size() != seq.length() - kmer_len + 1)
+          DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - kmer_len + 1), " '", seq, "'");
+        for (int i = 1; i < seq.length() - kmer_len; i++) {
+          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + kmer_len], 1, CTG_BLOOM_SET_PASS);
         }
       }
       progbar.update(bytes_read);
@@ -220,7 +220,7 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
   if ((pass_num_mask&2) == 2) {
     // read all the kmer depths from the binary depths file
     string depths_fname("./");
-    depths_fname += options->ctg_depths_fname;
+    depths_fname += ctg_depths_fname;
     get_rank_path(depths_fname, rank_me());
     zstr::ifstream depths_file(depths_fname, std::ios::binary);
     int64_t prefix_buf_sz = kmer_dht->num_prev_mers_from_ctgs * sizeof(int64_t);
@@ -246,17 +246,17 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
       bytes_read += cname.length() + seq.length();
       num_ctgs++;
       int64_t *cur_prefix_buf = (int64_t *)&prefix_buf[offset_in_buf];
-      offset_in_buf += seq.length() - options->prev_kmer_len + 1;
+      offset_in_buf += seq.length() - prev_kmer_len + 1;
       if (offset_in_buf > kmer_dht->num_prev_mers_from_ctgs) DIE("Offset in buf out of range ", offset_in_buf, " max ", kmer_dht->num_prev_mers_from_ctgs);
-      if (seq.length() >= options->kmer_len + 2) {
+      if (seq.length() >= kmer_len + 2) {
         auto kmers = Kmer::getKmers(seq);
-        if (kmers.size() != seq.length() - options->kmer_len + 1)
-          DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - options->kmer_len + 1), " '", seq, "'");
-        for (int i = 1; i < seq.length() - options->kmer_len; i++) {
-          int64_t depth_sum = cur_prefix_buf[i + options->kmer_len - options->prev_kmer_len] - cur_prefix_buf[i - 1];
-          depth_sum = (int)((depth_sum + options->kmer_len - options->prev_kmer_len) / (options->kmer_len - options->prev_kmer_len + 1));
+        if (kmers.size() != seq.length() - kmer_len + 1)
+          DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - kmer_len + 1), " '", seq, "'");
+        for (int i = 1; i < seq.length() - kmer_len; i++) {
+          int64_t depth_sum = cur_prefix_buf[i + kmer_len - prev_kmer_len] - cur_prefix_buf[i - 1];
+          depth_sum = (int)((depth_sum + kmer_len - prev_kmer_len) / (kmer_len - prev_kmer_len + 1));
           if (depth_sum > numeric_limits<uint16_t>::max()) depth_sum = numeric_limits<uint16_t>::max();
-          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + options->kmer_len], depth_sum, CTG_KMERS_PASS);
+          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + kmer_len], depth_sum, CTG_KMERS_PASS);
           num_kmers++;
         }
       }
@@ -275,85 +275,3 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
   */
 }
 
-/*
-int kcount_main(int argc, char **argv)
-{
-  SOUT("max kmer size ", MAX_KMER_SIZE, "\n");
-  auto start_t = chrono::high_resolution_clock::now();
-
-  SOUT("Running on ", rank_n(), " processes\n");
-  
-#ifdef DBG_ON
-  time_t curr_t = std::time(nullptr);
-  string dbg_fname = "kcount" + to_string(curr_t) + ".dbg"; // never in cached_io
-  get_rank_path(dbg_fname, rank_me());
-  _dbgstream.open(dbg_fname);
-  SOUT(KRED, "DEBUG mode - expect low performance\n", KNORM);
-#endif
-
-  double start_mem_free = get_free_mem_gb();
-  SOUT("Initial free memory on node 0: ", start_mem_free, "GB\n");
-    
-  {
-    Timer timer(__func__);
-    shared_ptr<OptionsKcount> options = make_shared<OptionsKcount>();
-    options->load(argc, argv);
-    auto my_cardinality = estimate_cardinality(options);
-    Kmer::set_k(options->kmer_len);
-    dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
-                                  options->dynamic_min_depth, options->use_bloom);
-    barrier();
-    if (options->use_bloom) {
-      count_kmers(options, kmer_dht, BLOOM_SET_PASS);
-      if (options->ctgs_fname != "") {
-        SOUT("Scanning contigs file to populate bloom2\n");
-        add_ctg_kmers(options, kmer_dht, true, 1);
-      }
-      kmer_dht->reserve_space_and_clear_bloom1();
-      count_kmers(options, kmer_dht, BLOOM_COUNT_PASS);
-    } else {
-      count_kmers(options, kmer_dht, NO_BLOOM_PASS);
-    }
-    barrier();
-    SOUT("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
-    barrier();
-    kmer_dht->write_histogram();
-    barrier();
-    kmer_dht->purge_kmers(options->min_depth_cutoff);
-    int64_t newCount = kmer_dht->get_num_kmers();
-    SOUT("After purge of kmers <", options->min_depth_cutoff, " there are ", newCount, " unique kmers\n");
-    barrier();
-    if (options->ctgs_fname != "") {
-      add_ctg_kmers(options, kmer_dht, options->use_bloom, options->use_bloom ? 2 : 3);
-      kmer_dht->purge_kmers(1);
-    }
-    barrier();
-    kmer_dht->compute_kmer_exts();
-    kmer_dht->dump_kmers(options->kmer_len, options->cached_io);
-    barrier();
-    kmer_dht->purge_fx_kmers();
-    traverse_debruijn_graph(options, kmer_dht);
-    double end_mem_free = get_free_mem_gb();
-    SOUT("Final free memory on node 0: ", end_mem_free, "GB, used ", (start_mem_free - end_mem_free), "GB\n");
-    barrier();
-  }
-  Timer lastly("Reductions");
-  auto tot_upc_mem_leak = reduce_one(upc_mem_alloced - upc_mem_freed, op_fast_add, 0).wait();
-  auto tot_upc_mem_peak = reduce_one(upc_mem_peak, op_fast_add, 0).wait();
-  SOUT("Peak UPC memory ", (double)tot_upc_mem_peak / ONE_GB / rank_n(), "GB per rank\n");
-  if (tot_upc_mem_leak) SOUT("Apparent memory leak of ", tot_upc_mem_leak, " across all ranks\n");
-
-  chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
-  SOUT("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), "\n"); 
-  barrier();
-
-#ifdef DBG_ON
-  _dbgstream.flush();
-  _dbgstream.close();
-#endif
-
-  upcxx::barrier();
-  
-  return 0;
-}
-*/

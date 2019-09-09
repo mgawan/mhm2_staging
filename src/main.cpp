@@ -54,18 +54,17 @@ int main(int argc, char **argv)
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
-  Kmer::init_k(options->kmer_len);
+  for (unsigned kmer_len : options->kmer_lens) {
+    SOUT(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
+    Kmer::init_k(kmer_len);
 
-  SOUT("Number of longs used to store kmers ", Kmer::n_longs, "\n");
-
-  auto my_cardinality = estimate_cardinality(options);
-  {
+    auto my_cardinality = estimate_cardinality(kmer_len, options->reads_fname_list);
     dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
                                   options->dynamic_min_depth, options->use_bloom);
     barrier();
 
     if (options->use_bloom) {
-      count_kmers(options, kmer_dht, BLOOM_SET_PASS);
+      count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_SET_PASS);
       /*
         if (options->ctgs_fname != "") {
         SOUT("Scanning contigs file to populate bloom2\n");
@@ -73,9 +72,9 @@ int main(int argc, char **argv)
         }
       */
       kmer_dht->reserve_space_and_clear_bloom1();
-      count_kmers(options, kmer_dht, BLOOM_COUNT_PASS);
+      count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
     } else {
-      count_kmers(options, kmer_dht, NO_BLOOM_PASS);
+      count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, NO_BLOOM_PASS);
     }
     barrier();
     SOUT("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
@@ -94,10 +93,10 @@ int main(int argc, char **argv)
     */
     barrier();
     kmer_dht->compute_kmer_exts();
-    kmer_dht->dump_kmers(options->kmer_len);
+    kmer_dht->dump_kmers(kmer_len);
     barrier();
     kmer_dht->purge_fx_kmers();
-    traverse_debruijn_graph(options, kmer_dht);
+    traverse_debruijn_graph(kmer_len, kmer_dht);
     // get total file size across all libraries
     double tot_file_size = 0;
     if (!rank_me()) {

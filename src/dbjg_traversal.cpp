@@ -177,7 +177,7 @@ bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char>
   return true;
 }
 
-void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht)
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
   // allocate space for biggest possible uutig in global storage
@@ -207,13 +207,13 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
       }
       auto sum_depths = walk_status->sum_depths;
       auto kmer_str = kmer.to_string();
-      uutig_str += kmer_str.substr(1, options->kmer_len - 2);
+      uutig_str += kmer_str.substr(1, kmer_len - 2);
       if (!traverse_right(kmer_dht, kmer, uutig_gptr, uutig_str, walk_status, start_walk_us)) {
         num_drops++;
         continue;
       }
       sum_depths += walk_status->sum_depths;
-      depths.push_back((double)sum_depths / (uutig_str.length() - options->kmer_len + 2));
+      depths.push_back((double)sum_depths / (uutig_str.length() - kmer_len + 2));
       uutigs.push_back(uutig_str);
       num_walks++;
     }
@@ -234,9 +234,9 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
     int i = 0;
     for (auto &uutig : uutigs) {
       progbar.update();
-      if (uutig.length() < options->kmer_len) DIE("uutig length ", uutig.length(), " less than kmer len");
+      if (uutig.length() < kmer_len) DIE("uutig length ", uutig.length(), " less than kmer len");
       // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
-      Kmer start_kmer(uutig.substr(0, options->kmer_len).c_str());
+      Kmer start_kmer(uutig.substr(0, kmer_len).c_str());
       auto start_kmer_rc = start_kmer.twin();
       if (start_kmer_rc < start_kmer) start_kmer = start_kmer_rc;
       auto visited = kmer_dht->get_visited(start_kmer);
@@ -270,15 +270,15 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
   ad.destroy();
   {
     string uutigs_fname = "./";
-    //uutigs_fname += "UUtigs-" + to_string(options->kmer_len) + ".fasta.gz";
-    uutigs_fname += "UUtigs_contigs-" + to_string(options->kmer_len) + ".fasta.gz";
+    //uutigs_fname += "UUtigs-" + to_string(kmer_len) + ".fasta.gz";
+    uutigs_fname += "UUtigs_contigs-" + to_string(kmer_len) + ".fasta.gz";
     get_rank_path(uutigs_fname, rank_me());
     zstr::ofstream uutigs_file(uutigs_fname);
     ostringstream uutigs_out_buf;
     
     string depths_fname = "./";
-    //depths_fname += "UUtigs-" + to_string(options->kmer_len) + ".depths.gz";
-    depths_fname += "merDepth_UUtigs_contigs-" + to_string(options->kmer_len) + ".txt.gz";
+    //depths_fname += "UUtigs-" + to_string(kmer_len) + ".depths.gz";
+    depths_fname += "merDepth_UUtigs_contigs-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(depths_fname, rank_me());
     zstr::ofstream depths_file(depths_fname);
     ostringstream depths_out_buf;
@@ -286,13 +286,13 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
     ProgressBar progbar(my_uutigs.size(), "Writing uutigs");
     int64_t cid = my_counter;
     for (auto uutig : my_uutigs) {
-      uutigs_out_buf << ">Contig_" << cid << " " << (uutig->length() - options->kmer_len + 1) << " " << my_depths[cid - my_counter] << endl;
+      uutigs_out_buf << ">Contig_" << cid << " " << (uutig->length() - kmer_len + 1) << " " << my_depths[cid - my_counter] << endl;
       string rc_uutig = revcomp(*uutig);
       if (rc_uutig < *uutig) *uutig = rc_uutig;
       // fold output
       for (int p = 0; p < uutig->length(); p += 50)
         uutigs_out_buf << uutig->substr(p, 50) << endl;
-      depths_out_buf << "Contig" << cid << "\t" << (uutig->length() - options->kmer_len + 1) << "\t" << my_depths[cid - my_counter] << endl;
+      depths_out_buf << "Contig" << cid << "\t" << (uutig->length() - kmer_len + 1) << "\t" << my_depths[cid - my_counter] << endl;
       progbar.update();
       cid++;
       if (!(cid % 1000)) {
@@ -313,14 +313,14 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
     auto tot_num_kmers = kmer_dht->get_num_kmers();
     if (!rank_me()) {
       string count_fname = "./";
-      count_fname += "nUUtigs_contigs-" + to_string(options->kmer_len) + ".txt";
+      count_fname += "nUUtigs_contigs-" + to_string(kmer_len) + ".txt";
       get_rank_path(count_fname, -1);
       ofstream count_file(count_fname);
       count_file << tot_num_kmers << endl;
     }
     {
       string my_count_fname = "./";
-      my_count_fname += "myUUtigs_contigs-" + to_string(options->kmer_len) + ".txt";
+      my_count_fname += "myUUtigs_contigs-" + to_string(kmer_len) + ".txt";
       get_rank_path(my_count_fname, rank_me());
       ofstream my_count_file(my_count_fname);
       my_count_file << kmer_dht->get_local_num_kmers() << endl;

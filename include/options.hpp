@@ -20,7 +20,7 @@ private:
     vector<string> split_content;
     std::regex pattern(in_pattern);
     copy(std::sregex_token_iterator(content.begin(), content.end(), pattern, -1),
-         std::sregex_token_iterator(),back_inserter(split_content));
+         std::sregex_token_iterator(), back_inserter(split_content));
     return split_content;
   }
 
@@ -34,7 +34,7 @@ private:
   
 public:
   vector<string> reads_fname_list;
-  unsigned int kmer_len = 99;
+  vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
   unsigned int prev_kmer_len = 0;
   int qual_offset = 33;
   bool verbose = false;
@@ -46,7 +46,7 @@ public:
   void load(int argc, char **argv) {
     string usage = string(argv[0]) + "\n" +
       "-r    readsfile       Files containing merged and unmerged reads in FASTQ format (comma separated)\n" + 
-      "-k    kmerlen         kmer length\n" +
+      "-k    kmerlens        kmer lengths\n" +
       "-p    prevkmerlen     prev kmer length used for generating contigs (optional)\n" +
       "-Q    qualoffset      Phred encoding offset\n" +
       "-m    kmerstore       Maximum size for kmer store\n" +
@@ -60,13 +60,22 @@ public:
     args.parse(argc, argv);
 
     string reads_fnames;
-    
     if (!(args("-r") >> reads_fnames) || args["-h"]) {
       SOUT(usage);
       exit(0);
     }
     reads_fname_list = split(reads_fnames, ',');
-    args("-k") >> kmer_len;
+    
+    string kmer_lens_str;
+    if (args("-k") >> kmer_lens_str) {
+      auto kmer_lens_split = split(kmer_lens_str, ',');
+      kmer_lens.clear();
+      for (auto kmer_len : kmer_lens_split) kmer_lens.push_back(atoi(kmer_len.c_str()));
+    }
+    if (kmer_lens_str.empty()) {
+      for (auto kmer_len : kmer_lens) kmer_lens_str += kmer_len + ",";
+    }
+
     args("-p") >> prev_kmer_len;
     args("-Q") >> qual_offset;
     args("-m") >> max_kmer_store;
@@ -75,10 +84,10 @@ public:
     if (args["-b"]) use_bloom = true;
     if (args["-v"]) verbose = true;
     if (upcxx::rank_me() == 0) {
-      cout << KLBLUE << "----\n";
+      cout << KLBLUE << "_________________________\n";
       cout << "MHM options:\n";
       cout << "  (-r) reads files:           " << reads_fnames << endl;
-      cout << "  (-k) kmer length:           " << kmer_len << endl;
+      cout << "  (-k) kmer length:           " << kmer_lens_str << endl;
       if (prev_kmer_len) cout << "  (-p) prev kmer length:      " << prev_kmer_len << endl;
       cout << "  (-Q) quality offset:        " << qual_offset << endl;
       cout << "  (-m) kmer store:            " << max_kmer_store << endl;
@@ -86,7 +95,7 @@ public:
       cout << "  (-D) dynamic min depth:     " << dynamic_min_depth << endl;
       cout << "  (-b) use bloom:             " << use_bloom << endl;
       cout << "  (-v) verbose:               " << (verbose ? "YES" : "NO") << endl;
-      cout << "----\n" << KNORM;
+      cout << "_________________________\n" << KNORM;
       cout << std::flush;
     }
     upcxx::barrier();

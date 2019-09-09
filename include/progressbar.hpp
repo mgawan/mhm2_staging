@@ -73,7 +73,8 @@ public:
         ticks = 0;
         prev_ticks = ticks;
         //std::cout << KLGREEN << "* " << std::setw(prefix_width) << std::left << (prefix_str + ":") << std::flush;
-        std::cout << KLGREEN << "* " << (prefix_str + " ...\n") << KNORM << (fname.substr(fname.find_last_of("/\\") + 1) + " " + get_size_str(sz)) << std::flush;
+        std::cout << KLGREEN << "* " << (prefix_str + " ") << (fname.substr(fname.find_last_of("/\\") + 1) + " " + get_size_str(sz))
+                  << "... " << std::flush;
         //std::cout << std::endl;
         prev_time = start_time;
       }
