@@ -22,6 +22,11 @@ using std::to_string;
 using std::cout;
 using std::cerr;
 
+
+#ifndef NDEBUG
+#define DEBUG
+#endif
+
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 
@@ -436,6 +441,13 @@ static string remove_file_ext(const string &fname)
   size_t lastdot = fname.find_last_of(".");
   if (lastdot == std::string::npos) return fname;
   return fname.substr(0, lastdot); 
+}
+
+static string get_merged_reads_fname(const string &reads_fname)
+{
+  string out_fname = remove_file_ext(reads_fname) + "-merged.fastq.gz";
+  get_rank_path(out_fname, upcxx::rank_me());
+  return out_fname;
 }
 
 #endif

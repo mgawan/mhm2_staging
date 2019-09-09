@@ -16,10 +16,6 @@
 using namespace std;
 using namespace upcxx;
 
-#ifndef NDEBUG
-#define DEBUG
-#endif
-
 #include "zstr.hpp"
 #include "utils.hpp"
 #include "fastq.hpp"
@@ -106,8 +102,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
   int64_t num_merged = 0;
   for (auto const &reads_fname : reads_fname_list) {
     FastqReader fqr(reads_fname);
-    string out_fname = remove_file_ext(reads_fname) + "-merged.fastq.gz";
-    get_rank_path(out_fname, rank_me());
+    string out_fname = get_merged_reads_fname(reads_fname);
     zstr::ofstream out_file(out_fname);
     ostringstream out_buf;
     

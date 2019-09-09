@@ -138,7 +138,6 @@ public:
 
   template<typename FuncDistObj, typename ...Args>  
   void flush_updates(FuncDistObj &func, Args &...args) {
-    DBG("flushing updates\n");
     for (int target_rank = 0; target_rank < rank_n(); target_rank++) {
       if (max_store_size > 0 && store[target_rank].size()) update_remote(target_rank, func, args...);
     }

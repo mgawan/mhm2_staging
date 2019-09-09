@@ -110,7 +110,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &
   // now attempt to walk to next kmer
   //Kmer next_kmer();
   Kmer next_kmer;
-  string kmer_str = kmer.toString();
+  string kmer_str = kmer.to_string();
   // get next extension
   char next_ext;
   if (dirn == TraverseDirn::LEFT) {
@@ -146,7 +146,7 @@ bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> 
   int walk_len = 0;
   int64_t sum_depths = 0;
   char prev_ext = 0;
-  string kmer_str = kmer.toString();
+  string kmer_str = kmer.to_string();
   traverse_step(kmer_dht, kmer.getArray(), kmer_str.front(), TraverseDirn::LEFT, walk_status, walk_len, sum_depths,
                 rank_me(), uutig_gptr, false, prev_ext, start_walk_us);
   while (!walk_status->done) progress();
@@ -165,7 +165,7 @@ bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char>
   walk_status->len = 0;
   int walk_len = 0;
   int64_t sum_depths = 0;
-  string kmer_str = kmer.toString();
+  string kmer_str = kmer.to_string();
   char prev_ext = 0;
   traverse_step(kmer_dht, kmer.getArray(), kmer_str.back(), TraverseDirn::RIGHT, walk_status, walk_len, sum_depths,
                 rank_me(), uutig_gptr, true, prev_ext, start_walk_us);
@@ -206,7 +206,7 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
         continue;
       }
       auto sum_depths = walk_status->sum_depths;
-      auto kmer_str = kmer.toString();
+      auto kmer_str = kmer.to_string();
       uutig_str += kmer_str.substr(1, options->kmer_len - 2);
       if (!traverse_right(kmer_dht, kmer, uutig_gptr, uutig_str, walk_status, start_walk_us)) {
         num_drops++;

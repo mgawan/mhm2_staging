@@ -77,8 +77,8 @@ int main(int argc, char **argv)
   barrier();
   SOUT("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
   barrier();
-  kmer_dht->write_histogram();
-  barrier();
+  //kmer_dht->write_histogram();
+  //barrier();
   kmer_dht->purge_kmers(options->min_depth_cutoff);
   int64_t newCount = kmer_dht->get_num_kmers();
   SOUT("After purge of kmers <", options->min_depth_cutoff, " there are ", newCount, " unique kmers\n");

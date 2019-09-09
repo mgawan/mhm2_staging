@@ -31,12 +31,13 @@ uint64_t estimate_cardinality(shared_ptr<Options> options)
   int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
   for (auto const &reads_fname : options->reads_fname_list) {
+    string merged_reads_fname = get_merged_reads_fname(reads_fname);
     int64_t records_processed = 0;
-    bool isCompressed = hasEnding(reads_fname, ".gz");
-    int64_t fileSize = get_file_size(reads_fname);
-    zstr::ifstream reads_file(reads_fname);
+    bool isCompressed = hasEnding(merged_reads_fname, ".gz");
+    int64_t fileSize = get_file_size(merged_reads_fname);
+    zstr::ifstream reads_file(merged_reads_fname);
     int64_t bytes_read = 0;
-    ProgressBar progbar(reads_fname, &reads_file, "Scanning reads file to estimate cardinality");
+    ProgressBar progbar(merged_reads_fname, &reads_file, "Scanning reads file to estimate cardinality");
     while (!reads_file.eof()) {
       bool done = false;
       for (int i = 0; i < 4; i++) {
@@ -92,18 +93,19 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
   char special = options->qual_offset + 2;
   IntermittentTimer t_io("reads IO");
   for (auto const &reads_fname : options->reads_fname_list) {
+    string merged_reads_fname = get_merged_reads_fname(reads_fname);
     int64_t bytes_read = 0;
-    zstr::ifstream reads_file(reads_fname);
+    zstr::ifstream reads_file(merged_reads_fname);
     /*
     stringstream reads_file_buf;
     {
       t_io.start();
-      zstr::ifstream reads_file(reads_fname);
+      zstr::ifstream reads_file(merged_reads_fname);
       reads_file_buf << reads_file.rdbuf();
       t_io.stop();
     }
     */
-    ProgressBar progbar(reads_fname, &reads_file, progbar_prefix);
+    ProgressBar progbar(merged_reads_fname, &reads_file, progbar_prefix);
     while (!reads_file.eof()) {
       bool done = false;
       for (int i = 0; i < 4; i++) {
@@ -156,6 +158,7 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
         }
         int count = (i < foundBadQualKmer) ? 1 : 0;
         kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
+        DBG("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
         num_kmers++;
       }
       progress();

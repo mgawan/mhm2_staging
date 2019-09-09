@@ -36,7 +36,8 @@
 class Kmer {
   
 public:
-  typedef std::array<uint64_t, N_LONGS> MerArray;
+  //typedef std::array<uint64_t, N_LONGS> MerArray;
+  typedef std::vector<uint64_t> MerArray;
   
 private:
   const uint64_t twin_table[256] = {
@@ -80,21 +81,27 @@ public:
 
   Kmer() {
     assert(Kmer::k > 0);
+    longs.resize(N_LONGS);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
   }
     
   Kmer(const Kmer& o) {
     assert(Kmer::k > 0);
+    longs.resize(N_LONGS);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
   }
   
   explicit Kmer(const char *s) {
     assert(Kmer::k > 0);
+    longs.resize(N_LONGS);
     set_kmer(s);
   }
   
   explicit Kmer(const MerArray &arr) {
     assert(Kmer::k > 0);
+    longs.resize(N_LONGS);
+    assert(arr.size() == N_LONGS);
+    assert(longs.size() == N_LONGS);
     std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
   }
 
@@ -257,7 +264,7 @@ public:
     return km;
   }
   
-  void toString(char *s) const {
+  void to_string(char *s) const {
     size_t i, j, l;
     for (i = 0; i < Kmer::k; i++) {
       j = i % 32;
@@ -272,9 +279,9 @@ public:
     *s = '\0';
   }
 
-  std::string toString() const {
+  std::string to_string() const {
     char buf[max_k];
-    toString(buf);
+    to_string(buf);
     return std::string(buf);
   }
 
@@ -285,7 +292,7 @@ public:
 
 // ABAB: return the raw data packed in an std::array
 // this preserves the lexicographical order on k-mers
-// i.e. A.toString() < B.toString <=> A.getArray() < B.getArray()
+// i.e. A.to_string() < B.to_string <=> A.getArray() < B.getArray()
   const MerArray &getArray() const {
     return longs;
   }
@@ -346,7 +353,7 @@ namespace std
 
 
 inline std::ostream& operator<<(std::ostream& out, const Kmer& k) {
-  return out << k.toString();
+  return out << k.to_string();
 };
 
 #endif
