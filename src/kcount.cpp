@@ -47,9 +47,9 @@ uint64_t estimate_cardinality(shared_ptr<Options> options)
           break;
         }
         bytes_read += read_record[i].length();
-        progbar.update(bytes_read);
         num_lines++;
       }
+      progbar.update(bytes_read);
       if (records_processed++ > 100000) break; // do not read the entire data set for just an estimate
       if (done) break;
       num_reads++;
@@ -115,9 +115,9 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
           break;
         }
         bytes_read += read_record[i].length();
-        progbar.update(bytes_read);
         num_lines++;
       }
+      progbar.update(bytes_read);
       if (done) break;
       string seq = move(read_record[1]);
       string quals = move(read_record[3]);

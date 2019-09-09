@@ -288,11 +288,18 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
       }
       if (!(num_pairs % 1000)) {
         out_file << out_buf.str();
+        bytes_written += out_buf.str().length();
         out_buf = ostringstream();
       }
     }
-    if (!out_buf.str().empty()) out_file << out_buf.str();
+    if (!out_buf.str().empty()) {
+      out_file << out_buf.str();
+      bytes_written += out_buf.str().length();
+    }
     out_file.close();
+    
+    // store the uncompressed size in a secondary file
+    write_uncompressed_file_size(reads_fname, bytes_written);
     
     auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
     auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();

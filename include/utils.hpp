@@ -380,28 +380,6 @@ static double get_free_mem_gb(void)
   return mem_free;
 }
 
-static int64_t get_file_size(string fname)
-{
-  struct stat s;
-
-  if (stat(fname.c_str(), &s) != 0) {
-    return -1;
-  }
-  return s.st_size;
-}
-
-static int64_t get_uncompressed_file_size(string fname)
-{
-  string uncompressedSizeFname = fname + ".uncompressedSize";
-  ifstream f(uncompressedSizeFname, std::ios::binary);
-  if (!f) return get_file_size(fname) * 5; // assume 5x compression
-  int64_t sz;
-  f.read((char*)&sz, sizeof(int64_t));
-  if (!f) return 0;
-  return sz;
-}
-
-
 static bool hasEnding (string const &fullString, string const &ending) {
   if (fullString.length() >= ending.length()) {
     return (0 == fullString.compare (fullString.length() - ending.length(), ending.length(), ending));
@@ -449,5 +427,31 @@ static string get_merged_reads_fname(const string &reads_fname)
   get_rank_path(out_fname, upcxx::rank_me());
   return out_fname;
 }
+
+static int64_t get_file_size(string fname)
+{
+  struct stat s;
+  if (stat(fname.c_str(), &s) != 0) return -1;
+  return s.st_size;
+}
+
+static size_t get_uncompressed_file_size(string fname)
+{
+  string uncompressedSizeFname = fname + ".uncompressedSize";
+  ifstream f(uncompressedSizeFname, std::ios::binary);
+  if (!f) return get_file_size(fname) * 5; // assume 5x compression
+  size_t sz = 0;
+  f.read((char*)&sz, sizeof(size_t));
+  return sz;
+}
+
+static void write_uncompressed_file_size(string fname, size_t sz)
+{
+  string uncompressedSizeFname = get_merged_reads_fname(fname) + ".uncompressedSize";
+  ofstream f(uncompressedSizeFname, std::ios::binary);
+  f.write((char*)&sz, sizeof(size_t));
+  f.close();
+}
+
 
 #endif
