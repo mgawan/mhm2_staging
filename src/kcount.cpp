@@ -90,11 +90,9 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
   char special = options->qual_offset + 2;
-  vector<int> maxReadLengths;
   IntermittentTimer t_io("reads IO");
   for (auto const &reads_fname : options->reads_fname_list) {
     int64_t bytes_read = 0;
-    int maxReadLength = 0;
     zstr::ifstream reads_file(reads_fname);
     /*
     stringstream reads_file_buf;
@@ -117,7 +115,6 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
         bytes_read += read_record[i].length();
         progbar.update(bytes_read);
         num_lines++;
-        if (i == 1 && maxReadLength < read_record[i].length()) maxReadLength = read_record[i].length();
       }
       if (done) break;
       string seq = move(read_record[1]);
@@ -165,19 +162,6 @@ void count_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, PA
     }
     progbar.done();
     kmer_dht->flush_updates(pass_type);
-    maxReadLength = reduce_one(maxReadLength, op_max, 0).wait();
-    SOUT("Detected maxReadLength of ", maxReadLength, " for ", reads_fname, "\n");
-    /*
-    if (!rank_me()) {
-      string maxFile = reads_fname;
-      size_t pos = maxFile.find_last_of('/');
-      if (pos != string::npos) maxFile = maxFile.substr(pos+1);
-      maxFile = "per_thread/" + maxFile + ".maxReadLen.txt";
-      if (! does_file_exist(maxFile) ) {
-        write_num_file(maxFile, maxReadLength);
-      }
-    }
-    */
   }
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads), max read length ", max_read_len, "\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();

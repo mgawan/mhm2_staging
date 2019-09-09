@@ -23,7 +23,7 @@ include_directories("${CMAKE_SOURCE_DIR}/zstr/src")
 # all the other headers
 include_directories("${CMAKE_SOURCE_DIR}/../include")
 
-add_executable(mhm main.cpp merge_reads.cpp kcount.cpp kmer.cpp dbjg_traversal.cpp hash_funcs.c)
+add_executable(mhm main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c)
 
 target_link_libraries(mhm ${ZLIB_LIBRARIES})
 #install(TARGETS mhm DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

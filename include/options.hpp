@@ -34,8 +34,8 @@ private:
   
 public:
   vector<string> reads_fname_list;
-  int kmer_len = 99;
-  int prev_kmer_len = 0;
+  unsigned int kmer_len = 99;
+  unsigned int prev_kmer_len = 0;
   int qual_offset = 33;
   bool verbose = false;
   int max_kmer_store = ONE_MB;

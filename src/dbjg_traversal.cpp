@@ -45,9 +45,9 @@ static void abort_walk(dist_object<WalkStatus> &walk_status, bool walk_drop, int
 
 static int num_conflicts = 0;
 
-static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MERARR &merarr, char ext, TraverseDirn dirn,
-                          dist_object<WalkStatus> &walk_status, int32_t walk_len, int64_t sum_depths, intrank_t start_rank,
-                          global_ptr<char> uutig, bool revisit_allowed, char prev_ext, int32_t start_walk_us)
+static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MERARR &merarr, char ext,
+                          TraverseDirn dirn, dist_object<WalkStatus> &walk_status, int32_t walk_len, int64_t sum_depths,
+                          intrank_t start_rank, global_ptr<char> uutig, bool revisit_allowed, char prev_ext, int32_t start_walk_us)
 {
   Kmer kmer(merarr);
   auto kmer_rc = kmer.twin();
@@ -108,6 +108,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MERARR &me
   walk_len++;
   sum_depths += kmer_counts->count;
   // now attempt to walk to next kmer
+  //Kmer next_kmer();
   Kmer next_kmer;
   string kmer_str = kmer.toString();
   // get next extension
@@ -130,12 +131,12 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MERARR &me
   rput(ext, uutig + walk_len - 1).then(
     [=, &kmer_dht, &walk_status]() {
       // only do the rpc to the next kmer vertex once the rput has completed
-      rpc_ff(target_rank, traverse_step, kmer_dht, next_kmer.getArray(), next_ext, dirn, walk_status, walk_len, sum_depths, start_rank,
-             uutig, false, prev_ext, start_walk_us);
+      rpc_ff(target_rank, traverse_step, kmer_dht, next_kmer.getArray(), next_ext, dirn, walk_status, walk_len,
+             sum_depths, start_rank, uutig, false, prev_ext, start_walk_us);
     });
 }
 
-bool traverse_left(int kmer_len, dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
+bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
                    string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
 {
   walk_status->done = false;
@@ -146,8 +147,8 @@ bool traverse_left(int kmer_len, dist_object<KmerDHT> &kmer_dht, Kmer &kmer, glo
   int64_t sum_depths = 0;
   char prev_ext = 0;
   string kmer_str = kmer.toString();
-  traverse_step(kmer_dht, kmer.getArray(), kmer_str.front(), TraverseDirn::LEFT, walk_status, walk_len, sum_depths, rank_me(),
-                uutig_gptr, false, prev_ext, start_walk_us);
+  traverse_step(kmer_dht, kmer.getArray(), kmer_str.front(), TraverseDirn::LEFT, walk_status, walk_len, sum_depths,
+                rank_me(), uutig_gptr, false, prev_ext, start_walk_us);
   while (!walk_status->done) progress();
   if (walk_status->drop) return false;
   char *local_uutig = uutig_gptr.local();
@@ -156,7 +157,7 @@ bool traverse_left(int kmer_len, dist_object<KmerDHT> &kmer_dht, Kmer &kmer, glo
   return true;
 }
 
-bool traverse_right(int kmer_len, dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
+bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
                     string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
 {
   walk_status->done = false;
@@ -166,8 +167,8 @@ bool traverse_right(int kmer_len, dist_object<KmerDHT> &kmer_dht, Kmer &kmer, gl
   int64_t sum_depths = 0;
   string kmer_str = kmer.toString();
   char prev_ext = 0;
-  traverse_step(kmer_dht, kmer.getArray(), kmer_str.back(), TraverseDirn::RIGHT, walk_status, walk_len, sum_depths, rank_me(),
-                uutig_gptr, true, prev_ext, start_walk_us);
+  traverse_step(kmer_dht, kmer.getArray(), kmer_str.back(), TraverseDirn::RIGHT, walk_status, walk_len, sum_depths,
+                rank_me(), uutig_gptr, true, prev_ext, start_walk_us);
   while (!walk_status->done) progress(); 
   if (walk_status->drop) return false;
   char *local_uutig = uutig_gptr.local();
@@ -200,14 +201,14 @@ void traverse_debruijn_graph(shared_ptr<Options> options, dist_object<KmerDHT> &
       int32_t start_walk_us = kmer_dht->get_time_offset_us();
       // walk left first
       string uutig_str = "";
-      if (!traverse_left(options->kmer_len, kmer_dht, kmer, uutig_gptr, uutig_str, walk_status, start_walk_us)) {
+      if (!traverse_left(kmer_dht, kmer, uutig_gptr, uutig_str, walk_status, start_walk_us)) {
         num_drops++;
         continue;
       }
       auto sum_depths = walk_status->sum_depths;
       auto kmer_str = kmer.toString();
       uutig_str += kmer_str.substr(1, options->kmer_len - 2);
-      if (!traverse_right(options->kmer_len, kmer_dht, kmer, uutig_gptr, uutig_str, walk_status, start_walk_us)) {
+      if (!traverse_right(kmer_dht, kmer, uutig_gptr, uutig_str, walk_status, start_walk_us)) {
         num_drops++;
         continue;
       }

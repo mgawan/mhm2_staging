@@ -27,6 +27,9 @@ ofstream _dbgstream;
 using namespace std;
 using namespace upcxx;
 
+unsigned int Kmer::k = 0;
+unsigned int Kmer::max_k = MAX_KMER_SIZE;
+
 
 int main(int argc, char **argv)
 {
@@ -51,8 +54,9 @@ int main(int argc, char **argv)
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
+  Kmer::k = options->kmer_len;
+  
   auto my_cardinality = estimate_cardinality(options);
-  Kmer::set_k(options->kmer_len);
   dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
                                 options->dynamic_min_depth, options->use_bloom);
   barrier();
