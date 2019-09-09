@@ -31,12 +31,10 @@
  *  - Provide hash of kmers
  *  - Get last and next kmer, e.g. ACGT -> CGTT or ACGT -> AACGT
  *  */
-#define N_LONGS (MAX_KMER_SIZE / (4 * sizeof(uint64_t))) /* 4 bases per byte */
 
 class Kmer {
   
 public:
-  //typedef std::array<uint64_t, N_LONGS> MerArray;
   typedef std::vector<uint64_t> MerArray;
   
 private:
@@ -76,44 +74,42 @@ private:
   };
 
   MerArray longs;
-  
+
 public:
 
   Kmer() {
     assert(Kmer::k > 0);
-    longs.resize(N_LONGS);
-    for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
+    longs.resize(n_longs);
+    for (size_t i = 0; i < n_longs; i++) longs[i] = 0;
   }
     
   Kmer(const Kmer& o) {
     assert(Kmer::k > 0);
-    longs.resize(N_LONGS);
-    for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
+    longs.resize(n_longs);
+    for (size_t i = 0; i < n_longs; i++) longs[i] = o.longs[i];
   }
   
   explicit Kmer(const char *s) {
     assert(Kmer::k > 0);
-    longs.resize(N_LONGS);
+    longs.resize(n_longs);
     set_kmer(s);
   }
   
   explicit Kmer(const MerArray &arr) {
     assert(Kmer::k > 0);
-    longs.resize(N_LONGS);
-    assert(arr.size() == N_LONGS);
-    assert(longs.size() == N_LONGS);
-    std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
+    longs.resize(n_longs);
+    std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (n_longs));
   }
 
   static std::vector<Kmer> getKmers(std::string seq) {
     assert(Kmer::k > 0);
     for (auto & c : seq) c = toupper(c); 
     if (seq.size() < Kmer::k) return std::vector<Kmer>();
-    int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
+    int bufsize = std::max((int)n_longs, (int)(seq.size() + 31) / 32) + 2;
     int numLongs = (Kmer::k + 31) / 32;
-    assert(numLongs <= N_LONGS);
+    assert(numLongs <= n_longs);
     int lastLong = numLongs - 1;
-    assert(lastLong >= 0 && lastLong < N_LONGS);
+    assert(lastLong >= 0 && lastLong < n_longs);
     std::vector<Kmer> kmers(seq.size() - Kmer::k + 1, Kmer());
     uint64_t buf[bufsize];
     uint8_t *bufPtr = (uint8_t *)buf;
@@ -157,7 +153,7 @@ public:
         }
         // set remaining bits to 0
         kmers[i].longs[lastLong] &= endmask;
-        for (int l = numLongs; l < N_LONGS; l++) {
+        for (int l = numLongs; l < n_longs; l++) {
           kmers[i].longs[l] = 0;
         }
       }
@@ -167,13 +163,13 @@ public:
   
   Kmer& operator=(const Kmer& o) {
     if (this != &o) 
-      for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
+      for (size_t i = 0; i < n_longs; i++) longs[i] = o.longs[i];
     return *this;
   }
   
   bool operator<(const Kmer& o) const {
     bool r = false;
-    for (size_t i = 0; i < N_LONGS; ++i) {
+    for (size_t i = 0; i < n_longs; ++i) {
       if (longs[i] < o.longs[i]) return true;
       if (longs[i] > o.longs[i]) return false;
     }
@@ -181,7 +177,7 @@ public:
   }
     
   bool operator==(const Kmer& o) const {
-    for (size_t i = 0; i < N_LONGS; i++) 
+    for (size_t i = 0; i < n_longs; i++) 
       if (longs[i] != o.longs[i]) return false;
     return true;
   }
@@ -204,7 +200,7 @@ public:
   }
     
   uint64_t hash() const {
-    return MurmurHash3_x64_64(reinterpret_cast<const void*>(longs.data()), N_LONGS * sizeof(uint64_t));
+    return MurmurHash3_x64_64(reinterpret_cast<const void*>(longs.data()), n_longs * sizeof(uint64_t));
   }
 
   Kmer twin() const {
@@ -280,14 +276,13 @@ public:
   }
 
   std::string to_string() const {
-    char buf[max_k];
+    char buf[Kmer::k + 1];
     to_string(buf);
     return std::string(buf);
   }
 
   void copyDataInto(void *pointer) const {
-    // void * memcpy ( void * destination, const void * source, size_t num );
-    memcpy(pointer, longs.data(), sizeof(uint64_t) * (N_LONGS));
+    memcpy(pointer, longs.data(), sizeof(uint64_t) * (n_longs));
   }
 
 // ABAB: return the raw data packed in an std::array
@@ -302,7 +297,7 @@ public:
   }
   
   int getNumBytes() const {
-    return N_LONGS * sizeof(uint64_t);
+    return n_longs * sizeof(uint64_t);
   }
 
   // returns true for completely identical k-mers as well as k-mers that only differ at the last base
@@ -313,11 +308,16 @@ public:
   }
 
   static constexpr size_t numBytes() {
-    return sizeof(uint64_t) * (N_LONGS);
+    return sizeof(uint64_t) * (n_longs);
   }
 
-  static unsigned int max_k;
   static unsigned int k;
+  static unsigned int n_longs;
+
+  static void init_k(unsigned _k) {
+    Kmer::k = _k;
+    Kmer::n_longs = (_k + 31) / 32;
+  }
 };
 
 

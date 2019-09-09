@@ -28,7 +28,7 @@ using namespace std;
 using namespace upcxx;
 
 unsigned int Kmer::k = 0;
-unsigned int Kmer::max_k = MAX_KMER_SIZE;
+unsigned int Kmer::n_longs = 0;
 
 
 int main(int argc, char **argv)
@@ -54,7 +54,9 @@ int main(int argc, char **argv)
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
-  Kmer::k = options->kmer_len;
+  Kmer::init_k(options->kmer_len);
+
+  SOUT("Number of longs used to store kmers ", Kmer::n_longs, "\n");
   
   auto my_cardinality = estimate_cardinality(options);
   dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
