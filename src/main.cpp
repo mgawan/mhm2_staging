@@ -112,8 +112,11 @@ int main(int argc, char **argv)
     barrier();
     kmer_dht->purge_fx_kmers();
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+    // FIXME: dump as single file if checkpoint option is specified
     ctgs_fname = ctgs.dump_contigs("uutigs", kmer_len);
-    
+
+    //find_alignments();
+      
     double loop_end_mem_free = get_free_mem_gb();
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",

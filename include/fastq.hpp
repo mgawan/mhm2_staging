@@ -1,8 +1,11 @@
 #ifndef _FASTQ_H
 #define _FASTQ_H
 
-
+#include <zlib.h>
 #include <upcxx/upcxx.hpp>
+
+#include "utils.hpp"
+
 
 using std::string;
 
@@ -12,11 +15,13 @@ using upcxx::rank_n;
 #define INT_CEIL(numerator, denominator) (((numerator) - 1) / (denominator) + 1)
 #define BUF_SIZE 2047
 
+#define PER_RANK_FILE true
 
 class FastqReader {
 
 private:
   FILE *f;
+  gzFile gzf;
   off_t file_size;
   int64_t start_read;
   int64_t end_read;
@@ -105,54 +110,81 @@ private:
   
 public:
   
-  FastqReader(const string &fname) : fname(fname), max_read_len(0) {
-    // only one rank gets the file size, to prevent many hits on metadata
-    if (!rank_me()) {
-      struct stat st;
-      if (stat(fname.c_str(), &st) != 0) DIE("Could not stat ", fname, ": ", strerror(errno));
-      file_size = st.st_size;
+  FastqReader(const string &fname, bool per_rank_file=false) : fname(fname), f(nullptr), gzf(nullptr), max_read_len(0) {
+    bool is_compressed = has_ending(fname, ".gz");
+    if (!per_rank_file) {
+      if (is_compressed) DIE("Single gzipped input file ", fname, " not supported\n");
+      // only one rank gets the file size, to prevent many hits on metadata
+      if (!rank_me()) file_size = get_file_size(fname);
+      file_size = upcxx::broadcast(file_size, 0).wait();
+    } else {
+      if (is_compressed) file_size = get_uncompressed_file_size(fname);
+      else file_size = get_file_size(fname);
     }
-    file_size = upcxx::broadcast(file_size, 0).wait();
-    f = fopen(fname.c_str(), "r");
-    if (!f) DIE("Could not open file ", fname, ": ", strerror(errno));
-    // just a part of the file is read by this thread 
-    int64_t read_block = INT_CEIL(file_size, rank_n());
-    start_read = read_block * rank_me();
-    end_read = read_block * (rank_me() + 1);
-    if (rank_me()) start_read = get_fptr_for_next_record(start_read);
-    if (rank_me() == rank_n() - 1) end_read = file_size;
+    if (is_compressed) {
+      gzf = gzopen(fname.c_str(), "r");
+      if (!gzf) DIE("Could not open file ", fname, ": ", strerror(errno));
+    } else {
+      f = fopen(fname.c_str(), "r");
+      if (!f) DIE("Could not open file ", fname, ": ", strerror(errno));
+    }
+    // just a part of the file is read by this thread
+    int max_rank = (per_rank_file ? 1 : rank_n());
+    int64_t read_block = INT_CEIL(file_size, max_rank);
+    int my_rank = (per_rank_file ? 0 : rank_me());
+    start_read = read_block * my_rank;
+    end_read = read_block * (my_rank + 1);
+    if (my_rank) start_read = get_fptr_for_next_record(start_read);
+    if (my_rank == max_rank - 1) end_read = file_size;
     else end_read = get_fptr_for_next_record(end_read);
-    if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
-    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+    if (!is_compressed) {
+      if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
+      posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+    }
     SOUT("Reading FASTQ file ", fname, "\n");
-    DBG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), "\n");
+    DBG("Reading fastq file ", fname, " at pos ", start_read, " ", (f ? ftell(f) : gztell(gzf)), "\n");
   }
 
   ~FastqReader() {
-    fclose(f);
+    if (f) fclose(f);
+    if (gzf) gzclose(gzf);
+  }
+
+  size_t my_file_size() {
+    return end_read - start_read;
+  }
+
+  long tell() {
+    return (f ? ftell(f) : gztell(gzf));
   }
   
-  bool get_next_fq_record(string &id, string &seq, string &quals) {
-    if (ftell(f) >= end_read) return false;
+  size_t get_next_fq_record(string &id, string &seq, string &quals) {
+    if (f) {
+      if (feof(f) || ftell(f) >= end_read) return 0;
+    } else {
+      if (gzeof(gzf) || gztell(gzf) >= end_read) return 0;
+    }
+    size_t bytes_read = 0;
     for (int i = 0; i < 4; i++) {
-      if (!fgets(buf, BUF_SIZE, f)) {
-        WARN("Read record terminated before full record at position ", ftell(f));
-        return false;
-      }
+      char *bytes = (f ? fgets(buf, BUF_SIZE, f) : gzgets(gzf, buf, BUF_SIZE));
+      if (!bytes) DIE("Read record terminated on file ", fname, " before full record at position ", (f ? ftell(f) : gztell(gzf)));
       if (i == 0) id.assign(buf);
       else if (i == 1) seq.assign(buf);
       else if (i == 3) quals.assign(buf);
+      bytes_read += strlen(buf);
     }
     rtrim(id);
     rtrim(seq);
     rtrim(quals);
-    if (id[0] != '@') DIE("Invalid FASTQ at position ", ftell(f), " expected read name (@), got: ", id);
+    if (id[0] != '@')
+      DIE("Invalid FASTQ in ", fname, ": expected read name (@), got: ", id);
     // construct universally formatted name (illumina 1 format)
-    if (!get_fq_name(id)) DIE("Invalid FASTQ name format: '", id, "'");
-    if (seq.length() != quals.length()) DIE("Sequence length ", seq.length(), " != ", quals.length(), " quals length at pos ", ftell(f));
+    if (!get_fq_name(id))
+      DIE("Invalid FASTQ in ", fname, ": incorrect name format '", id, "'");
+    if (seq.length() != quals.length())
+      DIE("Invalid FASTQ in ", fname, ": sequence length ", seq.length(), " != ", quals.length(), " quals length\n");
     if (seq.length() > max_read_len) max_read_len = seq.length();
-    //DBG(id, "\n", seq, "\n+\n", quals, "\n");
-    return true;
+    return bytes_read;
   }
   
 };

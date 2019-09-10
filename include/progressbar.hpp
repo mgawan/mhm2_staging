@@ -30,13 +30,6 @@ private:
   std::chrono::steady_clock::time_point prev_time;
   std::istream *infile = nullptr;
 
-  inline size_t get_file_size(std::string fname)
-  {
-    struct stat sb;
-    int rc = stat(fname.c_str(), &sb);
-    return rc == 0 ? sb.st_size : 0;
-  }
-
 public:
   ProgressBar(int64_t total, string prefix = "", int pwidth = 20,
               int width = 50, char complete = '=', char incomplete = ' ') :
@@ -62,11 +55,9 @@ public:
         stat(fname.c_str(), &stat_buf);
         total_ticks = stat_buf.st_size;
         */
-        bool isCompressed = hasEnding(fname, ".gz");
-        int64_t sz = isCompressed ? get_uncompressed_file_size(fname) : get_file_size(fname);
-        if (sz < 0) {
-            std::cout << KRED << "Could not read the file size for: " << fname << std::flush;
-        }
+        bool is_compressed = has_ending(fname, ".gz");
+        int64_t sz = is_compressed ? get_uncompressed_file_size(fname) : get_file_size(fname);
+        if (sz < 0) std::cout << KRED << "Could not read the file size for: " << fname << std::flush;
         total_ticks = sz;
         ten_perc = total_ticks / 10;
         if (ten_perc == 0) ten_perc = 1;

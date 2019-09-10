@@ -19,7 +19,7 @@ using namespace upcxx;
 #include "zstr.hpp"
 #include "utils.hpp"
 #include "fastq.hpp"
-
+#include "progressbar.hpp"
 
 static const double Q2Perror[] = { 1.0,
                                    0.7943,	0.6309,	0.5012,	0.3981,	0.3162,
@@ -103,6 +103,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
   for (auto const &reads_fname : reads_fname_list) {
     FastqReader fqr(reads_fname);
     string out_fname = get_merged_reads_fname(reads_fname);
+    ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
     zstr::ofstream out_file(out_fname);
     ostringstream out_buf;
     
@@ -124,8 +125,14 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
     
     string id1, seq1, quals1, id2, seq2, quals2;
     int64_t num_pairs = 0;
+    size_t tot_bytes_read = 0;
     for (; ; num_pairs++) {
-      if (!fqr.get_next_fq_record(id1, seq1, quals1) || !fqr.get_next_fq_record(id2, seq2, quals2)) break;
+      size_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
+      if (!bytes_read1) break;
+      size_t bytes_read2 = fqr.get_next_fq_record(id2, seq2, quals2);
+      if (!bytes_read2) break;
+      tot_bytes_read += bytes_read1 + bytes_read2;
+      progbar.update(tot_bytes_read);
       if (id1.substr(0, id1.length() - 2) != id2.substr(0, id2.length() - 2)) DIE("Mismatched pairs ", id1, " ", id2);
       if (id1[id1.length() - 1] != '1' || id2[id2.length() - 1] != '2') DIE("Mismatched pair numbers ", id1, " ", id2);
 
@@ -297,7 +304,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
       bytes_written += out_buf.str().length();
     }
     out_file.close();
-    
+    progbar.done();
+    SOUT("tot bytes read ", tot_bytes_read, "\n");
     // store the uncompressed size in a secondary file
     write_uncompressed_file_size(get_merged_reads_fname(reads_fname) + ".uncompressedSize", bytes_written);
     

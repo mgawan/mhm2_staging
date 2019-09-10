@@ -380,20 +380,16 @@ static double get_free_mem_gb(void)
   return mem_free;
 }
 
-static bool hasEnding (string const &fullString, string const &ending) {
-  if (fullString.length() >= ending.length()) {
-    return (0 == fullString.compare (fullString.length() - ending.length(), ending.length(), ending));
-  } else {
-    return false;
-  }
+static bool has_ending (string const &full_string, string const &ending) {
+  if (full_string.length() >= ending.length()) 
+    return (0 == full_string.compare(full_string.length() - ending.length(), ending.length(), ending));
+  return false;
 }
 
 static int does_file_exist(string fname)
 {
   struct stat s;
-  if (stat(fname.c_str(), &s) != 0) {
-    return 0;
-  }
+  if (stat(fname.c_str(), &s) != 0) return 0;
   return 1;
 }
 
@@ -439,7 +435,7 @@ static size_t get_uncompressed_file_size(string fname)
 {
   string uncompressedSizeFname = fname + ".uncompressedSize";
   ifstream f(uncompressedSizeFname, std::ios::binary);
-  if (!f) return get_file_size(fname) * 5; // assume 5x compression
+  if (!f) DIE("Cannot get uncompressed size for file ", fname);
   size_t sz = 0;
   f.read((char*)&sz, sizeof(size_t));
   return sz;

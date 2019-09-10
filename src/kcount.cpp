@@ -13,11 +13,12 @@
 #include "kcount.hpp"
 #include "progressbar.hpp"
 #include "kmer_dht.hpp"
+#include "fastq.hpp"
+
 
 using namespace std;
 using namespace upcxx;
 
-static const int QUAL_CUTOFF = 20;
 
 extern ofstream _dbgstream;
 
@@ -27,37 +28,30 @@ uint64_t estimate_cardinality(unsigned kmer_len, vector<string> reads_fname_list
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
-  string read_record[4];
   int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    int64_t records_processed = 0;
-    bool isCompressed = hasEnding(merged_reads_fname, ".gz");
-    int64_t fileSize = get_file_size(merged_reads_fname);
-    zstr::ifstream reads_file(merged_reads_fname);
-    int64_t bytes_read = 0;
-    ProgressBar progbar(merged_reads_fname, &reads_file, "Scanning reads file to estimate cardinality");
-    while (!reads_file.eof()) {
-      bool done = false;
-      for (int i = 0; i < 4; i++) {
-        getline(reads_file, read_record[i]);
-        if (read_record[i] == "") {
-          done = true;
-          break;
-        }
-        bytes_read += read_record[i].length();
-        num_lines++;
-      }
-      progbar.update(bytes_read);
-      if (records_processed++ > 100000) break; // do not read the entire data set for just an estimate
-      if (done) break;
+    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    string id, seq, quals;
+    ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate cardinality");
+    size_t tot_bytes_read = 0;
+    int64_t records_processed = 0; 
+    while (true) {
+      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      if (!bytes_read) break;
+      num_lines += 4;
       num_reads++;
-      if (read_record[1].length() < kmer_len) continue;
-      num_kmers += read_record[1].length() - kmer_len + 1;
+      tot_bytes_read += bytes_read;
+      progbar.update(tot_bytes_read);
+      records_processed++;
+      // do not read the entire data set for just an estimate
+      if (records_processed > 100000) break; 
+      if (seq.length() < kmer_len) continue;
+      num_kmers += seq.length() - kmer_len + 1;
     }
     total_records_processed += records_processed;
-    estimated_total_records += records_processed * fileSize / reads_file.zstr_tellg();
+    estimated_total_records += records_processed * fqr.my_file_size() / fqr.tell();
     progbar.done();
     barrier();
   }
@@ -81,8 +75,6 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
   Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
-  string read_record[4];
-  int max_read_len = 0;
   int64_t num_kmers = 0;
   string progbar_prefix = "";
   switch (pass_type) {
@@ -94,58 +86,37 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
   IntermittentTimer t_io("reads IO");
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    int64_t bytes_read = 0;
-    zstr::ifstream reads_file(merged_reads_fname);
-    /*
-    stringstream reads_file_buf;
-    {
-      t_io.start();
-      zstr::ifstream reads_file(merged_reads_fname);
-      reads_file_buf << reads_file.rdbuf();
-      t_io.stop();
-    }
-    */
-    ProgressBar progbar(merged_reads_fname, &reads_file, progbar_prefix);
-    while (!reads_file.eof()) {
-      bool done = false;
-      for (int i = 0; i < 4; i++) {
-        getline(reads_file, read_record[i]);
-        if (read_record[i] == "") {
-          done = true;
-          break;
-        }
-        bytes_read += read_record[i].length();
-        num_lines++;
-      }
-      progbar.update(bytes_read);
-      if (done) break;
-      string seq = move(read_record[1]);
-      string quals = move(read_record[3]);
+    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    string id, seq, quals;
+    ProgressBar progbar(fqr.my_file_size(), progbar_prefix);
+    size_t tot_bytes_read = 0;
+    while (true) {
+      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      if (!bytes_read) break;
+      num_lines += 4;
       num_reads++;
+      tot_bytes_read += bytes_read;
+      progbar.update(tot_bytes_read);
       if (seq.length() < kmer_len) continue;
-      if (seq.length() > max_read_len) max_read_len = seq.length();
-
+      
       // split into kmers
       auto kmers = Kmer::get_kmers(seq);
-
       // disable kmer counting of kmers after a bad quality score (of 2) in the read
       // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
-      size_t foundBadQual = quals.find_first_of(special);
-      if (foundBadQual == string::npos) foundBadQual = seq.length();   // remember that the last valid position is length()-1
-      int foundBadQualKmer = foundBadQual - kmer_len + 1;
-      assert( (int) kmers.size() >= foundBadQualKmer );
-
+      size_t found_bad_qual = quals.find_first_of(special);
+      if (found_bad_qual == string::npos) found_bad_qual = seq.length();   // remember that the last valid position is length()-1
+      int found_bad_qual_kmer = found_bad_qual - kmer_len + 1;
+      assert( (int) kmers.size() >= found_bad_qual_kmer );
       // skip kmers that contain an N
-      size_t foundN = seq.find_first_of('N');
-      if (foundN == string::npos) foundN = seq.length();
-
+      size_t found_N = seq.find_first_of('N');
+      if (found_N == string::npos) found_N = seq.length();
       for (int i = 0; i < kmers.size(); i++) {
         // skip kmers that contain an N
-        if (i + kmer_len > foundN) {
-          i = foundN; // skip
+        if (i + kmer_len > found_N) {
+          i = found_N; // skip
           // find the next N
-          foundN = seq.find_first_of('N', foundN+1);
-          if (foundN == string::npos) foundN = seq.length();
+          found_N = seq.find_first_of('N', found_N+1);
+          if (found_N == string::npos) found_N = seq.length();
           continue;
         }
         char left_base = '0';
@@ -156,7 +127,7 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
         if (i + kmer_len < seq.length() && quals[i + kmer_len] >= qual_offset + QUAL_CUTOFF) {
           right_base = seq[i + kmer_len];
         }
-        int count = (i < foundBadQualKmer) ? 1 : 0;
+        int count = (i < found_bad_qual_kmer) ? 1 : 0;
         kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
         DBG("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
         num_kmers++;
@@ -171,8 +142,7 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto all_distinct_kmers = kmer_dht->get_num_kmers();
-  auto all_max_read_len = reduce_one(max_read_len, op_fast_max, 0).wait();
-  SOUT("Processed a total of ", all_num_lines, " lines (", all_num_reads, " reads), max read length ", all_max_read_len, "\n");
+  SOUT("Processed a total of ", all_num_lines, " lines (", all_num_reads, " reads)\n");
   if (pass_type != BLOOM_SET_PASS) SOUT("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
 }
 
