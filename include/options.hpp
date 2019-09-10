@@ -66,14 +66,14 @@ public:
     }
     reads_fname_list = split(reads_fnames, ',');
     
-    string kmer_lens_str;
+    string kmer_lens_str = "";
     if (args("-k") >> kmer_lens_str) {
       auto kmer_lens_split = split(kmer_lens_str, ',');
       kmer_lens.clear();
-      for (auto kmer_len : kmer_lens_split) kmer_lens.push_back(atoi(kmer_len.c_str()));
-    }
-    if (kmer_lens_str.empty()) {
-      for (auto kmer_len : kmer_lens) kmer_lens_str += kmer_len + ",";
+      for (auto kmer_len : kmer_lens_split) kmer_lens.push_back(std::stoi(kmer_len.c_str()));
+    } else {
+      kmer_lens_str = "";
+      for (auto kmer_len : kmer_lens) kmer_lens_str += to_string(kmer_len) + ",";
     }
 
     args("-p") >> prev_kmer_len;
@@ -87,7 +87,7 @@ public:
       cout << KLBLUE << "_________________________\n";
       cout << "MHM options:\n";
       cout << "  (-r) reads files:           " << reads_fnames << endl;
-      cout << "  (-k) kmer length:           " << kmer_lens_str << endl;
+      cout << "  (-k) kmer lengths:          " << kmer_lens_str << endl;
       if (prev_kmer_len) cout << "  (-p) prev kmer length:      " << prev_kmer_len << endl;
       cout << "  (-Q) quality offset:        " << qual_offset << endl;
       cout << "  (-m) kmer store:            " << max_kmer_store << endl;

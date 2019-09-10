@@ -176,16 +176,11 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
   if (pass_type != BLOOM_SET_PASS) SOUT("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
 }
 
-void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, bool use_bloom, int pass_num_mask)
+void add_ctg_kmers(unsigned kmer_len, string ctgs_fname, dist_object<KmerDHT> &kmer_dht, bool use_bloom, int pass_num_mask)
 {
-  /*
   Timer timer(__func__);
-  string ctgs_fname = "./";
-  ctgs_fname += ctgs_fname;
-  get_rank_path(ctgs_fname, rank_me());
   // first pass over ctgs file - count the number of kmers
   if ((pass_num_mask&1) == 1) {
-    kmer_dht->num_prev_mers_from_ctgs = 0;
     zstr::ifstream ctgs_file(ctgs_fname);
     ProgressBar progbar(ctgs_fname, &ctgs_file, "Parsing contigs for extra kmers: pass 1");
     string cname, seq;
@@ -198,7 +193,6 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
       bytes_read += cname.length() + seq.length();
       int64_t num_mers = seq.length() - kmer_len - 1;
       if (num_mers < 0) num_mers = 0;
-      kmer_dht->num_prev_mers_from_ctgs += seq.length() - prev_kmer_len + 1;
       if (use_bloom && seq.length() >= kmer_len) {
         auto kmers = Kmer::getKmers(seq);
         if (kmers.size() != seq.length() - kmer_len + 1)
@@ -212,25 +206,11 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
     }
     if (use_bloom) kmer_dht->flush_updates(CTG_BLOOM_SET_PASS);
     progbar.done();
-    DBG("This rank found ", kmer_dht->num_prev_mers_from_ctgs, " prev mers from contigs\n");
-    auto all_num_prev_mers_from_ctgs = reduce_one(kmer_dht->num_prev_mers_from_ctgs, op_fast_add, 0).wait();
-    SOUT("Found ", all_num_prev_mers_from_ctgs, " prev mers from contigs\n");
   }
+  barrier();
   // second pass over contigs file - insert the new kmers into the dht
   if ((pass_num_mask&2) == 2) {
-    // read all the kmer depths from the binary depths file
-    string depths_fname("./");
-    depths_fname += ctg_depths_fname;
-    get_rank_path(depths_fname, rank_me());
-    zstr::ifstream depths_file(depths_fname, std::ios::binary);
-    int64_t prefix_buf_sz = kmer_dht->num_prev_mers_from_ctgs * sizeof(int64_t);
-    int64_t *prefix_buf = (int64_t*)malloc(kmer_dht->num_prev_mers_from_ctgs * sizeof(int64_t));
-    depths_file.read((char*)prefix_buf, prefix_buf_sz);
-    if (!depths_file)
-      DIE("could not read all ", kmer_dht->num_prev_mers_from_ctgs, " kmers from depths file ", depths_fname,
-          " only read ", depths_file.gcount(), " bytes");
-    if (depths_file.gcount() != prefix_buf_sz) DIE("read ", depths_file.gcount(), " but expected ", prefix_buf_sz, "\n");
-    string cname, seq;
+    string cname, seq, buf;
     int64_t num_kmers = 0;
     int64_t num_ctgs = 0;
     int64_t num_prev_kmers = kmer_dht->get_num_kmers();
@@ -241,22 +221,28 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
     while (!ctgs_file.eof()) {
       getline(ctgs_file, cname);
       if (cname == "") break;
-      getline(ctgs_file, seq);
+      // seq is folded, so read until we encounter '>' or eof
+      seq = "";
+      while (true) {
+        getline(ctgs_file, buf);
+        if (buf == "") break;
+        seq += buf;
+        auto next_ch = ctgs_file.peek();
+        if (next_ch == (int)'>' || next_ch == EOF) break;
+      }
       if (seq == "") break;
       bytes_read += cname.length() + seq.length();
+      // depth is the last field in the cname
+      size_t lastspace = cname.find_last_of(" ");
+      if (lastspace == std::string::npos) DIE("Depth is missing from uutigs file ", ctgs_fname, " for contig ", cname);
+      double depth = stod(cname.substr(lastspace));
       num_ctgs++;
-      int64_t *cur_prefix_buf = (int64_t *)&prefix_buf[offset_in_buf];
-      offset_in_buf += seq.length() - prev_kmer_len + 1;
-      if (offset_in_buf > kmer_dht->num_prev_mers_from_ctgs) DIE("Offset in buf out of range ", offset_in_buf, " max ", kmer_dht->num_prev_mers_from_ctgs);
       if (seq.length() >= kmer_len + 2) {
         auto kmers = Kmer::getKmers(seq);
         if (kmers.size() != seq.length() - kmer_len + 1)
           DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - kmer_len + 1), " '", seq, "'");
         for (int i = 1; i < seq.length() - kmer_len; i++) {
-          int64_t depth_sum = cur_prefix_buf[i + kmer_len - prev_kmer_len] - cur_prefix_buf[i - 1];
-          depth_sum = (int)((depth_sum + kmer_len - prev_kmer_len) / (kmer_len - prev_kmer_len + 1));
-          if (depth_sum > numeric_limits<uint16_t>::max()) depth_sum = numeric_limits<uint16_t>::max();
-          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + kmer_len], depth_sum, CTG_KMERS_PASS);
+          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + kmer_len], depth, CTG_KMERS_PASS);
           num_kmers++;
         }
       }
@@ -270,8 +256,6 @@ void add_ctg_kmers(shared_ptr<Options> options, dist_object<KmerDHT> &kmer_dht, 
     auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
     SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
     SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
-    free(prefix_buf);
   }
-  */
 }
 

@@ -48,8 +48,6 @@ using upcxx::delete_array;
 
 #define USE_BYTELL
 
-#define DBG_ON
-
 //#define DBG_INS_CTG_KMER DBG
 #define DBG_INS_CTG_KMER(...)
 
@@ -150,8 +148,6 @@ private:
   int64_t bloom1_cardinality;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   
-public:
-  int64_t num_prev_mers_from_ctgs;
 private:
 
   struct InsertKmer {
@@ -323,8 +319,7 @@ public:
           bool use_bloom) : kmers({}), min_depth_cutoff(min_depth_cutoff), dynamic_min_depth(dynamic_min_depth), bloom_filter1({}),
                             bloom_filter2({}), kmer_store({}), kmer_store_bloom({}),
                             insert_kmer({}), bloom_set({}), ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
-                            max_kmer_store_bytes(max_kmer_store_bytes), initial_kmer_dht_reservation(0), bloom1_cardinality(0),
-                            num_prev_mers_from_ctgs(0) {
+                            max_kmer_store_bytes(max_kmer_store_bytes), initial_kmer_dht_reservation(0), bloom1_cardinality(0) {
     if (use_bloom) {
         kmer_store_bloom.set_size(max_kmer_store_bytes);
     } else {
@@ -433,7 +428,6 @@ public:
         kmer_store.update(target_rank, merarr_and_ext, bloom_count, kmers, bloom_filter2);
         break;
       case NO_BLOOM_PASS:
-        DBG("add_kmer: ", kmer.to_string(), "\n");
         kmer_store.update(target_rank, merarr_and_ext, insert_kmer, kmers);
         break;
       case CTG_KMERS_PASS:
@@ -558,10 +552,6 @@ public:
     dump_file.close();
     progbar.done();
     SOUT("Dumped ", this->get_num_kmers(), " kmers\n");
-    string entries_fname = dump_fname + ".entries";
-    std::ofstream entries_file(entries_fname);
-    entries_file << kmers->size() << endl;
-    entries_file.close();
   }
 
   // build and output histogram

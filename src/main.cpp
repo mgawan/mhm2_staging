@@ -48,13 +48,19 @@ int main(int argc, char **argv)
   SOUT("Initial free memory on node 0: ", setprecision(3), fixed, start_mem_free, " GB\n");
   SOUT("Running on ", rank_n(), " ranks\n");
 
+#ifdef DEBUG
+  SOUT(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
+#endif
+  
   auto options = make_shared<Options>();
   options->load(argc, argv);
 
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
-  for (unsigned kmer_len : options->kmer_lens) {
+  string uutig_fname = "";
+  for (auto kmer_len : options->kmer_lens) {
+    double loop_start_mem_free = get_free_mem_gb();
     SOUT(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
     Kmer::init_k(kmer_len);
 
@@ -65,12 +71,10 @@ int main(int argc, char **argv)
 
     if (options->use_bloom) {
       count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_SET_PASS);
-      /*
-        if (options->ctgs_fname != "") {
+      if (kmer_len > options->kmer_lens[0]) {
         SOUT("Scanning contigs file to populate bloom2\n");
-        add_ctg_kmers(options, kmer_dht, true, 1);
-        }
-      */
+        add_ctg_kmers(kmer_len, uutig_fname, kmer_dht, true, 1);
+      }
       kmer_dht->reserve_space_and_clear_bloom1();
       count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
     } else {
@@ -85,29 +89,30 @@ int main(int argc, char **argv)
     int64_t newCount = kmer_dht->get_num_kmers();
     SOUT("After purge of kmers <", options->min_depth_cutoff, " there are ", newCount, " unique kmers\n");
     barrier();
-    /*
-      if (options->ctgs_fname != "") {
-      add_ctg_kmers(options, kmer_dht, options->use_bloom, options->use_bloom ? 2 : 3);
+    if (kmer_len > options->kmer_lens[0]) {
+      add_ctg_kmers(kmer_len, uutig_fname, kmer_dht, options->use_bloom, options->use_bloom ? 2 : 3);
       kmer_dht->purge_kmers(1);
-      }
-    */
+    }
     barrier();
     kmer_dht->compute_kmer_exts();
-    kmer_dht->dump_kmers(kmer_len);
+    // FIXME: dump if an option specifies
+    //kmer_dht->dump_kmers(kmer_len);
     barrier();
     kmer_dht->purge_fx_kmers();
-    traverse_debruijn_graph(kmer_len, kmer_dht);
+    uutig_fname = traverse_debruijn_graph(kmer_len, kmer_dht);
     // get total file size across all libraries
     double tot_file_size = 0;
     if (!rank_me()) {
       for (auto const &reads_fname : options->reads_fname_list) tot_file_size += get_file_size(reads_fname);
     }
 
-    double end_mem_free = get_free_mem_gb();
-    SOUT("Memory: used ", setprecision(3), fixed, (start_mem_free - end_mem_free), " GB for ",
+    double loop_end_mem_free = get_free_mem_gb();
+    SOUT("Memory: used ", setprecision(3), fixed, (loop_start_mem_free - loop_end_mem_free), " GB for ",
          (tot_file_size / ONE_GB), " GB inputs\n");
     barrier();
   }
+  SOUT(KBLUE "_________________________\nScaffolding\n\n", KNORM);
+  SOUT(KBLUE "_________________________\n\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SOUT("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
        " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");

@@ -177,7 +177,7 @@ bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char>
   return true;
 }
 
-void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht)
+string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
   // allocate space for biggest possible uutig in global storage
@@ -268,64 +268,40 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht)
   // wait until all ranks have updated the global counter
   barrier();
   ad.destroy();
+  string uutigs_fname = "./";
+  uutigs_fname += "uutigs-" + to_string(kmer_len) + ".fasta.gz";
+  get_rank_path(uutigs_fname, rank_me());
   {
-    string uutigs_fname = "./";
-    //uutigs_fname += "UUtigs-" + to_string(kmer_len) + ".fasta.gz";
-    uutigs_fname += "UUtigs_contigs-" + to_string(kmer_len) + ".fasta.gz";
-    get_rank_path(uutigs_fname, rank_me());
     zstr::ofstream uutigs_file(uutigs_fname);
     ostringstream uutigs_out_buf;
-    
-    string depths_fname = "./";
-    //depths_fname += "UUtigs-" + to_string(kmer_len) + ".depths.gz";
-    depths_fname += "merDepth_UUtigs_contigs-" + to_string(kmer_len) + ".txt.gz";
-    get_rank_path(depths_fname, rank_me());
-    zstr::ofstream depths_file(depths_fname);
-    ostringstream depths_out_buf;
-    
     ProgressBar progbar(my_uutigs.size(), "Writing uutigs");
     int64_t cid = my_counter;
+    size_t bytes_written = 0;
     for (auto uutig : my_uutigs) {
-      uutigs_out_buf << ">Contig_" << cid << " " << (uutig->length() - kmer_len + 1) << " " << my_depths[cid - my_counter] << endl;
+      uutigs_out_buf << ">Contig" << cid << " " << (uutig->length() - kmer_len + 1) << " " << my_depths[cid - my_counter] << endl;
       string rc_uutig = revcomp(*uutig);
       if (rc_uutig < *uutig) *uutig = rc_uutig;
       // fold output
       for (int p = 0; p < uutig->length(); p += 50)
         uutigs_out_buf << uutig->substr(p, 50) << endl;
-      depths_out_buf << "Contig" << cid << "\t" << (uutig->length() - kmer_len + 1) << "\t" << my_depths[cid - my_counter] << endl;
       progbar.update();
       cid++;
       if (!(cid % 1000)) {
         uutigs_file << uutigs_out_buf.str();
+        bytes_written += uutigs_out_buf.str().length();
         uutigs_out_buf = ostringstream();
-        depths_file << depths_out_buf.str();
-        depths_out_buf = ostringstream();
       }
     }
-    if (!uutigs_out_buf.str().empty()) uutigs_file << uutigs_out_buf.str();
+    if (!uutigs_out_buf.str().empty()) {
+      uutigs_file << uutigs_out_buf.str();
+      bytes_written += uutigs_out_buf.str().length();
+    }
     uutigs_file.close();
-    if (!depths_out_buf.str().empty()) depths_file << depths_out_buf.str();
-    depths_file.close();
     progbar.done();
+    write_uncompressed_file_size(uutigs_fname, bytes_written);
     SOUT("Wrote ", reduce_one(my_uutigs.size(), op_fast_add, 0).wait(), " uutigs to ", uutigs_fname, "\n");
-
-    // print some metafiles used in downstream steps
-    auto tot_num_kmers = kmer_dht->get_num_kmers();
-    if (!rank_me()) {
-      string count_fname = "./";
-      count_fname += "nUUtigs_contigs-" + to_string(kmer_len) + ".txt";
-      get_rank_path(count_fname, -1);
-      ofstream count_file(count_fname);
-      count_file << tot_num_kmers << endl;
-    }
-    {
-      string my_count_fname = "./";
-      my_count_fname += "myUUtigs_contigs-" + to_string(kmer_len) + ".txt";
-      get_rank_path(my_count_fname, rank_me());
-      ofstream my_count_file(my_count_fname);
-      my_count_file << kmer_dht->get_local_num_kmers() << endl;
-    }
   }
   barrier();
+  return uutigs_fname;
 }
 
