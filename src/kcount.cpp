@@ -83,7 +83,6 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
   char special = qual_offset + 2;
-  IntermittentTimer t_io("reads IO");
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);

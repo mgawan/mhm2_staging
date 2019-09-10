@@ -1,8 +1,24 @@
 #ifndef _CONTIGS_HPP
 #define _CONTIGS_HPP
 
+#include <iostream>
+#include <vector>
+#include <upcxx/upcxx.hpp>
+
+#include "zstr.hpp"
+
+using std::vector;
+using std::string;
+using std::endl;
+
+using upcxx::rank_me;
+using upcxx::reduce_one;
+using upcxx::op_fast_add;
+using upcxx::barrier;
+
+
 struct Contig {
-  uint64_t id;
+  int64_t id;
   string seq;
   double depth;
 };
@@ -95,7 +111,7 @@ public:
       // extract the id
       size_t firstspace = cname.find_first_of(" ");
       if (firstspace == std::string::npos) DIE("Ctgs file ", ctgs_fname, " is incorrect format on line: '", cname, "'");
-      uint64_t id = stoul(cname.substr(7, firstspace));
+      int64_t id = stol(cname.substr(7, firstspace));
       // depth is the last field in the cname
       size_t lastspace = cname.find_last_of(" ");
       if (lastspace == std::string::npos) DIE("Depth is missing from ctgs file ", ctgs_fname, " on line: '", cname, "'");

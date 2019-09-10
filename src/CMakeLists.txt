@@ -15,20 +15,28 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_COMPILER upcxx)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 
-add_definitions(-DCONFIG_USE_COLORS)
+add_definitions(-DUSE_COLORS)
 add_definitions(-DMAX_KMER_LEN=128)
 add_definitions(-DUSE_BYTELL)
 add_definitions(-DQUAL_CUTOFF=20)
+add_definitions(-DMAX_KMER_MAPPINGS=10)
 
 
 # include mateidavid's zstr c++ library
 include_directories("${CMAKE_SOURCE_DIR}/zstr/src")
+# include ssw library
+include_directories("${CMAKE_SOURCE_DIR}/ssw")
 # all the other headers
 include_directories("${CMAKE_SOURCE_DIR}/../include")
 
-add_executable(mhm main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c)
+add_subdirectory(ssw)
 
+add_executable(mhm main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp)
+
+target_link_libraries(mhm SSW_LIBRARY)
 target_link_libraries(mhm ${ZLIB_LIBRARIES})
+
+
 #install(TARGETS mhm DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
 # Set up version

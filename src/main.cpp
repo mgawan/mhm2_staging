@@ -23,6 +23,7 @@ ofstream _dbgstream;
 #include "merge_reads.hpp"
 #include "kcount.hpp"
 #include "dbjg_traversal.hpp"
+#include "klign.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -115,7 +116,7 @@ int main(int argc, char **argv)
     // FIXME: dump as single file if checkpoint option is specified
     ctgs_fname = ctgs.dump_contigs("uutigs", kmer_len);
 
-    //find_alignments();
+    find_alignments(kmer_len, ctgs);
       
     double loop_end_mem_free = get_free_mem_gb();
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;

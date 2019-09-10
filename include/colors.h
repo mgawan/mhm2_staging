@@ -27,7 +27,7 @@
 #ifndef __COLORS_H
 #define __COLORS_H
 
-#ifdef CONFIG_USE_COLORS
+#ifdef USE_COLORS
 
 #define KNORM  "\x1B[0m"
 #define KBLACK "\x1B[30m"
