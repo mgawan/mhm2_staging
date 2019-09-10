@@ -40,12 +40,12 @@ using upcxx::promise;
 template<typename T>
 class AggrStore {
 private:
-  using rank_store_t = vector<T>;
-  using store_t = vector<rank_store_t>;
-  using rpc_futures_t = deque< future<> >;
+  using RankStore = vector<T>;
+  using Store = vector<RankStore>;
+  using RpcFutures = deque< future<> >;
 
-  store_t store;
-  rpc_futures_t rpc_futures;
+  Store store;
+  RpcFutures rpc_futures;
   int64_t max_store_size;
   int max_rpcs_in_flight; // Limit for the number of rpcs in flight. This limit exists to prevent the dispatch buffers from growing indefinitely
 
@@ -121,8 +121,8 @@ public:
       if (!s.empty()) throw string("rank store is not empty!");
     }
     if (!rpc_futures.empty()) throw string("rpc_futures are not empty!");
-    store_t().swap( store );
-    rpc_futures_t().swap( rpc_futures );
+    Store().swap( store );
+    RpcFutures().swap( rpc_futures );
   }
 
   template<typename FuncDistObj, typename ...Args>  

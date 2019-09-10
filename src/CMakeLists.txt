@@ -16,7 +16,7 @@ set(CMAKE_CXX_COMPILER upcxx)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 
 add_definitions(-DCONFIG_USE_COLORS)
-#add_definitions(-DMAX_KMER_SIZE=128)
+add_definitions(-DMAX_KMER_LEN=128)
 
 # include mateidavid's zstr c++ library
 include_directories("${CMAKE_SOURCE_DIR}/zstr/src")

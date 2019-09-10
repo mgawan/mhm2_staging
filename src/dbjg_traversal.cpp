@@ -298,8 +298,8 @@ string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht
     }
     uutigs_file.close();
     progbar.done();
-    write_uncompressed_file_size(uutigs_fname, bytes_written);
     SOUT("Wrote ", reduce_one(my_uutigs.size(), op_fast_add, 0).wait(), " uutigs to ", uutigs_fname, "\n");
+    write_uncompressed_file_size(uutigs_fname + ".uncompressedSize", bytes_written);
   }
   barrier();
   return uutigs_fname;

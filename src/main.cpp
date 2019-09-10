@@ -1,5 +1,5 @@
-// mhm - UPC++ version
-// Steven Hofmeyr, LBNL, June 2019
+//mhm - UPC++ version
+//Steven Hofmeyr, LBNL, June 2019
 
 #include <iostream>
 #include <fstream>
@@ -28,7 +28,6 @@ using namespace std;
 using namespace upcxx;
 
 unsigned int Kmer::k = 0;
-unsigned int Kmer::n_longs = 0;
 
 
 int main(int argc, char **argv)
