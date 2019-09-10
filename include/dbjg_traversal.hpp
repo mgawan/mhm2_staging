@@ -2,7 +2,8 @@
 #define _DBJG_TRAVERSAL_H
 
 #include "options.hpp"
+#include "contigs.hpp"
 
-std::string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht);
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 
 #endif

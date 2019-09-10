@@ -121,8 +121,8 @@ public:
       if (!s.empty()) throw string("rank store is not empty!");
     }
     if (!rpc_futures.empty()) throw string("rpc_futures are not empty!");
-    Store().swap( store );
-    RpcFutures().swap( rpc_futures );
+    Store().swap(store);
+    RpcFutures().swap(rpc_futures);
   }
 
   template<typename FuncDistObj, typename ...Args>  

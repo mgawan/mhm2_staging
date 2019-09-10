@@ -97,7 +97,7 @@ public:
     std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
   }
 
-  static std::vector<Kmer> getKmers(std::string seq) {
+  static std::vector<Kmer> get_kmers(std::string seq) {
     assert(Kmer::k > 0);
     for (auto & c : seq) c = toupper(c); 
     if (seq.size() < Kmer::k) return std::vector<Kmer>();
@@ -229,7 +229,7 @@ public:
     return (tw < *this) ? tw : *this;
   }
   
-  Kmer forwardBase(const char b) const {
+  Kmer forward_base(const char b) const {
     Kmer km(*this);
     km.longs[0] = km.longs[0] << 2;
     size_t nlongs = (Kmer::k + 31) / 32;
@@ -242,7 +242,7 @@ public:
     return km;
   }
   
-  Kmer backwardBase(const char b) const {
+  Kmer backward_base(const char b) const {
     Kmer km(*this);
     size_t nlongs = (Kmer::k + 31) / 32;
     km.longs[nlongs - 1] = km.longs[nlongs - 1] >> 2;
@@ -277,41 +277,22 @@ public:
     return std::string(buf);
   }
 
-  void copyDataInto(void *pointer) const {
-    memcpy(pointer, longs.data(), sizeof(uint64_t) * (N_LONGS));
-  }
-
-// ABAB: return the raw data packed in an std::array
-// this preserves the lexicographical order on k-mers
-// i.e. A.to_string() < B.to_string <=> A.getArray() < B.getArray()
-  const MerArray &getArray() const {
+  // ABAB: return the raw data packed in an std::array
+  // this preserves the lexicographical order on k-mers
+  // i.e. A.to_string() < B.to_string <=> A.get_array() < B.get_array()
+  const MerArray &get_array() const {
     return longs;
   }
   
-  const uint8_t *getBytes() const {
+  const uint8_t *get_bytes() const {
     return reinterpret_cast<const uint8_t*>(longs.data());
   }
   
-  int getNumBytes() const {
+  int get_num_bytes() const {
     return N_LONGS * sizeof(uint64_t);
   }
 
-  // returns true for completely identical k-mers as well as k-mers that only differ at the last base
-  bool equalUpToLastBase(const Kmer & rhs) {
-    Kmer Ashifted = rhs.backwardBase('A');
-    Kmer Bshifted = backwardBase('A');
-    return Ashifted == Bshifted;
-  }
-
-  static constexpr size_t numBytes() {
-    return sizeof(uint64_t) * (N_LONGS);
-  }
-
   static unsigned int k;
-
-  static void init_k(unsigned _k) {
-    Kmer::k = _k;
-  }
 };
 
 

@@ -14,6 +14,7 @@
 #include "kmer_dht.hpp"
 #include "dbjg_traversal.hpp"
 
+
 //#define DBG_TRAVERSE DBG
 #define DBG_TRAVERSE(...)
 
@@ -116,11 +117,11 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &
   if (dirn == TraverseDirn::LEFT) {
     next_ext = left;
     prev_ext = kmer_str.back();
-    next_kmer = kmer.backwardBase(next_ext);
+    next_kmer = kmer.backward_base(next_ext);
   } else {
     next_ext = right;
     prev_ext = kmer_str.front();
-    next_kmer = kmer.forwardBase(next_ext);
+    next_kmer = kmer.forward_base(next_ext);
   }
   if (next_ext == 'X' || next_ext == 'F') DIE("Found X or F");
   auto next_kmer_rc = next_kmer.twin();
@@ -131,13 +132,13 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &
   rput(ext, uutig + walk_len - 1).then(
     [=, &kmer_dht, &walk_status]() {
       // only do the rpc to the next kmer vertex once the rput has completed
-      rpc_ff(target_rank, traverse_step, kmer_dht, next_kmer.getArray(), next_ext, dirn, walk_status, walk_len,
+      rpc_ff(target_rank, traverse_step, kmer_dht, next_kmer.get_array(), next_ext, dirn, walk_status, walk_len,
              sum_depths, start_rank, uutig, false, prev_ext, start_walk_us);
     });
 }
 
-bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                   string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
+static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
+                          string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
 {
   walk_status->done = false;
   walk_status->drop = false;
@@ -147,7 +148,7 @@ bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> 
   int64_t sum_depths = 0;
   char prev_ext = 0;
   string kmer_str = kmer.to_string();
-  traverse_step(kmer_dht, kmer.getArray(), kmer_str.front(), TraverseDirn::LEFT, walk_status, walk_len, sum_depths,
+  traverse_step(kmer_dht, kmer.get_array(), kmer_str.front(), TraverseDirn::LEFT, walk_status, walk_len, sum_depths,
                 rank_me(), uutig_gptr, false, prev_ext, start_walk_us);
   while (!walk_status->done) progress();
   if (walk_status->drop) return false;
@@ -157,8 +158,8 @@ bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> 
   return true;
 }
 
-bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                    string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
+static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
+                           string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
 {
   walk_status->done = false;
   walk_status->drop = false;
@@ -167,7 +168,7 @@ bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char>
   int64_t sum_depths = 0;
   string kmer_str = kmer.to_string();
   char prev_ext = 0;
-  traverse_step(kmer_dht, kmer.getArray(), kmer_str.back(), TraverseDirn::RIGHT, walk_status, walk_len, sum_depths,
+  traverse_step(kmer_dht, kmer.get_array(), kmer_str.back(), TraverseDirn::RIGHT, walk_status, walk_len, sum_depths,
                 rank_me(), uutig_gptr, true, prev_ext, start_walk_us);
   while (!walk_status->done) progress(); 
   if (walk_status->drop) return false;
@@ -177,7 +178,7 @@ bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char>
   return true;
 }
 
-string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht)
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs)
 {
   Timer timer(__func__);
   // allocate space for biggest possible uutig in global storage
@@ -186,8 +187,7 @@ string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht
   dist_object<WalkStatus> walk_status({false, false, 0});
   int64_t num_drops = 0;
   int64_t num_walks = 0;
-  vector<string> uutigs;
-  vector<double> depths;
+  Contigs uutigs;
   num_conflicts = 0;
   barrier();
   {
@@ -213,30 +213,28 @@ string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht
         continue;
       }
       sum_depths += walk_status->sum_depths;
-      depths.push_back((double)sum_depths / (uutig_str.length() - kmer_len + 2));
-      uutigs.push_back(uutig_str);
+      Contig contig = {0, uutig_str, (double)sum_depths / (uutig_str.length() - kmer_len + 2)};
+      uutigs.add_contig(contig);
       num_walks++;
     }
     progbar.done();
-    // now steal kmers from others
-    
+    // FIXME: now steal kmers from others???
   }
   delete_array(uutig_gptr);
   barrier();
   auto all_num_conflicts = reduce_one(num_conflicts, op_fast_add, 0).wait();
   SOUT("Found ", perc_str(all_num_conflicts, kmer_dht->get_num_kmers()), " conflicting kmers\n");
-  // count number of uutigs found by this rank, and save a vector of pointers to them
+  // put all the uutigs found by this rank into my_uutigs
   int64_t num_uutigs = 0;
-  vector<string*> my_uutigs;
-  vector<double> my_depths;
+  my_uutigs.clear();
   {
     ProgressBar progbar(uutigs.size(), "Dropping duplicate walks");
-    int i = 0;
-    for (auto &uutig : uutigs) {
+    for (auto it = uutigs.begin(); it != uutigs.end(); ++it) {
+      auto uutig = it;
       progbar.update();
-      if (uutig.length() < kmer_len) DIE("uutig length ", uutig.length(), " less than kmer len");
+      if (uutig->seq.length() < kmer_len) DIE("uutig length ", uutig->seq.length(), " less than kmer len");
       // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
-      Kmer start_kmer(uutig.substr(0, kmer_len).c_str());
+      Kmer start_kmer(uutig->seq.substr(0, kmer_len).c_str());
       auto start_kmer_rc = start_kmer.twin();
       if (start_kmer_rc < start_kmer) start_kmer = start_kmer_rc;
       auto visited = kmer_dht->get_visited(start_kmer);
@@ -247,10 +245,8 @@ string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht
         DBG_TRAVERSE("Drop kmer ", start_kmer, " visited is ", visited, " not my rank ", rank_me(), "\n");
       } else {
         num_uutigs++;
-        my_uutigs.push_back(&uutig);
-        my_depths.push_back(depths[i]);
+        my_uutigs.add_contig(*uutig);
       }
-      i++;
     }
     progbar.done();
   }
@@ -268,40 +264,13 @@ string traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht
   // wait until all ranks have updated the global counter
   barrier();
   ad.destroy();
-  string uutigs_fname = "./";
-  uutigs_fname += "uutigs-" + to_string(kmer_len) + ".fasta.gz";
-  get_rank_path(uutigs_fname, rank_me());
-  {
-    zstr::ofstream uutigs_file(uutigs_fname);
-    ostringstream uutigs_out_buf;
-    ProgressBar progbar(my_uutigs.size(), "Writing uutigs");
-    int64_t cid = my_counter;
-    size_t bytes_written = 0;
-    for (auto uutig : my_uutigs) {
-      uutigs_out_buf << ">Contig" << cid << " " << (uutig->length() - kmer_len + 1) << " " << my_depths[cid - my_counter] << endl;
-      string rc_uutig = revcomp(*uutig);
-      if (rc_uutig < *uutig) *uutig = rc_uutig;
-      // fold output
-      for (int p = 0; p < uutig->length(); p += 50)
-        uutigs_out_buf << uutig->substr(p, 50) << endl;
-      progbar.update();
-      cid++;
-      if (!(cid % 1000)) {
-        uutigs_file << uutigs_out_buf.str();
-        bytes_written += uutigs_out_buf.str().length();
-        uutigs_out_buf = ostringstream();
-      }
-    }
-    if (!uutigs_out_buf.str().empty()) {
-      uutigs_file << uutigs_out_buf.str();
-      bytes_written += uutigs_out_buf.str().length();
-    }
-    uutigs_file.close();
-    progbar.done();
-    SOUT("Wrote ", reduce_one(my_uutigs.size(), op_fast_add, 0).wait(), " uutigs to ", uutigs_fname, "\n");
-    write_uncompressed_file_size(uutigs_fname + ".uncompressedSize", bytes_written);
+  // set the unique ids
+  int64_t cid = my_counter;
+  for (auto it = my_uutigs.begin(); it != my_uutigs.end(); ++it) {
+    it->id = cid;
+    cid++;
   }
-  barrier();
-  return uutigs_fname;
 }
+
+
 

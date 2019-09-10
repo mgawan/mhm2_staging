@@ -46,7 +46,6 @@ using upcxx::global_ptr;
 using upcxx::new_array;
 using upcxx::delete_array;
 
-#define USE_BYTELL
 
 //#define DBG_INS_CTG_KMER DBG
 #define DBG_INS_CTG_KMER(...)
@@ -180,10 +179,10 @@ private:
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
       Kmer new_kmer(merarr);
-      if (!bloom_filter1->possibly_contains(new_kmer.getBytes(), new_kmer.getNumBytes())) 
-        bloom_filter1->add(new_kmer.getBytes(), new_kmer.getNumBytes());
+      if (!bloom_filter1->possibly_contains(new_kmer.get_bytes(), new_kmer.get_num_bytes())) 
+        bloom_filter1->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
       else 
-        bloom_filter2->add(new_kmer.getBytes(), new_kmer.getNumBytes());
+        bloom_filter2->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
     }
   };
   dist_object<BloomSet> bloom_set;
@@ -192,7 +191,7 @@ private:
     void operator()(Kmer::MerArray &merarr, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
       Kmer new_kmer(merarr);
-      bloom_filter2->add(new_kmer.getBytes(), new_kmer.getNumBytes());
+      bloom_filter2->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
     }
   };
   dist_object<CtgBloomSet> ctg_bloom_set;
@@ -201,7 +200,7 @@ private:
     void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
       Kmer new_kmer(merarr_and_ext.merarr);
       // if the kmer is not found in the bloom filter, skip it
-      if (!bloom_filter->possibly_contains(new_kmer.getBytes(), new_kmer.getNumBytes())) return;
+      if (!bloom_filter->possibly_contains(new_kmer.get_bytes(), new_kmer.get_num_bytes())) return;
       // add or update the kmer count
       const auto it = kmers->find(new_kmer);
       if (it == kmers->end()) {
@@ -318,16 +317,8 @@ public:
                             bloom_filter2({}), kmer_store({}), kmer_store_bloom({}),
                             insert_kmer({}), bloom_set({}), ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
                             max_kmer_store_bytes(max_kmer_store_bytes), initial_kmer_dht_reservation(0), bloom1_cardinality(0) {
-    if (use_bloom) {
-        kmer_store_bloom.set_size(max_kmer_store_bytes);
-    } else {
-        kmer_store.set_size(max_kmer_store_bytes);
-    }
-#ifdef USE_BYTELL
-    SOUT("Using bytell hash map\n");
-#else
-    SOUT("Using std::unordered_map\n");
-#endif
+    if (use_bloom) kmer_store_bloom.set_size(max_kmer_store_bytes);
+    else kmer_store.set_size(max_kmer_store_bytes);
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space is
       // reserved then
@@ -401,7 +392,7 @@ public:
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return -2;
                  else return it->second.visited;
-               }, kmer.getArray(), kmers).wait();
+               }, kmer.get_array(), kmers).wait();
   }
   
   void add_kmer(Kmer kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
@@ -414,7 +405,7 @@ public:
       right_ext = comp_nucleotide(right_ext);
     }
     auto target_rank = get_kmer_target_rank(kmer);
-    MerarrAndExt merarr_and_ext = { kmer.getArray(), left_ext, right_ext, count };
+    MerarrAndExt merarr_and_ext = { kmer.get_array(), left_ext, right_ext, count };
     switch (pass_type) {
       case BLOOM_SET_PASS:
         if (count != 0) kmer_store_bloom.update(target_rank, merarr_and_ext.merarr, bloom_set, bloom_filter1, bloom_filter2);

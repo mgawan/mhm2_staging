@@ -126,7 +126,7 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
       if (seq.length() > max_read_len) max_read_len = seq.length();
 
       // split into kmers
-      auto kmers = Kmer::getKmers(seq);
+      auto kmers = Kmer::get_kmers(seq);
 
       // disable kmer counting of kmers after a bad quality score (of 2) in the read
       // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
@@ -176,86 +176,63 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
   if (pass_type != BLOOM_SET_PASS) SOUT("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
 }
 
-void add_ctg_kmers(unsigned kmer_len, string ctgs_fname, dist_object<KmerDHT> &kmer_dht, bool use_bloom, int pass_num_mask)
+
+// count ctg kmers if using bloom
+void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
-  // first pass over ctgs file - count the number of kmers
-  if ((pass_num_mask&1) == 1) {
-    zstr::ifstream ctgs_file(ctgs_fname);
-    ProgressBar progbar(ctgs_fname, &ctgs_file, "Parsing contigs for extra kmers: pass 1");
-    string cname, seq;
-    int64_t bytes_read = 0;
-    while (!ctgs_file.eof()) {
-      getline(ctgs_file, cname);
-      if (cname == "") break;
-      getline(ctgs_file, seq);
-      if (seq == "") break;
-      bytes_read += cname.length() + seq.length();
-      int64_t num_mers = seq.length() - kmer_len - 1;
-      if (num_mers < 0) num_mers = 0;
-      if (use_bloom && seq.length() >= kmer_len) {
-        auto kmers = Kmer::getKmers(seq);
-        if (kmers.size() != seq.length() - kmer_len + 1)
-          DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - kmer_len + 1), " '", seq, "'");
-        for (int i = 1; i < seq.length() - kmer_len; i++) {
-          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + kmer_len], 1, CTG_BLOOM_SET_PASS);
-        }
+  ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
+  int64_t num_kmers = 0;
+  for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
+    auto ctg = it;
+    progbar.update();
+    if (ctg->seq.length() >= kmer_len) {
+      auto kmers = Kmer::get_kmers(ctg->seq);
+      if (kmers.size() != ctg->seq.length() - kmer_len + 1)
+        DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
+      for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
+        kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], 1, CTG_BLOOM_SET_PASS);
       }
-      progbar.update(bytes_read);
-      progress();
+      num_kmers += kmers.size();
     }
-    if (use_bloom) kmer_dht->flush_updates(CTG_BLOOM_SET_PASS);
-    progbar.done();
+    progress();
   }
+  kmer_dht->flush_updates(CTG_BLOOM_SET_PASS);
+  progbar.done();
+  DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
+  auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
+  auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
+  SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
   barrier();
-  // second pass over contigs file - insert the new kmers into the dht
-  if ((pass_num_mask&2) == 2) {
-    string cname, seq, buf;
-    int64_t num_kmers = 0;
-    int64_t num_ctgs = 0;
-    int64_t num_prev_kmers = kmer_dht->get_num_kmers();
-    int64_t bytes_read = 0;
-    int64_t offset_in_buf = 0;
-    zstr::ifstream ctgs_file(ctgs_fname);
-    ProgressBar progbar(ctgs_fname, &ctgs_file, "Parsing contigs for extra kmers: pass 2");
-    while (!ctgs_file.eof()) {
-      getline(ctgs_file, cname);
-      if (cname == "") break;
-      // seq is folded, so read until we encounter '>' or eof
-      seq = "";
-      while (true) {
-        getline(ctgs_file, buf);
-        if (buf == "") break;
-        seq += buf;
-        auto next_ch = ctgs_file.peek();
-        if (next_ch == (int)'>' || next_ch == EOF) break;
+}
+
+
+void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom)
+{
+  Timer timer(__func__);
+  int64_t num_kmers = 0;
+  int64_t num_prev_kmers = kmer_dht->get_num_kmers();
+  ProgressBar progbar(ctgs.size(), "Adding extra contig kmers");
+  for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
+    auto ctg = it;
+    progbar.update();
+    if (ctg->seq.length() >= kmer_len + 2) {
+      auto kmers = Kmer::get_kmers(ctg->seq);
+      if (kmers.size() != ctg->seq.length() - kmer_len + 1)
+        DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
+      for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
+        kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], ctg->depth, CTG_KMERS_PASS);
+        num_kmers++;
       }
-      if (seq == "") break;
-      bytes_read += cname.length() + seq.length();
-      // depth is the last field in the cname
-      size_t lastspace = cname.find_last_of(" ");
-      if (lastspace == std::string::npos) DIE("Depth is missing from uutigs file ", ctgs_fname, " for contig ", cname);
-      double depth = stod(cname.substr(lastspace));
-      num_ctgs++;
-      if (seq.length() >= kmer_len + 2) {
-        auto kmers = Kmer::getKmers(seq);
-        if (kmers.size() != seq.length() - kmer_len + 1)
-          DIE("kmers size mismatch ", kmers.size(), " != ", (seq.length() - kmer_len + 1), " '", seq, "'");
-        for (int i = 1; i < seq.length() - kmer_len; i++) {
-          kmer_dht->add_kmer(kmers[i], seq[i - 1], seq[i + kmer_len], depth, CTG_KMERS_PASS);
-          num_kmers++;
-        }
-      }
-      progbar.update(bytes_read);
-      progress();
     }
-    progbar.done();
-    kmer_dht->flush_updates(CTG_KMERS_PASS);
-    DBG("This rank processed ", num_ctgs, " contigs and ", num_kmers , " kmers\n");
-    auto all_num_ctgs = reduce_one(num_ctgs, op_fast_add, 0).wait();
-    auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
-    SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
-    SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
+    progress();
   }
+  progbar.done();
+  kmer_dht->flush_updates(CTG_KMERS_PASS);
+  DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
+  auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
+  auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
+  SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
+  SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
 }
 

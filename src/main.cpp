@@ -54,14 +54,30 @@ int main(int argc, char **argv)
   auto options = make_shared<Options>();
   options->load(argc, argv);
 
+#ifdef USE_BYTELL
+  SOUT("Using bytell hash map\n");
+#else
+  SOUT("Using std::unordered_map\n");
+#endif
+  
+  // get total file size across all libraries
+  double tot_file_size = 0;
+  if (!rank_me()) {
+    for (auto const &reads_fname : options->reads_fname_list) tot_file_size += get_file_size(reads_fname);
+    SOUT("Total size of ", options->reads_fname_list.size(), " input file", (options->reads_fname_list.size() > 1 ? "s" : ""),
+         " is ", (tot_file_size / ONE_GB), " GB\n");
+  }
+
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
-  string uutig_fname = "";
+  string ctgs_fname = "";
+  Contigs ctgs;
   for (auto kmer_len : options->kmer_lens) {
+    auto loop_start_t = chrono::high_resolution_clock::now();
     double loop_start_mem_free = get_free_mem_gb();
     SOUT(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
-    Kmer::init_k(kmer_len);
+    Kmer::k = kmer_len;
 
     auto my_cardinality = estimate_cardinality(kmer_len, options->reads_fname_list);
     dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
@@ -70,10 +86,7 @@ int main(int argc, char **argv)
 
     if (options->use_bloom) {
       count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_SET_PASS);
-      if (kmer_len > options->kmer_lens[0]) {
-        SOUT("Scanning contigs file to populate bloom2\n");
-        add_ctg_kmers(kmer_len, uutig_fname, kmer_dht, true, 1);
-      }
+      if (kmer_len > options->kmer_lens[0]) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
       kmer_dht->reserve_space_and_clear_bloom1();
       count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
     } else {
@@ -89,7 +102,7 @@ int main(int argc, char **argv)
     SOUT("After purge of kmers <", options->min_depth_cutoff, " there are ", newCount, " unique kmers\n");
     barrier();
     if (kmer_len > options->kmer_lens[0]) {
-      add_ctg_kmers(kmer_len, uutig_fname, kmer_dht, options->use_bloom, options->use_bloom ? 2 : 3);
+      add_ctg_kmers(kmer_len, ctgs, kmer_dht, options->use_bloom);
       kmer_dht->purge_kmers(1);
     }
     barrier();
@@ -98,16 +111,13 @@ int main(int argc, char **argv)
     //kmer_dht->dump_kmers(kmer_len);
     barrier();
     kmer_dht->purge_fx_kmers();
-    uutig_fname = traverse_debruijn_graph(kmer_len, kmer_dht);
-    // get total file size across all libraries
-    double tot_file_size = 0;
-    if (!rank_me()) {
-      for (auto const &reads_fname : options->reads_fname_list) tot_file_size += get_file_size(reads_fname);
-    }
-
+    traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+    ctgs_fname = ctgs.dump_contigs("uutigs", kmer_len);
+    
     double loop_end_mem_free = get_free_mem_gb();
-    SOUT("Memory: used ", setprecision(3), fixed, (loop_start_mem_free - loop_end_mem_free), " GB for ",
-         (tot_file_size / ONE_GB), " GB inputs\n");
+    chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
+    SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
+         get_current_time(), ", using ", (loop_start_mem_free - loop_end_mem_free), " GB memory\n");
     barrier();
   }
   SOUT(KBLUE "_________________________\nScaffolding\n\n", KNORM);

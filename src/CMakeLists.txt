@@ -17,6 +17,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 
 add_definitions(-DCONFIG_USE_COLORS)
 add_definitions(-DMAX_KMER_LEN=128)
+add_definitions(-DUSE_BYTELL)
 
 # include mateidavid's zstr c++ library
 include_directories("${CMAKE_SOURCE_DIR}/zstr/src")
