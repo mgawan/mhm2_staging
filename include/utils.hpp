@@ -447,8 +447,7 @@ static size_t get_uncompressed_file_size(string fname)
 
 static void write_uncompressed_file_size(string fname, size_t sz)
 {
-  string uncompressedSizeFname = get_merged_reads_fname(fname) + ".uncompressedSize";
-  ofstream f(uncompressedSizeFname, std::ios::binary);
+  ofstream f(fname, std::ios::binary);
   f.write((char*)&sz, sizeof(size_t));
   f.close();
 }

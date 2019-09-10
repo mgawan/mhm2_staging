@@ -299,7 +299,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
     out_file.close();
     
     // store the uncompressed size in a secondary file
-    write_uncompressed_file_size(reads_fname, bytes_written);
+    write_uncompressed_file_size(get_merged_reads_fname(reads_fname) + ".uncompressedSize", bytes_written);
     
     auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
     auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
