@@ -18,6 +18,7 @@
 #include "ssw.hpp"
 #include "contigs.hpp"
 #include "kmer.hpp"
+#include "aggr_store.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -37,10 +38,19 @@ int64_t _num_dropped = 0;
 
 class KmerCtgDHT {
 private:
+
+  struct MerarrAndCtgLoc {
+    Kmer::MerArray merarr;
+    CtgLoc ctg_loc;
+  };
+  
   // no need for a global ptr - just need to know where to find the sequence with an rpc to the destination
   // so the string ptr is only valid on the destination rank
   using kmer_map_t = unordered_map<Kmer, vector<CtgLoc> >;
   dist_object<kmer_map_t> kmer_map;
+
+  AggrStore<MerarrAndCtgLoc> kmer_store;
+
   int64_t num_perfect_alns;
   ofstream alns_file;
   IntermittentTimer t_ssw;
@@ -56,16 +66,38 @@ private:
     return std::hash<Kmer>{}(kmer) % rank_n();
   }
 
+  struct InsertKmer {
+    void operator()(MerarrAndCtgLoc &merarr_and_ctg_loc, dist_object<kmer_map_t> &kmer_map) {
+      Kmer kmer(merarr_and_ctg_loc.merarr);
+      CtgLoc ctg_loc = merarr_and_ctg_loc.ctg_loc;
+      const auto it = kmer_map->find(kmer);
+      if (it == kmer_map->end()) {
+        kmer_map->insert({kmer, {ctg_loc}});
+      } else {
+        vector<CtgLoc> *ctg_locs = &it->second;
+        // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
+        if (ctg_locs->size() >= MAX_KMER_MAPPINGS) {
+          _num_dropped++;
+          return;
+        }
+        // only add it if we don't already have a mapping from this kmer to this ctg
+        for (auto cl : it->second) 
+          if (cl.cid == ctg_loc.cid) return;
+        it->second.push_back(ctg_loc);
+      }
+    }
+  };
+  dist_object<InsertKmer> insert_kmer;
+  
 public:
 
   int kmer_len;
   int64_t num_alns;
   
-  
   // aligner construction: match_score, mismatch_penalty, gap_open_penalty, gap_extension_penalty - no entry for ambiquity, which should be 2
   // note SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len) : kmer_map({}), num_perfect_alns(0), ssw_aligner(1, 3, 5, 2, 2), num_alns(0),
-                             t_ssw("SSW"), kmer_len(kmer_len) {
+  KmerCtgDHT(int kmer_len) : kmer_map({}), kmer_store({}), insert_kmer({}), num_perfect_alns(0), ssw_aligner(1, 3, 5, 2, 2),
+                             num_alns(0), t_ssw("SSW"), kmer_len(kmer_len) {
     ssw_filter.report_cigar = false;
   }
 
@@ -73,6 +105,7 @@ public:
     for (auto it = kmer_map->begin(); it != kmer_map->end(); ) {
       it = kmer_map->erase(it);
     }
+    kmer_store.clear();
   }
   
   ~KmerCtgDHT() {
@@ -102,41 +135,18 @@ public:
     alns_file.close();
   }
 
-  /*
-  double count_entries() {
-    int64_t tot = 0;
-    int max_num = 0;
-    for (auto entry : *kmer_map) {
-      tot += entry.second.size();
-      max_num = max((int)entry.second.size(), max_num);
-    }
-    SOUT("max num ", max_num, "\n");
-    return (double)tot / kmer_map->size();
-  }
-  */
-
-  void add_kmer(Kmer &kmer, const CtgLoc &ctg_loc, promise<> &prom) {
-    rpc(get_target_rank(kmer), operation_cx::as_promise(prom),
-        [](dist_object<kmer_map_t> &kmer_map, Kmer::MerArray merarr, CtgLoc ctg_loc) {
-          Kmer kmer(merarr);
-          const auto it = kmer_map->find(kmer);
-          if (it == kmer_map->end()) {
-            kmer_map->insert({kmer, {ctg_loc}});
-          } else {
-            vector<CtgLoc> *ctg_locs = &it->second;
-            // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
-            if (ctg_locs->size() >= MAX_KMER_MAPPINGS) {
-              _num_dropped++;
-              return;
-            }
-            // only add it if we don't already have a mapping from this kmer to this ctg
-            for (auto cl : it->second) 
-              if (cl.cid == ctg_loc.cid) return;
-            it->second.push_back(ctg_loc);
-          }
-        }, kmer_map, kmer.get_array(), ctg_loc);
+  void add_kmer(Kmer &kmer, const CtgLoc &ctg_loc) {
+    MerarrAndCtgLoc merarr_and_ctg_loc = { kmer.get_array(), ctg_loc };
+    kmer_store.update(get_target_rank(kmer), merarr_and_ctg_loc, insert_kmer, kmer_map);
   }
 
+  void flush_add_kmers() {
+    Timer timer(__func__);
+    barrier();
+    kmer_store.flush_updates(insert_kmer, kmer_map);
+    barrier();
+  }
+  
   future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer &kmer) {
     return rpc(get_target_rank(kmer),
                [](dist_object<kmer_map_t> &kmer_map, Kmer::MerArray merarr) -> vector<CtgLoc> {
@@ -195,6 +205,33 @@ public:
                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << aln.sw_score << "\t" << aln.sw_score_next_best << endl;
     }
   }
+
+  // this is really only for debugging
+  void dump_ctg_kmers(int kmer_len) {
+    Timer timer(__func__);
+    string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
+    get_rank_path(dump_fname, rank_me());
+    zstr::ofstream dump_file(dump_fname);
+    ostringstream out_buf;
+    ProgressBar progbar(kmer_map->size(), "Dumping kmers to " + dump_fname);
+    int64_t i = 0;
+    for (auto &elem : *kmer_map) {
+      auto ctg_loc = &elem.second[0];
+      out_buf << elem.first << " " << elem.second.size() << " " << ctg_loc->clen << " " << ctg_loc->pos_in_ctg << " "
+              << ctg_loc->is_rc << endl;
+      i++;
+      if (!(i % 1000)) {
+        dump_file << out_buf.str();
+        out_buf = ostringstream();
+      }
+      progbar.update();
+    }
+    if (!out_buf.str().empty()) dump_file << out_buf.str();
+    dump_file.close();
+    progbar.done();
+    SOUT("Dumped ", this->get_num_kmers(), " kmers\n");
+  }
+
 };
 
 
@@ -202,7 +239,6 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, unsigned kmer_len, C
 {
   Timer timer(__func__);
   int64_t tot_num_kmers = 0;
-  promise<> prom;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
@@ -217,17 +253,19 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, unsigned kmer_len, C
       Kmer kmer_rc = kmers[i].twin();
       if (kmer_rc < kmers[i]) {
         ctg_loc.is_rc = false;
-        kmer_ctg_dht.add_kmer(kmers[i], ctg_loc, prom);
+        kmer_ctg_dht.add_kmer(kmers[i], ctg_loc);
       } else {
         ctg_loc.is_rc = true;
-        kmer_ctg_dht.add_kmer(kmer_rc, ctg_loc, prom);
+        kmer_ctg_dht.add_kmer(kmer_rc, ctg_loc);
       }
       ctg_loc.pos_in_ctg = i;
       progress();
     }
   }
-  prom.finalize().wait();
   progbar.done();
+  kmer_ctg_dht.flush_add_kmers();
+  barrier();
+  kmer_ctg_dht.dump_ctg_kmers(kmer_len);
   barrier();
   auto num_kmers_added = reduce_one(tot_num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();

@@ -314,8 +314,8 @@ public:
 
   KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int min_depth_cutoff, double dynamic_min_depth,
           bool use_bloom) : kmers({}), min_depth_cutoff(min_depth_cutoff), dynamic_min_depth(dynamic_min_depth), bloom_filter1({}),
-                            bloom_filter2({}), kmer_store({}), kmer_store_bloom({}),
-                            insert_kmer({}), bloom_set({}), ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
+                            bloom_filter2({}), kmer_store({}), kmer_store_bloom({}), insert_kmer({}), bloom_set({}),
+                            ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
                             max_kmer_store_bytes(max_kmer_store_bytes), initial_kmer_dht_reservation(0), bloom1_cardinality(0) {
     if (use_bloom) kmer_store_bloom.set_size(max_kmer_store_bytes);
     else kmer_store.set_size(max_kmer_store_bytes);
@@ -520,9 +520,7 @@ public:
   // where N is the count of the kmer frequency
   void dump_kmers(int k) {
     Timer timer(__func__);
-    string dump_fname = string("./");
-    dump_fname += "ALL_INPUTS.fofn-" + to_string(k) + ".ufx.bin";
-    dump_fname += ".gz";
+    string dump_fname = "kmers-" + to_string(k) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
     ostringstream out_buf;
