@@ -108,6 +108,8 @@ struct KmerCounts {
     char right = sorted_rights[0].first;
     int rightmax = sorted_rights[0].second;
     int rightmin = sorted_rights[1].second;
+    assert(_dynamic_min_depth > 0);
+    assert(_min_depth_cutoff > 0);
     int dmin_dyn = (1.0 - _dynamic_min_depth) * count;      // integer floor
     if (dmin_dyn < _min_depth_cutoff) dmin_dyn = _min_depth_cutoff;
     if (leftmax < dmin_dyn) left = 'X';
@@ -312,14 +314,15 @@ private:
 
 public:
 
-  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int min_depth_cutoff, double dynamic_min_depth,
-          bool use_bloom) : kmers({}), bloom_filter1({}), bloom_filter2({}), kmer_store({}), kmer_store_bloom({}), insert_kmer({}),
-                            bloom_set({}), ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
-                            max_kmer_store_bytes(max_kmer_store_bytes), initial_kmer_dht_reservation(0), bloom1_cardinality(0) {
-    _dynamic_min_depth = dynamic_min_depth;
-    _min_depth_cutoff = min_depth_cutoff;
-    if (use_bloom) kmer_store_bloom.set_size(max_kmer_store_bytes);
-    else kmer_store.set_size(max_kmer_store_bytes);
+  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom) :  kmers({}), bloom_filter1({}), bloom_filter2({}),
+                                                                             kmer_store({}), kmer_store_bloom({}), insert_kmer({}),
+                                                                             bloom_set({}), ctg_bloom_set({}), bloom_count({}),
+                                                                             insert_ctg_kmer({}),
+                                                                             max_kmer_store_bytes(max_kmer_store_bytes),
+                                                                             initial_kmer_dht_reservation(0),
+                                                                             bloom1_cardinality(0) {
+    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes);
+    else kmer_store.set_size("kmers", max_kmer_store_bytes);
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space is
       // reserved then
@@ -433,7 +436,7 @@ public:
 
     // purge the kmer store and prep the kmer + count
     kmer_store_bloom.clear();
-    kmer_store.set_size(max_kmer_store_bytes);
+    kmer_store.set_size("kmers", max_kmer_store_bytes);
 
     int64_t cardinality1 = bloom_filter1->estimate_num_items();
     int64_t cardinality2 = bloom_filter2->estimate_num_items();

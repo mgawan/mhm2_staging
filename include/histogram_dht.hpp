@@ -89,9 +89,9 @@ public:
 
   HistogramDHT() : hist_map({}), insert_or_add_hist_entry({}), hist_store({}) {
 #ifdef DBG_ON
-    hist_store.set_size(0); // force no store for testing
+    hist_store.set_size("histogram", 0); // force no store for testing
 #else
-    hist_store.set_size(1024*1024);
+    hist_store.set_size("histogram", 1024*1024);
 #endif
     cache_vector.resize(HIGH_COUNT, 0);
   }

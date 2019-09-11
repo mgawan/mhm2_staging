@@ -81,30 +81,32 @@ public:
     clear();
   }
 
-  void set_size(int64_t max_store_bytes) {
-    int64_t tmp_max_rpcs_in_flight = 300L * rank_n() / 100L + 1; // assume 150% of rpcs as there are ranks
+  void set_size(const string &desc, int64_t max_store_bytes) {
+    int64_t tmp_max_rpcs_in_flight = 500L * rank_n() / 100L + 1;
     max_rpcs_in_flight = tmp_max_rpcs_in_flight > max_rpcs_in_flight ? max_rpcs_in_flight : tmp_max_rpcs_in_flight; // hard maximum limit
     max_store_size = max_store_bytes / (sizeof(T) * (rank_n() + max_rpcs_in_flight)); 
     if (max_store_size <= 1) {
-        // no reason for delay and storage of 1 entry (i.e. small max mem at large scale), still uses max_rpcs_in_flight
-        max_store_size = 0;
-        store.clear();
+      // no reason for delay and storage of 1 entry (i.e. small max mem at large scale), still uses max_rpcs_in_flight
+      max_store_size = 0;
+      store.clear();
     } else {
-        store.resize(rank_n(), {});
+      store.resize(rank_n(), {});
     } 
 
     // reduce max in flight if necessary
     int64_t tmp_inflight_bytes = max_store_bytes - (max_store_size * rank_n() * sizeof(T)); // calc remaining memory for rpcs
     int64_t max_inflight_bytes = tmp_inflight_bytes > MIN_INFLIGHT_BYTES ? tmp_inflight_bytes : MIN_INFLIGHT_BYTES; // hard minimum limit
     int64_t per_rpc_bytes = (max_store_size > 0 ? max_store_size : 1) * sizeof(T);
-    if (max_rpcs_in_flight * per_rpc_bytes > max_inflight_bytes) {
-        max_rpcs_in_flight = max_inflight_bytes / per_rpc_bytes + 1;
-    }
-    SOUT("Using a store of max ", get_size_str(max_store_bytes / rank_n()), " per target rank, giving max ",
-         max_store_size, " of ", get_size_str(sizeof(T)), " entries per target rank (",get_size_str(max_store_size*sizeof(T)),", ",
-         get_size_str(max_store_size * sizeof(T) * rank_n()), ") and ", max_rpcs_in_flight,
-         " rpcs in flight (", get_size_str(max_rpcs_in_flight * per_rpc_bytes ), ")\n");
-    SOUT("Max possible memory for store for rank 0: ", get_size_str(max_store_size * sizeof(T) * rank_n() + per_rpc_bytes * max_rpcs_in_flight), "\n");
+    if (max_rpcs_in_flight * per_rpc_bytes > max_inflight_bytes) 
+      max_rpcs_in_flight = max_inflight_bytes / per_rpc_bytes + 1;
+    size_t max_target_buf = max_store_size * sizeof(T);
+    SOUT(desc, ": using an aggregating store for each rank of max ", get_size_str(max_store_bytes / rank_n()), " per target rank\n");
+    SOUT("  - buffers: max ", max_store_size, " entries of ", get_size_str(sizeof(T)),
+         " per target rank (", get_size_str(max_target_buf), ")\n");
+    SOUT("  - buffers: max over all target ranks ", get_size_str(max_target_buf * rank_n()), "\n");
+    SOUT("  - RPCs in flight: max ", max_rpcs_in_flight, " RPCs of ", get_size_str(per_rpc_bytes),
+         " max per RPC (", get_size_str(max_rpcs_in_flight * per_rpc_bytes), ")\n");
+    SOUT("  - max possible memory: ", get_size_str(max_target_buf * rank_n() + per_rpc_bytes * max_rpcs_in_flight), "\n");
     barrier();
   }
 
@@ -119,6 +121,7 @@ public:
 
   template<typename FuncDistObj, typename ...Args>  
   void update(intrank_t target_rank, T &elem, FuncDistObj &func, Args &...args) {
+    assert(max_store_size > 0);
     if (max_store_size <= 0) {
         update_remote1(target_rank, elem, func, args...);
         return;

@@ -207,10 +207,14 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
   SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
 }
 
-void analyze_kmers(unsigned int kmer_len, int qual_offset, int min_depth_cutoff, vector<string> reads_fname_list, bool use_bloom,
-                   Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
+void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> reads_fname_list, bool use_bloom, int min_depth_cutoff,
+                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
+  
+  _dynamic_min_depth = dynamic_min_depth;
+  _min_depth_cutoff = min_depth_cutoff;
+    
   if (use_bloom) {
     count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_SET_PASS);
     if (ctgs.size()) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
@@ -224,9 +228,9 @@ void analyze_kmers(unsigned int kmer_len, int qual_offset, int min_depth_cutoff,
   barrier();
   //kmer_dht->write_histogram();
   //barrier();
-  kmer_dht->purge_kmers(min_depth_cutoff);
+  kmer_dht->purge_kmers(_min_depth_cutoff);
   int64_t new_count = kmer_dht->get_num_kmers();
-  SOUT("After purge of kmers <", min_depth_cutoff, " there are ", new_count, " unique kmers\n");
+  SOUT("After purge of kmers <", _min_depth_cutoff, " there are ", new_count, " unique kmers\n");
   barrier();
   if (ctgs.size()) {
     add_ctg_kmers(kmer_len, ctgs, kmer_dht, use_bloom);

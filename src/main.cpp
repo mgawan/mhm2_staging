@@ -54,7 +54,6 @@ int main(int argc, char **argv)
   istringstream all_defs_ss(ALL_DEFNS);
   vector<string> all_defs((istream_iterator<string>(all_defs_ss)), istream_iterator<string>());
   for (auto &def : all_defs) SOUT("  ", def, "\n");
-  SOUT(KNORM "_________________________\n");
   
 #ifdef DEBUG
   SOUT(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
@@ -82,17 +81,16 @@ int main(int argc, char **argv)
     {
       // scope is to ensure that kmer_dht is freed by destructor
       auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->min_depth_cutoff,
-                                    options->dynamic_min_depth, options->use_bloom);
+      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
       barrier();
-      analyze_kmers(kmer_len, options->qual_offset, options->min_depth_cutoff, options->reads_fname_list, options->use_bloom,
-                    ctgs, kmer_dht);
+      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom, options->min_depth_cutoff,
+                    options->dynamic_min_depth, ctgs, kmer_dht);
       barrier();
       traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
       // FIXME: dump as single file if checkpoint option is specified
       ctgs.dump_contigs("uutigs", kmer_len);
     }
-    find_alignments(kmer_len, CONTIG_SEED_SPACE, options->reads_fname_list, ctgs);
+    find_alignments(kmer_len, CONTIG_SEED_SPACE, options->reads_fname_list, options->max_kmer_store, ctgs);
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",

@@ -22,9 +22,9 @@ add_definitions(-DCONTIG_SEED_SPACE=8)
 add_definitions(-DBLOOM_FP=0.05)
 add_definitions(-DMAX_FILE_PATH=255)
 add_definitions(-DMAX_RANKS_PER_DIR=1024)
-add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
+add_definitions(-DMAX_RPCS_IN_FLIGHT=8192) 
 # 4MB in flight
-add_definitions(-DMIN_INFLIGHT_BYTES=4194304)
+add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
 add_definitions(-DUSE_COLORS)
 add_definitions(-DUSE_BYTELL)
 
