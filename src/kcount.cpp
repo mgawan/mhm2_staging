@@ -19,6 +19,8 @@
 using namespace std;
 using namespace upcxx;
 
+//#define DBG_ADD_KMER DBG
+#define DBG_ADD_KMER(...)
 
 extern ofstream _dbgstream;
 
@@ -128,7 +130,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads
         }
         int count = (i < found_bad_qual_kmer) ? 1 : 0;
         kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
-        DBG("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
+        DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
         num_kmers++;
       }
       progress();
@@ -136,7 +138,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads
     progbar.done();
     kmer_dht->flush_updates(pass_type);
   }
-  DBG("This rank processed ", num_lines, " lines (", num_reads, " reads), max read length ", max_read_len, "\n");
+  DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
@@ -205,8 +207,8 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
   SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
 }
 
-void analyze_kmers(unsigned int kmer_len, int qual_offset, int min_depth_cutoff, vector<string> reads_fname_list, bool use_bloom, Contigs &ctgs,
-                   dist_object<KmerDHT> &kmer_dht)
+void analyze_kmers(unsigned int kmer_len, int qual_offset, int min_depth_cutoff, vector<string> reads_fname_list, bool use_bloom,
+                   Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
   if (use_bloom) {
@@ -232,8 +234,10 @@ void analyze_kmers(unsigned int kmer_len, int qual_offset, int min_depth_cutoff,
   }
   barrier();
   kmer_dht->compute_kmer_exts();
+#ifdef DEBUG
   // FIXME: dump if an option specifies
-  //kmer_dht->dump_kmers(kmer_len);
+  kmer_dht->dump_kmers(kmer_len);
+#endif
   barrier();
   kmer_dht->purge_fx_kmers();
 }

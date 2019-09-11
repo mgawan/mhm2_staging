@@ -29,14 +29,6 @@ using upcxx::promise;
 
 // this class aggregates updates into local buffers and then periodically does an rpc to dispatch them
 
-#ifndef MAX_RPCS_IN_FLIGHT
-#define MAX_RPCS_IN_FLIGHT 2048
-#endif
-
-#ifndef MIN_INFLIGHT_BYTES
-#define MIN_INFLIGHT_BYTES (1024L*1024L) /* always use at least 1MB in flight */
-#endif
-
 template<typename T>
 class AggrStore {
 private:

@@ -199,7 +199,7 @@ public:
     return MurmurHash3_x64_64(reinterpret_cast<const void*>(longs.data()), N_LONGS * sizeof(uint64_t));
   }
 
-  Kmer twin() const {
+  Kmer revcomp() const {
     Kmer km(*this);
     size_t nlongs = (Kmer::k + 31) / 32;
     for (size_t i = 0; i < nlongs; i++) {
@@ -222,11 +222,6 @@ public:
       km.longs[i] = km.longs[i] << shift;
     }
     return km;
-  }
-  
-  Kmer rep() const {
-    Kmer tw = twin();
-    return (tw < *this) ? tw : *this;
   }
   
   Kmer forward_base(const char b) const {

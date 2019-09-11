@@ -37,8 +37,9 @@ int main(int argc, char **argv)
   auto start_t = chrono::high_resolution_clock::now();
 
 #ifdef DEBUG
-  time_t curr_t = std::time(nullptr);
-  string dbg_fname = "dbg" + to_string(curr_t) + ".log"; 
+  //time_t curr_t = std::time(nullptr);
+  //string dbg_fname = "debug" + to_string(curr_t) + ".log";
+  string dbg_fname = "debug.log";
   get_rank_path(dbg_fname, rank_me());
   _dbgstream.open(dbg_fname);
 #endif
@@ -48,6 +49,13 @@ int main(int argc, char **argv)
   SOUT("Initial free memory on node 0: ", setprecision(3), fixed, start_mem_free, " GB\n");
   SOUT("Running on ", rank_n(), " ranks\n");
 
+  // print out all compiler definitions
+  SOUT(KBLUE "_________________________\nCompiler definitions:\n");
+  istringstream all_defs_ss(ALL_DEFNS);
+  vector<string> all_defs((istream_iterator<string>(all_defs_ss)), istream_iterator<string>());
+  for (auto &def : all_defs) SOUT("  ", def, "\n");
+  SOUT(KNORM "_________________________\n");
+  
 #ifdef DEBUG
   SOUT(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
 #endif
@@ -55,12 +63,6 @@ int main(int argc, char **argv)
   auto options = make_shared<Options>();
   options->load(argc, argv);
 
-#ifdef USE_BYTELL
-  SOUT("Using bytell hash map\n");
-#else
-  SOUT("Using std::unordered_map\n");
-#endif
-  
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
@@ -90,7 +92,7 @@ int main(int argc, char **argv)
       // FIXME: dump as single file if checkpoint option is specified
       ctgs.dump_contigs("uutigs", kmer_len);
     }
-    find_alignments(kmer_len, CONTIG_SEED_SPACE, ctgs);
+    find_alignments(kmer_len, CONTIG_SEED_SPACE, options->reads_fname_list, ctgs);
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",

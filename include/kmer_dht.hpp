@@ -49,16 +49,19 @@ using upcxx::delete_array;
 
 //#define DBG_INS_CTG_KMER DBG
 #define DBG_INS_CTG_KMER(...)
+//#define DBG_INSERT_KMER DBG
+#define DBG_INSERT_KMER(...)
 
-
-#ifndef BLOOM_FP
-#define BLOOM_FP 0.05
-#endif
 
 enum PASS_TYPE { BLOOM_SET_PASS, BLOOM_COUNT_PASS, NO_BLOOM_PASS, CTG_BLOOM_SET_PASS, CTG_KMERS_PASS };
 
 using ext_count_t = uint16_t;
-    
+
+// global variables to avoid passing dist objs to rpcs
+static double _dynamic_min_depth = 0;
+static int64_t _min_depth_cutoff = 0;
+
+
 struct ExtCounts {
   ext_count_t count_A;
   ext_count_t count_C;
@@ -96,7 +99,7 @@ struct KmerCounts {
   int32_t visited;
   int32_t start_walk_us;
 
-  pair<char, char> get_exts(int min_depth_cutoff, double dynamic_min_depth) {
+  pair<char, char> get_exts() {
     auto sorted_lefts = left_exts.get_sorted();
     auto sorted_rights = right_exts.get_sorted();
     char left = sorted_lefts[0].first;
@@ -105,8 +108,8 @@ struct KmerCounts {
     char right = sorted_rights[0].first;
     int rightmax = sorted_rights[0].second;
     int rightmin = sorted_rights[1].second;
-    int dmin_dyn = (1.0 - dynamic_min_depth) * count;      // integer floor
-    if (dmin_dyn < min_depth_cutoff) dmin_dyn = min_depth_cutoff;
+    int dmin_dyn = (1.0 - _dynamic_min_depth) * count;      // integer floor
+    if (dmin_dyn < _min_depth_cutoff) dmin_dyn = _min_depth_cutoff;
     if (leftmax < dmin_dyn) left = 'X';
     else if (leftmin >= dmin_dyn) left = 'F';
     if (rightmax < dmin_dyn) right = 'X';
@@ -138,8 +141,6 @@ private:
   dist_object<BloomFilter> bloom_filter1;
   // the second bloom filer stores only kmers that are above the repeat depth, and is used for correctly sizing the kmer hash table
   dist_object<BloomFilter> bloom_filter2;
-  dist_object<int> min_depth_cutoff;
-  dist_object<double> dynamic_min_depth;
   int64_t max_kmer_store_bytes;
   int64_t initial_kmer_dht_reservation;
   int64_t bloom1_cardinality;
@@ -161,11 +162,11 @@ private:
         kmers->insert({new_kmer, kmer_counts});
         if (prev_bucket_count < kmers->bucket_count())
           SOUT("*** Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count(), "***\n");
-        DBG("inserted kmer ", new_kmer.to_string(), " with count ", kmer_counts.count, "\n");
+        DBG_INSERT_KMER("inserted kmer ", new_kmer.to_string(), " with count ", kmer_counts.count, "\n");
       } else {
         auto kmer = &it->second;
         int new_count = kmer->count + merarr_and_ext.count;
-        DBG("updating kmer ", new_kmer.to_string(), " from count ", kmer->count, " to ", new_count, "\n");
+        DBG_INSERT_KMER("updating kmer ", new_kmer.to_string(), " from count ", kmer->count, " to ", new_count, "\n");
         kmer->count = (new_count < numeric_limits<uint16_t>::max()) ? new_count : numeric_limits<uint16_t>::max();
         inc_ext(kmer->left_exts, merarr_and_ext.left);
         inc_ext(kmer->right_exts, merarr_and_ext.right);
@@ -225,8 +226,7 @@ private:
   dist_object<BloomCount> bloom_count;
 
   struct InsertCtgKmer {
-    void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers, dist_object<int> &min_depth_cutoff,
-                    dist_object<double> &dynamic_min_depth) {
+    void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers) {
       // insert a new kmer derived from the previous round's contigs
       Kmer new_kmer(merarr_and_ext.merarr);
       const auto it = kmers->find(new_kmer);
@@ -245,7 +245,7 @@ private:
                          "G", kmer_counts->right_exts.count_G, " T", kmer_counts->right_exts.count_T, "\n");
         if (!kmer_counts->from_ctg) {
           // existing kmer is from a read, only replace with new contig kmer if the existing kmer is not UU
-          auto exts = kmer_counts->get_exts(*min_depth_cutoff, *dynamic_min_depth);
+          auto exts = kmer_counts->get_exts();
           if (exts.first == 'X' || exts.first == 'F' || exts.second == 'X' || exts.second == 'F') {
             // non-UU, replace
             insert = true;
@@ -260,7 +260,7 @@ private:
             DBG_INS_CTG_KMER("skip conflicted kmer, depth 0\n");
           } else {
             // if the two contig kmers disagree on exts, set to purge this one by setting the count to 0
-            auto exts = kmer_counts->get_exts(*min_depth_cutoff, *dynamic_min_depth);
+            auto exts = kmer_counts->get_exts();
             if (exts.first != merarr_and_ext.left || exts.second != merarr_and_ext.right) {
               merarr_and_ext.count = 0;
               insert = true;
@@ -313,10 +313,11 @@ private:
 public:
 
   KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int min_depth_cutoff, double dynamic_min_depth,
-          bool use_bloom) : kmers({}), min_depth_cutoff(min_depth_cutoff), dynamic_min_depth(dynamic_min_depth), bloom_filter1({}),
-                            bloom_filter2({}), kmer_store({}), kmer_store_bloom({}), insert_kmer({}), bloom_set({}),
-                            ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
+          bool use_bloom) : kmers({}), bloom_filter1({}), bloom_filter2({}), kmer_store({}), kmer_store_bloom({}), insert_kmer({}),
+                            bloom_set({}), ctg_bloom_set({}), bloom_count({}), insert_ctg_kmer({}),
                             max_kmer_store_bytes(max_kmer_store_bytes), initial_kmer_dht_reservation(0), bloom1_cardinality(0) {
+    _dynamic_min_depth = dynamic_min_depth;
+    _min_depth_cutoff = min_depth_cutoff;
     if (use_bloom) kmer_store_bloom.set_size(max_kmer_store_bytes);
     else kmer_store.set_size(max_kmer_store_bytes);
     if (use_bloom) {
@@ -397,9 +398,9 @@ public:
   
   void add_kmer(Kmer kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
     // get the lexicographically smallest
-    Kmer kmer_twin = kmer.twin();
-    if (kmer_twin < kmer) {
-      kmer = kmer_twin;
+    Kmer kmer_rc = kmer.revcomp();
+    if (kmer_rc < kmer) {
+      kmer = kmer_rc;
       swap(left_ext, right_ext);
       left_ext = comp_nucleotide(left_ext);
       right_ext = comp_nucleotide(right_ext);
@@ -420,7 +421,7 @@ public:
         kmer_store.update(target_rank, merarr_and_ext, insert_kmer, kmers);
         break;
       case CTG_KMERS_PASS:
-        kmer_store.update(target_rank, merarr_and_ext, insert_ctg_kmer, kmers, min_depth_cutoff, dynamic_min_depth);
+        kmer_store.update(target_rank, merarr_and_ext, insert_ctg_kmer, kmers);
         break;
     };
   }
@@ -463,7 +464,7 @@ public:
     } else if (pass_type == NO_BLOOM_PASS) {
       kmer_store.flush_updates(insert_kmer, kmers);
     } else if (pass_type == CTG_KMERS_PASS) {
-      kmer_store.flush_updates(insert_ctg_kmer, kmers, min_depth_cutoff, dynamic_min_depth);
+      kmer_store.flush_updates(insert_ctg_kmer, kmers);
     } else {
       DIE("bad pass type\n");
     }
@@ -508,7 +509,7 @@ public:
     Timer timer(__func__);
     for (auto &elem : *kmers) {
       auto kmer_counts = &elem.second;
-      auto exts = kmer_counts->get_exts(*min_depth_cutoff, *dynamic_min_depth);
+      auto exts = kmer_counts->get_exts();
       kmer_counts->left = exts.first;
       kmer_counts->right = exts.second;
     }

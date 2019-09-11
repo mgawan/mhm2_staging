@@ -51,7 +51,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &
                           intrank_t start_rank, global_ptr<char> uutig, bool revisit_allowed, char prev_ext, int32_t start_walk_us)
 {
   Kmer kmer(merarr);
-  auto kmer_rc = kmer.twin();
+  auto kmer_rc = kmer.revcomp();
   auto rc = false;
   KmerCounts *kmer_counts = nullptr;
   if (kmer_rc < kmer) {
@@ -124,7 +124,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &
     next_kmer = kmer.forward_base(next_ext);
   }
   if (next_ext == 'X' || next_ext == 'F') DIE("Found X or F");
-  auto next_kmer_rc = next_kmer.twin();
+  auto next_kmer_rc = next_kmer.revcomp();
   auto target_rank = (next_kmer_rc < next_kmer ? kmer_dht->get_kmer_target_rank(next_kmer_rc) :
                       kmer_dht->get_kmer_target_rank(next_kmer));
   // valid new kmer can be constructed
@@ -235,7 +235,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       if (uutig->seq.length() < kmer_len) DIE("uutig length ", uutig->seq.length(), " less than kmer len");
       // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
       Kmer start_kmer(uutig->seq.substr(0, kmer_len).c_str());
-      auto start_kmer_rc = start_kmer.twin();
+      auto start_kmer_rc = start_kmer.revcomp();
       if (start_kmer_rc < start_kmer) start_kmer = start_kmer_rc;
       auto visited = kmer_dht->get_visited(start_kmer);
       if (visited == -2) DIE("Could not find kmer ", start_kmer, "\n");

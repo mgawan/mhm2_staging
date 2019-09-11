@@ -15,12 +15,29 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_COMPILER upcxx)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 
-add_definitions(-DUSE_COLORS)
 add_definitions(-DMAX_KMER_LEN=128)
-add_definitions(-DUSE_BYTELL)
 add_definitions(-DQUAL_CUTOFF=20)
 add_definitions(-DMAX_KMER_MAPPINGS=10)
-add_definitions(-DCONTIG_SEED_SPACE=4)
+add_definitions(-DCONTIG_SEED_SPACE=8)
+add_definitions(-DBLOOM_FP=0.05)
+add_definitions(-DMAX_FILE_PATH=255)
+add_definitions(-DMAX_RANKS_PER_DIR=1024)
+add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
+# 4MB in flight
+add_definitions(-DMIN_INFLIGHT_BYTES=4194304)
+add_definitions(-DUSE_COLORS)
+add_definitions(-DUSE_BYTELL)
+
+# a bit of jiggery-pokery to get a list of all compile time definitions in the code
+get_directory_property(dir_defs COMPILE_DEFINITIONS)
+set(all_defs "")
+message("Definitions:")
+foreach(d ${dir_defs})
+    message("  " ${d})
+    set(all_defs "${all_defs} ${d}")
+endforeach()
+
+add_definitions(-DALL_DEFNS=\"${all_defs}\")
 
 # include mateidavid's zstr c++ library
 include_directories("${CMAKE_SOURCE_DIR}/zstr/src")

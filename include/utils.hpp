@@ -57,7 +57,7 @@ inline void logger(ostream &stream, bool fail, bool serial, T first, Params... p
 
 #define SOUT(...) do {                                                  \
     logger(cout, false, true, ##__VA_ARGS__);                           \
-    cout << std::flush;                                                 \
+    if (!upcxx::rank_me()) cout << std::flush;                          \
   } while (0)
 #define WARN(...)                                                       \
   logger(cerr, false, false, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
@@ -71,7 +71,11 @@ inline void logger(ostream &stream, bool fail, bool serial, T first, Params... p
 
 #ifdef DEBUG
 extern ofstream _dbgstream;
-#define DBG(...) do { if (_dbgstream) { logger(_dbgstream, false, false, ##__VA_ARGS__); _dbgstream << std::flush; } } while(0)
+#define DBG(...) do {                                                   \
+    if (_dbgstream) { logger(_dbgstream, false, false, "<", __FILENAME__, ":", __LINE__, "> ", ##__VA_ARGS__); \
+      _dbgstream << std::flush;                                         \
+    }                                                                   \
+  } while(0)
 #else
 #define DBG(...)
 #endif
@@ -252,12 +256,6 @@ inline int check_dir(const char *path)
   return 1;
 }
 
-
-#ifndef MAX_FILE_PATH
-#define MAX_FILE_PATH PATH_MAX
-#endif
-
-#define MAX_RANKS_PER_DIR 1000
 
 // replaces the given path with a rank based path, inserting a rank-based directory
 // example:  get_rank_path("path/to/file_output_data.txt", rank) -> "path/to/per_rank/<rankdir>/<rank>/file_output_data.txt"
