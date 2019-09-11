@@ -22,7 +22,7 @@ using namespace upcxx;
 
 extern ofstream _dbgstream;
 
-uint64_t estimate_cardinality(unsigned kmer_len, vector<string> reads_fname_list)
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> reads_fname_list)
 {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -34,7 +34,7 @@ uint64_t estimate_cardinality(unsigned kmer_len, vector<string> reads_fname_list
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
     string id, seq, quals;
-    ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate cardinality");
+    ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of kmers");
     size_t tot_bytes_read = 0;
     int64_t records_processed = 0; 
     while (true) {
@@ -65,12 +65,12 @@ uint64_t estimate_cardinality(unsigned kmer_len, vector<string> reads_fname_list
   int percent = 100.0 * fraction;
   SOUT("Processed ", percent, " % of the estimated total of ", all_num_lines,
        " lines (", all_num_reads, " reads), and found a maximum of ", all_num_kmers, " kmers\n");
-  int my_cardinality = all_num_kmers / rank_n();
-  SOUT("Cardinality estimated as ", my_cardinality, "\n");
-  return my_cardinality;
+  int my_num_kmers = all_num_kmers / rank_n();
+  SOUT("Number of kmers estimated as ", my_num_kmers, "\n");
+  return my_num_kmers;
 }
 
-void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_list, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_list, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
 {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -147,7 +147,7 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_
 
 
 // count ctg kmers if using bloom
-void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
+static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
 {
   Timer timer(__func__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
@@ -176,7 +176,7 @@ void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kme
 }
 
 
-void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom)
+static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom)
 {
   Timer timer(__func__);
   int64_t num_kmers = 0;
@@ -203,5 +203,38 @@ void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
   SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
+}
+
+void analyze_kmers(unsigned int kmer_len, int qual_offset, int min_depth_cutoff, vector<string> reads_fname_list, bool use_bloom, Contigs &ctgs,
+                   dist_object<KmerDHT> &kmer_dht)
+{
+  Timer timer(__func__);
+  if (use_bloom) {
+    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_SET_PASS);
+    if (ctgs.size()) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
+    kmer_dht->reserve_space_and_clear_bloom1();
+    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
+  } else {
+    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, NO_BLOOM_PASS);
+  }
+  barrier();
+  SOUT("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
+  barrier();
+  //kmer_dht->write_histogram();
+  //barrier();
+  kmer_dht->purge_kmers(min_depth_cutoff);
+  int64_t new_count = kmer_dht->get_num_kmers();
+  SOUT("After purge of kmers <", min_depth_cutoff, " there are ", new_count, " unique kmers\n");
+  barrier();
+  if (ctgs.size()) {
+    add_ctg_kmers(kmer_len, ctgs, kmer_dht, use_bloom);
+    kmer_dht->purge_kmers(1);
+  }
+  barrier();
+  kmer_dht->compute_kmer_exts();
+  // FIXME: dump if an option specifies
+  //kmer_dht->dump_kmers(kmer_len);
+  barrier();
+  kmer_dht->purge_fx_kmers();
 }
 

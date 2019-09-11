@@ -20,7 +20,7 @@ add_definitions(-DMAX_KMER_LEN=128)
 add_definitions(-DUSE_BYTELL)
 add_definitions(-DQUAL_CUTOFF=20)
 add_definitions(-DMAX_KMER_MAPPINGS=10)
-
+add_definitions(-DCONTIG_SEED_SPACE=4)
 
 # include mateidavid's zstr c++ library
 include_directories("${CMAKE_SOURCE_DIR}/zstr/src")

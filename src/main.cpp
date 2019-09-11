@@ -72,56 +72,29 @@ int main(int argc, char **argv)
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
-  string ctgs_fname = "";
   Contigs ctgs;
   for (auto kmer_len : options->kmer_lens) {
     auto loop_start_t = chrono::high_resolution_clock::now();
-    double loop_start_mem_free = get_free_mem_gb();
     SOUT(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
     Kmer::k = kmer_len;
-
-    auto my_cardinality = estimate_cardinality(kmer_len, options->reads_fname_list);
-    dist_object<KmerDHT> kmer_dht(world(), my_cardinality, options->max_kmer_store, options->min_depth_cutoff,
-                                  options->dynamic_min_depth, options->use_bloom);
-    barrier();
-
-    if (options->use_bloom) {
-      count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_SET_PASS);
-      if (kmer_len > options->kmer_lens[0]) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
-      kmer_dht->reserve_space_and_clear_bloom1();
-      count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
-    } else {
-      count_kmers(kmer_len, options->qual_offset, options->reads_fname_list, kmer_dht, NO_BLOOM_PASS);
+    {
+      // scope is to ensure that kmer_dht is freed by destructor
+      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->min_depth_cutoff,
+                                    options->dynamic_min_depth, options->use_bloom);
+      barrier();
+      analyze_kmers(kmer_len, options->qual_offset, options->min_depth_cutoff, options->reads_fname_list, options->use_bloom,
+                    ctgs, kmer_dht);
+      barrier();
+      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+      // FIXME: dump as single file if checkpoint option is specified
+      ctgs.dump_contigs("uutigs", kmer_len);
     }
-    barrier();
-    SOUT("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
-    barrier();
-    //kmer_dht->write_histogram();
-    //barrier();
-    kmer_dht->purge_kmers(options->min_depth_cutoff);
-    int64_t newCount = kmer_dht->get_num_kmers();
-    SOUT("After purge of kmers <", options->min_depth_cutoff, " there are ", newCount, " unique kmers\n");
-    barrier();
-    if (kmer_len > options->kmer_lens[0]) {
-      add_ctg_kmers(kmer_len, ctgs, kmer_dht, options->use_bloom);
-      kmer_dht->purge_kmers(1);
-    }
-    barrier();
-    kmer_dht->compute_kmer_exts();
-    // FIXME: dump if an option specifies
-    //kmer_dht->dump_kmers(kmer_len);
-    barrier();
-    kmer_dht->purge_fx_kmers();
-    traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-    // FIXME: dump as single file if checkpoint option is specified
-    ctgs_fname = ctgs.dump_contigs("uutigs", kmer_len);
-
-    find_alignments(kmer_len, ctgs);
-      
-    double loop_end_mem_free = get_free_mem_gb();
+    find_alignments(kmer_len, CONTIG_SEED_SPACE, ctgs);
+    
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-         get_current_time(), ", using ", (loop_start_mem_free - loop_end_mem_free), " GB memory\n");
+         get_current_time(), ", free memory ", get_free_mem_gb(), " GB\n");
     barrier();
   }
   SOUT(KBLUE "_________________________\nScaffolding\n\n", KNORM);

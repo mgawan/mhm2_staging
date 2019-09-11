@@ -76,6 +76,27 @@ extern ofstream _dbgstream;
 #define DBG(...)
 #endif
 
+static double get_free_mem_gb(void)
+{
+  string buf;
+  ifstream f("/proc/meminfo");
+  double mem_free = 0;
+  while (!f.eof()) {
+    getline(f, buf);
+    if (buf.find("MemFree") == 0 || buf.find("Buffers") == 0 || buf.find("Cached") == 0) {
+      stringstream fields;
+      string units;
+      string name;
+      double mem;
+      fields << buf;
+      fields >> name >> mem >> units;
+      if (units[0] == 'k') mem /= ONE_MB;
+      mem_free += mem;
+    }
+  }
+  return mem_free;
+}
+
 class IntermittentTimer {
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
   double t_elapsed;
@@ -105,18 +126,21 @@ public:
 class Timer {
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
   string name;
+  double init_free_mem;
 public:
   Timer(const string &name) {
     t = std::chrono::high_resolution_clock::now();
     this->name = name;
-    SOUT(KLCYAN, "--- ", name, " ---\n", KNORM);
+    if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
+    SOUT(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
   }
   ~Timer() {
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
     DBG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
     upcxx::barrier();
     t_elapsed = std::chrono::high_resolution_clock::now() - t;
-    SOUT(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
+    SOUT(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
+         (init_free_mem - get_free_mem_gb()), " GB) ---\n", KNORM);
   }
 };
 
@@ -357,27 +381,6 @@ inline std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, 
     }
   }
   return {min_dist, expected_overlap};
-}
-
-static double get_free_mem_gb(void)
-{
-  string buf;
-  ifstream f("/proc/meminfo");
-  double mem_free = 0;
-  while (!f.eof()) {
-    getline(f, buf);
-    if (buf.find("MemFree") == 0 || buf.find("Buffers") == 0 || buf.find("Cached") == 0) {
-      stringstream fields;
-      string units;
-      string name;
-      double mem;
-      fields << buf;
-      fields >> name >> mem >> units;
-      if (units[0] == 'k') mem /= ONE_MB;
-      mem_free += mem;
-    }
-  }
-  return mem_free;
 }
 
 static bool has_ending (string const &full_string, string const &ending) {
