@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <chrono>
 #include <math.h>
 #include <stdarg.h>
 #include <unistd.h>
@@ -26,6 +27,7 @@
 using namespace std;
 using namespace upcxx;
 
+#define NOW std::chrono::high_resolution_clock::now
 
 using cid_t = int64_t;
 
@@ -40,6 +42,11 @@ struct CtgLoc {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 static int64_t _num_ctg_kmers_matched = 0;
+static int64_t _num_perfect_alns = 0;
+static int64_t _num_reads_aligned = 0;
+static chrono::duration<double> _ssw_dt(0);
+//static chrono::duration<double> _get_ctgs_dt(0);
+
 
 class KmerCtgDHT {
 private:
@@ -49,22 +56,12 @@ private:
     CtgLoc ctg_loc;
   };
 
-  using MerarrAndRead = tuple<Kmer::MerArray, string, string, int, bool>;
+  AggrStore<MerarrAndCtgLoc> kmer_store;
   
-  // no need for a global ptr - just need to know where to find the sequence with an rpc to the destination
-  // so the string ptr is only valid on the destination rank
   using kmer_map_t = unordered_map<Kmer, vector<CtgLoc> >;
   dist_object<kmer_map_t> kmer_map;
-    
-  AggrStore<MerarrAndCtgLoc> kmer_store;
-  AggrStore<MerarrAndRead> try_align_store;
   
-  int64_t num_perfect_alns;
   zstr::ofstream *alns_file;
-  IntermittentTimer t_ssw;
-
-  // the key is to_string(cid) + rname
-  unordered_map<string, bool> cid_reads_map;
   
   // default aligner and filter
   StripedSmithWaterman::Aligner ssw_aligner;
@@ -96,20 +93,6 @@ private:
     }
   };
   dist_object<InsertKmer> insert_kmer;
-
-  struct FindSeedAndAlign {
-    void operator()(MerarrAndRead &merarr_and_read, dist_object<kmer_map_t> &kmer_map) {
-      Kmer::MerArray merarr;
-      string id, seq;
-      int pos;
-      bool is_rc;
-      tie(merarr, id, seq, pos, is_rc) = merarr_and_read;
-      Kmer kmer(merarr);
-      const auto it = kmer_map->find(kmer);
-      if (it != kmer_map->end()) _num_ctg_kmers_matched++;
-    }
-  };
-  dist_object<FindSeedAndAlign> find_seed_and_align;
   
 public:
 
@@ -118,12 +101,10 @@ public:
   
   // aligner construction: match_score, mismatch_penalty, gap_open_penalty, gap_extension_penalty - no entry for ambiquity, which should be 2
   // note SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size) : kmer_map({}), kmer_store({}), insert_kmer({}), try_align_store({}),
-                                                 find_seed_and_align({}), num_perfect_alns(0), ssw_aligner(1, 3, 5, 2, 2),
-                                                 num_alns(0), t_ssw("SSW"), kmer_len(kmer_len) {
+  KmerCtgDHT(int kmer_len, int max_store_size) : kmer_map({}), kmer_store({}), insert_kmer({}), ssw_aligner(1, 3, 5, 2, 2),
+                                                 num_alns(0), kmer_len(kmer_len) {
     ssw_filter.report_cigar = false;
     kmer_store.set_size("insert ctg seeds", max_store_size);
-    try_align_store.set_size("check read alns", max_store_size);
   }
 
   void clear() {
@@ -143,8 +124,8 @@ public:
   }
   
   int64_t get_num_perfect_alns(bool all = false) {
-    if (!all) return reduce_one(num_perfect_alns, op_fast_add, 0).wait();
-    else return reduce_all(num_perfect_alns, op_fast_add).wait();
+    if (!all) return reduce_one(_num_perfect_alns, op_fast_add, 0).wait();
+    else return reduce_all(_num_perfect_alns, op_fast_add).wait();
   }
 
   int64_t get_num_alns(bool all = false) {
@@ -188,28 +169,21 @@ public:
     barrier();
   }
 
-  void try_align_read(Kmer kmer, string &id, string &seq, int pos) {
-    Kmer kmer_rc = kmer.revcomp();
-    bool is_rc = false;
-    if (kmer_rc < kmer) {
-      kmer = kmer_rc;
-      is_rc = true;
-    }
-    MerarrAndRead merarr_and_read = { kmer.get_array(), id, seq, pos, is_rc };
-    try_align_store.update(get_target_rank(kmer), merarr_and_read, find_seed_and_align, kmer_map);
-  }
-
-  void flush_try_align_read() {
-    Timer timer(__func__);
-    barrier();
-    try_align_store.flush_updates(find_seed_and_align, kmer_map);
-    barrier();
+  future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer &kmer) {
+    return rpc(get_target_rank(kmer),
+               [](Kmer::MerArray merarr, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
+                 Kmer kmer(merarr);
+                 const auto it = kmer_map->find(kmer);
+                 if (it == kmer_map->end()) return {};
+                 return it->second;
+               }, kmer.get_array(), kmer_map);
   }
 
   void align_read(const string &rname, const string &rseq, char *seq_buf, int rstart,
                   int start_pos, int end_pos, const CtgLoc &ctg_loc, char orient, int subseq_len) {
+    num_alns++;
     bool perfect_match = true;
-    if (strncmp(seq_buf, (orient == '-' ? rseq.c_str() : rseq.c_str()) + rstart, subseq_len) == 0) num_perfect_alns++;
+    if (strncmp(seq_buf, (orient == '-' ? rseq.c_str() : rseq.c_str()) + rstart, subseq_len) == 0) _num_perfect_alns++;
     else perfect_match = false;
     int rend = rstart + subseq_len;
     progress();
@@ -238,9 +212,9 @@ public:
       // contig is the ref, read is the query
       StripedSmithWaterman::Alignment aln;
       const char *query_str = rseq.c_str();
-      t_ssw.start();
+      auto t = NOW();
       ssw_aligner.Align(query_str, seq_buf, strlen(seq_buf), ssw_filter, &aln, max((int)(rseq.length() / 2), 15));
-      t_ssw.stop();
+      _ssw_dt += (NOW() - t);
 
       rstart = aln.query_begin;
       rend = aln.query_end + 1;
@@ -256,7 +230,7 @@ public:
   }
 
   // this is really only for debugging
-  void dump_ctg_kmers(int kmer_len) {
+  void dump_ctg_kmers() {
     Timer timer(__func__);
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
@@ -284,7 +258,7 @@ public:
 };
 
 
-static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, unsigned kmer_len, Contigs &ctgs) 
+static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) 
 {
   Timer timer(__func__);
   int64_t num_kmers = 0;
@@ -316,59 +290,60 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, unsigned kmer_len, C
   }
 }
 
-/*
-static void compute_alns_for_kmer(KmerCtgDHT *kmer_ctg_dht, vector<CtgLoc> &aligned_ctgs, unordered_map<cid_t, int> &cids_mapped,
-                                  int pos_in_read, bool is_rc, const string &rname, const string &rseq) {
+
+using aligned_ctgs_map_t = unordered_map<cid_t, tuple<int, bool, CtgLoc>>;
+
+static future<> compute_alns_for_kmer(KmerCtgDHT *kmer_ctg_dht, aligned_ctgs_map_t *aligned_ctgs_map, const string &rname,
+                                      const string &rseq) {
   string rseq_rc = "";
   int rlen = rseq.length();
-  for (auto ctg_loc : aligned_ctgs) {
+  future<> all_fut = make_future();
+  for (auto &elem : *aligned_ctgs_map) {
     progress();
-    const auto it = cids_mapped.find(ctg_loc.cid);
-    if (it == cids_mapped.end()) {
-      cids_mapped.insert({ctg_loc.cid, pos_in_read});
-      kmer_ctg_dht->num_alns++;
-      char orient = '+';
-      if (ctg_loc.is_rc != is_rc) {
-        orient = '-';
-        pos_in_read = rlen - (kmer_ctg_dht->kmer_len + pos_in_read);
-        revcomp(rseq, &rseq_rc);
-      }
-      int pos_in_ctg_primer = max(ctg_loc.pos_in_ctg - pos_in_read - rlen, 0);
-      int start_pos = pos_in_ctg_primer;
-      int end_pos = min(ctg_loc.pos_in_ctg + rlen * 2, ctg_loc.clen);
-      int subseq_len = end_pos - start_pos;
-      if (subseq_len < 0) DIE("end_pos <= start_pos, ", end_pos, " ", start_pos);
-      char *seq_buf = new char[subseq_len + 1];
-
-      rget(ctg_loc.seq_gptr + start_pos, seq_buf, subseq_len,
-           operation_cx::as_promise(prom)|operation_cx::as_future()).then(
-             [=]() {
-               seq_buf[subseq_len] = '\0';
-               int rstart = 0;
-               if (pos_in_read && subseq_len < rlen) {
-                 if (orient == '-') rstart = max(pos_in_read - ctg_loc.pos_in_ctg, 0);
-                 else rstart = pos_in_read;
-               }
-               kmer_ctg_dht->align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, rstart, start_pos, end_pos, ctg_loc, orient, subseq_len);
-               delete[] seq_buf;
-             });
-
+    int pos_in_read;
+    bool is_rc;
+    CtgLoc ctg_loc;
+    tie(pos_in_read, is_rc, ctg_loc) = elem.second;
+    char orient = '+';
+    if (ctg_loc.is_rc != is_rc) {
+      orient = '-';
+      pos_in_read = rlen - (kmer_ctg_dht->kmer_len + pos_in_read);
+      rseq_rc = revcomp(rseq);
     }
-  }
-}
-*/
+    int pos_in_ctg_primer = max(ctg_loc.pos_in_ctg - pos_in_read - rlen, 0);
+    int start_pos = pos_in_ctg_primer;
+    int end_pos = min(ctg_loc.pos_in_ctg + rlen * 2, ctg_loc.clen);
+    int subseq_len = end_pos - start_pos;
+    if (subseq_len < 0) DIE("end_pos <= start_pos, ", end_pos, " ", start_pos);
+    char *seq_buf = new char[subseq_len + 1];
 
-static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list)
+    auto fut = rget(ctg_loc.seq_gptr + start_pos, seq_buf, subseq_len).then(
+           [=]() {
+             seq_buf[subseq_len] = '\0';
+             int rstart = 0;
+             if (pos_in_read && subseq_len < rlen) {
+               if (orient == '-') rstart = max(pos_in_read - ctg_loc.pos_in_ctg, 0);
+               else rstart = pos_in_read;
+             }
+             kmer_ctg_dht->align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, rstart, start_pos, end_pos, ctg_loc,
+                                      orient, subseq_len);
+             delete[] seq_buf;
+           });
+    all_fut = when_all(all_fut, fut);
+  }
+  return all_fut;
+}
+
+
+static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<string> &reads_fname_list)
 {
   Timer timer(__func__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
-  int64_t num_reads_aligned = 0;
-  IntermittentTimer t_get_ctgs("get_ctgs");
-  string dump_fname = "klign-" + to_string(kmer_len) + ".alns.gz";
+  string dump_fname = "klign-" + to_string(kmer_ctg_dht->kmer_len) + ".alns.gz";
   get_rank_path(dump_fname, rank_me());
   zstr::ofstream dump_file(dump_fname);
-  kmer_ctg_dht.open_alns_file(&dump_file);
+  kmer_ctg_dht->open_alns_file(&dump_file);
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
@@ -376,37 +351,81 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned kmer_len, unsigned 
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
-    // only one alignment needed per read-ctg
-    unordered_map<cid_t, int> cids_mapped;
-    cids_mapped.reserve(1000);
+    // keep track of all futures to enable asynchrony at the file level
+    vector<future<> > reads_futures;
     while (true) {
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
-      if (kmer_len > seq.length()) continue;
+      if (kmer_ctg_dht->kmer_len > seq.length()) continue;
+      // accumulate all the ctgs that align to this read at any position in a hash table to filter out duplicates
+      // this is dynamically allocated and deleted in the final .then callback when the computation is over
+      // a mapping of cid to {pos in read, is_rc, ctg location)
+      auto aligned_ctgs_map = new aligned_ctgs_map_t();
       auto kmers = Kmer::get_kmers(seq);
-      // only one alignment needed per read-ctg
-      cids_mapped.clear();
+      tot_num_kmers += kmers.size();
+      // get all the seeds/kmers for a read, and add all the potential ctgs for aln to the aligned_ctgs_map
+      // when the read future chain is completed, all the ctg info will be collected and the alignment can happen
+      future<> read_fut_chain = make_future();
       for (int i = 0; i < kmers.size(); i += seed_space) {
-        tot_num_kmers++;
-        kmer_ctg_dht.try_align_read(kmers[i], id, seq, i);
-        progress();
+        Kmer kmer = kmers[i];
+        Kmer kmer_rc = kmer.revcomp();
+        bool is_rc = false;
+        if (kmer_rc < kmer) {
+          kmer = kmer_rc;
+          is_rc = true;
+        }
+        auto t = NOW();
+        // add the fetched ctg into the unordered map
+        auto fut = kmer_ctg_dht->get_ctgs_with_kmer(kmer).then(
+          [=](vector<CtgLoc> aligned_ctgs) {
+            //_get_ctgs_dt += (NOW() - t);
+            for (auto ctg_loc : aligned_ctgs) {
+              // ensures only the first kmer to cid mapping is retained
+              aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
+            }
+          });
+        read_fut_chain = when_all(read_fut_chain, fut);
       }
-      if (cids_mapped.size()) num_reads_aligned++;
+      // when all the ctgs are fetched, do the alignments
+      auto fut = read_fut_chain.then(
+        [=]() {
+          _num_ctg_kmers_matched += aligned_ctgs_map->size();
+          if (aligned_ctgs_map->size()) _num_reads_aligned++;
+          return compute_alns_for_kmer(kmer_ctg_dht, aligned_ctgs_map, id, seq).then(
+            [aligned_ctgs_map]() {
+              delete aligned_ctgs_map;
+            });
+        });
+      reads_futures.push_back(fut);
+      progress();
       num_reads++;
     }
+    for (auto fut : reads_futures) fut.wait();
     progbar.done();
-    kmer_ctg_dht.flush_try_align_read();
     barrier();
-    kmer_ctg_dht.close_alns_file();
+    kmer_ctg_dht->close_alns_file();
   }
-  SOUT("Found ", perc_str(kmer_ctg_dht.get_num_ctg_kmers_matched(), kmer_ctg_dht.get_num_kmers()), " seeds in contigs\n");
+  SOUT("Found ", perc_str(kmer_ctg_dht->get_num_ctg_kmers_matched(), kmer_ctg_dht->get_num_kmers()), " seeds in contigs\n");
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto num_alns = kmer_ctg_dht.get_num_alns();
+  auto num_alns = kmer_ctg_dht->get_num_alns();
   SOUT("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds, and found ",
-       num_alns, " alignments, of which ", perc_str(kmer_ctg_dht.get_num_perfect_alns(), num_alns), " are perfect\n");
-  SOUT("Mapped ", perc_str(reduce_one(num_reads_aligned, op_fast_add, 0).wait(), tot_num_reads), " reads to contigs\n");
+       num_alns, " alignments, of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), num_alns), " are perfect\n");
+  SOUT("Mapped ", perc_str(reduce_one(_num_reads_aligned, op_fast_add, 0).wait(), tot_num_reads), " reads to contigs\n");
+  
+  double av_ssw_secs = reduce_one(_ssw_dt.count(), op_fast_add, 0).wait() / rank_n();
+  double max_ssw_secs = reduce_one(_ssw_dt.count(), op_fast_max, 0).wait();
+  SOUT("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
+       "max ", setprecision(2), fixed, max_ssw_secs, " s, ",
+       "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
+  /*
+  double av_get_ctgs_secs = reduce_one(_get_ctgs_dt.count(), op_fast_add, 0).wait() / rank_n();
+  double max_get_ctgs_secs = reduce_one(_get_ctgs_dt.count(), op_fast_max, 0).wait();
+  SOUT("Average time to get ctgs ", setprecision(2), fixed, av_get_ctgs_secs, " s, ",
+       "max ", max_get_ctgs_secs, " s, ",
+       "balance ", av_get_ctgs_secs / max_get_ctgs_secs, "\n");
+  */
 }
 
 
@@ -415,12 +434,16 @@ void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &rea
   Timer timer(__func__);
   _num_ctg_kmers_matched = 0;
   _num_dropped = 0;
+  _num_perfect_alns = 0;
+  _num_reads_aligned = 0;
+  _ssw_dt = chrono::duration<double>(0);
+  //_get_ctgs_dt = std::chrono::duration<double>(0);
   KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size);
-  build_alignment_index(kmer_ctg_dht, kmer_len, ctgs);
+  build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
-  kmer_ctg_dht.dump_ctg_kmers(kmer_len);
+  kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, kmer_len, seed_space, reads_fname_list);
+  do_alignments(&kmer_ctg_dht, seed_space, reads_fname_list);
   barrier();
 }
 
