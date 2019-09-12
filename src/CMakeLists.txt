@@ -27,6 +27,7 @@ add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
 add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
 add_definitions(-DUSE_COLORS)
 add_definitions(-DUSE_BYTELL)
+#add_definitions(-DWRITE_ALNS)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)

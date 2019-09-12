@@ -34,6 +34,7 @@ unsigned int Kmer::k = 0;
 int main(int argc, char **argv) {
   upcxx::init();
   auto start_t = chrono::high_resolution_clock::now();
+  double start_mem_free = get_free_mem_gb();
 
 #ifdef DEBUG
   //time_t curr_t = std::time(nullptr);
@@ -43,21 +44,6 @@ int main(int argc, char **argv) {
   _dbgstream.open(dbg_fname);
 #endif
 
-  SOUT("MHM version ", MHM_VERSION, "\n");
-  double start_mem_free = get_free_mem_gb();
-  SOUT("Initial free memory on node 0: ", setprecision(3), fixed, start_mem_free, " GB\n");
-  SOUT("Running on ", rank_n(), " ranks\n");
-
-  // print out all compiler definitions
-  SOUT(KBLUE "_________________________\nCompiler definitions:\n");
-  istringstream all_defs_ss(ALL_DEFNS);
-  vector<string> all_defs((istream_iterator<string>(all_defs_ss)), istream_iterator<string>());
-  for (auto &def : all_defs) SOUT("  ", def, "\n");
-  
-#ifdef DEBUG
-  SOUT(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
-#endif
-  
   auto options = make_shared<Options>();
   options->load(argc, argv);
 
@@ -89,7 +75,7 @@ int main(int argc, char **argv) {
       // FIXME: dump as single file if checkpoint option is specified
       ctgs.dump_contigs("uutigs", kmer_len);
     }
-    find_alignments(kmer_len, CONTIG_SEED_SPACE, options->reads_fname_list, options->max_kmer_store, ctgs);
+    find_alignments(kmer_len, CONTIG_SEED_SPACE, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs);
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",

@@ -326,7 +326,9 @@ public:
     , max_kmer_store_bytes(max_kmer_store_bytes)
     , initial_kmer_dht_reservation(0)
     , bloom1_cardinality(0) {
-    
+
+    // main purpose of the timer here is to track memory usage
+    Timer timer(__func__);
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes);
     else kmer_store.set_size("kmers", max_kmer_store_bytes);
     if (use_bloom) {
@@ -348,7 +350,6 @@ public:
       SOUT("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ", cardinality, " entries (",
            kmers->bucket_count(), " buckets)\n");
       barrier();
-      SOUT("After reserving space for local hash tables, ", (init_mem_free - get_free_mem_gb()), "GB memory was used on node 0\n");
     }
     start_t = std::chrono::high_resolution_clock::now();
   }

@@ -42,6 +42,8 @@ struct CtgLoc {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 
+using aligned_ctgs_map_t = unordered_map<cid_t, tuple<int, bool, CtgLoc>>;
+
 
 class KmerCtgDHT {
 
@@ -60,6 +62,11 @@ class KmerCtgDHT {
   int64_t num_alns;
   int64_t num_perfect_alns;
   chrono::duration<double> ssw_dt;
+  int max_ctg_seq_cache_size;
+  unordered_map<cid_t, string> ctg_seq_cache;
+  int num_ctg_seq_cache_hits;
+
+  int64_t ctg_seq_bytes_fetched;
   
   // default aligner and filter
   StripedSmithWaterman::Aligner ssw_aligner;
@@ -91,14 +98,73 @@ class KmerCtgDHT {
     }
   };
   dist_object<InsertKmer> insert_kmer;
+
+  void align_read(const string &rname, const string &rseq, char *seq_buf, int pos_in_read,
+                  int start_pos, int end_pos, const CtgLoc &ctg_loc, char orient, int subseq_len) {
+    num_alns++;
+    int rstart = 0;
+    if (pos_in_read && subseq_len < rseq.length()) {
+      if (orient == '-') rstart = max(pos_in_read - ctg_loc.pos_in_ctg, 0);
+      else rstart = pos_in_read;
+    }
+    bool perfect_match = true;
+    if (strncmp(seq_buf, (orient == '-' ? rseq.c_str() : rseq.c_str()) + rstart, subseq_len) == 0) num_perfect_alns++;
+    else perfect_match = false;
+    int rend = rstart + subseq_len;
+    progress();
+    
+    //StripedSmithWaterman::Aligner tmp_aligner(ssw_aligner);
+
+    int offset = rstart;
+    if (orient == '-') {
+      rstart = rseq.length() - rend;
+      rend = rseq.length() - offset;
+    }
+
+    if (perfect_match) {
+#ifdef WRITE_ALNS
+      *alns_file << "MERALIGNER-0\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
+                 << "Contig" + to_string(ctg_loc.cid) << "\t" << start_pos + 1 << "\t" << end_pos << "\t" << ctg_loc.clen << "\t"
+                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << (rend - rstart) << "\t0\n";
+      *alns_file << "DBG\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
+                 << start_pos + 1 << "\t" << end_pos << "\t" << ctg_loc.clen << "\t"
+                 << (orient == '+' ? "Plus" : "Minus") << "\t" << (rend - rstart) << "\n";
+#endif
+    } else {
+      // contig is the ref, read is the query - done this way so that we can do multiple alns to each read
+      StripedSmithWaterman::Alignment aln;
+      auto t = NOW();
+      // make sure upcxx progress is done before starting alignment
+      discharge();
+      
+      ssw_aligner.SetReferenceSequence(rseq.c_str(), rseq.length());
+      ssw_aligner.Align(seq_buf, ssw_filter, &aln, max((int)(rseq.length() / 2), 15));
+      ssw_dt += (NOW() - t);
+      rstart = aln.ref_begin;
+      rend = aln.ref_end + 1;
+      if (orient == '-') {
+        rstart = rseq.length() - aln.ref_end - 1;
+        rend = rseq.length() - aln.ref_begin;
+      }
+#ifdef WRITE_ALNS
+      *alns_file << "MERALIGNER-1\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
+                 << "Contig" + to_string(ctg_loc.cid) << "\t"
+                 << start_pos + aln.query_begin + 1 << "\t" << start_pos + aln.query_end + 1 << "\t" << ctg_loc.clen << "\t"
+                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << aln.sw_score << "\t" << aln.sw_score_next_best << endl;
+      *alns_file << "DBG\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
+                 << start_pos + aln.query_begin + 1 << "\t" << start_pos + aln.query_end + 1 << "\t" << ctg_loc.clen << "\t"
+                 << (orient == '+' ? "Plus" : "Minus") << "\t" << aln.sw_score << endl;
+#endif
+    }
+  }
   
 public:
 
-  int kmer_len;
+  int kmer_len;  
   
   // aligner construction: match_score, mismatch_penalty, gap_open_penalty, gap_extension_penalty - no entry for ambiquity, which should be 2
   // note SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size)
+  KmerCtgDHT(int kmer_len, int max_store_size, int max_ctg_cache)
     : kmer_map({})
     , kmer_store({})
     , insert_kmer({})
@@ -106,10 +172,14 @@ public:
     , num_alns(0)
     , num_perfect_alns(0)
     , ssw_dt(0)
-    , kmer_len(kmer_len) {
+    , kmer_len(kmer_len)
+    , num_ctg_seq_cache_hits(0)
+    , ctg_seq_bytes_fetched(0)
+    , max_ctg_seq_cache_size(max_ctg_cache) {
     
     ssw_filter.report_cigar = false;
     kmer_store.set_size("insert ctg seeds", max_store_size);
+    if (max_ctg_seq_cache_size) ctg_seq_cache.reserve(max_ctg_cache);
   }
 
   void clear() {
@@ -150,7 +220,15 @@ public:
   double get_max_ssw_secs() {
     return reduce_one(ssw_dt.count(), op_fast_max, 0).wait();
   }
-  
+
+  int64_t get_ctg_seq_cache_hits() {
+    return reduce_one(num_ctg_seq_cache_hits, op_fast_add, 0).wait();
+  }
+
+  int64_t get_ctg_seq_bytes_fetched() {
+    return reduce_one(ctg_seq_bytes_fetched, op_fast_add, 0).wait();
+  }    
+
   void open_alns_file(zstr::ofstream *f) {
     alns_file = f;
   }
@@ -187,55 +265,6 @@ public:
                }, kmer.get_array(), kmer_map);
   }
 
-  void set_read_ref_aln(const string &rseq) {
-    //ssw_aligner.SetReferenceSequence(rseq.c_str(), rseq.length());
-  }
-    
-  void align_read(const string &rname, const string &rseq, char *seq_buf, int rstart,
-                  int start_pos, int end_pos, const CtgLoc &ctg_loc, char orient, int subseq_len) {
-    num_alns++;
-    bool perfect_match = true;
-    if (strncmp(seq_buf, (orient == '-' ? rseq.c_str() : rseq.c_str()) + rstart, subseq_len) == 0) num_perfect_alns++;
-    else perfect_match = false;
-    int rend = rstart + subseq_len;
-    progress();
-    //auto tmp_aligner = ssw_aligner;
-    int offset = rstart;
-    if (orient == '-') {
-      rstart = rseq.length() - rend;
-      rend = rseq.length() - offset;
-    }
-
-    if (perfect_match) {
-      *alns_file << "MERALIGNER-0\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
-                 << "Contig" + to_string(ctg_loc.cid) << "\t" << start_pos + 1 << "\t" << end_pos << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << (rend - rstart) << "\t0\n";
-      *alns_file << "DBG\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
-                 << start_pos + 1 << "\t" << end_pos << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t" << (rend - rstart) << "\n";
-    } else {
-      // contig is the ref, read is the query - done this way so that we can do multiple alns to each read
-      StripedSmithWaterman::Alignment aln;
-      auto t = NOW();
-      ssw_aligner.SetReferenceSequence(rseq.c_str(), rseq.length());
-      ssw_aligner.Align(seq_buf, ssw_filter, &aln, max((int)(rseq.length() / 2), 15));
-      ssw_dt += (NOW() - t);
-      rstart = aln.ref_begin;
-      rend = aln.ref_end + 1;
-      if (orient == '-') {
-        rstart = rseq.length() - aln.ref_end - 1;
-        rend = rseq.length() - aln.ref_begin;
-      }
-      *alns_file << "MERALIGNER-1\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
-                 << "Contig" + to_string(ctg_loc.cid) << "\t"
-                 << start_pos + aln.query_begin + 1 << "\t" << start_pos + aln.query_end + 1 << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << aln.sw_score << "\t" << aln.sw_score_next_best << endl;
-      *alns_file << "DBG\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
-                 << start_pos + aln.query_begin + 1 << "\t" << start_pos + aln.query_end + 1 << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t" << aln.sw_score << endl;
-    }
-  }
-
   // this is really only for debugging
   void dump_ctg_kmers() {
     Timer timer(__func__);
@@ -262,6 +291,68 @@ public:
     SOUT("Dumped ", this->get_num_kmers(), " kmers\n");
   }
 
+  future<> compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, const string &rseq) {
+    string rseq_rc = "";
+    int rlen = rseq.length();
+    future<> all_fut = make_future();
+    for (auto &elem : *aligned_ctgs_map) {
+      progress();
+      int pos_in_read;
+      bool is_rc;
+      CtgLoc ctg_loc;
+      tie(pos_in_read, is_rc, ctg_loc) = elem.second;
+      char orient = '+';
+      if (ctg_loc.is_rc != is_rc) {
+        orient = '-';
+        pos_in_read = rlen - (kmer_len + pos_in_read);
+        rseq_rc = revcomp(rseq);
+      }
+      // the coords of the subseq to be aligned
+      int subseq_start_pos = max(ctg_loc.pos_in_ctg - pos_in_read - rlen, 0);
+      int subseq_end_pos = min(ctg_loc.pos_in_ctg + rlen * 2, ctg_loc.clen);
+      int subseq_len = subseq_end_pos - subseq_start_pos;
+      assert(subseq_len > 0);
+      // the coords of the seq to be fetched - whole string for cached
+      int start_pos = max_ctg_seq_cache_size ? 0 : subseq_start_pos;
+      int end_pos = max_ctg_seq_cache_size ? ctg_loc.clen : subseq_end_pos;
+      int seq_len = end_pos - start_pos;
+      // space for whatever is getting fetched
+      char *seq_buf = new char[seq_len + 1];
+      bool ctg_in_cache = false;
+      // if max_ctg_seq_cache_size is > 0, then we are using a cache
+      if (max_ctg_seq_cache_size) {
+        auto it = ctg_seq_cache.find(ctg_loc.cid);
+        if (it != ctg_seq_cache.end()) {
+          num_ctg_seq_cache_hits++;
+          // only get the subsequence needed
+          strncpy(seq_buf, it->second.c_str() + subseq_start_pos, subseq_len);
+          seq_buf[subseq_len] = '\0';
+          // align only the subseq
+          align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, pos_in_read, subseq_start_pos, subseq_end_pos, ctg_loc,
+                     orient, subseq_len);
+          delete[] seq_buf;
+          ctg_in_cache = true;
+        }
+      }
+      if (!ctg_in_cache) {
+        // get the full or subseq
+        auto fut = rget(ctg_loc.seq_gptr + start_pos, seq_buf, seq_len).then(
+          [=]() {
+            seq_buf[seq_len] = '\0';
+            ctg_seq_bytes_fetched += seq_len;
+            // only stash in cache if it will fit - this is the full seq
+            if (ctg_seq_cache.size() < max_ctg_seq_cache_size) ctg_seq_cache[ctg_loc.cid] = string(seq_buf);
+            // only align the subseq
+            align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, pos_in_read, subseq_start_pos, subseq_end_pos, ctg_loc,
+                       orient, subseq_len);
+            delete[] seq_buf;
+          });
+        all_fut = when_all(all_fut, fut);
+      }
+    }
+    return all_fut;
+  }
+  
 };
 
 
@@ -294,49 +385,6 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
     SOUT("Dropped ", num_dropped, " seed-to-contig mappings (", 
          setprecision(2), fixed, (100.0 * num_dropped / tot_num_kmers), "%)\n");
   }
-}
-
-using aligned_ctgs_map_t = unordered_map<cid_t, tuple<int, bool, CtgLoc>>;
-
-static future<> compute_alns_for_read(KmerCtgDHT *kmer_ctg_dht, aligned_ctgs_map_t *aligned_ctgs_map, const string &rname,
-                                      const string &rseq) {
-  string rseq_rc = "";
-  int rlen = rseq.length();
-  future<> all_fut = make_future();
-  for (auto &elem : *aligned_ctgs_map) {
-    progress();
-    int pos_in_read;
-    bool is_rc;
-    CtgLoc ctg_loc;
-    tie(pos_in_read, is_rc, ctg_loc) = elem.second;
-    char orient = '+';
-    if (ctg_loc.is_rc != is_rc) {
-      orient = '-';
-      pos_in_read = rlen - (kmer_ctg_dht->kmer_len + pos_in_read);
-      rseq_rc = revcomp(rseq);
-    }
-    int pos_in_ctg_primer = max(ctg_loc.pos_in_ctg - pos_in_read - rlen, 0);
-    int start_pos = pos_in_ctg_primer;
-    int end_pos = min(ctg_loc.pos_in_ctg + rlen * 2, ctg_loc.clen);
-    int subseq_len = end_pos - start_pos;
-    if (subseq_len < 0) DIE("end_pos <= start_pos, ", end_pos, " ", start_pos);
-    char *seq_buf = new char[subseq_len + 1];
-
-    auto fut = rget(ctg_loc.seq_gptr + start_pos, seq_buf, subseq_len).then(
-           [=]() {
-             seq_buf[subseq_len] = '\0';
-             int rstart = 0;
-             if (pos_in_read && subseq_len < rlen) {
-               if (orient == '-') rstart = max(pos_in_read - ctg_loc.pos_in_ctg, 0);
-               else rstart = pos_in_read;
-             }
-             kmer_ctg_dht->align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, rstart, start_pos, end_pos, ctg_loc,
-                                      orient, subseq_len);
-             delete[] seq_buf;
-           });
-    all_fut = when_all(all_fut, fut);
-  }
-  return all_fut;
 }
 
 static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<string> &reads_fname_list) {
@@ -396,7 +444,7 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
       auto fut = read_fut_chain.then(
         [=, &num_reads_aligned]() {
           if (aligned_ctgs_map->size()) num_reads_aligned++;
-          return compute_alns_for_read(kmer_ctg_dht, aligned_ctgs_map, id, seq).then(
+          return kmer_ctg_dht->compute_alns_for_read(aligned_ctgs_map, id, seq).then(
             [aligned_ctgs_map]() {
               delete aligned_ctgs_map;
             });
@@ -412,12 +460,16 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
   }
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   SOUT("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds\n");
-  auto num_alns = kmer_ctg_dht->get_num_alns();
-  SOUT("Found ", num_alns, " alignments, of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), num_alns), " are perfect\n");
+  auto tot_num_alns = kmer_ctg_dht->get_num_alns();
+  SOUT("Found ", tot_num_alns, " alignments, of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), tot_num_alns),
+       " are perfect\n");
   auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
   SOUT("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
-  SOUT("Average mappings per read ", (double)num_alns / tot_num_reads_aligned, "\n");
+  SOUT("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
 
+  SOUT("Ctg cache hits ", perc_str(kmer_ctg_dht->get_ctg_seq_cache_hits(), tot_num_alns), "\n");
+  SOUT("Fetched ", get_size_str(kmer_ctg_dht->get_ctg_seq_bytes_fetched()), " of contig sequences\n");
+  
   double av_ssw_secs = kmer_ctg_dht->get_av_ssw_secs();
   double max_ssw_secs = kmer_ctg_dht->get_max_ssw_secs();
   SOUT("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
@@ -425,11 +477,12 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
        "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
 }
 
-void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size, Contigs &ctgs) {
+void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
+                     int max_ctg_cache, Contigs &ctgs) {
   Timer timer(__func__);
   _num_dropped = 0;
   //_get_ctgs_dt = std::chrono::duration<double>(0);
-  KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size);
+  KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache);
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
   kmer_ctg_dht.dump_ctg_kmers();

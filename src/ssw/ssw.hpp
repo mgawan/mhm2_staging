@@ -100,6 +100,8 @@ namespace StripedSmithWaterman {
             const int8_t* translation_matrix,
             const int&    translation_matrix_size);
 
+    Aligner(const Aligner &aligner);
+    
     ~Aligner(void);
 
     // =========
@@ -212,7 +214,7 @@ namespace StripedSmithWaterman {
     void ClearMatrices(void);
 
     Aligner& operator= (const Aligner&);
-    Aligner (const Aligner&);
+    //Aligner (const Aligner&);
   }; // class Aligner
 
 
