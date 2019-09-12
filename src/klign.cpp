@@ -113,8 +113,6 @@ class KmerCtgDHT {
     int rend = rstart + subseq_len;
     progress();
     
-    //StripedSmithWaterman::Aligner tmp_aligner(ssw_aligner);
-
     int offset = rstart;
     if (orient == '-') {
       rstart = rseq.length() - rend;
@@ -131,12 +129,11 @@ class KmerCtgDHT {
                  << (orient == '+' ? "Plus" : "Minus") << "\t" << (rend - rstart) << "\n";
 #endif
     } else {
+      // make sure upcxx progress is done before starting alignment
+      discharge();
       // contig is the ref, read is the query - done this way so that we can do multiple alns to each read
       StripedSmithWaterman::Alignment aln;
       auto t = NOW();
-      // make sure upcxx progress is done before starting alignment
-      discharge();
-      
       ssw_aligner.SetReferenceSequence(rseq.c_str(), rseq.length());
       ssw_aligner.Align(seq_buf, ssw_filter, &aln, max((int)(rseq.length() / 2), 15));
       ssw_dt += (NOW() - t);
