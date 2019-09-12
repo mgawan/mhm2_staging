@@ -20,11 +20,12 @@ inline uint64_t nth_hash(uint8_t n, uint64_t hashA, uint64_t hashB, uint64_t fil
   
 
 struct BloomFilter {
-private:
+
   int num_hashes;
   std::vector<bool> m_bits;
 
 public:
+  
   void init(uint64_t entries, double error) {
     double num = log(error);
     double denom = 0.480453013918201; // ln(2)^2

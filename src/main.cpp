@@ -31,8 +31,7 @@ using namespace upcxx;
 unsigned int Kmer::k = 0;
 
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   upcxx::init();
   auto start_t = chrono::high_resolution_clock::now();
 

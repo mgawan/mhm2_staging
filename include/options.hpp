@@ -14,9 +14,8 @@ using std::endl;
 using std::vector;
 
 class Options {
-private:
-  vector<string> splitter(string in_pattern, string& content)
-  {
+
+  vector<string> splitter(string in_pattern, string& content) {
     vector<string> split_content;
     std::regex pattern(in_pattern);
     copy(std::sregex_token_iterator(content.begin(), content.end(), pattern, -1),
@@ -24,8 +23,7 @@ private:
     return split_content;
   }
 
-  void get_options(argh::parser &parser, string &usage)
-  {
+  void get_options(argh::parser &parser, string &usage) {
     vector<string> lines = splitter(R"(\n)", usage);
     for (string line: lines) {
       parser.add_param(line.substr(0, 2));
@@ -33,6 +31,7 @@ private:
   }
   
 public:
+  
   vector<string> reads_fname_list;
   vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
   unsigned int prev_kmer_len = 0;

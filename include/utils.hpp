@@ -36,15 +36,13 @@ using std::cerr;
 inline void logger(ostringstream &os) {}
 
 template <typename T, typename... Params>
-inline void logger(ostringstream &os, T first, Params... params)
-{
+inline void logger(ostringstream &os, T first, Params... params) {
   os << first;
   logger(os, params ...);
 }
 
 template <typename T, typename... Params>
-inline void logger(ostream &stream, bool fail, bool serial, T first, Params... params)
-{
+inline void logger(ostream &stream, bool fail, bool serial, T first, Params... params) {
   if (serial && upcxx::rank_me()) return;
   ostringstream os;
   os << first;
@@ -80,8 +78,7 @@ extern ofstream _dbgstream;
 #define DBG(...)
 #endif
 
-static double get_free_mem_gb(void)
-{
+static double get_free_mem_gb(void) {
   string buf;
   ifstream f("/proc/meminfo");
   double mem_free = 0;
@@ -102,6 +99,7 @@ static double get_free_mem_gb(void)
 }
 
 class IntermittentTimer {
+  
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
   double t_elapsed;
   string name;
@@ -138,6 +136,7 @@ public:
     if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
     SOUT(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
   }
+  
   ~Timer() {
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
     DBG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
@@ -149,20 +148,15 @@ public:
 };
 
 
-inline string tail(const string &s, int n)
-{
+inline string tail(const string &s, int n) {
   return s.substr(s.size() - n);
 }
 
-
-inline string head(const string &s, int n)
-{
+inline string head(const string &s, int n) {
   return s.substr(0, n);
 }
 
-
-inline string perc_str(int64_t num, int64_t tot)
-{
+inline string perc_str(int64_t num, int64_t tot) {
   ostringstream os;
   os.precision(2);
   os << std::fixed; 
@@ -170,8 +164,7 @@ inline string perc_str(int64_t num, int64_t tot)
   return os.str();
 }
 
-inline std::vector<string> split(const string &s, char delim)
-{
+inline std::vector<string> split(const string &s, char delim) {
   std::vector<string> elems;
   std::stringstream ss(s);
   string token;
@@ -179,8 +172,7 @@ inline std::vector<string> split(const string &s, char delim)
   return elems;
 }
 
-inline void check_file_exists(const string &fname)
-{
+inline void check_file_exists(const string &fname) {
   auto fnames = split(fname, ',');
   for (auto fname : fnames) {
     ifstream ifs(fname);
@@ -189,15 +181,12 @@ inline void check_file_exists(const string &fname)
   upcxx::barrier();
 }
 
-
-inline void replace_spaces(string &s)
-{
+inline void replace_spaces(string &s) {
   for (int i = 0; i < s.size(); i++)
     if (s[i] == ' ') s[i] = '_';
 }
 
-inline string revcomp(const string &seq)
-{
+inline string revcomp(const string &seq) {
   string seq_rc = "";
   seq_rc.reserve(seq.size());
   for (int i = seq.size() - 1; i >= 0; i--) {
@@ -214,8 +203,7 @@ inline string revcomp(const string &seq)
   return seq_rc;
 }
 
-inline char comp_nucleotide(char ch)
-{
+inline char comp_nucleotide(char ch) {
   switch (ch) {
       case 'A': return 'T';
       case 'C': return 'G'; 
@@ -228,10 +216,8 @@ inline char comp_nucleotide(char ch)
   return 0;
 }
 
-
 // returns 1 when it created the directory, 0 otherwise, -1 if there is an error
-inline int check_dir(const char *path)
-{
+inline int check_dir(const char *path) {
   if (0 != access(path, F_OK)) {
     if (ENOENT == errno) {
       // does not exist
@@ -256,12 +242,10 @@ inline int check_dir(const char *path)
   return 1;
 }
 
-
 // replaces the given path with a rank based path, inserting a rank-based directory
 // example:  get_rank_path("path/to/file_output_data.txt", rank) -> "path/to/per_rank/<rankdir>/<rank>/file_output_data.txt"
 // of if rank == -1, "path/to/per_rank/file_output_data.txt"
-inline bool get_rank_path(string &fname, int rank)
-{
+inline bool get_rank_path(string &fname, int rank) {
   char buf[MAX_FILE_PATH];
   strcpy(buf, fname.c_str());
   int pathlen = strlen(buf);
@@ -314,8 +298,7 @@ inline bool get_rank_path(string &fname, int rank)
   return true;
 }
 
-inline std::vector<string> find_per_rank_files(string &fname_list, const string &ext)
-{
+inline std::vector<string> find_per_rank_files(string &fname_list, const string &ext) {
   std::vector<string> full_fnames;
   auto fnames = split(fname_list, ',');
   for (auto fname : fnames) {
@@ -338,16 +321,14 @@ inline std::vector<string> find_per_rank_files(string &fname_list, const string 
   return full_fnames;
 }
 
-inline string get_current_time()
-{
+inline string get_current_time() {
   auto t = std::time(nullptr);
   std::ostringstream os;
   os << std::put_time(localtime(&t), "%D %T");
   return os.str();
 }
 
-inline int hamming_dist(const string &s1, const string &s2) 
-{
+inline int hamming_dist(const string &s1, const string &s2) {
   if (s2.size() != (s1.size() + 1) && s1.size() != s2.size()) 
     DIE("Hamming distance substring lengths don't match, ", s1.size(), ", ", s2.size(), "\n");
   int d = 0;
@@ -356,15 +337,13 @@ inline int hamming_dist(const string &s1, const string &s2)
   return d;
 }
 
-inline bool is_overlap_mismatch(int dist, int overlap) 
-{
+inline bool is_overlap_mismatch(int dist, int overlap) {
   const int MISMATCH_THRES = 5;
   if (dist > MISMATCH_THRES || dist > overlap / 10) return true;
   return false;
 }
 
-inline std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, int max_overlap, int expected_overlap=-1)
-{
+inline std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, int max_overlap, int expected_overlap=-1) {
   int min_dist = max_overlap;
   if (expected_overlap != -1) {
     int min_dist = hamming_dist(tail(s1, expected_overlap), head(s2, expected_overlap));
@@ -387,23 +366,20 @@ static bool has_ending (string const &full_string, string const &ending) {
   return false;
 }
 
-static int does_file_exist(string fname)
-{
+static int does_file_exist(string fname) {
   struct stat s;
   if (stat(fname.c_str(), &s) != 0) return 0;
   return 1;
 }
 
-static void write_num_file(string fname, int64_t maxReadLength)
-{
+static void write_num_file(string fname, int64_t maxReadLength) {
   ofstream out(fname);
   if (!out) { std::string error("Could not write to " + fname); throw error; }
   out << std::to_string(maxReadLength);
   out.close();
 }
 
-static string get_size_str(int64_t sz)
-{
+static string get_size_str(int64_t sz) {
   if (sz >= ONE_GB * 1024l) return to_string(sz / (ONE_GB * 1024l)) + "TB";
   else if (sz >= ONE_GB) return to_string(sz / ONE_GB) + "GB";
   else if (sz >= ONE_MB) return to_string(sz / ONE_MB) + "MB";
@@ -411,29 +387,25 @@ static string get_size_str(int64_t sz)
   else return to_string(sz) + "B";
 }
 
-static string remove_file_ext(const string &fname)
-{
+static string remove_file_ext(const string &fname) {
   size_t lastdot = fname.find_last_of(".");
   if (lastdot == std::string::npos) return fname;
   return fname.substr(0, lastdot); 
 }
 
-static string get_merged_reads_fname(const string &reads_fname)
-{
+static string get_merged_reads_fname(const string &reads_fname) {
   string out_fname = remove_file_ext(reads_fname) + "-merged.fastq.gz";
   get_rank_path(out_fname, upcxx::rank_me());
   return out_fname;
 }
 
-static int64_t get_file_size(string fname)
-{
+static int64_t get_file_size(string fname) {
   struct stat s;
   if (stat(fname.c_str(), &s) != 0) return -1;
   return s.st_size;
 }
 
-static size_t get_uncompressed_file_size(string fname)
-{
+static size_t get_uncompressed_file_size(string fname) {
   string uncompressedSizeFname = fname + ".uncompressedSize";
   ifstream f(uncompressedSizeFname, std::ios::binary);
   if (!f) DIE("Cannot get uncompressed size for file ", fname);
@@ -442,8 +414,7 @@ static size_t get_uncompressed_file_size(string fname)
   return sz;
 }
 
-static void write_uncompressed_file_size(string fname, size_t sz)
-{
+static void write_uncompressed_file_size(string fname, size_t sz) {
   ofstream f(fname, std::ios::binary);
   f.write((char*)&sz, sizeof(size_t));
   f.close();

@@ -19,7 +19,6 @@ using upcxx::rank_n;
 
 class FastqReader {
 
-private:
   FILE *f;
   gzFile gzf;
   off_t file_size;
@@ -110,7 +109,12 @@ private:
   
 public:
   
-  FastqReader(const string &fname, bool per_rank_file=false) : fname(fname), f(nullptr), gzf(nullptr), max_read_len(0) {
+  FastqReader(const string &fname, bool per_rank_file=false)
+    : fname(fname)
+    , f(nullptr)
+    , gzf(nullptr)
+    , max_read_len(0) {
+    
     bool is_compressed = has_ending(fname, ".gz");
     if (!per_rank_file) {
       if (is_compressed) DIE("Single gzipped input file ", fname, " not supported\n");

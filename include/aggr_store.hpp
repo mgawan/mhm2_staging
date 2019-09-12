@@ -31,7 +31,7 @@ using upcxx::promise;
 
 template<typename T>
 class AggrStore {
-private:
+
   using RankStore = vector<T>;
   using Store = vector<RankStore>;
   using RpcFutures = deque< future<> >;
@@ -76,7 +76,12 @@ private:
   
 public:
   
-  AggrStore() : store({}), rpc_futures(), max_store_size(0), max_rpcs_in_flight(MAX_RPCS_IN_FLIGHT) {}
+  AggrStore()
+    : store({})
+    , rpc_futures()
+    , max_store_size(0)
+    , max_rpcs_in_flight(MAX_RPCS_IN_FLIGHT) {}
+  
   virtual ~AggrStore() {
     clear();
   }

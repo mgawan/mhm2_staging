@@ -24,8 +24,7 @@ using namespace upcxx;
 
 extern ofstream _dbgstream;
 
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> reads_fname_list)
-{
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> reads_fname_list) {
   Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -72,8 +71,8 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> reads_fname_list)
   return my_num_kmers;
 }
 
-static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_list, dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type)
-{
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_list, dist_object<KmerDHT> &kmer_dht,
+                        PASS_TYPE pass_type) {
   Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -147,10 +146,8 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads
   if (pass_type != BLOOM_SET_PASS) SOUT("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
 }
 
-
 // count ctg kmers if using bloom
-static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
-{
+static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__func__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
@@ -177,9 +174,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   barrier();
 }
 
-
-static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom)
-{
+static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom) {
   Timer timer(__func__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
@@ -208,8 +203,7 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
 }
 
 void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> reads_fname_list, bool use_bloom, int min_depth_cutoff,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht)
-{
+                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__func__);
   
   _dynamic_min_depth = dynamic_min_depth;

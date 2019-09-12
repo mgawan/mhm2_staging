@@ -21,23 +21,25 @@ using namespace upcxx;
 #include "fastq.hpp"
 #include "progressbar.hpp"
 
-static const double Q2Perror[] = { 1.0,
-                                   0.7943,	0.6309,	0.5012,	0.3981,	0.3162,
-                                   0.2512,	0.1995,	0.1585,	0.1259,	0.1,
-                                   0.07943,	0.06310,	0.05012,	0.03981,	0.03162,
-                                   0.02512,	0.01995,	0.01585,	0.01259,	0.01,
-                                   0.007943,	0.006310,	0.005012,	0.003981,	0.003162,
-                                   0.002512,	0.001995,	0.001585,	0.001259,	0.001,
-                                   0.0007943,	0.0006310,	0.0005012,	0.0003981,	0.0003162,
-                                   0.0002512,	0.0001995,	0.0001585,	0.0001259,	0.0001,
-                                   7.943e-05,	6.310e-05,	5.012e-05,	3.981e-05,	3.162e-05,
-                                   2.512e-05,	1.995e-05,	1.585e-05,	1.259e-05,	1e-05,
-                                   7.943e-06,	6.310e-06,	5.012e-06,	3.981e-06,	3.162e-06,
-                                   2.512e-06,	1.995e-06,	1.585e-06,	1.259e-06,	1e-06,
-                                   7.943e-07,	6.310e-07,	5.012e-07,	3.981e-07,	3.1622e-07,
-                                   2.512e-07,	1.995e-07,	1.585e-07,	1.259e-07,	1e-07,
-                                   7.943e-08,	6.310e-08,	5.012e-08,	3.981e-08,	3.1622e-08,
-                                   2.512e-08,	1.995e-08,	1.585e-08,	1.259e-08,	1e-08};
+static const double Q2Perror[] = {
+  1.0,
+  0.7943,	0.6309,	0.5012,	0.3981,	0.3162,
+  0.2512,	0.1995,	0.1585,	0.1259,	0.1,
+  0.07943,	0.06310,	0.05012,	0.03981,	0.03162,
+  0.02512,	0.01995,	0.01585,	0.01259,	0.01,
+  0.007943,	0.006310,	0.005012,	0.003981,	0.003162,
+  0.002512,	0.001995,	0.001585,	0.001259,	0.001,
+  0.0007943,	0.0006310,	0.0005012,	0.0003981,	0.0003162,
+  0.0002512,	0.0001995,	0.0001585,	0.0001259,	0.0001,
+  7.943e-05,	6.310e-05,	5.012e-05,	3.981e-05,	3.162e-05,
+  2.512e-05,	1.995e-05,	1.585e-05,	1.259e-05,	1e-05,
+  7.943e-06,	6.310e-06,	5.012e-06,	3.981e-06,	3.162e-06,
+  2.512e-06,	1.995e-06,	1.585e-06,	1.259e-06,	1e-06,
+  7.943e-07,	6.310e-07,	5.012e-07,	3.981e-07,	3.1622e-07,
+  2.512e-07,	1.995e-07,	1.585e-07,	1.259e-07,	1e-07,
+  7.943e-08,	6.310e-08,	5.012e-08,	3.981e-08,	3.1622e-08,
+  2.512e-08,	1.995e-08,	1.585e-08,	1.259e-08,	1e-08
+};
 
 
 // returns the number of mismatches if it is <= max or a number greater than max (but no the actual count)
@@ -93,9 +95,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
   return mismatches;
 }
 
-
-void merge_reads(vector<string> reads_fname_list, int qual_offset)
-{
+void merge_reads(vector<string> reads_fname_list, int qual_offset) {
   Timer timer(__func__);
 
   int64_t num_ambiguous = 0;
@@ -118,9 +118,10 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset)
     const int Q2PerrorSize = sizeof(Q2Perror) / sizeof(*Q2Perror);
     assert(qual_offset == 33 || qual_offset == 64);
 
-    // illumina reads generally accumulate errors at the end, so allow more mismatches in the overlap as long as differential quality indicates a clear winner
-    const double MAX_PERROR = 0.025; // allow up to 2.5% accumulated mismatch probablity of error within the overlap by differential quality score
-    const int16_t EXTRA_MISMATCHES_PER_1000 = (int) 150; // allow additional mismatches per 1000 bases of overlap before aborting an overlap test
+    // illumina reads generally accumulate errors at the end, so allow more mismatches in the overlap as long as differential
+    // quality indicates a clear winner
+    const double MAX_PERROR = 0.025; // max 2.5% accumulated mismatch prob of error within overlap by differential quality score
+    const int16_t EXTRA_MISMATCHES_PER_1000 = (int) 150; // allow addtl mismatches per 1000 bases overlap before aborting test
     const uint8_t MAX_MATCH_QUAL = 41 + qual_offset;
     
     string id1, seq1, quals1, id2, seq2, quals2;

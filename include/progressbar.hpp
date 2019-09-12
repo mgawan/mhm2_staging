@@ -32,9 +32,14 @@ private:
 
 public:
   ProgressBar(int64_t total, string prefix = "", int pwidth = 20,
-              int width = 50, char complete = '=', char incomplete = ' ') :
-    total_ticks{total}, prefix_str{prefix}, prefix_width{pwidth}, bar_width{width},
-    complete_char{complete}, incomplete_char{incomplete} {
+              int width = 50, char complete = '=', char incomplete = ' ')
+    : total_ticks{total}
+    , prefix_str{prefix}
+    , prefix_width{pwidth}
+    , bar_width{width}
+    , complete_char{complete}
+    , incomplete_char{incomplete} {
+      
       if (!upcxx::rank_me()) {
         ten_perc = total / 10;
         if (ten_perc == 0) ten_perc = 1;
@@ -46,9 +51,15 @@ public:
     }
 
   ProgressBar(const string &fname, std::istream *infile, string prefix = "", int pwidth = 20, int width = 50, 
-              char complete = '=', char incomplete = ' ') :
-    infile{infile}, total_ticks{0}, prefix_str{prefix}, prefix_width{pwidth}, bar_width{width},
-    complete_char{complete}, incomplete_char{incomplete} {
+              char complete = '=', char incomplete = ' ')
+    : infile{infile}
+    , total_ticks{0}
+    , prefix_str{prefix}
+    , prefix_width{pwidth}
+    , bar_width{width}
+    , complete_char{complete}
+    , incomplete_char{incomplete} {
+      
       if (!upcxx::rank_me()) {
         /*
         struct stat stat_buf;
@@ -75,8 +86,7 @@ public:
     //done();
   }
   
-  void display(bool is_last = false)
-  {
+  void display(bool is_last = false) {
     if (upcxx::rank_me()) return;
     if (total_ticks == 0) return;
     float progress = (float) ticks / total_ticks;
@@ -93,8 +103,7 @@ public:
     prev_time = now;
   }
 
-  void done()
-  {
+  void done() {
     //display(true);
     std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();

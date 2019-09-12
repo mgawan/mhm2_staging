@@ -59,6 +59,11 @@ static const uint64_t TWIN_TABLE[256] = {
   0xD0, 0x90, 0x50, 0x10, 0xC0, 0x80, 0x40, 0x00
 };
 
+
+static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
+using MerArray = std::array<uint64_t, N_LONGS>;
+
+
 /* Short description:
  *  - Store kmer strings by using 2 bits per base instead of 8
  *  - Easily return reverse complements of kmers, e.g. TTGG -> CCAA
@@ -67,12 +72,7 @@ static const uint64_t TWIN_TABLE[256] = {
  *  - Get last and next kmer, e.g. ACGT -> CGTT or ACGT -> AACGT
  *  */
 class Kmer {
-  static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
-  
-public:
-  using MerArray = std::array<uint64_t, N_LONGS>;
 
-private:
   MerArray longs;
 
 public:
@@ -305,21 +305,24 @@ struct KmerEqual {
 
 // specialization of std::Hash
 
-namespace std
-{
-  template<> struct hash<Kmer>{
+namespace std {
+  
+  template<>
+  struct hash<Kmer> {
     typedef std::size_t result_type;
     result_type operator()(Kmer const& km) const {
       return km.hash();
     }
   };
-  template<> struct hash<Kmer::MerArray>{
+  
+  template<>
+  struct hash<MerArray> {
     typedef std::size_t result_type;
-    result_type operator()(const Kmer::MerArray & km) const {
-      return MurmurHash3_x64_64((const void *)km.data(), sizeof(Kmer::MerArray));
+    result_type operator()(const MerArray & km) const {
+      return MurmurHash3_x64_64((const void *)km.data(), sizeof(MerArray));
     }
   };
-};
+}
 
 
 inline std::ostream& operator<<(std::ostream& out, const Kmer& k) {

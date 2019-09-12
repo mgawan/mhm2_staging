@@ -15,7 +15,6 @@
 #include "kmer.hpp"
 #include "bloom.hpp"
 #include "zstr.hpp"
-#include "histogram_dht.hpp"
 #include "aggr_store.hpp"
 
 using std::vector;
@@ -83,6 +82,7 @@ struct ExtCounts {
     if (count_A + count_C + count_G + count_T == 0) return true;
     return false;
   }
+  
 };
 
 // total bytes: 2+8+8=18
@@ -126,18 +126,18 @@ using KmerMap = ska::bytell_hash_map<Kmer, KmerCounts, KmerHash, KmerEqual>;
 using KmerMap = std::unordered_map<Kmer, KmerCounts, KmerHash, KmerEqual>;
 #endif
 
+
 class KmerDHT {
-private:
 
   // total bytes for k = 51: 16+18+18=52
   struct MerarrAndExt {
-    Kmer::MerArray merarr;
+    MerArray merarr;
     char left, right;
     uint16_t count;
   };
   
   dist_object<KmerMap> kmers;
-  AggrStore<Kmer::MerArray> kmer_store_bloom;
+  AggrStore<MerArray> kmer_store_bloom;
   AggrStore<MerarrAndExt> kmer_store;
   // The first bloom filter stores all kmers and is used to check for single occurrences to filter out
   dist_object<BloomFilter> bloom_filter1;
@@ -148,8 +148,6 @@ private:
   int64_t bloom1_cardinality;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   
-private:
-
   struct InsertKmer {
     void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers) {
       Kmer new_kmer(merarr_and_ext.merarr);
@@ -178,7 +176,7 @@ private:
   dist_object<InsertKmer> insert_kmer;
 
   struct BloomSet {
-    void operator()(Kmer::MerArray &merarr, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(MerArray &merarr, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
       Kmer new_kmer(merarr);
@@ -191,7 +189,7 @@ private:
   dist_object<BloomSet> bloom_set;
 
   struct CtgBloomSet {
-    void operator()(Kmer::MerArray &merarr, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(MerArray &merarr, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
       Kmer new_kmer(merarr);
       bloom_filter2->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
@@ -314,13 +312,21 @@ private:
 
 public:
 
-  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom) :  kmers({}), bloom_filter1({}), bloom_filter2({}),
-                                                                             kmer_store({}), kmer_store_bloom({}), insert_kmer({}),
-                                                                             bloom_set({}), ctg_bloom_set({}), bloom_count({}),
-                                                                             insert_ctg_kmer({}),
-                                                                             max_kmer_store_bytes(max_kmer_store_bytes),
-                                                                             initial_kmer_dht_reservation(0),
-                                                                             bloom1_cardinality(0) {
+  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom)
+    : kmers({})
+    , bloom_filter1({})
+    , bloom_filter2({})
+    , kmer_store({})
+    , kmer_store_bloom({})
+    , insert_kmer({})
+    , bloom_set({})
+    , ctg_bloom_set({})
+    , bloom_count({})
+    , insert_ctg_kmer({})
+    , max_kmer_store_bytes(max_kmer_store_bytes)
+    , initial_kmer_dht_reservation(0)
+    , bloom1_cardinality(0) {
+    
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes);
     else kmer_store.set_size("kmers", max_kmer_store_bytes);
     if (use_bloom) {
@@ -391,7 +397,7 @@ public:
 
   int32_t get_visited(Kmer &kmer) {
     return rpc(get_kmer_target_rank(kmer),
-               [](Kmer::MerArray merarr, dist_object<KmerMap> &kmers) -> int32_t {
+               [](MerArray merarr, dist_object<KmerMap> &kmers) -> int32_t {
                  Kmer kmer(merarr);
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return -2;
@@ -543,26 +549,6 @@ public:
     dump_file.close();
     progbar.done();
     SOUT("Dumped ", this->get_num_kmers(), " kmers\n");
-  }
-
-  // build and output histogram
-  void write_histogram() {
-    Timer timer(__func__);
-    SOUT("Generating histogram\n");
-    shared_ptr<HistogramDHT> histogram = make_shared<HistogramDHT>();
-    size_t numKmers = 0;
-    for (auto &elem : *kmers) {
-      size_t count = elem.second.count;
-      histogram->add_count(count,1);
-      numKmers++;
-    }
-    if (bloom1_cardinality > 0) {
-      int64_t num_one_counts = bloom1_cardinality - numKmers;
-      if (num_one_counts > 0) histogram->add_count(1, num_one_counts);
-    }
-    histogram->flush_updates();
-    string hist_fname = "per_thread/histogram_k" + std::to_string(Kmer::k) + ".txt";
-    histogram->write_histogram(hist_fname);
   }
 
   KmerMap::const_iterator local_kmers_begin() {

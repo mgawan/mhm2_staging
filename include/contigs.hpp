@@ -24,8 +24,9 @@ struct Contig {
 };
 
 class Contigs {
-private:
+  
   vector<Contig> contigs;
+  
 public:
 
   Contigs() {}

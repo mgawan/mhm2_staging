@@ -273,6 +273,7 @@ namespace StripedSmithWaterman {
     : score_matrix_(NULL)
     , score_matrix_size_(score_matrix_size)
     , translation_matrix_(NULL)
+    , translation_matrix_size_(translation_matrix_size)
     , match_score_(2)
     , mismatch_penalty_(2)
     , gap_opening_penalty_(3)
@@ -282,10 +283,43 @@ namespace StripedSmithWaterman {
   {
     score_matrix_ = new int8_t[score_matrix_size_ * score_matrix_size_];
     memcpy(score_matrix_, score_matrix, sizeof(int8_t) * score_matrix_size_ * score_matrix_size_);
-    translation_matrix_ = new int8_t[translation_matrix_size];
-    memcpy(translation_matrix_, translation_matrix, sizeof(int8_t) * translation_matrix_size);
+    translation_matrix_ = new int8_t[translation_matrix_size_];
+    memcpy(translation_matrix_, translation_matrix, sizeof(int8_t) * translation_matrix_size_);
   }
 
+
+  Aligner::Aligner(const Aligner &aligner) {
+    int8_t* score_matrix_;
+    int     score_matrix_size_;
+    int8_t* translation_matrix_;
+
+    uint8_t match_score_;           // default: 2
+    uint8_t mismatch_penalty_;      // default: 2
+    uint8_t gap_opening_penalty_;   // default: 3
+    uint8_t gap_extending_penalty_; // default: 1
+    uint8_t ambiguity_penalty_;     // default: 2
+
+    int8_t* translated_reference_;
+    int32_t reference_length_;
+    
+    
+    match_score_ = aligner.match_score_;
+    mismatch_penalty_ = aligner.mismatch_penalty_;
+    gap_opening_penalty_ = aligner.gap_opening_penalty_;
+    gap_extending_penalty_ = aligner.gap_extending_penalty_;
+    ambiguity_penalty_ = aligner.ambiguity_penalty_;
+    
+    translated_reference_ = nullptr;
+    reference_length_ = 0;
+    
+    score_matrix_size_ = aligner.score_matrix_size_;
+    score_matrix_ = new int8_t[score_matrix_size_ * score_matrix_size_];
+    memcpy(score_matrix_, aligner.score_matrix_, sizeof(int8_t) * score_matrix_size_ * score_matrix_size_);
+
+    translation_matrix_size_ = aligner.translation_matrix_size_;
+    translation_matrix_ = new int8_t[translation_matrix_size_];
+    memcpy(translation_matrix_, aligner.translation_matrix_, sizeof(int8_t) * translation_matrix_size_);
+  }
 
   Aligner::~Aligner(void){
     Clear();
@@ -461,8 +495,9 @@ namespace StripedSmithWaterman {
     ClearMatrices();
     score_matrix_ = new int8_t[score_matrix_size_ * score_matrix_size_];
     memcpy(score_matrix_, score_matrix, sizeof(int8_t) * score_matrix_size_ * score_matrix_size_);
-    translation_matrix_ = new int8_t[translation_matrix_size];
-    memcpy(translation_matrix_, translation_matrix, sizeof(int8_t) * translation_matrix_size);
+    translation_matrix_size_ = translation_matrix_size;
+    translation_matrix_ = new int8_t[translation_matrix_size_];
+    memcpy(translation_matrix_, translation_matrix, sizeof(int8_t) * translation_matrix_size_);
 
     return true;
   }

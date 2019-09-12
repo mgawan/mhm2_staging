@@ -32,8 +32,7 @@ struct WalkStatus {
   int64_t sum_depths;
 };
 
-static void abort_walk(dist_object<WalkStatus> &walk_status, bool walk_drop, int32_t walk_len, int64_t sum_depths, intrank_t start_rank)
-{
+static void abort_walk(dist_object<WalkStatus> &walk_status, bool walk_drop, int32_t walk_len, int64_t sum_depths, intrank_t start_rank) {
   rpc_ff(start_rank,
          [](dist_object<WalkStatus> &walk_status, bool walk_drop, int32_t walk_len, int64_t sum_depths) {
            if (walk_status->done) DIE("walk status is already done");
@@ -46,10 +45,9 @@ static void abort_walk(dist_object<WalkStatus> &walk_status, bool walk_drop, int
 
 static int num_conflicts = 0;
 
-static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &merarr, char ext,
+static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr, char ext,
                           TraverseDirn dirn, dist_object<WalkStatus> &walk_status, int32_t walk_len, int64_t sum_depths,
-                          intrank_t start_rank, global_ptr<char> uutig, bool revisit_allowed, char prev_ext, int32_t start_walk_us)
-{
+                          intrank_t start_rank, global_ptr<char> uutig, bool revisit_allowed, char prev_ext, int32_t start_walk_us) {
   Kmer kmer(merarr);
   auto kmer_rc = kmer.revcomp();
   auto rc = false;
@@ -138,8 +136,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const Kmer::MerArray &
 }
 
 static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                          string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
-{
+                          string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us) {
   walk_status->done = false;
   walk_status->drop = false;
   walk_status->len = 0;
@@ -159,8 +156,7 @@ static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr
 }
 
 static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                           string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us)
-{
+                           string &uutig_str, dist_object<WalkStatus> &walk_status, int32_t start_walk_us) {
   walk_status->done = false;
   walk_status->drop = false;
   walk_status->len = 0;
@@ -178,8 +174,7 @@ static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_pt
   return true;
 }
 
-void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs)
-{
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
   Timer timer(__func__);
   // allocate space for biggest possible uutig in global storage
   const int MAX_UUTIG_LEN = 10000000;
