@@ -134,8 +134,7 @@ class KmerCtgDHT {
       // contig is the ref, read is the query - done this way so that we can do multiple alns to each read
       StripedSmithWaterman::Alignment aln;
       auto t = NOW();
-      ssw_aligner.SetReferenceSequence(rseq.c_str(), rseq.length());
-      ssw_aligner.Align(seq_buf, ssw_filter, &aln, max((int)(rseq.length() / 2), 15));
+      ssw_aligner.Align(seq_buf, rseq.c_str(), rseq.length(), ssw_filter, &aln, max((int)(rseq.length() / 2), 15));
       ssw_dt += (NOW() - t);
       rstart = aln.ref_begin;
       rend = aln.ref_end + 1;
@@ -340,8 +339,8 @@ public:
             // only stash in cache if it will fit - this is the full seq
             if (ctg_seq_cache.size() < max_ctg_seq_cache_size) ctg_seq_cache[ctg_loc.cid] = string(seq_buf);
             // only align the subseq
-            align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, pos_in_read, subseq_start_pos, subseq_end_pos, ctg_loc,
-                       orient, subseq_len);
+            align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf + (max_ctg_seq_cache_size ? subseq_start_pos : 0),
+                       pos_in_read, subseq_start_pos, subseq_end_pos, ctg_loc, orient, subseq_len);
             delete[] seq_buf;
           });
         all_fut = when_all(all_fut, fut);
