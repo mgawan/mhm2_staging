@@ -121,12 +121,9 @@ class KmerCtgDHT {
 
     if (perfect_match) {
 #ifdef WRITE_ALNS
-      *alns_file << "MERALIGNER-0\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
+      *alns_file << "MERALIGNER-0\t" << rname.substr(1) << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
                  << "Contig" + to_string(ctg_loc.cid) << "\t" << start_pos + 1 << "\t" << end_pos << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << (rend - rstart) << "\t0\n";
-      *alns_file << "DBG\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
-                 << start_pos + 1 << "\t" << end_pos << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t" << (rend - rstart) << "\n";
+                 << (orient == '+' ? "Plus" : "Minus") << "\t" << (rend - rstart) << "\t0\n";
 #endif
     } else {
       // make sure upcxx progress is done before starting alignment
@@ -143,13 +140,10 @@ class KmerCtgDHT {
         rend = rseq.length() - aln.ref_begin;
       }
 #ifdef WRITE_ALNS
-      *alns_file << "MERALIGNER-1\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
+      *alns_file << "MERALIGNER-1\t" << rname.substr(1) << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
                  << "Contig" + to_string(ctg_loc.cid) << "\t"
                  << start_pos + aln.query_begin + 1 << "\t" << start_pos + aln.query_end + 1 << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t0\t0\t0\t0\t" << aln.sw_score << "\t" << aln.sw_score_next_best << endl;
-      *alns_file << "DBG\t" << rname << "\t" << rstart + 1 << "\t" << rend << "\t" << rseq.length() << "\t"
-                 << start_pos + aln.query_begin + 1 << "\t" << start_pos + aln.query_end + 1 << "\t" << ctg_loc.clen << "\t"
-                 << (orient == '+' ? "Plus" : "Minus") << "\t" << aln.sw_score << endl;
+                 << (orient == '+' ? "Plus" : "Minus") << "\t" << aln.sw_score << "\t" << aln.sw_score_next_best << endl;
 #endif
     }
   }
