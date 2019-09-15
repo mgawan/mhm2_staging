@@ -21,14 +21,24 @@ ofstream _dbgstream;
 #include "utils.hpp"
 #include "options.hpp"
 #include "merge_reads.hpp"
-#include "kcount.hpp"
-#include "dbjg_traversal.hpp"
-#include "klign.hpp"
+#include "kmer.hpp"
+#include "contigs.hpp"
+#include "alignments.hpp"
+#include "kmer_dht.hpp"
 
 using namespace std;
 using namespace upcxx;
 
 unsigned int Kmer::k = 0;
+
+// Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
+void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom, int min_depth_cutoff,
+                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
+void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
+                     int max_ctg_cache, Contigs &ctgs, Alns *alns);
+void run_scaffolding(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -59,6 +69,7 @@ int main(int argc, char **argv) {
   merge_reads(options->reads_fname_list, options->qual_offset);
 
   Contigs ctgs;
+  int max_kmer_len = options->kmer_lens.back();
   for (auto kmer_len : options->kmer_lens) {
     auto loop_start_t = chrono::high_resolution_clock::now();
     SOUT(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
@@ -75,7 +86,12 @@ int main(int argc, char **argv) {
       // FIXME: dump as single file if checkpoint option is specified
       ctgs.dump_contigs("uutigs", kmer_len);
     }
-    find_alignments(kmer_len, CONTIG_SEED_SPACE, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs);
+    {
+      Alns alns;
+      find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
+                      ctgs, &alns);
+      run_scaffolding(max_kmer_len, kmer_len, options->reads_fname_list, ctgs, alns);
+    }
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
@@ -89,7 +105,8 @@ int main(int argc, char **argv) {
        " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");
   
   chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
-  SOUT("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), "\n"); 
+  SOUT("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
+       " for MHM version ", MHM_VERSION, "\n"); 
   barrier();
 
 #ifdef DEBUG

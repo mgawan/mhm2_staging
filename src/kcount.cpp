@@ -10,11 +10,10 @@
 #include <upcxx/upcxx.hpp>
 
 #include "utils.hpp"
-#include "kcount.hpp"
 #include "progressbar.hpp"
 #include "kmer_dht.hpp"
 #include "fastq.hpp"
-
+#include "contigs.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -24,7 +23,7 @@ using namespace upcxx;
 
 extern ofstream _dbgstream;
 
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> reads_fname_list) {
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list) {
   Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -71,7 +70,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> reads_fname_list) 
   return my_num_kmers;
 }
 
-static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> reads_fname_list, dist_object<KmerDHT> &kmer_dht,
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, dist_object<KmerDHT> &kmer_dht,
                         PASS_TYPE pass_type) {
   Timer timer(__func__);
   int64_t num_reads = 0;
@@ -202,7 +201,7 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
   SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
 }
 
-void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> reads_fname_list, bool use_bloom, int min_depth_cutoff,
+void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom, int min_depth_cutoff,
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__func__);
   

@@ -6,6 +6,7 @@
 #include <upcxx/upcxx.hpp>
 
 #include "zstr.hpp"
+#include "progressbar.hpp"
 
 using std::vector;
 using std::string;

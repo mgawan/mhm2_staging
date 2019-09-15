@@ -1,6 +1,9 @@
 #ifndef _FASTQ_H
 #define _FASTQ_H
 
+#include <iostream>
+#include <unistd.h>
+#include <fcntl.h>
 #include <zlib.h>
 #include <upcxx/upcxx.hpp>
 
@@ -34,8 +37,10 @@ class FastqReader {
     s.resize(pos + 1);
   }
 
-  bool get_fq_name(string header) {
+  bool get_fq_name(string &header) {
     if (header[0] != '@') return false;
+    // trim off '@'
+    header.erase(0, 1);
     // convert if new illumina 2 format  or HudsonAlpha format
     int len = header.length();
     if (header[len - 2] != '/') {
@@ -74,7 +79,6 @@ class FastqReader {
         header.resize(end_pos + 2);
       }
     }
-    assert(header[0] == '@');
     return true;
   }
   

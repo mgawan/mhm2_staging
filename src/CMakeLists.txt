@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 project(MHM)
 
+message("Building ${CMAKE_BUILD_TYPE} version")
+
 find_package(ZLIB 1.2.3 REQUIRED)
 include_directories(BEFORE ${ZLIB_INCLUDE_DIRECTORIES})
 get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
@@ -18,7 +20,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 add_definitions(-DMAX_KMER_LEN=128)
 add_definitions(-DQUAL_CUTOFF=20)
 add_definitions(-DMAX_KMER_MAPPINGS=10)
-add_definitions(-DCONTIG_SEED_SPACE=8)
 add_definitions(-DBLOOM_FP=0.05)
 add_definitions(-DMAX_FILE_PATH=255)
 add_definitions(-DMAX_RANKS_PER_DIR=1024)
@@ -27,7 +28,6 @@ add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
 add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
 add_definitions(-DUSE_COLORS)
 add_definitions(-DUSE_BYTELL)
-add_definitions(-DWRITE_ALNS)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)
@@ -49,7 +49,8 @@ include_directories("${CMAKE_SOURCE_DIR}/../include")
 
 add_subdirectory(ssw)
 
-add_executable(mhm main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp)
+add_executable(mhm
+    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp)# walk_ctg_graph.cpp)
 
 target_link_libraries(mhm SSW_LIBRARY)
 target_link_libraries(mhm ${ZLIB_LIBRARIES})

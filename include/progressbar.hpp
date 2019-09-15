@@ -113,7 +113,8 @@ public:
     double av_time = tot_time / upcxx::rank_n();
     if (!upcxx::rank_me()) {
       std::cout << std::setprecision(2) << std::fixed;
-      std::cout << "  Average " << av_time << " max " << max_time << " (balance " <<  (max_time == 0.0 ? 1.0 : (av_time / max_time)) << ")"<< KNORM << std::endl;
+      std::cout << "  Average " << av_time << " max " << max_time << " (balance " <<  (max_time == 0.0 ? 1.0 : (av_time / max_time))
+                << ")"<< KNORM << std::endl;
     }
   }
   

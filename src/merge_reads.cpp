@@ -282,8 +282,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
                        
         is_merged = true;
         num_merged++;
-        out_buf << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
-        out_buf << id2 << "\nN\n+\n" << (char)qual_offset << "\n";
+        out_buf << '@' << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
+        out_buf << '@' << id2 << "\nN\n+\n" << (char)qual_offset << "\n";
         int read_len = seq1.length(); // caculate new merged length
         if (max_read_len < read_len) max_read_len = read_len;
         merged_len += read_len;
@@ -291,8 +291,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
       }
       if (!is_merged) {
         // undo the revcomp
-        out_buf << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
-        out_buf << id2 << "\n" << seq2 << "\n+\n" << quals2 << "\n";
+        out_buf << '@' << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
+        out_buf << '@' << id2 << "\n" << seq2 << "\n+\n" << quals2 << "\n";
       }
       if (!(num_pairs % 1000)) {
         out_file << out_buf.str();

@@ -12,8 +12,7 @@
 #include "utils.hpp"
 #include "progressbar.hpp"
 #include "kmer_dht.hpp"
-#include "dbjg_traversal.hpp"
-
+#include "contigs.hpp"
 
 //#define DBG_TRAVERSE DBG
 #define DBG_TRAVERSE(...)

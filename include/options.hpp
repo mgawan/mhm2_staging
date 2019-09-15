@@ -7,7 +7,7 @@
 #include <upcxx/upcxx.hpp>
 
 #include "utils.hpp"
-#include "argh.h"
+#include "argh.hpp"
 
 using std::cout;
 using std::endl;
@@ -42,6 +42,7 @@ public:
   bool use_bloom = false;
   double dynamic_min_depth = 0.9;
   int min_depth_cutoff = 2;
+  int seed_space = 8;
   
   void load(int argc, char **argv) {
     string usage = string(argv[0]) + "\n" +
@@ -54,6 +55,7 @@ public:
       "-b    usebloom        Use bloom filter to reduce memory at the increase of runtime\n" +
       "-d    mindepthcutoff  Min. allowable depth\n" +
       "-D    dynamicmindepth Dynamic min depth setting\n" +
+      "-S    seedspace       Aligner seed space\n" +
       "-v                    Verbose mode\n" + 
       "-h                    Display help message\n";
 
@@ -86,6 +88,7 @@ public:
     args("-C") >> max_ctg_cache;
     args("-d") >> min_depth_cutoff;
     args("-D") >> dynamic_min_depth;
+    args("-S") >> seed_space;
     if (args["-b"]) use_bloom = true;
     if (args["-v"]) verbose = true;
     
@@ -105,6 +108,7 @@ public:
       cout << "  (-C) max ctg cache:         " << max_ctg_cache << endl;
       cout << "  (-d) min depth cutoff:      " << min_depth_cutoff << endl;
       cout << "  (-D) dynamic min depth:     " << dynamic_min_depth << endl;
+      cout << "  (-S) aligner seed space:    " << seed_space << endl;
       cout << "  (-b) use bloom:             " << use_bloom << endl;
       cout << "  (-v) verbose:               " << (verbose ? "YES" : "NO") << endl;
       cout << "_________________________\n" << KNORM;
