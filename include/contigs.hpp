@@ -11,10 +11,12 @@
 using std::vector;
 using std::string;
 using std::endl;
+using std::max;
 
 using upcxx::rank_me;
 using upcxx::reduce_one;
 using upcxx::op_fast_add;
+using upcxx::op_fast_max;
 using upcxx::barrier;
 
 
@@ -128,7 +130,51 @@ public:
     SOUT("Processed a total of ", all_num_ctgs, " contigs\n");
     barrier();
   }
+
+  void print_stats() {
+    int64_t tot_len = 0, max_len = 0;
+    double tot_depth = 0;
+    int64_t len_1kbp = 0, len_5kbp = 0, len_25kbp = 0, len_50kbp = 0;
+    int64_t num_ctgs = 0;
+    int64_t num_ns = 0;
+    for (auto ctg : contigs) {
+      if (ctg.seq.size() < MIN_CTG_PRINT_LEN) continue;
+      num_ctgs++;
+      tot_len += ctg.seq.size();
+      tot_depth += ctg.depth;
+      max_len = max(max_len, static_cast<int64_t>(ctg.seq.size()));
+      if (ctg.seq.size() >= 1000) len_1kbp += ctg.seq.size();
+      if (ctg.seq.size() >= 5000) len_5kbp += ctg.seq.size();
+      if (ctg.seq.size() >= 25000) len_25kbp += ctg.seq.size();
+      if (ctg.seq.size() >= 50000) len_50kbp += ctg.seq.size();
+      num_ns += count(ctg.seq.begin(), ctg.seq.end(), 'N');
+    }
+    barrier();
+    int64_t all_num_ctgs = reduce_one(num_ctgs, op_fast_add, 0).wait();
+    int64_t all_tot_len = reduce_one(tot_len, op_fast_add, 0).wait();
+    int64_t all_max_len = reduce_one(max_len, op_fast_max, 0).wait();
+    int64_t all_len_1kbp = reduce_one(len_1kbp, op_fast_add, 0).wait();
+    int64_t all_len_5kbp = reduce_one(len_5kbp, op_fast_add, 0).wait();
+    int64_t all_len_25kbp = reduce_one(len_25kbp, op_fast_add, 0).wait();
+    int64_t all_len_50kbp = reduce_one(len_50kbp, op_fast_add, 0).wait();
+    double all_tot_depth = reduce_one(tot_depth, op_fast_add, 0).wait();
+    int64_t all_num_ns = reduce_one(num_ns, op_fast_add, 0).wait();
   
+    SOUT("Assembly statistics:\n");
+    SOUT("   (contig lengths >= ", MIN_CTG_PRINT_LEN, "):\n");
+    SOUT("    Number of contigs:       ", all_num_ctgs, "\n");
+    SOUT("    Total assembled length:  ", all_tot_len, "\n");
+    SOUT("    Average contig depth:    ", all_tot_depth / all_num_ctgs, "\n");
+    SOUT("    Number of Ns/100kbp:     ", (double)all_num_ns * 100000.0 / all_tot_len, " (", all_num_ns, ")", KNORM, "\n");
+    SOUT("\n");
+    SOUT("    Max. contig length:      ", all_max_len, "\n");
+    SOUT("    Contig lengths:\n");
+    SOUT("        > 1kbp:              ", perc_str(all_len_1kbp, all_tot_len), "\n");
+    SOUT("        > 5kbp:              ", perc_str(all_len_5kbp, all_tot_len), "\n");
+    SOUT("        > 25kbp:             ", perc_str(all_len_25kbp, all_tot_len), "\n");
+    SOUT("        > 50kbp:             ", perc_str(all_len_50kbp, all_tot_len), "\n");
+  }
+
 };
  
 #endif

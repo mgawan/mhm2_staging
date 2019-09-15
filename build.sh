@@ -2,16 +2,19 @@
 
 set -e
 
-cd `pwd`/src/build
+srcdir=`pwd`/src
+echo $srcdir
+
+cd `pwd`/build
 
 if [ "$2" == "clean" ] || [ "$1" == "clean" ]; then
-    cmake --build . --target clean
+    cmake --build $srcdir --target clean
 fi
 
 if [ "$1" == "Debug" ]; then
-    cmake . -DCMAKE_BUILD_TYPE=Debug
+    cmake $srcdir -DCMAKE_BUILD_TYPE=Debug
 elif [ "$1" == "Release" ]; then
-    cmake . -DCMAKE_BUILD_TYPE=Release
+    cmake $srdir -DCMAKE_BUILD_TYPE=Release
 fi
 
 make -j

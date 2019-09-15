@@ -50,10 +50,10 @@ struct AlnStats {
 static CtgGraph *_graph = nullptr;
 
 
-static void add_vertices_from_ctgs(Contigs &ctgs) {
+static void add_vertices_from_ctgs(Contigs *ctgs) {
   Timer timer(__func__);
-  ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
-  for (auto ctg : ctgs) {
+  ProgressBar progbar(ctgs->size(), "Adding contig vertices to graph");
+  for (auto ctg : *ctgs) {
     Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
     _graph->add_vertex(v, ctg.seq);
     progbar.update();
@@ -702,7 +702,7 @@ static void merge_nbs()
 }
 
 
-void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns) {
+void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
   Timer timer(__func__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);

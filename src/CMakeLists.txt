@@ -28,6 +28,8 @@ add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
 add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
 add_definitions(-DUSE_COLORS)
 add_definitions(-DUSE_BYTELL)
+add_definitions(-DMIN_CTG_PRINT_LEN=500)
+
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)
@@ -50,7 +52,7 @@ include_directories("${CMAKE_SOURCE_DIR}/../include")
 add_subdirectory(ssw)
 
 add_executable(mhm
-    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp)# walk_ctg_graph.cpp)
+    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp)
 
 target_link_libraries(mhm SSW_LIBRARY)
 target_link_libraries(mhm ${ZLIB_LIBRARIES})

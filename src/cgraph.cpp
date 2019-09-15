@@ -20,19 +20,22 @@ using namespace std;
 using namespace upcxx;
 
 
-void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns);
-//void walk_graph(Options *options, shared_ptr<CtgGraph> graph);
+void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns);
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds, Contigs *ctgs);
 
 
-void run_scaffolding(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns) {
+void run_scaffolding(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
   Timer timer(__func__);
   CtgGraph graph;
   build_ctg_graph(&graph, max_kmer_len, kmer_len, reads_fname_list, ctgs, alns);
   barrier();
+  ctgs->clear();
   string graph_fname;
   graph.print_stats();
   barrier();
-  //walk_graph(&options, graph);
+  int min_ctg_len = 300;
+  bool break_scaffolds = false;
+  walk_graph(&graph, max_kmer_len, kmer_len, min_ctg_len, break_scaffolds, ctgs);
   barrier();
 }
 

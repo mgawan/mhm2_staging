@@ -38,7 +38,7 @@ void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns);
-void run_scaffolding(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns);
+void run_scaffolding(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -83,14 +83,20 @@ int main(int argc, char **argv) {
                     options->dynamic_min_depth, ctgs, kmer_dht);
       barrier();
       traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+#ifdef DEBUG
       // FIXME: dump as single file if checkpoint option is specified
       ctgs.dump_contigs("uutigs", kmer_len);
+#endif
     }
     {
       Alns alns;
       find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
-      run_scaffolding(max_kmer_len, kmer_len, options->reads_fname_list, ctgs, alns);
+      run_scaffolding(max_kmer_len, kmer_len, options->reads_fname_list, &ctgs, alns);
+      // FIXME: dump as single file if checkpoint option is specified
+      ctgs.dump_contigs("contigs", kmer_len);
+      SOUT(KBLUE "_________________________\n\n", KNORM);
+      ctgs.print_stats();
     }
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
