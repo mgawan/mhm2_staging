@@ -91,71 +91,7 @@ struct GapStats {
 };
 
 
-/*
-static void write_assembly(const vector<Scaffold> &scaffs, const string &fname, int max_clen, int min_clen) {
-  Timer timer(__func__);
-  string tmpfname = fname + ".tmp"; // make a .tmp file and rename on success
-  string fasta = "";
-  for (auto &scaff : scaffs) {
-    if (scaff.seq.size() > max_clen || scaff.seq.size() < min_clen) continue;
-    fasta += ">Scaffold" + to_string(scaff.id) + "-" + to_string(scaff.seq.length()) + "\n";
-    for (int64_t i = 0; i < scaff.seq.length(); i += 50) fasta += scaff.seq.substr(i, 50) + "\n";
-  }
-  auto sz = fasta.size();
-  atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-  global_ptr<size_t> fpos = nullptr;
-  if (!rank_me()) fpos = new_<size_t>(0);
-  fpos = broadcast(fpos, 0).wait();
-  size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
-  // wait until all ranks have updated the global counter
-  barrier();
-  int bytes_written = 0;
-  int fileno = -1;
-  size_t fsize = 0;
-  if (!rank_me()) {
-    fsize = ad.load(fpos, memory_order_relaxed).wait();
-    // rank 0 creates the file and truncates it to the correct length
-    fileno = open(tmpfname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
-    if (fileno == -1) WARN("Error trying to create file ", tmpfname, ": ", strerror(errno), "\n");
-    if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", tmpfname, " to ", fsize, " bytes\n");
-  }
-  barrier();
-  ad.destroy();
-  // wait until rank 0 has finished setting up the file
-  if (rank_me()) fileno = open(tmpfname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
-  if (fileno == -1) WARN("Error trying to open file ", tmpfname, ": ", strerror(errno), "\n");
-  bytes_written = pwrite(fileno, fasta.c_str(), sz, my_fpos);
-  close(fileno);
-
-  if (bytes_written != sz)
-    DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
-  barrier();
-  if (rank_me() == 0) {
-    if (rename(tmpfname.c_str(), fname.c_str()) != 0)
-       SDIE("Could not rename ", tmpfname, " to ", fname);
-    SOUT("Successfully wrote ", fsize, " bytes to ", fname, "\n");
-  }
-}
-
-
-static void write_assembly_per_rank(const vector<Scaffold> &scaffs, const string &fname) {
-  Timer timer(__func__);
-  string fasta = "";
-  for (auto &scaff : scaffs) {
-    fasta += ">Contig_" + to_string(scaff.id) + "\n";
-    fasta += scaff.seq + "\n";
-    depths += "Contig" + to_string(scaff.id) + "\t" + to_string(scaff.seq.length()) + "\t" + to_string(scaff.depth) + "\n";
-  }
-  string rank_path_fname = string(_options->cached_io ? "/dev/shm/" : "") + fname + ".fasta.gz";
-  get_rank_path(rank_path_fname, upcxx::rank_me());
-  zstr::ofstream f(rank_path_fname);
-  f.write(fasta.c_str(), fasta.size());
-}
-
-
-*/
-
-static void walks_to_ctgs(int max_kmer_len, int kmer_len, bool break_scaffolds, vector<Walk> &walks, Contigs *ctgs) {
+static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, bool break_scaffolds, vector<Walk> &walks, Contigs *ctgs) {
   Timer timer(__func__);
 
   int num_break_scaffs = 0;
@@ -822,7 +758,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
          tot_unvisited_len, "\n");
   walk_stats.print();
 
-  walks_to_ctgs(max_kmer_len, kmer_len, break_scaffolds, walks, ctgs);
+  get_ctgs_from_walks(max_kmer_len, kmer_len, break_scaffolds, walks, ctgs);
+  
   /*
   if (_options->out_dirname != "") {
     write_assembly(scaffs, "/final_assembly.fa", INT_MAX, 200);

@@ -84,8 +84,7 @@ int main(int argc, char **argv) {
       barrier();
       traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
-      // FIXME: dump as single file if checkpoint option is specified
-      ctgs.dump_contigs("uutigs", kmer_len);
+      ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
     }
     {
@@ -93,10 +92,10 @@ int main(int argc, char **argv) {
       find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
       run_scaffolding(max_kmer_len, kmer_len, options->reads_fname_list, &ctgs, alns);
-      // FIXME: dump as single file if checkpoint option is specified
-      ctgs.dump_contigs("contigs", kmer_len);
+      // FIXME: dump all contigs if checkpoint option specified
+      ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SOUT(KBLUE "_________________________\n\n", KNORM);
-      ctgs.print_stats();
+      ctgs.print_stats(MIN_CTG_PRINT_LEN);
     }
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
@@ -106,6 +105,9 @@ int main(int argc, char **argv) {
   }
   SOUT(KBLUE "_________________________\nScaffolding\n\n", KNORM);
   SOUT(KBLUE "_________________________\n\n", KNORM);
+
+  ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
+  
   double end_mem_free = get_free_mem_gb();
   SOUT("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
        " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");

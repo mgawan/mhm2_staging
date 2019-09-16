@@ -4,6 +4,9 @@
 #include <iostream>
 #include <vector>
 #include <upcxx/upcxx.hpp>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "zstr.hpp"
 #include "progressbar.hpp"
@@ -12,13 +15,18 @@ using std::vector;
 using std::string;
 using std::endl;
 using std::max;
+using std::memory_order_relaxed;
 
 using upcxx::rank_me;
+using upcxx::rank_n;
 using upcxx::reduce_one;
 using upcxx::op_fast_add;
 using upcxx::op_fast_max;
 using upcxx::barrier;
-
+using upcxx::atomic_domain;
+using upcxx::atomic_op;
+using upcxx::global_ptr;
+using upcxx::new_;
 
 struct Contig {
   int64_t id;
@@ -55,6 +63,7 @@ public:
     return contigs.end();
   }
 
+  /*
   string dump_contigs(string fname, unsigned kmer_len) {
     fname += "-" + to_string(kmer_len) + ".fasta.gz";
     get_rank_path(fname, rank_me());
@@ -66,7 +75,7 @@ public:
       int64_t i = 0;
       for (auto it = contigs.begin(); it != contigs.end(); ++it) {
         auto uutig = it;
-        out_buf << ">Contig" << uutig->id << " " << (uutig->seq.length() - kmer_len + 1) << " " << uutig->depth << endl;
+        out_buf << ">Contig" << uutig->id << " " << << uutig->depth << endl;
         string rc_uutig = revcomp(uutig->seq);
         if (rc_uutig < uutig->seq) uutig->seq = rc_uutig;
         // fold output
@@ -92,7 +101,9 @@ public:
     barrier();
     return fname;
   }
-
+  */
+  /*
+  //FIXME: this should be a read from a single file
   void load_contigs(string ctgs_fname) {
     string cname, seq, buf;
     size_t bytes_read = 0;
@@ -130,15 +141,18 @@ public:
     SOUT("Processed a total of ", all_num_ctgs, " contigs\n");
     barrier();
   }
-
-  void print_stats() {
+  */
+  
+  void print_stats(int min_ctg_len) {
     int64_t tot_len = 0, max_len = 0;
     double tot_depth = 0;
     int64_t len_1kbp = 0, len_5kbp = 0, len_25kbp = 0, len_50kbp = 0;
     int64_t num_ctgs = 0;
     int64_t num_ns = 0;
+    vector<int> lens;
+    lens.reserve(contigs.size());
     for (auto ctg : contigs) {
-      if (ctg.seq.size() < MIN_CTG_PRINT_LEN) continue;
+      if (ctg.seq.size() < min_ctg_len) continue;
       num_ctgs++;
       tot_len += ctg.seq.size();
       tot_depth += ctg.depth;
@@ -148,6 +162,19 @@ public:
       if (ctg.seq.size() >= 25000) len_25kbp += ctg.seq.size();
       if (ctg.seq.size() >= 50000) len_50kbp += ctg.seq.size();
       num_ns += count(ctg.seq.begin(), ctg.seq.end(), 'N');
+      lens.push_back(ctg.seq.size());
+    }
+    // Compute local N50 and then take the median across all of them. This gives a very good approx of the exact N50 and is much
+    // cheaper to compute
+    sort(lens.rbegin(), lens.rend());
+    int64_t sum_lens = 0;
+    int64_t n50 = 0;
+    for (auto l : lens) {
+      sum_lens += l;
+      if (sum_lens >= tot_len / 2) {
+        n50 = l;
+        break;
+      }
     }
     barrier();
     int64_t all_num_ctgs = reduce_one(num_ctgs, op_fast_add, 0).wait();
@@ -159,9 +186,10 @@ public:
     int64_t all_len_50kbp = reduce_one(len_50kbp, op_fast_add, 0).wait();
     double all_tot_depth = reduce_one(tot_depth, op_fast_add, 0).wait();
     int64_t all_num_ns = reduce_one(num_ns, op_fast_add, 0).wait();
+    int64_t all_n50s = reduce_one(n50, op_fast_add, 0).wait();
   
     SOUT("Assembly statistics:\n");
-    SOUT("   (contig lengths >= ", MIN_CTG_PRINT_LEN, "):\n");
+    SOUT("   (contig lengths >= ", min_ctg_len, "):\n");
     SOUT("    Number of contigs:       ", all_num_ctgs, "\n");
     SOUT("    Total assembled length:  ", all_tot_len, "\n");
     SOUT("    Average contig depth:    ", all_tot_depth / all_num_ctgs, "\n");
@@ -173,8 +201,57 @@ public:
     SOUT("        > 5kbp:              ", perc_str(all_len_5kbp, all_tot_len), "\n");
     SOUT("        > 25kbp:             ", perc_str(all_len_25kbp, all_tot_len), "\n");
     SOUT("        > 50kbp:             ", perc_str(all_len_50kbp, all_tot_len), "\n");
+    // FIXME: need to this to be the median, not average - median is much more reliable
+    SOUT("    Approx N50:              ", all_n50s / rank_n(), " (rank 0 only ", n50, ")\n");
   }
 
+  void dump_contigs(const string &fname, int min_ctg_len) {
+    Timer timer(__func__);
+    string tmpfname = fname + ".tmp"; // make a .tmp file and rename on success
+    string fasta = "";
+    for (auto it = contigs.begin(); it != contigs.end(); ++it) {
+      auto ctg = it;
+      if (ctg->seq.length() < min_ctg_len) continue;
+      fasta += ">Contig" + to_string(ctg->id) + " " + to_string(ctg->depth) + "\n";
+      for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
+    }
+    auto sz = fasta.size();
+    atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
+    global_ptr<size_t> fpos = nullptr;
+    if (!rank_me()) fpos = new_<size_t>(0);
+    fpos = broadcast(fpos, 0).wait();
+    size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
+    // wait until all ranks have updated the global counter
+    barrier();
+    int bytes_written = 0;
+    int fileno = -1;
+    size_t fsize = 0;
+    if (!rank_me()) {
+      fsize = ad.load(fpos, memory_order_relaxed).wait();
+      // rank 0 creates the file and truncates it to the correct length
+      fileno = open(tmpfname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+      if (fileno == -1) WARN("Error trying to create file ", tmpfname, ": ", strerror(errno), "\n");
+      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", tmpfname, " to ", fsize, " bytes\n");
+    }
+    barrier();
+    ad.destroy();
+    // wait until rank 0 has finished setting up the file
+    if (rank_me()) fileno = open(tmpfname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+    if (fileno == -1) WARN("Error trying to open file ", tmpfname, ": ", strerror(errno), "\n");
+    bytes_written = pwrite(fileno, fasta.c_str(), sz, my_fpos);
+    close(fileno);
+
+    if (bytes_written != sz)
+      DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
+    barrier();
+    if (rank_me() == 0) {
+      string new_fname = fname + ".fasta";
+      if (rename(tmpfname.c_str(), new_fname.c_str()) != 0)
+        SDIE("Could not rename ", tmpfname, " to ", new_fname);
+      SOUT("Successfully wrote ", fsize, " bytes to ", new_fname, "\n");
+    }
+  }
+  
 };
  
 #endif
