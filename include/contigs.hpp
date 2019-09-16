@@ -213,6 +213,8 @@ public:
       auto ctg = it;
       if (ctg->seq.length() < min_ctg_len) continue;
       fasta += ">Contig" + to_string(ctg->id) + " " + to_string(ctg->depth) + "\n";
+      string rc_uutig = revcomp(ctg->seq);
+      if (rc_uutig < ctg->seq) ctg->seq = rc_uutig;
       for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
     }
     auto sz = fasta.size();
