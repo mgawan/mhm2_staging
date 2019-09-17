@@ -39,7 +39,7 @@ public:
     , bar_width{width}
     , complete_char{complete}
     , incomplete_char{incomplete} {
-      
+#ifdef USE_PROGBAR      
       if (!upcxx::rank_me()) {
         ten_perc = total / 10;
         if (ten_perc == 0) ten_perc = 1;
@@ -48,6 +48,7 @@ public:
         //std::cout << std::endl;
         prev_time = start_time;
       }
+#endif
     }
 
   ProgressBar(const string &fname, std::istream *infile, string prefix = "", int pwidth = 20, int width = 50, 
@@ -59,7 +60,7 @@ public:
     , bar_width{width}
     , complete_char{complete}
     , incomplete_char{incomplete} {
-      
+#ifdef USE_PROGBAR      
       if (!upcxx::rank_me()) {
         /*
         struct stat stat_buf;
@@ -80,6 +81,7 @@ public:
         //std::cout << std::endl;
         prev_time = start_time;
       }
+#endif
   }
 
   ~ProgressBar() {
@@ -87,6 +89,7 @@ public:
   }
   
   void display(bool is_last = false) {
+#ifdef USE_PROGBAR      
     if (upcxx::rank_me()) return;
     if (total_ticks == 0) return;
     float progress = (float) ticks / total_ticks;
@@ -101,9 +104,11 @@ public:
     std::cout << "  " << int(progress * 100.0) << "% " << (float(time_elapsed) / 1000.0) << "s " 
               << (float(time_delta) / 1000.0) << "s " << std::flush << std::endl;
     prev_time = now;
+#endif    
   }
 
   void done() {
+#ifdef USE_PROGBAR
     //display(true);
     std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
@@ -116,11 +121,12 @@ public:
       std::cout << "  Average " << av_time << " max " << max_time << " (balance " <<  (max_time == 0.0 ? 1.0 : (av_time / max_time))
                 << ")"<< KNORM << std::endl;
     }
+#endif
   }
   
   bool update(int64_t new_ticks = -1) {
+#ifdef USE_PROGBAR
     if (total_ticks == 0) return false;
-//#ifdef CONFIG_SHOW_PROGRESS
     if (new_ticks != -1) ticks = new_ticks;
     else if (infile) ticks = infile->tellg();
     else ticks++;
@@ -129,7 +135,7 @@ public:
       prev_ticks = ticks;
       return true;
     }
-//#endif
+#endif
     return false;
   }
 

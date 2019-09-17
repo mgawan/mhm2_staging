@@ -105,13 +105,14 @@ public:
     if (max_rpcs_in_flight * per_rpc_bytes > max_inflight_bytes) 
       max_rpcs_in_flight = max_inflight_bytes / per_rpc_bytes + 1;
     size_t max_target_buf = max_store_size * sizeof(T);
-    SOUT(desc, ": using an aggregating store for each rank of max ", get_size_str(max_store_bytes / rank_n()), " per target rank\n");
-    SOUT("  - buffers: max ", max_store_size, " entries of ", get_size_str(sizeof(T)),
+    SLOG_VERBOSE(desc, ": using an aggregating store for each rank of max ", get_size_str(max_store_bytes / rank_n()),
+                 " per target rank\n");
+    SLOG_VERBOSE("  - buffers: max ", max_store_size, " entries of ", get_size_str(sizeof(T)),
          " per target rank (", get_size_str(max_target_buf), ")\n");
-    SOUT("  - buffers: max over all target ranks ", get_size_str(max_target_buf * rank_n()), "\n");
-    SOUT("  - RPCs in flight: max ", max_rpcs_in_flight, " RPCs of ", get_size_str(per_rpc_bytes),
+    SLOG_VERBOSE("  - buffers: max over all target ranks ", get_size_str(max_target_buf * rank_n()), "\n");
+    SLOG_VERBOSE("  - RPCs in flight: max ", max_rpcs_in_flight, " RPCs of ", get_size_str(per_rpc_bytes),
          " max per RPC (", get_size_str(max_rpcs_in_flight * per_rpc_bytes), ")\n");
-    SOUT("  - max possible memory: ", get_size_str(max_target_buf * rank_n() + per_rpc_bytes * max_rpcs_in_flight), "\n");
+    SLOG_VERBOSE("  - max possible memory: ", get_size_str(max_target_buf * rank_n() + per_rpc_bytes * max_rpcs_in_flight), "\n");
     barrier();
   }
 

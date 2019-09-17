@@ -161,7 +161,7 @@ class KmerDHT {
         auto prev_bucket_count = kmers->bucket_count();
         kmers->insert({new_kmer, kmer_counts});
         if (prev_bucket_count < kmers->bucket_count())
-          SOUT("*** Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count(), "***\n");
+          SWARN("*** Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count(), "***\n");
         DBG_INSERT_KMER("inserted kmer ", new_kmer.to_string(), " with count ", kmer_counts.count, "\n");
       } else {
         auto kmer = &it->second;
@@ -337,7 +337,7 @@ public:
       double init_mem_free = get_free_mem_gb();
       bloom_filter1->init(cardinality, BLOOM_FP);
       bloom_filter2->init(cardinality/4, BLOOM_FP); // second bloom will have far fewer entries - assume 75% are filtered out
-      SOUT("Bloom filters used ", (init_mem_free - get_free_mem_gb()), "GB memory on node 0\n");
+      SLOG_VERBOSE("Bloom filters used ", (init_mem_free - get_free_mem_gb()), "GB memory on node 0\n");
     } else {
       double init_mem_free = get_free_mem_gb();
       barrier();
@@ -347,8 +347,8 @@ public:
       initial_kmer_dht_reservation = cardinality;    
       kmers->reserve(cardinality);
       double kmers_space_reserved = cardinality * (sizeof(Kmer) + sizeof(KmerCounts));
-      SOUT("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ", cardinality, " entries (",
-           kmers->bucket_count(), " buckets)\n");
+      SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
+                   cardinality, " entries (", kmers->bucket_count(), " buckets)\n");
       barrier();
     }
     start_t = std::chrono::high_resolution_clock::now();
@@ -378,7 +378,7 @@ public:
   float load_factor() {
     int64_t cardinality = initial_kmer_dht_reservation * rank_n();
     int64_t num_kmers = get_num_kmers();
-    SOUT("Originally reserved ", cardinality, " and now have ", num_kmers, " elements\n");
+    SLOG_VERBOSE("Originally reserved ", cardinality, " and now have ", num_kmers, " elements\n");
     return reduce_one(kmers->load_factor(), op_fast_add, 0).wait() / upcxx::rank_n();
   }
   
@@ -448,8 +448,8 @@ public:
     int64_t cardinality1 = bloom_filter1->estimate_num_items();
     int64_t cardinality2 = bloom_filter2->estimate_num_items();
     bloom1_cardinality = cardinality1;
-    SOUT("Rank 0: first bloom filter size estimate is ", cardinality1, " and second size estimate is ", cardinality2,
-         " ratio is ", (double)cardinality2 / cardinality1, "\n");
+    SLOG_VERBOSE("Rank 0: first bloom filter size estimate is ", cardinality1, " and second size estimate is ",
+                 cardinality2, " ratio is ", (double)cardinality2 / cardinality1, "\n");
     bloom_filter1->clear(); // no longer need it
 
     double init_mem_free = get_free_mem_gb();
@@ -457,8 +457,8 @@ public:
     initial_kmer_dht_reservation = (int64_t) (cardinality2 * (1+BLOOM_FP) * (1+BLOOM_FP) + 1000); // two bloom false positive rates applied
     kmers->reserve( initial_kmer_dht_reservation );
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer) + sizeof(KmerCounts));
-    SOUT("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ", initial_kmer_dht_reservation, " entries (",
-         kmers->bucket_count(), " buckets)\n");
+    SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
+                 initial_kmer_dht_reservation, " entries (", kmers->bucket_count(), " buckets)\n");
     barrier();
   }
 
@@ -495,7 +495,8 @@ public:
       }
     }
     auto all_num_purged = reduce_one(num_purged, op_fast_add, 0).wait();
-    SOUT("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers below frequency threshold of ", threshold, "\n");
+    SLOG_VERBOSE("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers below frequency threshold of ",
+                 threshold, "\n");
   }
 
   void purge_fx_kmers() {
@@ -512,7 +513,7 @@ public:
       }
     }
     auto all_num_purged = reduce_one(num_purged, op_fast_add, 0).wait();
-    SOUT("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers with F or X extensions\n");
+    SLOG_VERBOSE("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers with F or X extensions\n");
   }
 
   void compute_kmer_exts() {
@@ -549,7 +550,7 @@ public:
     if (!out_buf.str().empty()) dump_file << out_buf.str();
     dump_file.close();
     progbar.done();
-    SOUT("Dumped ", this->get_num_kmers(), " kmers\n");
+    SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
 
   KmerMap::const_iterator local_kmers_begin() {

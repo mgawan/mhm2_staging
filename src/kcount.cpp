@@ -22,9 +22,10 @@ using namespace upcxx;
 #define DBG_ADD_KMER(...)
 
 extern ofstream _dbgstream;
+extern ofstream _logstream;
 
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list) {
-  Timer timer(__func__);
+  Timer timer(__func__, true);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
@@ -55,23 +56,21 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
     progbar.done();
     barrier();
   }
-  //auto all_records_processed = reduce_one(total_records_processed, op_fast_add, 0).wait();
-  //SOUT("all records processed ", all_records_processed, "\n");
   double fraction = (double) total_records_processed / (double) estimated_total_records;
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads), and found ", num_kmers, " kmers\n");
   auto all_num_lines = reduce_one(num_lines / fraction, op_fast_add, 0).wait();
   auto all_num_reads = reduce_one(num_reads / fraction, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_all(num_kmers / fraction, op_fast_add).wait();
   int percent = 100.0 * fraction;
-  SOUT("Processed ", percent, " % of the estimated total of ", all_num_lines,
-       " lines (", all_num_reads, " reads), and found a maximum of ", all_num_kmers, " kmers\n");
+  SLOG_VERBOSE("Processed ", percent, " % of the estimated total of ", all_num_lines,
+               " lines (", all_num_reads, " reads), and found a maximum of ", all_num_kmers, " kmers\n");
   int my_num_kmers = all_num_kmers / rank_n();
-  SOUT("Number of kmers estimated as ", my_num_kmers, "\n");
+  SLOG("Number of kmers estimated as ", my_num_kmers, "\n");
   return my_num_kmers;
 }
 
-static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, dist_object<KmerDHT> &kmer_dht,
-                        PASS_TYPE pass_type) {
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list,
+                        dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type) {
   Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -141,8 +140,8 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto all_distinct_kmers = kmer_dht->get_num_kmers();
-  SOUT("Processed a total of ", all_num_lines, " lines (", all_num_reads, " reads)\n");
-  if (pass_type != BLOOM_SET_PASS) SOUT("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
+  SLOG_VERBOSE("Processed a total of ", all_num_lines, " lines (", all_num_reads, " reads)\n");
+  if (pass_type != BLOOM_SET_PASS) SLOG_VERBOSE("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
 }
 
 // count ctg kmers if using bloom
@@ -169,7 +168,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
-  SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
+  SLOG_VERBOSE("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
   barrier();
 }
 
@@ -197,13 +196,13 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
-  SOUT("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
-  SOUT("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
+  SLOG_VERBOSE("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
+  SLOG_VERBOSE("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
 }
 
-void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom, int min_depth_cutoff,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
-  Timer timer(__func__);
+void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
+                   int min_depth_cutoff, double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
+  Timer timer(__func__, true);
   
   _dynamic_min_depth = dynamic_min_depth;
   _min_depth_cutoff = min_depth_cutoff;
@@ -217,13 +216,13 @@ void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads
     count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, NO_BLOOM_PASS);
   }
   barrier();
-  SOUT("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
+  SLOG_VERBOSE("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
   barrier();
   //kmer_dht->write_histogram();
   //barrier();
   kmer_dht->purge_kmers(_min_depth_cutoff);
   int64_t new_count = kmer_dht->get_num_kmers();
-  SOUT("After purge of kmers <", _min_depth_cutoff, " there are ", new_count, " unique kmers\n");
+  SLOG_VERBOSE("After purge of kmers <", _min_depth_cutoff, " there are ", new_count, " unique kmers\n");
   barrier();
   if (ctgs.size()) {
     add_ctg_kmers(kmer_len, ctgs, kmer_dht, use_bloom);

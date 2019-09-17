@@ -95,7 +95,7 @@ public:
       }
       f.close();
       progbar.done();
-      SOUT("Wrote ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs to ", fname, "\n");
+      SLOG("Wrote ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs to ", fname, "\n");
       write_uncompressed_file_size(fname + ".uncompressedSize", bytes_written);
     }
     barrier();
@@ -138,7 +138,7 @@ public:
     progbar.done();
     DBG("This rank processed ", contigs.size(), " contigs\n");
     auto all_num_ctgs = reduce_one(contigs.size(), op_fast_add, 0).wait();
-    SOUT("Processed a total of ", all_num_ctgs, " contigs\n");
+    SLOG("Processed a total of ", all_num_ctgs, " contigs\n");
     barrier();
   }
   */
@@ -188,21 +188,21 @@ public:
     int64_t all_num_ns = reduce_one(num_ns, op_fast_add, 0).wait();
     int64_t all_n50s = reduce_one(n50, op_fast_add, 0).wait();
   
-    SOUT("Assembly statistics:\n");
-    SOUT("   (contig lengths >= ", min_ctg_len, "):\n");
-    SOUT("    Number of contigs:       ", all_num_ctgs, "\n");
-    SOUT("    Total assembled length:  ", all_tot_len, "\n");
-    SOUT("    Average contig depth:    ", all_tot_depth / all_num_ctgs, "\n");
-    SOUT("    Number of Ns/100kbp:     ", (double)all_num_ns * 100000.0 / all_tot_len, " (", all_num_ns, ")", KNORM, "\n");
-    SOUT("\n");
-    SOUT("    Max. contig length:      ", all_max_len, "\n");
-    SOUT("    Contig lengths:\n");
-    SOUT("        > 1kbp:              ", perc_str(all_len_1kbp, all_tot_len), "\n");
-    SOUT("        > 5kbp:              ", perc_str(all_len_5kbp, all_tot_len), "\n");
-    SOUT("        > 25kbp:             ", perc_str(all_len_25kbp, all_tot_len), "\n");
-    SOUT("        > 50kbp:             ", perc_str(all_len_50kbp, all_tot_len), "\n");
+    SLOG("Assembly statistics:\n");
+    SLOG("   (contig lengths >= ", min_ctg_len, "):\n");
+    SLOG("    Number of contigs:       ", all_num_ctgs, "\n");
+    SLOG("    Total assembled length:  ", all_tot_len, "\n");
+    SLOG("    Average contig depth:    ", all_tot_depth / all_num_ctgs, "\n");
+    SLOG("    Number of Ns/100kbp:     ", (double)all_num_ns * 100000.0 / all_tot_len, " (", all_num_ns, ")", KNORM, "\n");
+    SLOG("\n");
+    SLOG("    Max. contig length:      ", all_max_len, "\n");
+    SLOG("    Contig lengths:\n");
+    SLOG("        > 1kbp:              ", perc_str(all_len_1kbp, all_tot_len), "\n");
+    SLOG("        > 5kbp:              ", perc_str(all_len_5kbp, all_tot_len), "\n");
+    SLOG("        > 25kbp:             ", perc_str(all_len_25kbp, all_tot_len), "\n");
+    SLOG("        > 50kbp:             ", perc_str(all_len_50kbp, all_tot_len), "\n");
     // FIXME: need to this to be the median, not average - median is much more reliable
-    SOUT("    Approx N50:              ", all_n50s / rank_n(), " (rank 0 only ", n50, ")\n");
+    SLOG("    Approx N50:              ", all_n50s / rank_n(), " (rank 0 only ", n50, ")\n");
   }
 
   void dump_contigs(const string &fname, int min_ctg_len) {
@@ -214,7 +214,7 @@ public:
       if (ctg->seq.length() < min_ctg_len) continue;
       fasta += ">Contig" + to_string(ctg->id) + " " + to_string(ctg->depth) + "\n";
       string rc_uutig = revcomp(ctg->seq);
-      if (rc_uutig < ctg->seq) ctg->seq = rc_uutig;
+      string seq = (rc_uutig < ctg->seq ? rc_uutig : ctg->seq);
       for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
     }
     auto sz = fasta.size();
@@ -250,7 +250,7 @@ public:
       string new_fname = fname + ".fasta";
       if (rename(tmpfname.c_str(), new_fname.c_str()) != 0)
         SDIE("Could not rename ", tmpfname, " to ", new_fname);
-      SOUT("Successfully wrote ", fsize, " bytes to ", new_fname, "\n");
+      SLOG_VERBOSE("Successfully wrote ", fsize, " bytes to ", new_fname, "\n");
     }
   }
   

@@ -297,7 +297,7 @@ public:
     if (!out_buf.str().empty()) dump_file << out_buf.str();
     dump_file.close();
     progbar.done();
-    SOUT("Dumped ", this->get_num_kmers(), " kmers\n");
+    SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
 
   future<> compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, const string &rseq) {
@@ -388,11 +388,11 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
   barrier();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
-  SOUT("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
+  SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
   auto num_dropped = kmer_ctg_dht.get_num_dropped();
   if (num_dropped) {
-    SOUT("Dropped ", num_dropped, " seed-to-contig mappings (", 
-         setprecision(2), fixed, (100.0 * num_dropped / tot_num_kmers), "%)\n");
+    SLOG_VERBOSE("Dropped ", num_dropped, " seed-to-contig mappings (", 
+                 setprecision(2), fixed, (100.0 * num_dropped / tot_num_kmers), "%)\n");
   }
 }
 
@@ -463,28 +463,29 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
     barrier();
   }
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  SOUT("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds\n");
+  SLOG_VERBOSE("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds\n");
   auto tot_num_alns = kmer_ctg_dht->get_num_alns();
-  SOUT("Found ", tot_num_alns, " alignments, of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), tot_num_alns),
-       " are perfect\n");
+  SLOG_VERBOSE("Found ", tot_num_alns, " alignments, of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), tot_num_alns),
+               " are perfect\n");
   auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
-  SOUT("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
-  SOUT("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
+  SLOG("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
+  SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
 
-  SOUT("Ctg cache hits ", perc_str(kmer_ctg_dht->get_ctg_seq_cache_hits(), tot_num_alns), "\n");
-  SOUT("Fetched ", get_size_str(kmer_ctg_dht->get_ctg_seq_bytes_fetched()), " of contig sequences\n");
+  SLOG_VERBOSE("Ctg cache hits ", perc_str(kmer_ctg_dht->get_ctg_seq_cache_hits(), tot_num_alns), "\n");
+  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht->get_ctg_seq_bytes_fetched()), " of contig sequences\n");
   
   double av_ssw_secs = kmer_ctg_dht->get_av_ssw_secs();
   double max_ssw_secs = kmer_ctg_dht->get_max_ssw_secs();
-  SOUT("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
-       "max ", setprecision(2), fixed, max_ssw_secs, " s, ",
-       "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
+  SLOG_VERBOSE("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
+               "max ", setprecision(2), fixed, max_ssw_secs, " s, ",
+               "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
 }
 
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns) {
-  Timer timer(__func__);
+  Timer timer(__func__, true);
   _num_dropped = 0;
+  SLOG("Aligning with seed length ", kmer_len, "\n");
   //_get_ctgs_dt = std::chrono::duration<double>(0);
   KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   build_alignment_index(kmer_ctg_dht, ctgs);

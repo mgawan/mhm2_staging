@@ -14,7 +14,7 @@ fi
 if [ "$1" == "Debug" ]; then
     cmake $srcdir -DCMAKE_BUILD_TYPE=Debug
 elif [ "$1" == "Release" ]; then
-    cmake $srdir -DCMAKE_BUILD_TYPE=Release
+    cmake $srcdir -DCMAKE_BUILD_TYPE=Release
 fi
 
 make -j

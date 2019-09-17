@@ -829,16 +829,16 @@ public:
       progbar.done();
     }
   
-    SOUT("Graph statistics:\n");
-    SOUT("    vertices:  ", get_num_vertices(), "\n");
-    SOUT("    edges:     ", get_num_edges(), "\n");
-    SOUT("    aln_len:   ", get_avg_min_max(aln_lens), "\n");
-    SOUT("    aln_score: ", get_avg_min_max(aln_scores), "\n");
-    SOUT("  for contigs >= ", CLEN_THRES, " length:\n");
-    SOUT("    depth:     ", get_avg_min_max(depths), "\n");
-    //SOUT("    clen:      ", get_avg_min_max(clens, av_clen), "\n");
-    SOUT("    support:   ", get_avg_min_max(supports), "\n");
-    SOUT("    gap:       ", get_avg_min_max(gaps), "\n");
+    SLOG("Graph statistics:\n");
+    SLOG("    vertices:  ", get_num_vertices(), "\n");
+    SLOG("    edges:     ", get_num_edges(), "\n");
+    SLOG("    aln_len:   ", get_avg_min_max(aln_lens), "\n");
+    SLOG("    aln_score: ", get_avg_min_max(aln_scores), "\n");
+    SLOG("  for contigs >= ", CLEN_THRES, " length:\n");
+    SLOG("    depth:     ", get_avg_min_max(depths), "\n");
+    //SLOG("    clen:      ", get_avg_min_max(clens, av_clen), "\n");
+    SLOG("    support:   ", get_avg_min_max(supports), "\n");
+    SLOG("    gap:       ", get_avg_min_max(gaps), "\n");
   }
 
 };

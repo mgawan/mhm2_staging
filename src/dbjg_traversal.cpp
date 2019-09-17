@@ -174,7 +174,7 @@ static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_pt
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
-  Timer timer(__func__);
+  Timer timer(__func__, true);
   // allocate space for biggest possible uutig in global storage
   const int MAX_UUTIG_LEN = 10000000;
   global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_LEN);
@@ -217,7 +217,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   delete_array(uutig_gptr);
   barrier();
   auto all_num_conflicts = reduce_one(num_conflicts, op_fast_add, 0).wait();
-  SOUT("Found ", perc_str(all_num_conflicts, kmer_dht->get_num_kmers()), " conflicting kmers\n");
+  SLOG_VERBOSE("Found ", perc_str(all_num_conflicts, kmer_dht->get_num_kmers()), " conflicting kmers\n");
   // put all the uutigs found by this rank into my_uutigs
   int64_t num_uutigs = 0;
   my_uutigs.clear();
@@ -248,7 +248,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   DBG_TRAVERSE("dropped ", num_drops, " out of ", num_walks, " walks\n");
   auto all_num_drops = reduce_one(num_drops, op_fast_add, 0).wait();
   auto all_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
-  SOUT("Dropped ", perc_str(all_num_drops, all_num_walks), " duplicate traversals\n");
+  SLOG_VERBOSE("Dropped ", perc_str(all_num_drops, all_num_walks), " duplicate traversals\n");
   // now get unique ids for the uutigs
   atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
   global_ptr<size_t> counter = nullptr;

@@ -39,7 +39,7 @@ public:
     } catch (std::exception &e) {
       DIE(e.what(), " note: num bits is ", num_bits, " dentries is ", dentries, " bpe is ", bpe);
     }
-    SOUT("Rank 0 created bloom filter with ", num_bits, " bits and ", num_hashes, " hashes\n");
+    SLOG_VERBOSE("Rank 0 created bloom filter with ", num_bits, " bits and ", num_hashes, " hashes\n");
   }
 
   void clear() {

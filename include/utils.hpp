@@ -29,10 +29,20 @@ using std::cerr;
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
-
 #define ONE_MB (1024*1024)
 #define ONE_GB (ONE_MB*1024)
 
+extern ofstream _logstream;
+extern bool _verbose;
+
+inline void init_logger() {
+  if (!upcxx::rank_me()) _logstream.open("mhm.log");
+}
+
+inline void set_logger_verbose(bool verbose) {
+  _verbose = verbose;
+}
+  
 inline void logger(ostringstream &os) {}
 
 template <typename T, typename... Params>
@@ -42,36 +52,45 @@ inline void logger(ostringstream &os, T first, Params... params) {
 }
 
 template <typename T, typename... Params>
-inline void logger(ostream &stream, bool fail, bool serial, T first, Params... params) {
+inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first, Params... params) {
   if (serial && upcxx::rank_me()) return;
   ostringstream os;
   os << first;
   logger(os, params ...);
   stream << os.str();
-  //stream.flush();
+  if (flush) stream.flush();
   if (fail) exit(1);
 }
 
 
-#define SOUT(...) do {                                                  \
-    logger(cout, false, true, ##__VA_ARGS__);                           \
-    if (!upcxx::rank_me()) cout << std::flush;                          \
+#define SOUT(...) do {                                   \
+    logger(cout, false, true, true, ##__VA_ARGS__);      \
   } while (0)
 #define WARN(...)                                                       \
-  logger(cerr, false, false, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, false, true, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
 #define DIE(...)                                                        \
-  logger(cerr, true, false, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, true, false, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 #define SWARN(...)                                                      \
-  logger(cerr, false, true, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, true, true, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
 #define SDIE(...)                                                       \
-  logger(cerr, true, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, true, true, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 
+
+#define SLOG(...) do {                                              \
+    logger(cout, false, true, true, ##__VA_ARGS__);                 \
+    logger(_logstream, false, true, true, ##__VA_ARGS__);           \
+  } while (0)
+
+#define SLOG_VERBOSE(...) do {                                       \
+    if (_verbose) logger(cout, false, true, true, ##__VA_ARGS__);    \
+    logger(_logstream, false, true, true, ##__VA_ARGS__);           \
+  } while (0)
 
 #ifdef DEBUG
 extern ofstream _dbgstream;
 #define DBG(...) do {                                                   \
-    if (_dbgstream) { logger(_dbgstream, false, false, "<", __FILENAME__, ":", __LINE__, "> ", ##__VA_ARGS__); \
-      _dbgstream << std::flush;                                         \
+    if (_dbgstream) {                                                   \
+      logger(_dbgstream, false, false, true, "<", __FILENAME__, ":", __LINE__, "> ", ##__VA_ARGS__); \
     }                                                                   \
   } while(0)
 #else
@@ -110,7 +129,7 @@ public:
   }
   
   ~IntermittentTimer() {
-    SOUT(KLCYAN, "--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n", KNORM);
+    SLOG_VERBOSE(KLCYAN, "--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n", KNORM);
     DBG("--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
   }
 
@@ -129,12 +148,14 @@ class Timer {
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
   string name;
   double init_free_mem;
+  bool always_show;
 public:
-  Timer(const string &name) {
+  Timer(const string &name, bool always_show=false) : always_show(always_show) {
     t = std::chrono::high_resolution_clock::now();
     this->name = name;
     if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
-    SOUT(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
+    if (always_show) SLOG(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
+    else SLOG_VERBOSE(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
   }
   
   ~Timer() {
@@ -142,8 +163,13 @@ public:
     DBG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
     upcxx::barrier();
     t_elapsed = std::chrono::high_resolution_clock::now() - t;
-    SOUT(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-         (init_free_mem - get_free_mem_gb()), " GB) ---\n", KNORM);
+    if (always_show) {
+      SLOG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
+           (init_free_mem - get_free_mem_gb()), " GB) ---\n", KNORM);
+    } else {
+      SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
+                   (init_free_mem - get_free_mem_gb()), " GB) ---\n", KNORM);
+    }
   }
 };
 
@@ -309,7 +335,7 @@ inline std::vector<string> find_per_rank_files(string &fname_list, const string 
     struct stat stbuf;
     if (stat(gz_fname.c_str(), &stbuf) == 0) {
       // gzip file exists
-      SOUT("Found compressed file '", gz_fname, "'\n");
+      SLOG_VERBOSE("Found compressed file '", gz_fname, "'\n");
       fname = gz_fname;
     } else {
       // no gz file - look for plain file

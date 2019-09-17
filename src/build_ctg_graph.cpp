@@ -61,7 +61,7 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
   progbar.done();
   barrier();
   auto num_vertices = _graph->get_num_vertices();
-  SOUT("Added ", num_vertices, " vertices\n");
+  SLOG_VERBOSE("Added ", num_vertices, " vertices\n");
 }
 
 
@@ -173,7 +173,7 @@ static void set_nbs(AlnStats &stats)
     progbar.done();
   }
   barrier();
-  SOUT(stats.to_string());
+  SLOG_VERBOSE(stats.to_string());
 }
 
 
@@ -270,8 +270,8 @@ static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
   }
   barrier();
   auto tot_num_alns = reduce_one(num_alns, op_fast_add, 0).wait();
-  SOUT("Processed ", tot_num_alns, " alignments (", unaligned, " unaligned) and found ",
-       perc_str(reduce_one(num_pairs, op_fast_add, 0).wait(), tot_num_alns), " pairs\n");
+  SLOG_VERBOSE("Processed ", tot_num_alns, " alignments (", unaligned, " unaligned) and found ",
+               perc_str(reduce_one(num_pairs, op_fast_add, 0).wait(), tot_num_alns), " pairs\n");
   auto all_num_same_ctg_pairs = reduce_one(num_same_ctg_pairs, op_fast_add, 0).wait();
   auto all_av_ins = reduce_one(my_av_ins, op_fast_add, 0).wait() / all_num_same_ctg_pairs;
   DBG_SPANS("Num same ctg pairs ", all_num_same_ctg_pairs, ", average insert size ", all_av_ins, "\n");
@@ -287,8 +287,8 @@ static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
   }
   barrier();
   auto tot_num_spans_only = reduce_one(num_spans_only, op_fast_add, 0).wait();
-  SOUT("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
-  SOUT("Found ", perc_str(reduce_one(num_pos_spans, op_fast_add, 0).wait(), tot_num_spans_only), " pos gap spans\n");
+  SLOG_VERBOSE("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
+  SLOG_VERBOSE("Found ", perc_str(reduce_one(num_pos_spans, op_fast_add, 0).wait(), tot_num_spans_only), " pos gap spans\n");
 }
 
 
@@ -318,8 +318,8 @@ static AlnStats get_splints_from_alns(Alns &alns) {
   progbar.done();
   barrier();
   auto tot_nalns = reduce_one(stats.nalns, op_fast_add, 0).wait();
-  SOUT("Processed ", tot_nalns, " alignments and found ",
-       perc_str(reduce_one(num_splints, op_fast_add, 0).wait(), tot_nalns), " splints\n");
+  SLOG_VERBOSE("Processed ", tot_nalns, " alignments and found ",
+               perc_str(reduce_one(num_splints, op_fast_add, 0).wait(), tot_nalns), " splints\n");
   return stats;
 }
 
@@ -466,8 +466,9 @@ static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
   }
   _graph->max_read_len = reduce_all(max_read_len, op_fast_max).wait();  
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  SOUT("Processed a total of ", tot_num_reads, " reads, found max read length ", _graph->max_read_len, "\n");
-  SOUT("Extracted ", perc_str(reduce_one(num_seqs_added, op_fast_add, 0).wait(), tot_num_reads), " read sequences for pos gaps\n");
+  SLOG_VERBOSE("Processed a total of ", tot_num_reads, " reads, found max read length ", _graph->max_read_len, "\n");
+  SLOG_VERBOSE("Extracted ", perc_str(reduce_one(num_seqs_added, op_fast_add, 0).wait(), tot_num_reads),
+               " read sequences for pos gaps\n");
 
   int64_t num_pos_gaps = 0;
   int64_t num_pos_spans = 0;
@@ -539,13 +540,13 @@ static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
     barrier();
   }
   auto tot_pos_gaps = reduce_one(num_pos_gaps, op_fast_add, 0).wait();
-  SOUT("Filled ", tot_pos_gaps, " positive gaps with ", _graph->get_num_read_seqs(), " reads\n");
+  SLOG_VERBOSE("Filled ", tot_pos_gaps, " positive gaps with ", _graph->get_num_read_seqs(), " reads\n");
   auto tot_pos_spans = reduce_one(num_pos_spans, op_fast_add, 0).wait();
   auto tot_pos_spans_closed = reduce_one(num_pos_spans_closed, op_fast_add, 0).wait();
   auto tot_pos_spans_w_ns = reduce_one(num_pos_spans_w_ns, op_fast_add, 0).wait();
-  SOUT("Found ", perc_str(tot_pos_spans, tot_pos_gaps), " positive spans, of which ",
-       perc_str(tot_pos_spans_closed, tot_pos_spans), " were closed - ",
-       perc_str(tot_pos_spans_w_ns, tot_pos_spans_closed), " with Ns\n");
+  SLOG_VERBOSE("Found ", perc_str(tot_pos_spans, tot_pos_gaps), " positive spans, of which ",
+               perc_str(tot_pos_spans_closed, tot_pos_spans), " were closed - ",
+               perc_str(tot_pos_spans_w_ns, tot_pos_spans_closed), " with Ns\n");
 }
 
 
@@ -693,12 +694,12 @@ static void merge_nbs()
   }
   barrier();
   auto tot_merges = reduce_one(num_merges, op_fast_add, 0).wait();
-  SOUT("Merged ", perc_str(tot_merges, 2 *_graph->get_num_vertices()), " vertices\n");
+  SLOG_VERBOSE("Merged ", perc_str(tot_merges, 2 *_graph->get_num_vertices()), " vertices\n");
   auto tot_orphans = reduce_one(num_orphans, op_fast_add, 0).wait();
   auto all_max_orphan_len = reduce_one(max_orphan_len, op_fast_max, 0).wait();
   auto all_max_orphan_depth = reduce_one(max_orphan_depth, op_fast_max, 0).wait();
-  SOUT("Found ", perc_str(tot_orphans, _graph->get_num_vertices()), " orphaned vertices (no edges), max length ", 
-       all_max_orphan_len, ", max depth ", all_max_orphan_depth, "\n");
+  SLOG_VERBOSE("Found ", perc_str(tot_orphans, _graph->get_num_vertices()), " orphaned vertices (no edges), max length ", 
+               all_max_orphan_len, ", max depth ", all_max_orphan_depth, "\n");
 }
 
 

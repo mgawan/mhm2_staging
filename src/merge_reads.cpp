@@ -96,7 +96,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 }
 
 void merge_reads(vector<string> reads_fname_list, int qual_offset) {
-  Timer timer(__func__);
+  Timer timer(__func__, true);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
@@ -306,7 +306,6 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     }
     out_file.close();
     progbar.done();
-    SOUT("tot bytes read ", tot_bytes_read, "\n");
     // store the uncompressed size in a secondary file
     write_uncompressed_file_size(get_merged_reads_fname(reads_fname) + ".uncompressedSize", bytes_written);
     
@@ -316,12 +315,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     auto all_merged_len = upcxx::reduce_one(merged_len, op_fast_add, 0).wait();
     auto all_overlap_len = upcxx::reduce_one(overlap_len, op_fast_add, 0).wait();
     auto all_max_read_len = upcxx::reduce_one(max_read_len, op_fast_max, 0).wait();
-    SOUT("Merged reads in file ", reads_fname, ":\n");
-    SOUT("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
-    SOUT("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
-    SOUT("  average merged length ", (double)all_merged_len / all_num_merged, "\n");
-    SOUT("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
-    SOUT("  max read length ", all_max_read_len, "\n");
+    SLOG("Merged reads in file ", reads_fname, ":\n");
+    SLOG("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
+    SLOG("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
+    SLOG("  average merged length ", (double)all_merged_len / all_num_merged, "\n");
+    SLOG("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
+    SLOG("  max read length ", all_max_read_len, "\n");
+    SLOG("Total bytes read ", tot_bytes_read, "\n");
 
     barrier();
   }

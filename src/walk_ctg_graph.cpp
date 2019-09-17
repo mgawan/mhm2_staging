@@ -55,13 +55,13 @@ struct WalkStats {
     int64_t tot_terms = tot_dead_ends + tot_visited + tot_no_candidate + tot_multi_candidates;
 
     cout << setprecision(2) << fixed;
-    SOUT("Walks statistics:\n");
-    SOUT("  total walk steps:           ", tot_steps, "\n");
-    SOUT("  walk terminations:          ", perc_str(tot_terms, tot_steps), "\n");
-    SOUT("    dead ends:                ", perc_str(tot_dead_ends, tot_terms), "\n");
-    SOUT("    no viable candidates:     ", perc_str(tot_no_candidate, tot_terms), "\n");
-    SOUT("    multiple candidates:      ", perc_str(tot_multi_candidates, tot_terms), "\n");
-    SOUT("    already visited:          ", perc_str(tot_visited, tot_terms), "\n");
+    SLOG_VERBOSE("Walks statistics:\n");
+    SLOG_VERBOSE("  total walk steps:           ", tot_steps, "\n");
+    SLOG_VERBOSE("  walk terminations:          ", perc_str(tot_terms, tot_steps), "\n");
+    SLOG_VERBOSE("    dead ends:                ", perc_str(tot_dead_ends, tot_terms), "\n");
+    SLOG_VERBOSE("    no viable candidates:     ", perc_str(tot_no_candidate, tot_terms), "\n");
+    SLOG_VERBOSE("    multiple candidates:      ", perc_str(tot_multi_candidates, tot_terms), "\n");
+    SLOG_VERBOSE("    already visited:          ", perc_str(tot_visited, tot_terms), "\n");
   }
 };
 
@@ -79,14 +79,14 @@ struct GapStats {
     int64_t tot_corrected_spans = reduce_one(corrected_spans, op_fast_add, 0).wait();
 
     cout << setprecision(2) << fixed;
-    SOUT("Gaps statistics:\n");
-    SOUT("  total:                    ", tot_gaps, "\n");
-    SOUT("  positive:                 ", perc_str(tot_positive, tot_gaps), "\n");
-    SOUT("  mismatched splints:       ", perc_str(tot_mismatched_splints, tot_gaps), "\n");
-    SOUT("  mismatched spans:         ", perc_str(tot_mismatched_spans, tot_gaps), "\n");
-    SOUT("  unclosed:                 ", perc_str(tot_unclosed, tot_gaps), "\n");
-    SOUT("  corrected splints:        ", perc_str(tot_corrected_splints, tot_gaps), "\n");
-    SOUT("  corrected spans:          ", perc_str(tot_corrected_spans, tot_gaps), "\n");
+    SLOG_VERBOSE("Gaps statistics:\n");
+    SLOG_VERBOSE("  total:                    ", tot_gaps, "\n");
+    SLOG_VERBOSE("  positive:                 ", perc_str(tot_positive, tot_gaps), "\n");
+    SLOG_VERBOSE("  mismatched splints:       ", perc_str(tot_mismatched_splints, tot_gaps), "\n");
+    SLOG_VERBOSE("  mismatched spans:         ", perc_str(tot_mismatched_spans, tot_gaps), "\n");
+    SLOG_VERBOSE("  unclosed:                 ", perc_str(tot_unclosed, tot_gaps), "\n");
+    SLOG_VERBOSE("  corrected splints:        ", perc_str(tot_corrected_splints, tot_gaps), "\n");
+    SLOG_VERBOSE("  corrected spans:          ", perc_str(tot_corrected_spans, tot_gaps), "\n");
   }
 };
 
@@ -200,7 +200,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, bool break_scaff
     if (ctg.seq != "") ctgs->add_contig(ctg);
   }
   barrier();
-  SOUT("Number of scaffold breaks ", reduce_one(num_break_scaffs, op_fast_add, 0).wait(), "\n");
+  SLOG_VERBOSE("Number of scaffold breaks ", reduce_one(num_break_scaffs, op_fast_add, 0).wait(), "\n");
   gap_stats.print();
   // now get unique ids for all the contigs
   size_t num_ctgs = ctgs->size();
@@ -215,13 +215,13 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, bool break_scaff
   for (auto it = ctgs->begin(); it != ctgs->end(); it++) it->id = my_counter++;
 }
 
-/*
+
 static bool depth_match(double depth, double walk_depth) {
 //TESTING
   const int MAX_DEPTH_DIFF = 15;
   const int MIN_DEPTH_DIFF = 5;
   double depth_diff = fabs(depth - walk_depth);
-  double allowable_diff = _options->depth_diff_thres * walk_depth;
+  double allowable_diff = DEPTH_DIFF_THRES * walk_depth;
   if (allowable_diff > MAX_DEPTH_DIFF) allowable_diff = MAX_DEPTH_DIFF;
   if (allowable_diff < MIN_DEPTH_DIFF) allowable_diff = MIN_DEPTH_DIFF;
   return (depth_diff <= allowable_diff);
@@ -322,7 +322,8 @@ static cid_t bfs_branch(shared_ptr<Vertex> curr_v, int end, double walk_depth) {
 }
 
 
-static vector<shared_ptr<Vertex> > search_for_next_nbs(shared_ptr<Vertex> curr_v, int end, double walk_depth, WalkStats &stats,
+static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kmer_len, bool minimize_error,
+                                                       shared_ptr<Vertex> curr_v, int end, double walk_depth, WalkStats &stats,
                                                        cid_t fwd_cid=-1) {
   auto in_cid_list = [](vector<cid_t> cids, cid_t query_cid) -> bool {
     for (auto cid : cids) if (cid == query_cid) return true;
@@ -382,14 +383,14 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(shared_ptr<Vertex> curr_v
   } else if (candidate_branches.size() > 1) {
     stats.term_multi_candidates++;
     DBG_WALK("      -> found ", candidate_branches.size(), " viable candidates\n");
-    if (_options->quality_tuning != QualityTuning::MIN_ERROR || walk_depth <= 10) {
-      if (_options->max_kmer_len > _options->kmer_len) {
+    if (!minimize_error || walk_depth <= 10) {
+      if (max_kmer_len > kmer_len) {
         // if one branch has much better aln len than the others, choose it
         int num_max_kmer_alns = 0;
         vector<pair<int, int> > nbs_aln_lens;
         for (auto candidate : candidate_branches) {
           auto edge = nb_edges[candidate.first];
-          if (edge->aln_len >= _options->max_kmer_len) {
+          if (edge->aln_len >= max_kmer_len) {
             num_max_kmer_alns++;
             if (num_max_kmer_alns > 1) break;
           }
@@ -417,8 +418,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(shared_ptr<Vertex> curr_v
         // if one branch has much higher edge support than the others, choose it
         double support_thres = 3;
 
-        if (fwd_cid != -1 && _options->quality_tuning == QualityTuning::MAX_CONTIGUITY) support_thres = 1.5;
-
+        //if (fwd_cid != -1 && qual_tuning == QualityTuning::MAX_CONTIGUITY) support_thres = 1.5;
 
         // if (fwd_cid != -1) {
         //   if (walk_depth <= 10) support_thres = 2.0;
@@ -486,7 +486,8 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(shared_ptr<Vertex> curr_v
 }
 
 
-static vector<Walk> do_walks(vector<pair<cid_t, int32_t> > &sorted_ctgs, WalkStats &walk_stats, IntermittentTimer &next_nbs_timer) {
+static vector<Walk> do_walks(int max_kmer_len, int kmer_len, bool minimize_error, vector<pair<cid_t, int32_t> > &sorted_ctgs,
+                             WalkStats &walk_stats, IntermittentTimer &next_nbs_timer) {
   auto has_depth_remaining = [](unordered_map<cid_t, double> &depth_remaining, shared_ptr<Vertex> v, double walk_depth) {
     if (v->visited) return false;
     auto it = depth_remaining.find(v->cid);
@@ -539,7 +540,7 @@ static vector<Walk> do_walks(vector<pair<cid_t, int32_t> > &sorted_ctgs, WalkSta
     while (curr_v) {
       DBG_WALK("    search fwd: ");
       next_nbs_timer.start();
-      auto next_nbs = search_for_next_nbs(curr_v, end, walk_depth, walk_stats);
+      auto next_nbs = search_for_next_nbs(max_kmer_len, kmer_len, minimize_error, curr_v, end, walk_depth, walk_stats);
       next_nbs_timer.stop();
       bool already_visited = false;
       if (!next_nbs.empty()) {
@@ -561,7 +562,8 @@ static vector<Walk> do_walks(vector<pair<cid_t, int32_t> > &sorted_ctgs, WalkSta
         if ((next_nb_end == 5 && next_nb->end5_merged.size() > 1) || (next_nb_end == 3 && next_nb->end3_merged.size() > 1)) {
           DBG_WALK("    search bwd: ");
           next_nbs_timer.start();
-          auto back_nbs = search_for_next_nbs(next_nb, next_nb_end, walk_depth, walk_stats, curr_v->cid);
+          auto back_nbs = search_for_next_nbs(max_kmer_len, kmer_len, minimize_error, next_nb, next_nb_end, walk_depth, walk_stats,
+                                              curr_v->cid);
           next_nbs_timer.stop();
           if (!back_nbs.empty()) join_resolved = true;
         } else {
@@ -612,7 +614,7 @@ static vector<Walk> do_walks(vector<pair<cid_t, int32_t> > &sorted_ctgs, WalkSta
   }
   return tmp_walks;
 }
-*/
+
 
 static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
   Timer timer("sort_ctgs");
@@ -623,9 +625,10 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
     // don't start walks on vertices without depth information - this can happen in alignment-based depth calcs
     if (v->depth == 0) continue;
     // don't start walks on short contigs
-    if (v->clen < min_ctg_len) continue;
-    // don't start walks on very low depth
-    //if (v->depth < 3 && v->clen < 1000) continue;
+    if (v->depth > 30 && v->clen < min_ctg_len) continue;
+    if (v->depth > 20 && v->clen < min_ctg_len * 2 / 3) continue;
+    if (v->depth > 10 && v->clen < min_ctg_len / 2) continue;
+    //if (v->clen < min_ctg_len) continue;
     // don't start walks on a high depth contig, which is a contig that has at least 2x depth higher than its nb average
     // and doesn't have any nbs of higher depth
     if (v->depth > 10) {
@@ -655,7 +658,8 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
 }
 
 
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds, Contigs *ctgs) {
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds, bool minimize_error,
+                Contigs *ctgs) {
   _graph = graph;
   
   // The general approach is to have each rank do walks starting from its local vertices only.
@@ -676,17 +680,16 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
   auto sorted_ctgs = sort_ctgs(min_ctg_len);
   barrier();
   int64_t num_start_ctgs = reduce_one(sorted_ctgs.size(), op_fast_add, 0).wait();
-  SOUT("Number of starting contigs: ", perc_str(num_start_ctgs, _graph->get_num_vertices()), "\n");
+  SLOG_VERBOSE("Number of starting contigs: ", perc_str(num_start_ctgs, _graph->get_num_vertices()), "\n");
   // need to repeat the sets of walks because there may be a conflicts between walks across ranks, which results
   // in one of the walks being dropped. So this loop will repeat until no more scaffolds can be built.
   {
     IntermittentTimer next_nbs_timer("next_nbs");
     IntermittentTimer walks_timer("walks");
     while (true) {
-      /*
       walks_timer.start();
       ProgressBar progbar(sorted_ctgs.size(), "Walking graph round " + to_string(num_rounds));
-      auto tmp_walks = do_walks(sorted_ctgs, walk_stats, next_nbs_timer);
+      auto tmp_walks = do_walks(max_kmer_len, kmer_len, minimize_error, sorted_ctgs, walk_stats, next_nbs_timer);
       progbar.done();
       walks_timer.stop();
       barrier();
@@ -701,10 +704,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
         // resolve conflict in favor of longest walk - this marks the walk the vertex belongs to 
         for (auto &w : walk.vertices) _graph->update_vertex_walk(w.first, walk.len);
       }
-      */
       barrier();
       int num_walks_added = 0;
-      /*
       // now drop all walks where any vertex's rank does not match this rank
       for (auto walk : tmp_walks) {
         bool add_walk = true;
@@ -722,11 +723,10 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
           walks.push_back(walk);
         }
       }
-      */
       barrier();
       auto tot_walks_added = reduce_all(num_walks_added, op_fast_add).wait();
       if (tot_walks_added == 0) break;
-      //SOUT("Walk round ", num_rounds, " found ", tot_walks_added, " new walks\n");
+      //SLOG_VERBOSE("Walk round ", num_rounds, " found ", tot_walks_added, " new walks\n");
       num_rounds++;
       if (num_rounds > rank_n() * 5) {
         SWARN("breaking on high count\n");
@@ -754,27 +754,12 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
   auto tot_max_unvisited_len = reduce_all(max_unvisited_len, op_fast_max).wait();
   auto tot_unvisited_len = reduce_all(unvisited_len, op_fast_add).wait();
   if (tot_unvisited) 
-    SOUT("Didn't visit ", tot_unvisited, " vertices, max len ", tot_max_unvisited_len, " total length ", 
-         tot_unvisited_len, "\n");
+    SLOG_VERBOSE("Didn't visit ", tot_unvisited, " vertices, max len ", tot_max_unvisited_len, " total length ", 
+                 tot_unvisited_len, "\n");
   walk_stats.print();
 
   get_ctgs_from_walks(max_kmer_len, kmer_len, break_scaffolds, walks, ctgs);
   
-  /*
-  if (_options->out_dirname != "") {
-    write_assembly(scaffs, "/final_assembly.fa", INT_MAX, 200);
-    write_assembly(scaffs, "/final_assembly-200.fa", 200, 0);
-  } else {
-    string contigs_fname = "cgraph-" + to_string(max_kmer_len);
-    write_assembly_per_rank(scaffs, contigs_fname);
-    int64_t num_scaffolds = reduce_one(scaffs.size(), op_fast_add, 0).wait();
-    if (!rank_me()) {
-      ofstream f("per_thread/n" + contigs_fname + ".txt");
-      f << num_scaffolds << endl;
-      f.close();
-    }
-  }
-  */
   barrier();
 }
 

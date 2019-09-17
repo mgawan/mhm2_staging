@@ -29,20 +29,25 @@ ofstream _dbgstream;
 using namespace std;
 using namespace upcxx;
 
+ofstream _logstream;
+bool _verbose = false;
+
 unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
-void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom, int min_depth_cutoff,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
+void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
+                   int min_depth_cutoff, double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns);
-void run_scaffolding(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns);
+void run_scaffolding(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
+                     Contigs *ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
   upcxx::init();
+  init_logger();
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
 
@@ -56,12 +61,12 @@ int main(int argc, char **argv) {
 
   auto options = make_shared<Options>();
   options->load(argc, argv);
-
+  set_logger_verbose(options->verbose);
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
     for (auto const &reads_fname : options->reads_fname_list) tot_file_size += get_file_size(reads_fname);
-    SOUT("Total size of ", options->reads_fname_list.size(), " input file", (options->reads_fname_list.size() > 1 ? "s" : ""),
+    SLOG("Total size of ", options->reads_fname_list.size(), " input file", (options->reads_fname_list.size() > 1 ? "s" : ""),
          " is ", (tot_file_size / ONE_GB), " GB\n");
   }
 
@@ -72,15 +77,15 @@ int main(int argc, char **argv) {
   int max_kmer_len = options->kmer_lens.back();
   for (auto kmer_len : options->kmer_lens) {
     auto loop_start_t = chrono::high_resolution_clock::now();
-    SOUT(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
+    SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
     Kmer::k = kmer_len;
     {
       // scope is to ensure that kmer_dht is freed by destructor
       auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
       dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
       barrier();
-      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom, options->min_depth_cutoff,
-                    options->dynamic_min_depth, ctgs, kmer_dht);
+      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+                    options->min_depth_cutoff, options->dynamic_min_depth, ctgs, kmer_dht);
       barrier();
       traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
@@ -91,29 +96,40 @@ int main(int argc, char **argv) {
       Alns alns;
       find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
-      run_scaffolding(max_kmer_len, kmer_len, options->reads_fname_list, &ctgs, alns);
+      // in the contig loop, minimize error from cgraph, and use all ctgs, even short ones
+      run_scaffolding(max_kmer_len, kmer_len, 300, options->reads_fname_list, (kmer_len == max_kmer_len ? false : true), &ctgs, alns);
       // FIXME: dump all contigs if checkpoint option specified
       ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
-      SOUT(KBLUE "_________________________\n\n", KNORM);
+      SLOG(KBLUE "_________________________\n\n", KNORM);
       ctgs.print_stats(MIN_CTG_PRINT_LEN);
     }
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-    SOUT("Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
+    SLOG("\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
          get_current_time(), ", free memory ", get_free_mem_gb(), " GB\n");
     barrier();
   }
-  SOUT(KBLUE "_________________________\nScaffolding\n\n", KNORM);
-  SOUT(KBLUE "_________________________\n\n", KNORM);
+  SLOG(KBLUE "_________________________\nScaffolding\n\n", KNORM);
+  {
+    Timer timer("Scaffolding", true);
+    int kmer_len = (options->kmer_lens.size() > 1 ? options->kmer_lens[1] : options->kmer_lens[0]);
+    Alns alns;
+    find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
+                    ctgs, &alns);
+    // now maximimize ctgy and only start at longer ctgs
+    run_scaffolding(max_kmer_len, kmer_len, 300, options->reads_fname_list, false, &ctgs, alns);
+  }
+  SLOG(KBLUE "_________________________\n\n", KNORM);
 
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
+  ctgs.print_stats(MIN_CTG_PRINT_LEN);
   
   double end_mem_free = get_free_mem_gb();
-  SOUT("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
+  SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
        " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");
   
   chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
-  SOUT("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
+  SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
        " for MHM version ", MHM_VERSION, "\n"); 
   barrier();
 

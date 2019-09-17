@@ -149,7 +149,7 @@ public:
       if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
       posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
     }
-    SOUT("Reading FASTQ file ", fname, "\n");
+    SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
     DBG("Reading fastq file ", fname, " at pos ", start_read, " ", (f ? ftell(f) : gztell(gzf)), "\n");
   }
 

@@ -59,7 +59,7 @@ public:
       "-v                    Verbose mode\n" + 
       "-h                    Display help message\n";
 
-    SOUT(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
+    SLOG(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
 
     argh::parser args;
     get_options(args, usage);
@@ -94,31 +94,30 @@ public:
     
     if (upcxx::rank_me() == 0) {
       // print out all compiler definitions
-      SOUT(KBLUE "_________________________\nCompiler definitions:\n");
+      SLOG(KBLUE "_________________________\nCompiler definitions:\n");
       std::istringstream all_defs_ss(ALL_DEFNS);
       vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
-      for (auto &def : all_defs) SOUT("  ", def, "\n");
-      cout << KLBLUE << "_________________________\n";
-      cout << "MHM options:\n";
-      cout << "  (-r) reads files:           " << reads_fnames << endl;
-      cout << "  (-k) kmer lengths:          " << kmer_lens_str << endl;
-      if (prev_kmer_len) cout << "  (-p) prev kmer length:      " << prev_kmer_len << endl;
-      cout << "  (-Q) quality offset:        " << qual_offset << endl;
-      cout << "  (-m) max kmer store:        " << max_kmer_store << endl;
-      cout << "  (-C) max ctg cache:         " << max_ctg_cache << endl;
-      cout << "  (-d) min depth cutoff:      " << min_depth_cutoff << endl;
-      cout << "  (-D) dynamic min depth:     " << dynamic_min_depth << endl;
-      cout << "  (-S) aligner seed space:    " << seed_space << endl;
-      cout << "  (-b) use bloom:             " << use_bloom << endl;
-      cout << "  (-v) verbose:               " << (verbose ? "YES" : "NO") << endl;
-      cout << "_________________________\n" << KNORM;
-      cout << std::flush;
+      for (auto &def : all_defs) SLOG("  ", def, "\n");
+      SLOG(KLBLUE, "_________________________\n");
+      SLOG("MHM options:\n");
+      SLOG("  (-r) reads files:           ", reads_fnames, "\n");
+      SLOG("  (-k) kmer lengths:          ", kmer_lens_str, "\n");
+      if (prev_kmer_len) SLOG("  (-p) prev kmer length:      ", prev_kmer_len, "\n");
+      SLOG("  (-Q) quality offset:        ", qual_offset, "\n");
+      SLOG("  (-m) max kmer store:        ", max_kmer_store, "\n");
+      SLOG("  (-C) max ctg cache:         ", max_ctg_cache, "\n");
+      SLOG("  (-d) min depth cutoff:      ", min_depth_cutoff, "\n");
+      SLOG("  (-D) dynamic min depth:     ", dynamic_min_depth, "\n");
+      SLOG("  (-S) aligner seed space:    ", seed_space, "\n");
+      SLOG("  (-b) use bloom:             ", use_bloom, "\n");
+      SLOG("  (-v) verbose:               ", (verbose ? "YES" : "NO"), "\n");
+      SLOG("_________________________", KNORM, "\n");
       
       double start_mem_free = get_free_mem_gb();
-      SOUT("Initial free memory on node 0: ", std::setprecision(3), std::fixed, start_mem_free, " GB\n");
-      SOUT("Running on ", upcxx::rank_n(), " ranks\n");
+      SLOG("Initial free memory on node 0: ", std::setprecision(3), std::fixed, start_mem_free, " GB\n");
+      SLOG("Running on ", upcxx::rank_n(), " ranks\n");
 #ifdef DEBUG
-      SOUT(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
+      SLOG(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
 #endif
     }
     upcxx::barrier();
