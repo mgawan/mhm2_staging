@@ -30,7 +30,7 @@ add_definitions(-DUSE_COLORS)
 add_definitions(-DUSE_BYTELL)
 add_definitions(-DMIN_CTG_PRINT_LEN=200)
 add_definitions(-DDEPTH_DIFF_THRES=0.1)
-#add_definitions(-DUSE_PROGBAR)
+add_definitions(-DUSE_PROGBAR)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)

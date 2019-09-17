@@ -42,7 +42,8 @@ public:
   bool use_bloom = false;
   double dynamic_min_depth = 0.9;
   int min_depth_cutoff = 2;
-  int seed_space = 8;
+  int seed_space = 2;
+  bool checkpoint = false;
   
   void load(int argc, char **argv) {
     string usage = string(argv[0]) + "\n" +
@@ -56,6 +57,7 @@ public:
       "-d    mindepthcutoff  Min. allowable depth\n" +
       "-D    dynamicmindepth Dynamic min depth setting\n" +
       "-S    seedspace       Aligner seed space\n" +
+      "-x    checkpoint      Checkpoint after each contig round\n" +
       "-v                    Verbose mode\n" + 
       "-h                    Display help message\n";
 
@@ -91,6 +93,7 @@ public:
     args("-S") >> seed_space;
     if (args["-b"]) use_bloom = true;
     if (args["-v"]) verbose = true;
+    if (args["-x"]) checkpoint = true;
     
     if (upcxx::rank_me() == 0) {
       // print out all compiler definitions
@@ -110,6 +113,7 @@ public:
       SLOG("  (-D) dynamic min depth:     ", dynamic_min_depth, "\n");
       SLOG("  (-S) aligner seed space:    ", seed_space, "\n");
       SLOG("  (-b) use bloom:             ", use_bloom, "\n");
+      SLOG("  (-x) checkpoint:            ", checkpoint, "\n");
       SLOG("  (-v) verbose:               ", (verbose ? "YES" : "NO"), "\n");
       SLOG("_________________________", KNORM, "\n");
       

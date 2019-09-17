@@ -342,8 +342,7 @@ public:
       double init_mem_free = get_free_mem_gb();
       barrier();
       // in this case we have to roughly estimate the hash table size - we do the allocation here
-      // rough estimate at 5x depth
-      cardinality /= 5;
+      cardinality /= 3;
       initial_kmer_dht_reservation = cardinality;    
       kmers->reserve(cardinality);
       double kmers_space_reserved = cardinality * (sizeof(Kmer) + sizeof(KmerCounts));

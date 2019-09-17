@@ -25,8 +25,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
                 Contigs *ctgs);
 
 
-void run_scaffolding(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
-                     Contigs *ctgs, Alns &alns) {
+void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
+                        bool break_scaffolds, Contigs *ctgs, Alns &alns) {
   Timer timer(__func__, true);
   CtgGraph graph;
   build_ctg_graph(&graph, max_kmer_len, kmer_len, reads_fname_list, ctgs, alns);
@@ -35,7 +35,6 @@ void run_scaffolding(int max_kmer_len, int kmer_len, int min_ctg_len, vector<str
   string graph_fname;
   graph.print_stats();
   barrier();
-  bool break_scaffolds = false;
   walk_graph(&graph, max_kmer_len, kmer_len, min_ctg_len, break_scaffolds, minimize_error, ctgs);
   barrier();
 }

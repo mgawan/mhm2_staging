@@ -41,8 +41,8 @@ void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns);
-void run_scaffolding(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
-                     Contigs *ctgs, Alns &alns);
+void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
+                        bool break_scaffolds, Contigs *ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -73,6 +73,8 @@ int main(int argc, char **argv) {
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
+  const bool MINIMIZE_ERRS = true;
+  const bool BREAK_SCAFFS = true;
   Contigs ctgs;
   int max_kmer_len = options->kmer_lens.back();
   for (auto kmer_len : options->kmer_lens) {
@@ -96,12 +98,16 @@ int main(int argc, char **argv) {
       Alns alns;
       find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
-      // in the contig loop, minimize error from cgraph, and use all ctgs, even short ones
-      run_scaffolding(max_kmer_len, kmer_len, 300, options->reads_fname_list, (kmer_len == max_kmer_len ? false : true), &ctgs, alns);
-      // FIXME: dump all contigs if checkpoint option specified
-      ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+      if (kmer_len < max_kmer_len) {
+        // always minimize errors, break scaffolds and use low ctg len thres
+        traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
+      } else {
+        // last in contigging rounds, don't minimize errors or break scaffolds
+        traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
+      }        
+      if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SLOG(KBLUE "_________________________\n\n", KNORM);
-      ctgs.print_stats(MIN_CTG_PRINT_LEN);
+      ctgs.print_stats(500);
     }
     
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
@@ -117,12 +123,13 @@ int main(int argc, char **argv) {
     find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                     ctgs, &alns);
     // now maximimize ctgy and only start at longer ctgs
-    run_scaffolding(max_kmer_len, kmer_len, 300, options->reads_fname_list, false, &ctgs, alns);
+    traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, !BREAK_SCAFFS, &ctgs, alns);
+    //traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
   }
   SLOG(KBLUE "_________________________\n\n", KNORM);
 
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
-  ctgs.print_stats(MIN_CTG_PRINT_LEN);
+  ctgs.print_stats(500);
   
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
