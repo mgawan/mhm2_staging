@@ -245,10 +245,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
   int64_t new_count = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("After purge of kmers < 2, there are ", new_count, " unique kmers\n");
   barrier();
-  if (ctgs.size()) {
-    add_ctg_kmers(kmer_len, prev_kmer_len, ctgs, kmer_dht, use_bloom);
-    kmer_dht->purge_kmers(2);
-  }
+  if (ctgs.size()) add_ctg_kmers(kmer_len, prev_kmer_len, ctgs, kmer_dht, use_bloom);
   barrier();
   kmer_dht->compute_kmer_exts();
 #ifdef DEBUG
