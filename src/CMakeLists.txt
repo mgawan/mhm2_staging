@@ -18,6 +18,10 @@ set(CMAKE_CXX_COMPILER upcxx)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 
 add_definitions(-DMAX_KMER_LEN=128)
+# quality encoding is logarithmic, so the probability of an error is:
+# cutoff 10: 10% chance
+# cutoff 20: 1% chance
+# cutoff 30: 0.1% chance
 add_definitions(-DQUAL_CUTOFF=20)
 add_definitions(-DMAX_KMER_MAPPINGS=10)
 add_definitions(-DBLOOM_FP=0.05)

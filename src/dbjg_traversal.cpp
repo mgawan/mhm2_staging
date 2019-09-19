@@ -267,4 +267,27 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
 }
 
 
+void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
+  Timer timer(__func__);
+  ProgressBar progbar(ctgs.size(), "Computing contig kmer depths");
+  for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
+    auto ctg = it;
+    progbar.update();
+    if (ctg->seq.length() >= kmer_len + 2) {
+      int num_kmers = ctg->seq.length() - kmer_len;
+      ctg->kmer_depths.reserve(num_kmers);
+      auto kmers = Kmer::get_kmers(ctg->seq);
+      for (auto kmer : kmers) {
+        auto kmer_rc = kmer.revcomp();
+        if (kmer_rc < kmer) kmer = kmer_rc;
+        uint16_t count = kmer_dht->get_kmer_count(kmer);
+        assert(count != 0);
+        ctg->kmer_depths.push_back(count);
+        progress();
+      }
+    }
+  }
+  progbar.done();
+  barrier();
+}
 

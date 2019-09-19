@@ -36,9 +36,10 @@ unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
-void analyze_kmers(unsigned int kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   int min_depth_cutoff, double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
+                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
+void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns);
 void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
@@ -76,55 +77,55 @@ int main(int argc, char **argv) {
   const bool MINIMIZE_ERRS = true;
   const bool BREAK_SCAFFS = true;
   Contigs ctgs;
+
+  if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
+
   int max_kmer_len = options->kmer_lens.back();
+  int prev_kmer_len = 0;
   for (auto kmer_len : options->kmer_lens) {
     auto loop_start_t = chrono::high_resolution_clock::now();
     SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
     Kmer::k = kmer_len;
-    {
-      // scope is to ensure that kmer_dht is freed by destructor
-      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
-      barrier();
-      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                    options->min_depth_cutoff, options->dynamic_min_depth, ctgs, kmer_dht);
-      barrier();
-      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+    auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+    dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
+    barrier();
+    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+                  options->dynamic_min_depth, ctgs, kmer_dht);
+    barrier();
+    traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+    barrier();
+    //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
-      ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
+    ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
-    }
-    {
-      Alns alns;
-      find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                      ctgs, &alns);
-      if (kmer_len < max_kmer_len) {
-        // always minimize errors, break scaffolds and use low ctg len thres
-        traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
-      } else {
-        // last in contigging rounds, don't minimize errors or break scaffolds
-        traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
-      }        
-      if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
-      SLOG(KBLUE "_________________________\n\n", KNORM);
-      ctgs.print_stats(500);
-    }
+    prev_kmer_len = kmer_len;
     
+    if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+    SLOG(KBLUE "_________________________\n\n", KNORM);
+    ctgs.print_stats(500);
+
     chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
     SLOG("\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
          get_current_time(), ", free memory ", get_free_mem_gb(), " GB\n");
     barrier();
   }
-  SLOG(KBLUE "_________________________\nScaffolding\n\n", KNORM);
-  {
-    Timer timer("Scaffolding", true);
-    int kmer_len = (options->kmer_lens.size() > 1 ? options->kmer_lens[1] : options->kmer_lens[0]);
-    Alns alns;
-    find_alignments(kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                    ctgs, &alns);
-    // now maximimize ctgy and only start at longer ctgs
-    traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, !BREAK_SCAFFS, &ctgs, alns);
-    //traverse_ctg_graph(max_kmer_len, kmer_len, 300, options->reads_fname_list, MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
+  if (options->scaff_kmer_len) {
+    SLOG(KBLUE "_________________________\nScaffolding\n\n", KNORM);
+    {
+      Timer timer("Scaffolding", true);
+      Alns alns;
+      // cgraph with seed of max kmer len
+      find_alignments(max_kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
+                      ctgs, &alns);
+      traverse_ctg_graph(max_kmer_len, max_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
+      ctgs.print_stats(500);
+      alns.clear();
+      int kmer_len = options->kmer_lens[1];
+      find_alignments(options->scaff_kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store,
+                      options->max_ctg_cache, ctgs, &alns);
+      traverse_ctg_graph(max_kmer_len, options->scaff_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, !BREAK_SCAFFS,
+                         &ctgs, alns);
+    }
   }
   SLOG(KBLUE "_________________________\n\n", KNORM);
 
@@ -148,4 +149,5 @@ int main(int argc, char **argv) {
   upcxx::finalize();
   return 0;
 }
+
 

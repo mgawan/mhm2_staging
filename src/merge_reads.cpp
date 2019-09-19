@@ -159,7 +159,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
         int16_t overlap = len-i;
         int16_t this_max_mismatch = MAX_MISMATCHES + (EXTRA_MISMATCHES_PER_1000 * overlap / 1000);
         int16_t error_max_mismatch = this_max_mismatch * 4 / 3 + 1; // 33% higher
-        if (fast_count_mismatches(seq1.c_str() + start_i + i, rc_seq2.c_str(), overlap, error_max_mismatch) > error_max_mismatch) continue;
+        if (fast_count_mismatches(seq1.c_str() + start_i + i, rc_seq2.c_str(), overlap, error_max_mismatch) > error_max_mismatch)
+          continue;
         int16_t matches = 0, mismatches = 0, bothNs = 0, Ncount = 0;
         int16_t overlapChecked = 0;
         double perror = 0.0;

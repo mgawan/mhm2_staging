@@ -59,7 +59,11 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
   logger(os, params ...);
   stream << os.str();
   if (flush) stream.flush();
-  if (fail) exit(1);
+  // in debug mode, get a stack trace
+  if (fail) {
+    assert(0);
+    exit(1);
+  }
 }
 
 
@@ -154,21 +158,21 @@ public:
     t = std::chrono::high_resolution_clock::now();
     this->name = name;
     if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
-    if (always_show) SLOG(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
-    else SLOG_VERBOSE(KLCYAN, "--- ", name, " (", init_free_mem, " GB free) ---\n", KNORM);
+    if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
+    else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
   }
   
   ~Timer() {
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
-    DBG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ---\n", KNORM);
+    DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --\n", KNORM);
     upcxx::barrier();
     t_elapsed = std::chrono::high_resolution_clock::now() - t;
     if (always_show) {
-      SLOG(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-           (init_free_mem - get_free_mem_gb()), " GB) ---\n", KNORM);
+      SLOG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
+           (init_free_mem - get_free_mem_gb()), " GB) --\n", KNORM);
     } else {
-      SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-                   (init_free_mem - get_free_mem_gb()), " GB) ---\n", KNORM);
+      SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
+                   (init_free_mem - get_free_mem_gb()), " GB) --\n", KNORM);
     }
   }
 };

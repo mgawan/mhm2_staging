@@ -13,6 +13,8 @@ using std::cout;
 using std::endl;
 using std::vector;
 
+#define YES_NO(X) ((X) ? "YES" : "NO")
+
 class Options {
 
   vector<string> splitter(string in_pattern, string& content) {
@@ -41,23 +43,27 @@ public:
   int max_ctg_cache = 0;
   bool use_bloom = false;
   double dynamic_min_depth = 0.9;
-  int min_depth_cutoff = 2;
   int seed_space = 2;
   bool checkpoint = false;
+  int scaff_kmer_len = 0;
+  string ctgs_fname;
+
   
   void load(int argc, char **argv) {
     string usage = string(argv[0]) + "\n" +
       "-r    readsfile       Files containing merged and unmerged reads in FASTQ format (comma separated)\n" + 
       "-k    kmerlens        kmer lengths\n" +
-      "-p    prevkmerlen     prev kmer length used for generating contigs (optional)\n" +
+      "-k    prevkmerlen     prev kmer length used for generating contigs (optional)\n" +
       "-Q    qualoffset      Phred encoding offset\n" +
       "-m    maxkmerstore    Maximum size for kmer store\n" +
       "-C    maxctgcache     Maximum number of entries for contig cache in aligner\n" + 
-      "-b    usebloom        Use bloom filter to reduce memory at the increase of runtime\n" +
       "-d    mindepthcutoff  Min. allowable depth\n" +
       "-D    dynamicmindepth Dynamic min depth setting\n" +
-      "-S    seedspace       Aligner seed space\n" +
-      "-x    checkpoint      Checkpoint after each contig round\n" +
+      "-c    string          File with contigs for restart\n" +
+      "-S    int             Aligner seed space\n" +
+      "-b    bool            Use bloom filter to reduce memory at the increase of runtime\n" +
+      "-x    bool            Checkpoint after each contig round\n" +
+      "-s    int             Run scaffolding with second round kmer length\n" +
       "-v                    Verbose mode\n" + 
       "-h                    Display help message\n";
 
@@ -88,13 +94,14 @@ public:
     args("-Q") >> qual_offset;
     args("-m") >> max_kmer_store;
     args("-C") >> max_ctg_cache;
-    args("-d") >> min_depth_cutoff;
     args("-D") >> dynamic_min_depth;
+    args("-c") >> ctgs_fname;
     args("-S") >> seed_space;
+    args("-s") >> scaff_kmer_len;
     if (args["-b"]) use_bloom = true;
-    if (args["-v"]) verbose = true;
     if (args["-x"]) checkpoint = true;
-    
+    if (args["-v"]) verbose = true;
+
     if (upcxx::rank_me() == 0) {
       // print out all compiler definitions
       SLOG(KBLUE "_________________________\nCompiler definitions:\n");
@@ -109,12 +116,13 @@ public:
       SLOG("  (-Q) quality offset:        ", qual_offset, "\n");
       SLOG("  (-m) max kmer store:        ", max_kmer_store, "\n");
       SLOG("  (-C) max ctg cache:         ", max_ctg_cache, "\n");
-      SLOG("  (-d) min depth cutoff:      ", min_depth_cutoff, "\n");
       SLOG("  (-D) dynamic min depth:     ", dynamic_min_depth, "\n");
+      if (!ctgs_fname.empty()) SLOG("  (-c) contig file name:      ", ctgs_fname, "\n");
       SLOG("  (-S) aligner seed space:    ", seed_space, "\n");
-      SLOG("  (-b) use bloom:             ", use_bloom, "\n");
-      SLOG("  (-x) checkpoint:            ", checkpoint, "\n");
-      SLOG("  (-v) verbose:               ", (verbose ? "YES" : "NO"), "\n");
+      SLOG("  (-b) use bloom:             ", YES_NO(use_bloom), "\n");
+      SLOG("  (-x) checkpoint:            ", YES_NO(checkpoint), "\n");
+      SLOG("  (-s) scaffold kmer length:  ", scaff_kmer_len, "\n");
+      SLOG("  (-v) verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
       
       double start_mem_free = get_free_mem_gb();
