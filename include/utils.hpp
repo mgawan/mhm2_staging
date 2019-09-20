@@ -57,13 +57,12 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
   ostringstream os;
   os << first;
   logger(os, params ...);
+  if (fail) {
+    std::cerr << "\n" << KNORM;
+    throw std::runtime_error(os.str());
+  }
   stream << os.str();
   if (flush) stream.flush();
-  // in debug mode, get a stack trace
-  if (fail) {
-    assert(0);
-    exit(1);
-  }
 }
 
 
@@ -202,13 +201,9 @@ inline std::vector<string> split(const string &s, char delim) {
   return elems;
 }
 
-inline void check_file_exists(const string &fname) {
-  auto fnames = split(fname, ',');
-  for (auto fname : fnames) {
-    ifstream ifs(fname);
-    if (!ifs.is_open()) SDIE("File ", fname, " cannot be accessed: ", strerror(errno), "\n");
-  }
-  upcxx::barrier();
+inline bool file_exists(const string &fname) {
+  ifstream ifs(fname, std::ios_base::binary);
+  return ifs.good();
 }
 
 inline void replace_spaces(string &s) {

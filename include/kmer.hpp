@@ -86,19 +86,21 @@ public:
     assert(Kmer::k > 0);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
   }
-  
+
   explicit Kmer(const char *s) {
     assert(Kmer::k > 0);
     set_kmer(s);
   }
-  
+
   explicit Kmer(const MerArray &arr) {
     assert(Kmer::k > 0);
     std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
   }
 
-  static std::vector<Kmer> get_kmers(std::string seq) {
-    assert(Kmer::k > 0);
+  static std::vector<Kmer> get_kmers(int kmer_len, std::string seq) {
+    // only need rank 0 to check
+    if (Kmer::k == 0) SDIE("Kmer::k not set");
+    if (kmer_len != Kmer::k) SDIE("Kmer::k value ", Kmer::k, " is different from kmer length ", kmer_len, " passed to get kmers");
     for (auto & c : seq) c = toupper(c); 
     if (seq.size() < Kmer::k) return std::vector<Kmer>();
     int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;

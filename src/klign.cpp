@@ -88,6 +88,7 @@ class KmerCtgDHT {
         vector<CtgLoc> *ctg_locs = &it->second;
         // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
         if (ctg_locs->size() >= MAX_KMER_MAPPINGS) {
+          assert(ctg_locs->size() <= MAX_KMER_MAPPINGS);
           _num_dropped++;
           return;
         }
@@ -375,7 +376,7 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
     global_ptr<char> seq_gptr = allocate<char>(ctg->seq.length() + 1);
     strcpy(seq_gptr.local(), ctg->seq.c_str());
     CtgLoc ctg_loc = { .cid = ctg->id, .seq_gptr = seq_gptr, .clen = (int)ctg->seq.length() };
-    auto kmers = Kmer::get_kmers(ctg->seq);
+    auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq);
     num_kmers += kmers.size();
     for (int i = 0; i < kmers.size(); i++) {
       ctg_loc.pos_in_ctg = i;
@@ -420,10 +421,11 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
       // this is dynamically allocated and deleted in the final .then callback when the computation is over
       // a mapping of cid to {pos in read, is_rc, ctg location)
       auto aligned_ctgs_map = new aligned_ctgs_map_t();
-      auto kmers = Kmer::get_kmers(seq);
+      auto kmers = Kmer::get_kmers(kmer_ctg_dht->kmer_len, seq);
       tot_num_kmers += kmers.size();
       // get all the seeds/kmers for a read, and add all the potential ctgs for aln to the aligned_ctgs_map
       // when the read future chain is completed, all the ctg info will be collected and the alignment can happen
+      // FIXME: if using a seed > 1 and no alns are found, repeat with a seed of 1
       future<> read_fut_chain = make_future();
       for (int i = 0; i < kmers.size(); i += seed_space) {
         Kmer kmer = kmers[i];
@@ -437,13 +439,13 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
         // add the fetched ctg into the unordered map
         auto fut = kmer_ctg_dht->get_ctgs_with_kmer(kmer).then(
           [=](vector<CtgLoc> aligned_ctgs) {
-            //_get_ctgs_dt += (NOW() - t);
             for (auto ctg_loc : aligned_ctgs) {
               // ensures only the first kmer to cid mapping is retained
               aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
             }
           });
         read_fut_chain = when_all(read_fut_chain, fut);
+        progress();
       }
       // when all the ctgs are fetched, do the alignments
       auto fut = read_fut_chain.then(
@@ -455,7 +457,6 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
             });
         });
       reads_futures.push_back(fut);
-      progress();
       num_reads++;
     }
     for (auto fut : reads_futures) fut.wait();
@@ -485,9 +486,10 @@ void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &rea
                      int max_ctg_cache, Contigs &ctgs, Alns *alns) {
   Timer timer(__func__, true);
   _num_dropped = 0;
-  SLOG("Aligning with seed length ", kmer_len, "\n");
+  SLOG("Aligning with seed length ", kmer_len, " and seed space ", seed_space, "\n");
   //_get_ctgs_dt = std::chrono::duration<double>(0);
   KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
+  barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
   kmer_ctg_dht.dump_ctg_kmers();

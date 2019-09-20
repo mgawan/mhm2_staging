@@ -104,7 +104,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
       if (seq.length() < kmer_len) continue;
       
       // split into kmers
-      auto kmers = Kmer::get_kmers(seq);
+      auto kmers = Kmer::get_kmers(kmer_len, seq);
       /*
       // disable kmer counting of kmers after a bad quality score (of 2) in the read
       // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
@@ -165,7 +165,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
     auto ctg = it;
     progbar.update();
     if (ctg->seq.length() >= kmer_len) {
-      auto kmers = Kmer::get_kmers(ctg->seq);
+      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
@@ -184,7 +184,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   barrier();
 }
 
-static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom) {
+static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom) {
   Timer timer(__func__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
@@ -195,7 +195,7 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
     auto ctg = it;
     progbar.update();
     if (ctg->seq.length() >= kmer_len + 2) {
-      auto kmers = Kmer::get_kmers(ctg->seq);
+      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
@@ -224,7 +224,7 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
   SLOG_VERBOSE("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
 }
 
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
+void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__func__, true);
   
@@ -245,7 +245,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
   int64_t new_count = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("After purge of kmers < 2, there are ", new_count, " unique kmers\n");
   barrier();
-  if (ctgs.size()) add_ctg_kmers(kmer_len, prev_kmer_len, ctgs, kmer_dht, use_bloom);
+  if (ctgs.size()) add_ctg_kmers(kmer_len, ctgs, kmer_dht, use_bloom);
   barrier();
   kmer_dht->compute_kmer_exts();
 #ifdef DEBUG

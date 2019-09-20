@@ -205,7 +205,7 @@ static void add_span(int max_kmer_len, int kmer_len, Aln* aln1, Aln* aln2) {
   int end1 = aln1->orient == '+' ? 3 : 5;
   int end2 = aln2->orient == '+' ? 3 : 5;
 
-  if (gap >= -(max_kmer_len - 1) && gap < aln1->rlen + aln2->rlen - 2 * kmer_len) {
+  if (gap >= -(max_kmer_len - 1) && gap < aln1->rlen + aln2->rlen - 2 * max_kmer_len) {
     CidPair cids = { .cid1 = aln1->cid, .cid2 = aln2->cid };
     if (cids.cid1 < cids.cid2) {
       swap(end1, end2);

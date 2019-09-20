@@ -35,17 +35,15 @@ class Options {
 public:
   
   vector<string> reads_fname_list;
-  vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
-  unsigned int prev_kmer_len = 0;
+  vector<unsigned> kmer_lens = {};
+  vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
   int max_kmer_store = ONE_MB;
   int max_ctg_cache = 0;
   bool use_bloom = false;
   double dynamic_min_depth = 0.9;
-  int seed_space = 2;
   bool checkpoint = false;
-  int scaff_kmer_len = 0;
   string ctgs_fname;
 
   
@@ -60,10 +58,9 @@ public:
       "-d    mindepthcutoff  Min. allowable depth\n" +
       "-D    dynamicmindepth Dynamic min depth setting\n" +
       "-c    string          File with contigs for restart\n" +
-      "-S    int             Aligner seed space\n" +
       "-b    bool            Use bloom filter to reduce memory at the increase of runtime\n" +
       "-x    bool            Checkpoint after each contig round\n" +
-      "-s    int             Run scaffolding with second round kmer length\n" +
+      "-s    scaffkmerlens   kmer lengths for scaffolding rounds\n" +
       "-v                    Verbose mode\n" + 
       "-h                    Display help message\n";
 
@@ -83,21 +80,21 @@ public:
     string kmer_lens_str = "";
     if (args("-k") >> kmer_lens_str) {
       auto kmer_lens_split = split(kmer_lens_str, ',');
-      kmer_lens.clear();
       for (auto kmer_len : kmer_lens_split) kmer_lens.push_back(std::stoi(kmer_len.c_str()));
-    } else {
-      kmer_lens_str = "";
-      for (auto kmer_len : kmer_lens) kmer_lens_str += to_string(kmer_len) + ",";
     }
 
-    args("-p") >> prev_kmer_len;
+    string scaff_kmer_lens_str = "";
+    if (args("-s") >> scaff_kmer_lens_str) {
+      auto scaff_kmer_lens_split = split(scaff_kmer_lens_str, ',');
+      for (auto scaff_kmer_len : scaff_kmer_lens_split) scaff_kmer_lens.push_back(std::stoi(scaff_kmer_len.c_str()));
+    }
+    
+
     args("-Q") >> qual_offset;
     args("-m") >> max_kmer_store;
     args("-C") >> max_ctg_cache;
     args("-D") >> dynamic_min_depth;
     args("-c") >> ctgs_fname;
-    args("-S") >> seed_space;
-    args("-s") >> scaff_kmer_len;
     if (args["-b"]) use_bloom = true;
     if (args["-x"]) checkpoint = true;
     if (args["-v"]) verbose = true;
@@ -112,16 +109,14 @@ public:
       SLOG("MHM options:\n");
       SLOG("  (-r) reads files:           ", reads_fnames, "\n");
       SLOG("  (-k) kmer lengths:          ", kmer_lens_str, "\n");
-      if (prev_kmer_len) SLOG("  (-p) prev kmer length:      ", prev_kmer_len, "\n");
+      SLOG("  (-s) scaffold kmer lengths: ", scaff_kmer_lens_str, "\n");
       SLOG("  (-Q) quality offset:        ", qual_offset, "\n");
       SLOG("  (-m) max kmer store:        ", max_kmer_store, "\n");
       SLOG("  (-C) max ctg cache:         ", max_ctg_cache, "\n");
       SLOG("  (-D) dynamic min depth:     ", dynamic_min_depth, "\n");
       if (!ctgs_fname.empty()) SLOG("  (-c) contig file name:      ", ctgs_fname, "\n");
-      SLOG("  (-S) aligner seed space:    ", seed_space, "\n");
       SLOG("  (-b) use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  (-x) checkpoint:            ", YES_NO(checkpoint), "\n");
-      SLOG("  (-s) scaffold kmer length:  ", scaff_kmer_len, "\n");
       SLOG("  (-v) verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
       

@@ -36,7 +36,7 @@ unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
+void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
@@ -80,62 +80,67 @@ int main(int argc, char **argv) {
 
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
 
-  int max_kmer_len = options->kmer_lens.back();
-  int prev_kmer_len = 0;
-  for (auto kmer_len : options->kmer_lens) {
-    auto loop_start_t = chrono::high_resolution_clock::now();
-    SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
-    Kmer::k = kmer_len;
-    auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-    dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
-    barrier();
-    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                  options->dynamic_min_depth, ctgs, kmer_dht);
-    barrier();
-    traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-    barrier();
-    //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
+  if (options->kmer_lens.size()) {
+    int max_kmer_len = options->kmer_lens.back();
+    for (auto kmer_len : options->kmer_lens) {
+      auto loop_start_t = chrono::high_resolution_clock::now();
+      auto free_mem = get_free_mem_gb();
+      SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
+      Kmer::k = kmer_len;
+      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
+      barrier();
+      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+                    options->dynamic_min_depth, ctgs, kmer_dht);
+      barrier();
+      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+      barrier();
+      //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
-    ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
+      ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
-    prev_kmer_len = kmer_len;
-    
-    if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
-    SLOG(KBLUE "_________________________\n\n", KNORM);
-    ctgs.print_stats(500);
-
-    chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-    SLOG("\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-         get_current_time(), ", free memory ", get_free_mem_gb(), " GB\n");
-    barrier();
-  }
-  if (options->scaff_kmer_len) {
-    SLOG(KBLUE "_________________________\nScaffolding\n\n", KNORM);
-    {
-      Timer timer("Scaffolding", true);
-      Alns alns;
-      // cgraph with seed of max kmer len
-      find_alignments(max_kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                      ctgs, &alns);
-      traverse_ctg_graph(max_kmer_len, max_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, BREAK_SCAFFS, &ctgs, alns);
+      if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+      SLOG(KBLUE "_________________________\n", KNORM);
       ctgs.print_stats(500);
-      alns.clear();
-      int kmer_len = options->kmer_lens[1];
-      find_alignments(options->scaff_kmer_len, options->seed_space, options->reads_fname_list, options->max_kmer_store,
-                      options->max_ctg_cache, ctgs, &alns);
-      traverse_ctg_graph(max_kmer_len, options->scaff_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, !BREAK_SCAFFS,
-                         &ctgs, alns);
+      chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
+      SLOG("\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
+           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n");
+      barrier();
     }
   }
-  SLOG(KBLUE "_________________________\n\n", KNORM);
-
+  if (options->scaff_kmer_lens.size()) {
+    auto max_scaff_kmer_len = options->scaff_kmer_lens.front();
+    for (auto scaff_kmer_len : options->scaff_kmer_lens) {
+      auto loop_start_t = chrono::high_resolution_clock::now();
+      auto free_mem = get_free_mem_gb();
+      Kmer::k = scaff_kmer_len;
+      SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
+      Alns alns;
+      int seed_space = (scaff_kmer_len == max_scaff_kmer_len ? 2 : 4);
+      find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
+                      ctgs, &alns);
+      alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns");
+      bool break_scaffs = (scaff_kmer_len == options->scaff_kmer_lens.back() ? false : true);
+      traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, break_scaffs, &ctgs, alns);
+      if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
+        if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
+        SLOG(KBLUE "_________________________\n", KNORM);
+        ctgs.print_stats(500);
+      }
+      chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
+      SLOG("\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
+           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n");
+      barrier();
+    }
+  }
+  SLOG(KBLUE "_________________________\n", KNORM);
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
+  SLOG(KBLUE "_________________________\n", KNORM);
   ctgs.print_stats(500);
-  
+  SLOG(KBLUE "_________________________\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
        " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");
-  
   chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
   SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
        " for MHM version ", MHM_VERSION, "\n"); 

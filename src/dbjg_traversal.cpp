@@ -276,7 +276,7 @@ void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Conti
     if (ctg->seq.length() >= kmer_len + 2) {
       int num_kmers = ctg->seq.length() - kmer_len;
       ctg->kmer_depths.reserve(num_kmers);
-      auto kmers = Kmer::get_kmers(ctg->seq);
+      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
       for (auto kmer : kmers) {
         auto kmer_rc = kmer.revcomp();
         if (kmer_rc < kmer) kmer = kmer_rc;

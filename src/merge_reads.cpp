@@ -101,8 +101,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
   for (auto const &reads_fname : reads_fname_list) {
-    FastqReader fqr(reads_fname);
     string out_fname = get_merged_reads_fname(reads_fname);
+    // skip if the file already exists
+    if (file_exists(out_fname)) {
+      SLOG("File ", out_fname, " already exists, skipping...\n");
+      continue;
+    }
+    FastqReader fqr(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
     zstr::ofstream out_file(out_fname);
     ostringstream out_buf;
