@@ -16,7 +16,7 @@ using namespace upcxx;
 
 
 struct AlnStats {
-  int64_t nalns, unaligned, short_alns, containments, circular, mismatched, conflicts, bad_overlaps;
+  int64_t nalns, unaligned, short_alns, containments, circular, mismatched, conflicts, bad_overlaps, empty_spans;
   
   string to_string() const {
     int64_t tot_nalns = reduce_one(nalns, op_fast_add, 0).wait();
@@ -27,6 +27,7 @@ struct AlnStats {
     int64_t tot_mismatched = reduce_one(mismatched, op_fast_add, 0).wait();
     int64_t tot_conflicts = reduce_one(conflicts, op_fast_add, 0).wait();
     int64_t tot_bad_overlaps = reduce_one(bad_overlaps, op_fast_add, 0).wait();
+    int64_t tot_empty_spans = reduce_one(empty_spans, op_fast_add, 0).wait();
     int64_t nbad = tot_unaligned + tot_containments + tot_short_alns + tot_circular +
       tot_mismatched + tot_conflicts + tot_bad_overlaps;
     
@@ -42,6 +43,7 @@ struct AlnStats {
     os << "    mismatched:         " << perc_str(tot_mismatched, tot_nalns) << endl;
     os << "    conflicts:          " << perc_str(tot_conflicts, tot_nalns) << endl;
     os << "    bad overlaps:       " << perc_str(tot_bad_overlaps, tot_nalns) << endl;
+    os << "    empty spans:        " << perc_str(tot_empty_spans, tot_nalns) << endl;
     return os.str();
   }
 };
@@ -67,7 +69,7 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
 
 // gets all the alns for a single read, and returns true if there are more alns
 static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln*> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
-  const int ALN_SLOP = 5;
+  const int ALN_SLOP = 1;
   string start_read_id = "";
   for (; i < alns.size(); i++) {
     Aln *aln = &alns.get_aln(i);
@@ -101,6 +103,10 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
   AlnCoords ctg1 = get_aln_coords(aln1);
   AlnCoords ctg2 = get_aln_coords(aln2);
   
+  if (aln1->cid == aln2->cid) {
+    stats.circular++;
+    return false;
+  }
   auto is_contained = [](const AlnCoords &ctg1, const AlnCoords &ctg2) -> bool {
     if (ctg1.start >= ctg2.start && ctg1.stop <= ctg2.stop) return true;
     else return false;
@@ -108,10 +114,6 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
   
   if (is_contained(ctg1, ctg2) || is_contained(ctg2, ctg1)) {
     stats.containments++;
-    return false;
-  }
-  if (aln1->cid == aln2->cid) {
-    stats.circular++;
     return false;
   }
   int end1, end2;
@@ -205,7 +207,7 @@ static void add_span(int max_kmer_len, int kmer_len, Aln* aln1, Aln* aln2) {
   int end1 = aln1->orient == '+' ? 3 : 5;
   int end2 = aln2->orient == '+' ? 3 : 5;
 
-  if (gap >= -(max_kmer_len - 1) && gap < aln1->rlen + aln2->rlen - 2 * max_kmer_len) {
+  if (gap >= -(max_kmer_len - 1) && gap < aln1->rlen + aln2->rlen - 2 * kmer_len) {
     CidPair cids = { .cid1 = aln1->cid, .cid2 = aln2->cid };
     if (cids.cid1 < cids.cid2) {
       swap(end1, end2);
@@ -708,9 +710,9 @@ void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<str
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  get_spans_from_alns(max_kmer_len, kmer_len, alns);
+  //get_spans_from_alns(max_kmer_len, kmer_len, alns);
   // purge mismatches and conflicts
-  _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts);
+  _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);
   parse_reads(kmer_len, reads_fname_list);

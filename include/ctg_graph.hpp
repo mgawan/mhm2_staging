@@ -8,6 +8,8 @@
 #include <map>
 #include <fstream>
 #include <stdarg.h>
+#include <numeric>
+#include <algorithm>
 #include <upcxx/upcxx.hpp>
 
 #include "progressbar.hpp"
@@ -608,38 +610,6 @@ public:
                }, edges, edge.serialize()).wait();
   }
 
-  void update_edge_gap(Edge &edge, int gap) {
-    upcxx::rpc(get_edge_target_rank(edge.cids),
-               [](upcxx::dist_object<edge_map_t> &edges, CidPair cids, int gap) {
-                 const auto it = edges->find(cids);
-                 if (it == edges->end()) {
-                   DIE("Edge for ", cids.cid1, "-", cids.cid2, " not found\n");
-                 } else {
-                   auto edge = &it->second;
-                   if (!edge->gap_updated) {
-                     DBG("\tCorrected final gap size for edge ", edge->cids.cid1, "<=>", edge->cids.cid2 ,"\n");
-                     edge->gap = gap;
-                     edge->gap_updated = true;
-                   } else {
-                     DBG("\tRACE: edge ", edge->cids.cid1, "<=>", edge->cids.cid2, " already corrected!\n");
-                   }
-                 }
-               }, edges, edge.cids, gap).wait();
-  }
-
-  void update_edge_type(Edge &edge, EdgeType edge_type) {
-    upcxx::rpc(get_edge_target_rank(edge.cids),
-               [](upcxx::dist_object<edge_map_t> &edges, CidPair cids, EdgeType edge_type) {
-                 const auto it = edges->find(cids);
-                 if (it == edges->end()) {
-                   DIE("Edge for ", cids.cid1, "-", cids.cid2, " not found\n");
-                 } else {
-                   auto edge = &it->second;
-                   edge->edge_type = edge_type;
-                 }
-               }, edges, edge.cids, edge_type).wait();
-  }
-  
   void add_edge_gap_read(CidPair cids, GapRead gap_read, int aln_len, int aln_score) {
     auto target_rank = get_edge_target_rank(cids);
     EdgeGapReadInfo edge_gap_read_info = { cids, gap_read, aln_len, aln_score };
@@ -650,7 +620,7 @@ public:
     edge_gap_read_store.flush_updates(add_edge_gap_read_func, edges);
   }
 
-  void purge_error_edges(int64_t *mismatched, int64_t *conflicts) {
+  void purge_error_edges(int64_t *mismatched, int64_t *conflicts, int64_t *empty_spans) {
     for (auto it = edges->begin(); it != edges->end(); ) {
       auto edge = make_shared<Edge>(it->second);
       if (edge->mismatch_error) {
@@ -658,6 +628,7 @@ public:
         it = edges->erase(it);
       } else if (edge->edge_type == EdgeType::SPAN && edge->gap > 0 && !edge->gap_reads.size()) {
         // don't use positive span gaps without filler
+        (*empty_spans)++;
         it = edges->erase(it);
       } else {
         // retain the conflicts to prevent falsely choosing a path when it should be a fork
@@ -710,22 +681,6 @@ public:
     return v1->cid >= v2->cid ? edge->end2 : edge->end1;
   }
   
-  bool edge_exists(const cid_t cidA, int endA, const cid_t cidB, int endB) {
-    auto edge = get_edge(cidA, cidB);
-    if (edge) {
-      if ((cidA > cidB && edge->end1 == endA && edge->end2 == endB)
-          ||
-          (cidB > cidA && edge->end1 == endB && edge->end2 == endA) ) {
-        return true;
-      }
-    }
-    return false;
-  }
-  
-  bool edge_exists(shared_ptr<Vertex> v1, int endA, shared_ptr<Vertex> v2, int endB) {
-    return edge_exists(v1->cid, endA, v2->cid, endB);
-  }
-
   void clear_caches() {
     vertex_cache.clear();
     edge_cache.clear();
@@ -764,14 +719,9 @@ public:
     const int CLEN_THRES = 500;
     Timer timer(__func__);
     auto get_avg_min_max = [](vector<int64_t> &vals, double *avg = nullptr) {
-      double total = 0;
-      int64_t max_val = 0;
-      int64_t min_val = LONG_MAX;
-      for (auto val : vals) {
-        total += val;
-        min_val = min(min_val, val);
-        max_val = max(max_val, val);
-      }
+      int64_t total = std::accumulate(vals.begin(), vals.end(), 0);
+      int64_t max_val = *std::max_element(vals.begin(), vals.end());
+      int64_t min_val = *std::min_element(vals.begin(), vals.end());
       int64_t all_min_val =  upcxx::reduce_one(min_val, upcxx::op_fast_min, 0).wait();
       int64_t all_max_val =  upcxx::reduce_one(max_val, upcxx::op_fast_max, 0).wait();
       double all_total = upcxx::reduce_one(total, upcxx::op_fast_add, 0).wait();

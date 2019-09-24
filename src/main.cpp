@@ -110,16 +110,18 @@ int main(int argc, char **argv) {
   }
   if (options->scaff_kmer_lens.size()) {
     auto max_scaff_kmer_len = options->scaff_kmer_lens.front();
+// FIXME: need to derive this even when not given it on the command line    
+    max_scaff_kmer_len = 99;
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem_gb();
       Kmer::k = scaff_kmer_len;
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
-      int seed_space = (scaff_kmer_len == max_scaff_kmer_len ? 2 : 4);
+      int seed_space = 1;//(scaff_kmer_len == max_scaff_kmer_len ? 2 : 4);
       find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
-      alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns");
+      alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
       bool break_scaffs = (scaff_kmer_len == options->scaff_kmer_lens.back() ? false : true);
       traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, break_scaffs, &ctgs, alns);
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {

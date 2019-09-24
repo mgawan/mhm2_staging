@@ -42,6 +42,8 @@ struct CtgLoc {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 
+static const int ALN_EXTRA = 10;
+
 using aligned_ctgs_map_t = unordered_map<cid_t, tuple<int, bool, CtgLoc>>;
 
 
@@ -66,7 +68,8 @@ class KmerCtgDHT {
   unordered_map<cid_t, string> ctg_seq_cache;
   int num_ctg_seq_cache_hits;
   int64_t ctg_seq_bytes_fetched;
-
+  int64_t sum_hamming_dist;
+  
   Alns *alns;
   
   // default aligner and filter
@@ -101,54 +104,64 @@ class KmerCtgDHT {
   };
   dist_object<InsertKmer> insert_kmer;
 
-  void align_read(const string &rname, const string &rseq, char *seq_buf, int pos_in_read,
-                  int start_pos, int end_pos, const CtgLoc &ctg_loc, char orient, int subseq_len) {
+  void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rend, int rlen,
+                  int cstart, int cend, int clen, char orient, int start_overlap, int end_overlap, 
+                  const string &full_rseq, const string &full_cseq, int pr, int pc, bool ctg_rc) {
     num_alns++;
-    int rstart = 0;
-    if (pos_in_read && subseq_len < rseq.length()) {
-      if (orient == '-') rstart = max(pos_in_read - ctg_loc.pos_in_ctg, 0);
-      else rstart = pos_in_read;
-    }
-    bool perfect_match = true;
-    if (strncmp(seq_buf, (orient == '-' ? rseq.c_str() : rseq.c_str()) + rstart, subseq_len) == 0) num_perfect_alns++;
-    else perfect_match = false;
-    int rend = rstart + subseq_len;
-    progress();
-    
-    int offset = rstart;
-    if (orient == '-') {
-      rstart = rseq.length() - rend;
-      rend = rseq.length() - offset;
-    }
-
-    string rname_fixed = rname;
-    replace_spaces(rname_fixed);
-
+    int hdist = 0;
     Aln aln;
-    if (perfect_match) {
-      aln = { .read_id = rname_fixed, .cid = ctg_loc.cid, 
-              .rstart = rstart, .rstop = rend, .rlen = (int)rseq.length(),
-              .cstart = start_pos, .cstop = end_pos, .clen = ctg_loc.clen,
-              .orient = orient, .score1 = (rend - rstart), .score2 = 0 };
+    StripedSmithWaterman::Alignment ssw_aln;
+
+    if (rseq == cseq) {
+      num_perfect_alns++;
+      int aln_len = rseq.length();
+      ssw_aln.ref_begin = 0;
+      ssw_aln.ref_end = aln_len;
+      ssw_aln.query_begin = 0;
+      ssw_aln.query_end = aln_len;
+      ssw_aln.sw_score = aln_len;
+      ssw_aln.sw_score_next_best = 0;
     } else {
       // make sure upcxx progress is done before starting alignment
       discharge();
-      // contig is the ref, read is the query - done this way so that we can do multiple alns to each read
-      StripedSmithWaterman::Alignment ssw_aln;
-      auto t = NOW();
-      ssw_aligner.Align(seq_buf, rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
-      ssw_dt += (NOW() - t);
-      rstart = ssw_aln.ref_begin;
-      rend = ssw_aln.ref_end + 1;
-      if (orient == '-') {
-        rstart = rseq.length() - ssw_aln.ref_end - 1;
-        rend = rseq.length() - ssw_aln.ref_begin;
+#ifdef DEBUG
+      // sanity check that kmer matches
+      for (int i = 0; i < rseq.length(); i++) {
+        // allow matches to any Ns
+        if (rseq[i] == 'N') continue;
+        if (rseq[i] != cseq[i]) {
+          // we have a mismatch
+          if (i >= start_overlap && i < start_overlap + kmer_len) {
+            // this is in the seed region - there should be no mismatches
+            //if (full_cseq.length() < 500) 
+              DIE("Mismatch found within seed at position ", i, ": ", rseq[i], " != ", cseq[i],
+                  " start overlap ", start_overlap, " end overlap ", end_overlap, " orient ", orient,
+                  " rlen ", rlen, " clen ", clen, " pr ", pr, " pc ", pc, " ctg rc ", ctg_rc, " rid ", rname, " cid ", cid,
+                  "\n", rseq, "\n", cseq, "\n", full_rseq, "\n", full_cseq);
+          }
+        }
       }
-      aln = { .read_id = rname_fixed, .cid = ctg_loc.cid,
-              .rstart = rstart, .rstop = rend, .rlen = (int)rseq.length(),
-              .cstart = start_pos + ssw_aln.query_begin, .cstop = start_pos + ssw_aln.query_end + 1, .clen = ctg_loc.clen,
-              .orient = orient, .score1 = ssw_aln.sw_score, .score2 = ssw_aln.sw_score_next_best };
+#endif
+      // contig is the ref, read is the query - done this way so that we can do multiple alns to each read
+      auto t = NOW();
+      ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
+      ssw_dt += (NOW() - t);
     }
+    rend = rstart + ssw_aln.ref_end + 1;
+    rstart = rstart + ssw_aln.ref_begin;
+    if (orient == '-') {
+      int tmp = rstart;
+      rstart = rlen - rend;
+      rend = rlen - tmp;
+    }
+    aln = { .read_id = rname, .cid = cid,
+            .rstart = rstart, .rstop = rend, .rlen = rlen,
+            .cstart = cstart + ssw_aln.query_begin, .cstop = cstart + ssw_aln.query_end + 1, .clen = clen,
+            .orient = orient, .score1 = ssw_aln.sw_score, .score2 = ssw_aln.sw_score_next_best };
+    int aln_len = rend - rstart;
+    // check against hamming distance
+    hdist = hamming_dist(rseq.substr(ssw_aln.ref_begin, aln_len), cseq.substr(ssw_aln.query_begin, aln_len), false);
+    sum_hamming_dist += hdist;
 #ifdef DEBUG
     *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
 #endif
@@ -179,7 +192,8 @@ public:
     , num_ctg_seq_cache_hits(0)
     , ctg_seq_bytes_fetched(0)
     , max_ctg_seq_cache_size(max_ctg_cache)
-    , alns(alns) {
+    , alns(alns)
+    , sum_hamming_dist(0) {
     
     ssw_filter.report_cigar = false;
     kmer_store.set_size("insert ctg seeds", max_store_size);
@@ -247,6 +261,10 @@ public:
     return reduce_one(ctg_seq_bytes_fetched, op_fast_add, 0).wait();
   }    
 
+  int64_t get_sum_hamming_dist() {
+    return reduce_one(sum_hamming_dist, op_fast_add, 0).wait();
+  }    
+
   void add_kmer(Kmer kmer, CtgLoc &ctg_loc) {
     Kmer kmer_rc = kmer.revcomp();
     ctg_loc.is_rc = false;
@@ -301,33 +319,39 @@ public:
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
 
-  future<> compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, const string &rseq) {
-    string rseq_rc = "";
+  future<> compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, string rseq) {
     int rlen = rseq.length();
+    string rseq_rc = revcomp(rseq);
     future<> all_fut = make_future();
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read;
-      bool is_rc;
+      bool read_kmer_is_rc;
       CtgLoc ctg_loc;
-      tie(pos_in_read, is_rc, ctg_loc) = elem.second;
+      tie(pos_in_read, read_kmer_is_rc, ctg_loc) = elem.second;
       char orient = '+';
-      if (ctg_loc.is_rc != is_rc) {
+      string *rseq_ptr = &rseq;
+      if (ctg_loc.is_rc != read_kmer_is_rc) {
+        // it's revcomp in either contig or read, but not in both or neither
         orient = '-';
         pos_in_read = rlen - (kmer_len + pos_in_read);
-        rseq_rc = revcomp(rseq);
+        rseq_ptr = &rseq_rc;
       }
-      // the coords of the subseq to be aligned
-      int subseq_start_pos = max(ctg_loc.pos_in_ctg - pos_in_read - rlen, 0);
-      int subseq_end_pos = min(ctg_loc.pos_in_ctg + rlen * 2, ctg_loc.clen);
-      int subseq_len = subseq_end_pos - subseq_start_pos;
-      assert(subseq_len > 0);
-      // the coords of the seq to be fetched - whole string for cached
-      int start_pos = max_ctg_seq_cache_size ? 0 : subseq_start_pos;
-      int end_pos = max_ctg_seq_cache_size ? ctg_loc.clen : subseq_end_pos;
-      int seq_len = end_pos - start_pos;
-      // space for whatever is getting fetched
-      char *seq_buf = new char[seq_len + 1];
+      // assume the alignment is anchored to the seed and no indels (only for illumina) 
+      // so look for max possible overlap
+      int start_overlap = min(pos_in_read, ctg_loc.pos_in_ctg);
+      int end_overlap = min(rlen - pos_in_read - kmer_len, ctg_loc.clen - ctg_loc.pos_in_ctg - kmer_len);
+      int rstart = pos_in_read - start_overlap;
+      int rend = pos_in_read + kmer_len + end_overlap;
+      int cstart = ctg_loc.pos_in_ctg - start_overlap;
+      int cend = ctg_loc.pos_in_ctg + kmer_len + end_overlap;
+      int overlap_len = cend - cstart;
+      assert(rstart >= 0);
+      assert(rend <= rlen);
+      assert(cstart >= 0);
+      assert(cend <= ctg_loc.clen);
+      assert(overlap_len == rend - rstart);
+      string read_subseq = rseq_ptr->substr(rstart, overlap_len);
       bool ctg_in_cache = false;
       // if max_ctg_seq_cache_size is > 0, then we are using a cache
       if (max_ctg_seq_cache_size) {
@@ -335,27 +359,49 @@ public:
         if (it != ctg_seq_cache.end()) {
           num_ctg_seq_cache_hits++;
           // only get the subsequence needed
-          strncpy(seq_buf, it->second.c_str() + subseq_start_pos, subseq_len);
-          seq_buf[subseq_len] = '\0';
-          // align only the subseq
-          align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf, pos_in_read, subseq_start_pos, subseq_end_pos, ctg_loc,
-                     orient, subseq_len);
-          delete[] seq_buf;
+          string ctg_subseq = it->second.substr(cstart, overlap_len);
+          // align only the subseqs
+          align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rend, rlen, cstart, cend, ctg_loc.clen, orient,
+                     start_overlap, end_overlap, *rseq_ptr, it->second, pos_in_read, ctg_loc.pos_in_ctg, ctg_loc.is_rc);
           ctg_in_cache = true;
         }
       }
       if (!ctg_in_cache) {
+        int fetch_start_pos, fetch_end_pos;
+        if (!max_ctg_seq_cache_size) {
+          // not caching - only fetch subseq
+          fetch_start_pos = cstart;
+          fetch_end_pos = cend;
+        } else {
+          // caching - fetch whole contig
+          fetch_start_pos = 0;
+          fetch_end_pos = ctg_loc.clen;
+        }
+        int fetch_seq_len = fetch_end_pos - fetch_start_pos;
+        // space for whatever is getting fetched plus a null terminator
+        char *seq_buf = new char[fetch_seq_len + 1];
         // get the full or subseq
-        auto fut = rget(ctg_loc.seq_gptr + start_pos, seq_buf, seq_len).then(
+        auto fut = rget(ctg_loc.seq_gptr + fetch_start_pos, seq_buf, fetch_seq_len).then(
           [=]() {
-            seq_buf[seq_len] = '\0';
-            ctg_seq_bytes_fetched += seq_len;
-            // only stash in cache if it will fit - this is the full seq
-            if (ctg_seq_cache.size() < max_ctg_seq_cache_size) ctg_seq_cache[ctg_loc.cid] = string(seq_buf);
-            // only align the subseq
-            align_read(rname, orient == '+' ? rseq : rseq_rc, seq_buf + (max_ctg_seq_cache_size ? subseq_start_pos : 0),
-                       pos_in_read, subseq_start_pos, subseq_end_pos, ctg_loc, orient, subseq_len);
+            string ctg_seq(seq_buf, fetch_seq_len);
             delete[] seq_buf;
+            ctg_seq_bytes_fetched += fetch_seq_len;
+            if (ctg_seq_cache.size() < max_ctg_seq_cache_size) {
+              // if cache is in use and there is space, stash the whole contig
+              ctg_seq_cache[ctg_loc.cid] = ctg_seq;
+              assert(ctg_seq_cache[ctg_loc.cid].length() == ctg_loc.clen);
+            }
+            // get the subseq for alignment
+            string ctg_subseq;
+            if (!max_ctg_seq_cache_size) {
+              // if we are not caching, we fetched just the substring anyway
+              ctg_subseq = ctg_seq;
+            } else {
+              // we had to fetch the whole seq, so get just the substring
+              ctg_subseq = ctg_seq.substr(cstart, overlap_len);
+            }
+            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rend, rlen, cstart, cend, ctg_loc.clen, orient,
+                       start_overlap, end_overlap, *rseq_ptr, ctg_seq, pos_in_read, ctg_loc.pos_in_ctg, ctg_loc.is_rc);
           });
         all_fut = when_all(all_fut, fut);
       }
@@ -406,22 +452,22 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
-    string id, seq, quals;
+    string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
     // keep track of all futures to enable asynchrony at the file level
     vector<future<> > reads_futures;
     while (true) {
-      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
-      if (kmer_ctg_dht->kmer_len > seq.length()) continue;
+      if (kmer_ctg_dht->kmer_len > read_seq.length()) continue;
       // accumulate all the ctgs that align to this read at any position in a hash table to filter out duplicates
       // this is dynamically allocated and deleted in the final .then callback when the computation is over
       // a mapping of cid to {pos in read, is_rc, ctg location)
       auto aligned_ctgs_map = new aligned_ctgs_map_t();
-      auto kmers = Kmer::get_kmers(kmer_ctg_dht->kmer_len, seq);
+      auto kmers = Kmer::get_kmers(kmer_ctg_dht->kmer_len, read_seq);
       tot_num_kmers += kmers.size();
       // get all the seeds/kmers for a read, and add all the potential ctgs for aln to the aligned_ctgs_map
       // when the read future chain is completed, all the ctg info will be collected and the alignment can happen
@@ -440,7 +486,7 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
         auto fut = kmer_ctg_dht->get_ctgs_with_kmer(kmer).then(
           [=](vector<CtgLoc> aligned_ctgs) {
             for (auto ctg_loc : aligned_ctgs) {
-              // ensures only the first kmer to cid mapping is retained
+              // ensures only the first kmer to cid mapping is retained - copies will not be inserted
               aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
             }
           });
@@ -451,15 +497,16 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
       auto fut = read_fut_chain.then(
         [=, &num_reads_aligned]() {
           if (aligned_ctgs_map->size()) num_reads_aligned++;
-          return kmer_ctg_dht->compute_alns_for_read(aligned_ctgs_map, id, seq).then(
+          return kmer_ctg_dht->compute_alns_for_read(aligned_ctgs_map, read_id, read_seq).then(
             [aligned_ctgs_map]() {
               delete aligned_ctgs_map;
             });
         });
       reads_futures.push_back(fut);
+      //fut.wait();
       num_reads++;
     }
-    for (auto fut : reads_futures) fut.wait();
+    //for (auto fut : reads_futures) fut.wait();
     progbar.done();
     barrier();
   }
@@ -496,6 +543,11 @@ void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &rea
 #endif
   do_alignments(&kmer_ctg_dht, seed_space, reads_fname_list);
   assert(kmer_ctg_dht.get_my_num_alns() == alns->size());
+  barrier();
+  auto sum_hamming_dist = kmer_ctg_dht.get_sum_hamming_dist();
+  auto num_alns = kmer_ctg_dht.get_num_alns();
+  SOUT("Average hamming distance in alignments ", sum_hamming_dist / num_alns, "\n");
+  SOUT("Number of duplicate alignments ", perc_str(alns->get_num_dups(), num_alns), "\n");
   barrier();
 }
 

@@ -22,10 +22,11 @@ struct Aln {
 class Alns {
   
   vector<Aln> alns;
+  int64_t num_dups;
   
 public:
 
-  Alns() {}
+  Alns() : num_dups(0) {}
 
   void clear() {
     alns.clear();
@@ -33,6 +34,16 @@ public:
   }
     
   void add_aln(Aln &aln) {
+    // check for duplicate alns first - do this backwards because only the most recent entries could be for this read
+    for (auto it = alns.rbegin(); it != alns.rend(); ++it) {
+      // we have no more entries for this read 
+      if (it->read_id != aln.read_id) break;
+      // now check for equality
+      if (it->rstart == aln.rstart && it->rstop == aln.rstop && it->cstart == aln.cstart && it->cstop == aln.cstop) {
+        num_dups++;
+        return;
+      }
+    }
     alns.push_back(aln);
   }
 
@@ -42,6 +53,10 @@ public:
   
   size_t size() {
     return alns.size();
+  }
+
+  int64_t get_num_dups() {
+    return reduce_one(num_dups, op_fast_add, 0).wait();
   }
   
   auto begin() {
@@ -59,7 +74,13 @@ public:
     ProgressBar progbar(alns.size(), "Writing alns");
     size_t bytes_written = 0;
     int64_t i = 0;
-    for (auto &aln : alns) {
+    for (auto aln : alns) {
+      // aln was changed for cgraph usage. Need to change back so it looks the same as produced by meraligner, etc
+      if (aln.orient == '-') {
+        int tmp = aln.cstart;
+        aln.cstart = aln.clen - aln.cstop;
+        aln.cstop = aln.clen - tmp;
+      }
       out_buf << aln.to_string() << endl;
       progbar.update();
       i++;

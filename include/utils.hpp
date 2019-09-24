@@ -21,7 +21,7 @@ using std::ofstream;
 using std::to_string;
 using std::cout;
 using std::cerr;
-
+using std::min;
 
 #ifndef NDEBUG
 #define DEBUG
@@ -353,11 +353,11 @@ inline string get_current_time() {
   return os.str();
 }
 
-inline int hamming_dist(const string &s1, const string &s2) {
-  if (s2.size() != (s1.size() + 1) && s1.size() != s2.size()) 
+inline int hamming_dist(const string &s1, const string &s2, bool require_equal_len=true) {
+  if (require_equal_len && s2.size() != s1.size())//abs((int)(s2.size() - s1.size())) > 1)
     DIE("Hamming distance substring lengths don't match, ", s1.size(), ", ", s2.size(), "\n");
   int d = 0;
-  for (int i = 0; i < s1.size(); i++) 
+  for (int i = 0; i < min(s1.size(), s2.size()); i++) 
     if (s1[i] != s2[i]) d++;
   return d;
 }

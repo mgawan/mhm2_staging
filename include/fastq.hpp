@@ -189,6 +189,9 @@ public:
     // construct universally formatted name (illumina 1 format)
     if (!get_fq_name(id))
       DIE("Invalid FASTQ in ", fname, ": incorrect name format '", id, "'");
+    // get rid of spaces
+    // FIXME: this should be hexify
+    replace_spaces(id);
     if (seq.length() != quals.length())
       DIE("Invalid FASTQ in ", fname, ": sequence length ", seq.length(), " != ", quals.length(), " quals length\n");
     if (seq.length() > max_read_len) max_read_len = seq.length();

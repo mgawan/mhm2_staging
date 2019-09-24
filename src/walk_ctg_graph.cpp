@@ -679,7 +679,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
   vector<Walk> walks;
   WalkStats walk_stats = {0};
   int64_t num_rounds = 0;
-  vector<int> min_clens = {3 * max_kmer_len, 2 * max_kmer_len, (int)(1.5 * max_kmer_len), max_kmer_len};
+  //vector<int> min_clens = {3 * max_kmer_len, 2 * max_kmer_len, (int)(1.5 * max_kmer_len), max_kmer_len};
+  vector<int> min_clens = {min_ctg_len};
   for (auto min_clen : min_clens) {
     auto sorted_ctgs = sort_ctgs(min_clen);
     barrier();
