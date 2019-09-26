@@ -716,9 +716,8 @@ public:
   }
 
   void print_stats(string graph_fname="") {
-    const int CLEN_THRES = 500;
     Timer timer(__func__);
-    auto get_avg_min_max = [](vector<int64_t> &vals, double *avg = nullptr) {
+    auto get_avg_min_max = [](vector<int64_t> &vals) {
       int64_t total = std::accumulate(vals.begin(), vals.end(), 0);
       int64_t max_val = *std::max_element(vals.begin(), vals.end());
       int64_t min_val = *std::min_element(vals.begin(), vals.end());
@@ -726,7 +725,6 @@ public:
       int64_t all_max_val =  upcxx::reduce_one(max_val, upcxx::op_fast_max, 0).wait();
       double all_total = upcxx::reduce_one(total, upcxx::op_fast_add, 0).wait();
       size_t all_nvals = upcxx::reduce_one(vals.size(), upcxx::op_fast_add, 0).wait();
-      if (avg) *avg = all_total / all_nvals;
       ostringstream os;
       os.precision(2);
       os << std::fixed;
@@ -778,15 +776,18 @@ public:
       }
       progbar.done();
     }
-  
+
+    auto num_vertices = get_num_vertices();
+    auto num_edges = get_num_edges();
     SLOG("Graph statistics:\n");
-    SLOG("    vertices:  ", get_num_vertices(), "\n");
-    SLOG("    edges:     ", get_num_edges(), "\n");
+    SLOG("    vertices:  ", num_vertices, "\n");
+    SLOG("    edges:     ", num_edges, "\n");
+    SLOG("    degree:    ", (double)num_edges / num_vertices, "\n");
     SLOG("    aln_len:   ", get_avg_min_max(aln_lens), "\n");
     SLOG("    aln_score: ", get_avg_min_max(aln_scores), "\n");
     SLOG("  for contigs >= ", CLEN_THRES, " length:\n");
     SLOG("    depth:     ", get_avg_min_max(depths), "\n");
-    //SLOG("    clen:      ", get_avg_min_max(clens, av_clen), "\n");
+    SLOG("    clen:      ", get_avg_min_max(clens), "\n");
     SLOG("    support:   ", get_avg_min_max(supports), "\n");
     SLOG("    gap:       ", get_avg_min_max(gaps), "\n");
   }

@@ -102,7 +102,6 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
       if (seq.length() < kmer_len) continue;
-      
       // split into kmers
       auto kmers = Kmer::get_kmers(kmer_len, seq);
       /*
@@ -250,7 +249,7 @@ void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fna
   kmer_dht->compute_kmer_exts();
 #ifdef DEBUG
   // FIXME: dump if an option specifies
-//  kmer_dht->dump_kmers(kmer_len);
+  kmer_dht->dump_kmers(kmer_len);
 #endif
   barrier();
   kmer_dht->purge_fx_kmers();

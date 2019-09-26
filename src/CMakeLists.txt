@@ -35,6 +35,17 @@ add_definitions(-DUSE_BYTELL)
 add_definitions(-DMIN_CTG_PRINT_LEN=200)
 add_definitions(-DDEPTH_DIFF_THRES=0.1)
 add_definitions(-DUSE_PROGBAR)
+add_definitions(-DALN_EXTRA=1)
+add_definitions(-DMAX_DEPTH_DIFF=15)
+add_definitions(-DMIN_DEPTH_DIFF=5)
+add_definitions(-DMAX_SEARCH_LEVEL=5)
+add_definitions(-DMAX_QUEUE_SIZE=100)
+add_definitions(-DALN_SLOP=1)
+add_definitions(-DCLEN_THRES=500)
+add_definitions(-DCGRAPH_WALK_START_MIN_CTG_LEN=300)
+#FIXME: these should not be defined here!!
+add_definitions(-DINSERT_AVG=320)
+add_definitions(-DINSERT_STDDEV=30)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)

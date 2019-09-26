@@ -118,16 +118,20 @@ int main(int argc, char **argv) {
       Kmer::k = scaff_kmer_len;
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
-      int seed_space = 1;//(scaff_kmer_len == max_scaff_kmer_len ? 2 : 4);
+      int seed_space = 1;
+      //int seed_space = (scaff_kmer_len == max_scaff_kmer_len ? 2 : 4);
       find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
+#ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
+#endif
       bool break_scaffs = (scaff_kmer_len == options->scaff_kmer_lens.back() ? false : true);
-      traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, 300, options->reads_fname_list, !MINIMIZE_ERRS, break_scaffs, &ctgs, alns);
+      traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, CGRAPH_WALK_START_MIN_CTG_LEN, options->reads_fname_list,
+                         !MINIMIZE_ERRS, break_scaffs, &ctgs, alns);
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
         SLOG(KBLUE "_________________________\n", KNORM);
-        ctgs.print_stats(500);
+        ctgs.print_stats(CLEN_THRES);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       SLOG("\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
@@ -138,7 +142,7 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________\n", KNORM);
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
   SLOG(KBLUE "_________________________\n", KNORM);
-  ctgs.print_stats(500);
+  ctgs.print_stats(CLEN_THRES);
   SLOG(KBLUE "_________________________\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,

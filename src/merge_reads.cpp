@@ -296,7 +296,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
         overlap_len += overlap;
       }
       if (!is_merged) {
-        // undo the revcomp
+        // write without the revcomp
         out_buf << '@' << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
         out_buf << '@' << id2 << "\n" << seq2 << "\n+\n" << quals2 << "\n";
       }

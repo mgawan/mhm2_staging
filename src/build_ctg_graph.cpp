@@ -69,7 +69,6 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
 
 // gets all the alns for a single read, and returns true if there are more alns
 static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln*> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
-  const int ALN_SLOP = 1;
   string start_read_id = "";
   for (; i < alns.size(); i++) {
     Aln *aln = &alns.get_aln(i);
@@ -179,40 +178,44 @@ static void set_nbs(AlnStats &stats)
 }
 
 
-static void add_pos_gap_read(Edge* edge, Aln* aln) {
-  int end = (aln->cid == edge->cids.cid1 ? edge->end1 : edge->end2);
+static void add_pos_gap_read(Edge* edge, Aln &aln) {
+  int end = (aln.cid == edge->cids.cid1 ? edge->end1 : edge->end2);
   int gap_start;
-  if (aln->cid == edge->cids.cid1) {
-    if ((edge->end1 == 3 && aln->orient == '+') || (edge->end1 == 5 && aln->orient == '-')) gap_start = aln->rstop;
-    else gap_start = aln->rlen - aln->rstart;
-    if (gap_start == aln->rlen) return;
-  } else if (aln->cid == edge->cids.cid2) {
+  if (aln.cid == edge->cids.cid1) {
+    if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-')) gap_start = aln.rstop;
+    else gap_start = aln.rlen - aln.rstart;
+    if (gap_start == aln.rlen) return;
+  } else if (aln.cid == edge->cids.cid2) {
     // head
-    if ((edge->end2 == 5 && aln->orient == '+') || (edge->end2 == 3 && aln->orient == '-')) gap_start = aln->rstart;
-    else gap_start = aln->rlen - aln->rstop;
+    if ((edge->end2 == 5 && aln.orient == '+') || (edge->end2 == 3 && aln.orient == '-')) gap_start = aln.rstart;
+    else gap_start = aln.rlen - aln.rstop;
     if (gap_start == 0) return;
   } else {
     DIE("cid doesn't match in pos edge\n");
   }
-  edge->gap_reads.push_back(GapRead(aln->read_id, gap_start, aln->rstart, aln->rstop, aln->orient, aln->cid));
-  _graph->add_pos_gap_read(aln->read_id);
+  edge->gap_reads.push_back(GapRead(aln.read_id, gap_start, aln.rstart, aln.rstop, aln.orient, aln.cid));
+  _graph->add_pos_gap_read(aln.read_id);
 }
 
   
-static void add_span(int max_kmer_len, int kmer_len, Aln* aln1, Aln* aln2) {
-  // FIXME: this needs to be determined from the same pair matches
-  int ins_av = 320;
-  int gap = ins_av - (aln1->rstop - aln1->rstart) - (aln2->rstop - aln2->rstart) -
-    (aln1->clen - aln1->cstop) - (aln2->clen - aln2->cstop);
-  int end1 = aln1->orient == '+' ? 3 : 5;
-  int end2 = aln2->orient == '+' ? 3 : 5;
+static void add_span(int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
+  int gap = INSERT_AVG - aln1.rstart - aln1.clen + aln1.cstart - aln2.rstart - aln2.clen + aln2.cstart;
+  
+  int end1 = aln1.orient == '+' ? 3 : 5;
+  int end2 = aln2.orient == '+' ? 3 : 5;
 
-  if (gap >= -(max_kmer_len - 1) && gap < aln1->rlen + aln2->rlen - 2 * kmer_len) {
-    CidPair cids = { .cid1 = aln1->cid, .cid2 = aln2->cid };
+  //if (gap > 0) gap -= INSERT_STDDEV;
+  if (gap >= -(max_kmer_len - 1) && gap < aln1.rlen + aln2.rlen - 2 * kmer_len) {
+    CidPair cids = { .cid1 = aln1.cid, .cid2 = aln2.cid };
     if (cids.cid1 < cids.cid2) {
       swap(end1, end2);
       swap(cids.cid1, cids.cid2);
     }
+    DBG("span gap ", gap, " ", cids.cid1, ".", end1, " <-> ", cids.cid2, ".", end2, 
+        "\n", aln1.cid, " ", aln1.orient, " read_id1 ", aln1.read_id, " rstart1 ", aln1.rstart, " rstop1 ", aln1.rstop, " cstart1 ", aln1.cstart, " cstop1 ", aln1.cstop, 
+        "\n", aln2.cid, " ", aln2.orient, " read_id2 ", aln2.read_id, " rstart2 ", aln2.rstart, " rstop2 ", aln2.rstop, " cstart2 ", aln2.cstart, " cstop2 ", aln2.cstop,
+        "\n");
+
     Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1,
                   .aln_len = kmer_len, .aln_score = kmer_len, .edge_type = EdgeType::SPAN, .seq = "",
                   .mismatch_error = false, .conflict_error = false, .gap_reads = {}};
@@ -259,7 +262,7 @@ static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
               int ins_size = (aln1->cstart - aln1->rstart + aln2->cstart + aln2->rstart);
               my_av_ins += ins_size;
             } else {
-              add_span(max_kmer_len, kmer_len, aln1, aln2);
+              add_span(max_kmer_len, kmer_len, *aln1, *aln2);
             }
           }
         }
@@ -710,7 +713,7 @@ void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<str
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  //get_spans_from_alns(max_kmer_len, kmer_len, alns);
+  get_spans_from_alns(max_kmer_len, kmer_len, alns);
   // purge mismatches and conflicts
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();

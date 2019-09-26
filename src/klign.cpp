@@ -42,8 +42,6 @@ struct CtgLoc {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 
-static const int ALN_EXTRA = 10;
-
 using aligned_ctgs_map_t = unordered_map<cid_t, tuple<int, bool, CtgLoc>>;
 
 
@@ -104,15 +102,14 @@ class KmerCtgDHT {
   };
   dist_object<InsertKmer> insert_kmer;
 
-  void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rend, int rlen,
-                  int cstart, int cend, int clen, char orient, int start_overlap, int end_overlap, 
-                  const string &full_rseq, const string &full_cseq, int pr, int pc, bool ctg_rc) {
-    num_alns++;
+  void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
+                  int cstart, int clen, char orient, int start_overlap) {
     int hdist = 0;
     Aln aln;
     StripedSmithWaterman::Alignment ssw_aln;
 
-    if (rseq == cseq) {
+    // only check for perfect matches if ALN_EXTRA is 0; otherwise it doesn't do much.
+    if (!ALN_EXTRA && rseq == cseq) {
       num_perfect_alns++;
       int aln_len = rseq.length();
       ssw_aln.ref_begin = 0;
@@ -125,19 +122,19 @@ class KmerCtgDHT {
       // make sure upcxx progress is done before starting alignment
       discharge();
 #ifdef DEBUG
-      // sanity check that kmer matches
-      for (int i = 0; i < rseq.length(); i++) {
-        // allow matches to any Ns
-        if (rseq[i] == 'N') continue;
-        if (rseq[i] != cseq[i]) {
-          // we have a mismatch
-          if (i >= start_overlap && i < start_overlap + kmer_len) {
-            // this is in the seed region - there should be no mismatches
-            //if (full_cseq.length() < 500) 
+      if (!ALN_EXTRA) {
+        // sanity check that kmer matches
+        for (int i = 0; i < rseq.length(); i++) {
+          // allow matches to any Ns
+          if (rseq[i] == 'N') continue;
+          if (rseq[i] != cseq[i]) {
+            // we have a mismatch
+            if (i >= start_overlap && i < start_overlap + kmer_len) {
+              // this is in the seed region - there should be no mismatches
               DIE("Mismatch found within seed at position ", i, ": ", rseq[i], " != ", cseq[i],
-                  " start overlap ", start_overlap, " end overlap ", end_overlap, " orient ", orient,
-                  " rlen ", rlen, " clen ", clen, " pr ", pr, " pc ", pc, " ctg rc ", ctg_rc, " rid ", rname, " cid ", cid,
-                  "\n", rseq, "\n", cseq, "\n", full_rseq, "\n", full_cseq);
+                  " orient ", orient, " rlen ", rlen, " clen ", clen, " rid ", rname, " cid ", cid,
+                  "\n", rseq, "\n", cseq);
+            }
           }
         }
       }
@@ -147,13 +144,9 @@ class KmerCtgDHT {
       ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
       ssw_dt += (NOW() - t);
     }
-    rend = rstart + ssw_aln.ref_end + 1;
+    int rend = rstart + ssw_aln.ref_end + 1;
     rstart = rstart + ssw_aln.ref_begin;
-    if (orient == '-') {
-      int tmp = rstart;
-      rstart = rlen - rend;
-      rend = rlen - tmp;
-    }
+    if (orient == '-') switch_orient(rstart, rend, rlen);
     aln = { .read_id = rname, .cid = cid,
             .rstart = rstart, .rstop = rend, .rlen = rlen,
             .cstart = cstart + ssw_aln.query_begin, .cstop = cstart + ssw_aln.query_end + 1, .clen = clen,
@@ -166,12 +159,9 @@ class KmerCtgDHT {
     *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
 #endif
     // adjust for use with cgraph algos
-    if (aln.orient == '-') {
-      int tmp = aln.cstart;
-      aln.cstart = aln.clen - aln.cstop;
-      aln.cstop = aln.clen - tmp;
-    }
+    if (aln.orient == '-') switch_orient(aln.cstart, aln.cstop, aln.clen);
     alns->add_aln(aln);
+    num_alns++;
   }
   
 public:
@@ -231,10 +221,6 @@ public:
     else return reduce_all(num_perfect_alns, op_fast_add).wait();
   }
 
-  int64_t get_my_num_alns() {
-    return num_alns;
-  }
-  
   int64_t get_num_alns(bool all = false) {
     if (!all) return reduce_one(num_alns, op_fast_add, 0).wait();
     else return reduce_all(num_alns, op_fast_add).wait();
@@ -341,16 +327,15 @@ public:
       // so look for max possible overlap
       int start_overlap = min(pos_in_read, ctg_loc.pos_in_ctg);
       int end_overlap = min(rlen - pos_in_read - kmer_len, ctg_loc.clen - ctg_loc.pos_in_ctg - kmer_len);
-      int rstart = pos_in_read - start_overlap;
-      int rend = pos_in_read + kmer_len + end_overlap;
-      int cstart = ctg_loc.pos_in_ctg - start_overlap;
-      int cend = ctg_loc.pos_in_ctg + kmer_len + end_overlap;
+
+      start_overlap += ALN_EXTRA;
+      end_overlap += ALN_EXTRA;
+      
+      int rstart = max(pos_in_read - start_overlap, 0);
+      int rend = min(pos_in_read + kmer_len + end_overlap, rlen);
+      int cstart = max(ctg_loc.pos_in_ctg - start_overlap, 0);
+      int cend = min(ctg_loc.pos_in_ctg + kmer_len + end_overlap, ctg_loc.clen);
       int overlap_len = cend - cstart;
-      assert(rstart >= 0);
-      assert(rend <= rlen);
-      assert(cstart >= 0);
-      assert(cend <= ctg_loc.clen);
-      assert(overlap_len == rend - rstart);
       string read_subseq = rseq_ptr->substr(rstart, overlap_len);
       bool ctg_in_cache = false;
       // if max_ctg_seq_cache_size is > 0, then we are using a cache
@@ -361,8 +346,7 @@ public:
           // only get the subsequence needed
           string ctg_subseq = it->second.substr(cstart, overlap_len);
           // align only the subseqs
-          align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rend, rlen, cstart, cend, ctg_loc.clen, orient,
-                     start_overlap, end_overlap, *rseq_ptr, it->second, pos_in_read, ctg_loc.pos_in_ctg, ctg_loc.is_rc);
+          align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, start_overlap);
           ctg_in_cache = true;
         }
       }
@@ -400,8 +384,7 @@ public:
               // we had to fetch the whole seq, so get just the substring
               ctg_subseq = ctg_seq.substr(cstart, overlap_len);
             }
-            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rend, rlen, cstart, cend, ctg_loc.clen, orient,
-                       start_overlap, end_overlap, *rseq_ptr, ctg_seq, pos_in_read, ctg_loc.pos_in_ctg, ctg_loc.is_rc);
+            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, start_overlap);
           });
         all_fut = when_all(all_fut, fut);
       }
@@ -513,8 +496,9 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   SLOG_VERBOSE("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds\n");
   auto tot_num_alns = kmer_ctg_dht->get_num_alns();
-  SLOG_VERBOSE("Found ", tot_num_alns, " alignments, of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), tot_num_alns),
-               " are perfect\n");
+  SLOG_VERBOSE("Found ", tot_num_alns, " alignments");
+  if (ALN_EXTRA) SLOG_VERBOSE(" of which ", perc_str(kmer_ctg_dht->get_num_perfect_alns(), tot_num_alns), " are perfect\n");
+  else SLOG_VERBOSE("\n");
   auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
   SLOG("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
@@ -542,12 +526,11 @@ void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &rea
   kmer_ctg_dht.dump_ctg_kmers();
 #endif
   do_alignments(&kmer_ctg_dht, seed_space, reads_fname_list);
-  assert(kmer_ctg_dht.get_my_num_alns() == alns->size());
   barrier();
   auto sum_hamming_dist = kmer_ctg_dht.get_sum_hamming_dist();
   auto num_alns = kmer_ctg_dht.get_num_alns();
-  SOUT("Average hamming distance in alignments ", sum_hamming_dist / num_alns, "\n");
-  SOUT("Number of duplicate alignments ", perc_str(alns->get_num_dups(), num_alns), "\n");
+  SLOG_VERBOSE("Average hamming distance in alignments ", sum_hamming_dist / num_alns, "\n");
+  SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns->get_num_dups(), num_alns), "\n");
   barrier();
 }
 

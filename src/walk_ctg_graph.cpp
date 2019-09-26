@@ -217,9 +217,6 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, bool break_scaff
 
 
 static bool depth_match(double depth, double walk_depth) {
-//TESTING
-  const int MAX_DEPTH_DIFF = 15;
-  const int MIN_DEPTH_DIFF = 5;
   double depth_diff = fabs(depth - walk_depth);
   double allowable_diff = DEPTH_DIFF_THRES * walk_depth;
   if (allowable_diff > MAX_DEPTH_DIFF) allowable_diff = MAX_DEPTH_DIFF;
@@ -243,9 +240,6 @@ static string vertex_list_to_cid_string(vector<shared_ptr<Vertex> > &vertices) {
 
 
 static cid_t bfs_branch(shared_ptr<Vertex> curr_v, int end, double walk_depth) {
-  const int MAX_SEARCH_LEVEL = 5;
-  const int MAX_QUEUE_SIZE = 100;
-  
   queue<pair<shared_ptr<Vertex>, int> > q;
   unordered_map<cid_t, bool> visited;
 

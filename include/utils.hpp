@@ -445,5 +445,10 @@ static void write_uncompressed_file_size(string fname, size_t sz) {
   f.close();
 }
 
-
+inline void switch_orient(int &start, int &stop, int &len) {
+  int tmp = start;
+  start = len - stop;
+  stop = len - tmp;
+}
+  
 #endif
