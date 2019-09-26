@@ -73,6 +73,8 @@ public:
     string reads_fnames;
     if (!(args("-r") >> reads_fnames) || args["-h"]) {
       SOUT(usage);
+      upcxx::barrier();
+      upcxx::finalize();
       exit(0);
     }
     reads_fname_list = split(reads_fnames, ',');
@@ -88,7 +90,6 @@ public:
       auto scaff_kmer_lens_split = split(scaff_kmer_lens_str, ',');
       for (auto scaff_kmer_len : scaff_kmer_lens_split) scaff_kmer_lens.push_back(std::stoi(scaff_kmer_len.c_str()));
     }
-    
 
     args("-Q") >> qual_offset;
     args("-m") >> max_kmer_store;
