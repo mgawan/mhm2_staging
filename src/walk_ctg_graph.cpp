@@ -316,7 +316,7 @@ static cid_t bfs_branch(shared_ptr<Vertex> curr_v, int end, double walk_depth) {
 }
 
 
-static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kmer_len, bool minimize_error,
+static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kmer_len, QualityLevel quality_level,
                                                        shared_ptr<Vertex> curr_v, int end, double walk_depth, WalkStats &stats,
                                                        cid_t fwd_cid=-1) {
   auto in_cid_list = [](vector<cid_t> cids, cid_t query_cid) -> bool {
@@ -335,11 +335,17 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
     DBG_WALK("    -> terminate: dead end\n");
     return {};
   }
+
+  if (quality_level == QualityLevel::SINGLE_PATH_ONLY) {
+    if (nbs_cids.size() == 1) return get_vertex_list(nbs_cids[0]);
+    else return {};
+  }
+  
   vector<shared_ptr<Vertex> > nb_vertices;
   for (auto nb_cids : nbs_cids) nb_vertices.push_back(_graph->get_vertex_cached(nb_cids.back()));
   vector<shared_ptr<Edge> > nb_edges;
   for (auto nb_cids : nbs_cids) nb_edges.push_back(_graph->get_edge_cached(curr_v->cid, nb_cids.back()));
-
+  
   vector<pair<int, int> > candidate_branches;
   unordered_map<cid_t, int> candidates;
   bool bulge = false;
@@ -377,7 +383,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
   } else if (candidate_branches.size() > 1) {
     stats.term_multi_candidates++;
     DBG_WALK("      -> found ", candidate_branches.size(), " viable candidates\n");
-    if (!minimize_error || walk_depth <= 10) {
+    if (quality_level == QualityLevel::ALL || walk_depth <= 10) {
       if (max_kmer_len > kmer_len) {
         // if one branch has much better aln len than the others, choose it
         int num_max_kmer_alns = 0;
@@ -411,14 +417,6 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
       if (branch_chosen == -1) {
         // if one branch has much higher edge support than the others, choose it
         double support_thres = 3;
-
-        //if (fwd_cid != -1 && qual_tuning == QualityTuning::MAX_CONTIGUITY) support_thres = 1.5;
-
-        // if (fwd_cid != -1) {
-        //   if (walk_depth <= 10) support_thres = 2.0;
-        //   else if (walk_depth <= 5) support_thres = 1.5;
-        // }
-
         vector<pair<int, int> > nbs_support;
         for (auto candidate : candidate_branches) {
           auto edge = nb_edges[candidate.first];
@@ -435,23 +433,6 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
           DBG_WALK("    -> resolve most supported ", branch_chosen, "\n");
         }
       }
-//TESTING
-
-      // if (branch_chosen == -1 && walk_depth <= 5) {
-      //   // if one candidate has much greater length, choose it
-      //   sort(candidate_branches.begin(), candidate_branches.end(),
-      //        [](auto &a, auto &b) {
-      //          return a.second > b.second;
-      //        });
-      //   DBG_WALK("    -> longest branch is ", candidate_branches[0].first, " (", candidate_branches[0].second,
-      //            "), next best is ", candidate_branches[1].first, " (", candidate_branches[1].second, ")\n");
-      //   if (candidate_branches[0].second > 300 && candidate_branches[1].second <= 300 &&
-      //       candidate_branches[0].second >= 2.0 * candidate_branches[1].second) {
-      //     branch_chosen = candidate_branches[0].first;
-      //     DBG_WALK("    -> resolve longest ", branch_chosen, "\n");
-      //   }
-      // }
-
     }
   }
   
@@ -480,7 +461,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
 }
 
 
-static vector<Walk> do_walks(int max_kmer_len, int kmer_len, bool minimize_error, vector<pair<cid_t, int32_t> > &sorted_ctgs,
+static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel quality_level, vector<pair<cid_t, int32_t> > &sorted_ctgs,
                              WalkStats &walk_stats, IntermittentTimer &next_nbs_timer) {
   auto has_depth_remaining = [](unordered_map<cid_t, double> &depth_remaining, shared_ptr<Vertex> v, double walk_depth) {
     if (v->visited) return false;
@@ -534,7 +515,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, bool minimize_error
     while (curr_v) {
       DBG_WALK("    search fwd: ");
       next_nbs_timer.start();
-      auto next_nbs = search_for_next_nbs(max_kmer_len, kmer_len, minimize_error, curr_v, end, walk_depth, walk_stats);
+      auto next_nbs = search_for_next_nbs(max_kmer_len, kmer_len, quality_level, curr_v, end, walk_depth, walk_stats);
       next_nbs_timer.stop();
       bool already_visited = false;
       if (!next_nbs.empty()) {
@@ -556,7 +537,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, bool minimize_error
         if ((next_nb_end == 5 && next_nb->end5_merged.size() > 1) || (next_nb_end == 3 && next_nb->end3_merged.size() > 1)) {
           DBG_WALK("    search bwd: ");
           next_nbs_timer.start();
-          auto back_nbs = search_for_next_nbs(max_kmer_len, kmer_len, minimize_error, next_nb, next_nb_end, walk_depth, walk_stats,
+          auto back_nbs = search_for_next_nbs(max_kmer_len, kmer_len, quality_level, next_nb, next_nb_end, walk_depth, walk_stats,
                                               curr_v->cid);
           next_nbs_timer.stop();
           if (!back_nbs.empty()) join_resolved = true;
@@ -654,8 +635,8 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
 }
 
 
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds, bool minimize_error,
-                Contigs *ctgs) {
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds,
+                QualityLevel quality_level, Contigs *ctgs) {
   _graph = graph;
   
   // The general approach is to have each rank do walks starting from its local vertices only.
@@ -688,7 +669,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
       while (true) {
         walks_timer.start();
         ProgressBar progbar(sorted_ctgs.size(), "Walking graph round " + to_string(num_rounds));
-        auto tmp_walks = do_walks(max_kmer_len, kmer_len, minimize_error, sorted_ctgs, walk_stats, next_nbs_timer);
+        auto tmp_walks = do_walks(max_kmer_len, kmer_len, quality_level, sorted_ctgs, walk_stats, next_nbs_timer);
         progbar.done();
         walks_timer.stop();
         barrier();

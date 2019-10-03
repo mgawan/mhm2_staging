@@ -252,6 +252,6 @@ void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fna
   kmer_dht->dump_kmers(kmer_len);
 #endif
   barrier();
-  kmer_dht->purge_fx_kmers();
+  //kmer_dht->purge_fx_kmers();
 }
 

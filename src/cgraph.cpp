@@ -21,12 +21,12 @@ using namespace upcxx;
 
 
 void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns);
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds, bool minimize_error,
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds, QualityLevel quality_level,
                 Contigs *ctgs);
 
 
-void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, bool minimize_error,
-                        bool break_scaffolds, Contigs *ctgs, Alns &alns) {
+void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list,
+                        bool break_scaffolds, QualityLevel quality_level, Contigs *ctgs, Alns &alns) {
   Timer timer(__func__, true);
   CtgGraph graph;
   build_ctg_graph(&graph, max_kmer_len, kmer_len, reads_fname_list, ctgs, alns);
@@ -35,7 +35,7 @@ void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<
   string graph_fname;
   graph.print_stats();
   barrier();
-  walk_graph(&graph, max_kmer_len, kmer_len, min_ctg_len, break_scaffolds, minimize_error, ctgs);
+  walk_graph(&graph, max_kmer_len, kmer_len, min_ctg_len, break_scaffolds, quality_level, ctgs);
   barrier();
 }
 

@@ -32,6 +32,13 @@ using std::min;
 #define ONE_MB (1024*1024)
 #define ONE_GB (ONE_MB*1024)
 
+// this shouldn't really be defined here, but I didn't want yet another header file
+enum class QualityLevel {
+  SINGLE_PATH_ONLY,
+  DEPTH_RESLN_ONLY,
+  ALL
+};
+
 extern ofstream _logstream;
 extern bool _verbose;
 

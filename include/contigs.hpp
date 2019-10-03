@@ -30,6 +30,7 @@ using upcxx::global_ptr;
 using upcxx::new_;
 using upcxx::dist_object;
 
+
 struct Contig {
   int64_t id;
   string seq;

@@ -41,6 +41,38 @@ static const double Q2Perror[] = {
   2.512e-08,	1.995e-08,	1.585e-08,	1.259e-08,	1e-08
 };
 
+uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
+  Timer timer(__func__, true);
+  int64_t num_reads = 0;
+  int64_t num_lines = 0;
+  int64_t estimated_total_records = 0;
+  int64_t total_records_processed = 0;
+  string id, seq, quals;
+  for (auto const &reads_fname : reads_fname_list) {
+    FastqReader fqr(reads_fname);
+    ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of reads");
+    size_t tot_bytes_read = 0;
+    int64_t records_processed = 0; 
+    while (true) {
+      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      if (!bytes_read) break;
+      num_lines += 4;
+      num_reads++;
+      tot_bytes_read += bytes_read;
+      progbar.update(tot_bytes_read);
+      records_processed++;
+      // do not read the entire data set for just an estimate
+      if (records_processed > 100000) break; 
+    }
+    total_records_processed += records_processed;
+    estimated_total_records += records_processed * fqr.my_file_size() / fqr.tell();
+    progbar.done();
+    barrier();
+  }
+  double fraction = (double) total_records_processed / (double) estimated_total_records;
+  DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
+  return estimated_total_records;
+}
 
 // returns the number of mismatches if it is <= max or a number greater than max (but no the actual count)
 int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max) {
@@ -100,6 +132,15 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
+  int64_t num_reads = 0;
+  
+  // for unique read id, estimate number of reads in our section of the file
+  auto my_num_reads_estimate = estimate_num_reads(reads_fname_list);
+  auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
+  SLOG_VERBOSE("Max number reads for any rank ", max_num_reads, "\n");
+  // double the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
+  uint64_t read_id = rank_me() * max_num_reads * 2;
+    
   for (auto const &reads_fname : reads_fname_list) {
     string out_fname = get_merged_reads_fname(reads_fname);
     // skip if the file already exists
@@ -107,6 +148,12 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
       SLOG("File ", out_fname, " already exists, skipping...\n");
       continue;
     }
+
+    // FIXME: unique number id (uint64_t) for reads
+    // - do a reduction to find the max of all those estimates
+    // - double the max to be sure - this becomes the block size
+    // - my reads are numbered from block_size*rank_me() to block_size*(rank_me()+1)
+    
     FastqReader fqr(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
     zstr::ofstream out_file(out_fname);
@@ -288,8 +335,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
                        
         is_merged = true;
         num_merged++;
-        out_buf << '@' << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
-        out_buf << '@' << id2 << "\nN\n+\n" << (char)qual_offset << "\n";
+        out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
+        out_buf << "@r" << read_id << "/2\nN\n+\n" << (char)qual_offset << "\n";
         int read_len = seq1.length(); // caculate new merged length
         if (max_read_len < read_len) max_read_len = read_len;
         merged_len += read_len;
@@ -297,14 +344,16 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
       }
       if (!is_merged) {
         // write without the revcomp
-        out_buf << '@' << id1 << "\n" << seq1 << "\n+\n" << quals1 << "\n";
-        out_buf << '@' << id2 << "\n" << seq2 << "\n+\n" << quals2 << "\n";
+        out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
+        out_buf << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
       }
       if (!(num_pairs % 1000)) {
         out_file << out_buf.str();
         bytes_written += out_buf.str().length();
         out_buf = ostringstream();
       }
+      // inc by 2 so that we can use a later optimization of treating the even as /1 and the odd as /2
+      read_id += 2;
     }
     if (!out_buf.str().empty()) {
       out_file << out_buf.str();
@@ -330,6 +379,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     SLOG("Total bytes read ", tot_bytes_read, "\n");
 
     barrier();
+    num_reads += num_pairs * 2;
   }
 }
 

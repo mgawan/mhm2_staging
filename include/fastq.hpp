@@ -197,7 +197,16 @@ public:
     if (seq.length() > max_read_len) max_read_len = seq.length();
     return bytes_read;
   }
-  
+
+  size_t get_next_fq_record(uint64_t &id, uint8_t pair_idx, string &seq, string &quals) {
+    string id_str;
+    auto res = get_next_fq_record(id_str, seq, quals);
+    if (id_str[0] != 'r') DIE("Expected compressed read id beginning with r and then a number. Found ", id_str);
+    id = std::stoull(id_str.substr(1, id_str.length() - 3));
+    pair_idx = id_str[id_str.length() - 1] == '1' ? 1 : 2;
+    return res;
+  }
+    
 };
 
 #endif
