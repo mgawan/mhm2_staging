@@ -91,7 +91,7 @@ struct GapStats {
 };
 
 
-static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, bool break_scaffolds, vector<Walk> &walks, Contigs *ctgs) {
+static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs *ctgs) {
   Timer timer(__func__);
 
   int num_break_scaffs = 0;
@@ -148,7 +148,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, bool break_scaff
                 gap_seq = gap_edge_seq.substr(len, edge->gap);
               }
               // now break if too many Ns
-              if (break_scaffolds > 0 && !break_scaffold && gap_seq.find(string(break_scaffolds, 'N')) != string::npos)
+              if (break_scaff_Ns > 0 && !break_scaffold && gap_seq.find(string(break_scaff_Ns, 'N')) != string::npos)
                 break_scaffold = true;
             }
           } else {  // gap sequence does not exist
@@ -416,7 +416,6 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
       }
       if (branch_chosen == -1) {
         // if one branch has much higher edge support than the others, choose it
-        double support_thres = 3;
         vector<pair<int, int> > nbs_support;
         for (auto candidate : candidate_branches) {
           auto edge = nb_edges[candidate.first];
@@ -428,7 +427,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
              });
         DBG_WALK("    -> most supported branch is ", nbs_support[0].second, " (", nbs_support[0].first, 
                  "), next best is ", nbs_support[1].second, " (", nbs_support[1].first, ")\n");
-        if (nbs_support[0].first >= support_thres * nbs_support[1].first && nbs_support[0].first > 2) {
+        if (nbs_support[0].first >= WALK_SUPPORT_THRES * nbs_support[1].first && nbs_support[0].first > 2) {
           branch_chosen = nbs_support[0].second;
           DBG_WALK("    -> resolve most supported ", branch_chosen, "\n");
         }
@@ -463,31 +462,21 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
 
 static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel quality_level, vector<pair<cid_t, int32_t> > &sorted_ctgs,
                              WalkStats &walk_stats, IntermittentTimer &next_nbs_timer) {
-  auto has_depth_remaining = [](unordered_map<cid_t, double> &depth_remaining, shared_ptr<Vertex> v, double walk_depth) {
-    if (v->visited) return false;
-    auto it = depth_remaining.find(v->cid);
-    if (it == depth_remaining.end()) return true;
-    if (it->second < v->depth && it->second < walk_depth) return false;
+  auto is_visited = [](unordered_map<cid_t, bool> &visited, shared_ptr<Vertex> v) {
+    if (v->visited) return true;
+    if (visited.find(v->cid) == visited.end()) return false;
     return true;
   };
   
-  auto get_start_vertex = [&](vector<pair<cid_t, int32_t> > &sorted_ctgs, int64_t *ctg_pos, 
-                              unordered_map<cid_t, double> &depth_remaining) -> shared_ptr<Vertex> {
+  auto get_start_vertex = [&](vector<pair<cid_t, int32_t> > &sorted_ctgs, int64_t *ctg_pos) -> shared_ptr<Vertex> {
     while (*ctg_pos < sorted_ctgs.size()) {
       auto v = _graph->get_local_vertex(sorted_ctgs[*ctg_pos].first);
       (*ctg_pos)++;
-      // don't use if used in a walk in a previous round (possibly by another rank's walk)
-      if (v->visited) continue;
-      // don't use if already in walk in this round by local rank
-      auto it = depth_remaining.find(v->cid);
-      if (it != depth_remaining.end() && it->second < v->depth) continue;
-      return v;
+      if (!v->visited) return v;
     }
     return nullptr;
   };
 
-  // keep track of vertex depths used up by walks so we don't visit them too many times
-  unordered_map<cid_t, double> depth_remaining;
   int64_t sum_scaff_lens = 0;
   int64_t ctg_pos = 0;
   shared_ptr<Vertex> start_v;
@@ -495,7 +484,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
   vector<Walk> tmp_walks;
   _graph->clear_caches();
   // each rank does an independent set of walks over the graph until it has run out of start vertices
-  while ((start_v = get_start_vertex(sorted_ctgs, &ctg_pos, depth_remaining)) != nullptr) {
+  while ((start_v = get_start_vertex(sorted_ctgs, &ctg_pos)) != nullptr) {
     DBG_WALK("start ", start_v->cid,  " len ",  start_v->clen,  " depth ",  start_v->depth,  "\n");
     // store the walk in a double ended queue because we could start walking in the middle and so need to add to
     // either the front or back
@@ -506,7 +495,8 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
     Orient orient = Orient::NORMAL;
 
     double walk_depth = start_v->depth;
-    depth_remaining[start_v->cid] = 0;
+    unordered_map<cid_t, bool> visited;
+    visited[start_v->cid] = true;
                 
     walk_vertices.push_front({start_v, orient});
     auto curr_v = start_v;
@@ -521,7 +511,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
       if (!next_nbs.empty()) {
         // we have possibly multiple next nbs in sequence
         // update the last one and reject if it has insufficient depth remaining
-        if (!has_depth_remaining(depth_remaining, next_nbs.back(), 0.9 * walk_depth)) {
+        if (is_visited(visited, next_nbs.back())) {
           walk_stats.term_visited++;
           DBG_WALK("    -> terminate: ", next_nbs.back()->cid, " is already visited\n");
           curr_v = nullptr;
@@ -549,11 +539,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
           if (depth_match(next_nbs.back()->depth, walk_depth)) walk_depth = next_nbs.back()->depth;
           // add all vertices in merged path to the walk
           for (auto next_nb : next_nbs) {
-            // update depth remaining for the newly added vertex
-            auto it = depth_remaining.find(next_nb->cid);
-            if (it == depth_remaining.end()) depth_remaining[next_nb->cid] = next_nb->depth;
-            depth_remaining[next_nb->cid] -= walk_depth;
-            //depth_remaining[next_nb->cid] = 0;
+            visited[next_nb->cid] = true;
             auto edge = _graph->get_edge_cached(curr_v->cid, next_nb->cid);
             if (!edge) DIE("edge not found\n");
             scaff_len += next_nb->clen + edge->gap;
@@ -584,7 +570,6 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
     // unique ids are generated later
     Walk walk = { .len = scaff_len, .depth = walk_depth, .vertices = {} };
     for (auto &w : walk_vertices) walk.vertices.push_back({w.first->cid, w.second});
-    for (auto &w : walk.vertices) depth_remaining[w.first] = 0;
     tmp_walks.push_back(walk);
   }
   return tmp_walks;
@@ -597,15 +582,9 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
   for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
     // don't start on a contig that has already been used
     if (v->visited) continue;
-    // don't start walks on vertices without depth information - this can happen in alignment-based depth calcs
-    if (v->depth == 0) continue;
     // don't start walks on short contigs
-    /*
-    if (v->depth > 20 && v->clen < min_ctg_len) continue;
-    if (v->depth > 15 && v->clen < min_ctg_len * 2 / 3) continue;
-    if (v->depth > 10 && v->clen < min_ctg_len * 2 / 4) continue;
-    */
     if (v->clen < min_ctg_len) continue;
+    /*
     // don't start walks on a high depth contig, which is a contig that has at least 2x depth higher than its nb average
     // and doesn't have any nbs of higher depth
     if (v->depth > 10) {
@@ -625,31 +604,29 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
         if (v->depth > 2.0 * sum_nb_depths / all_nb_cids.size()) continue;
       }
     }
+    */
     sorted_ctgs.push_back({v->cid, v->clen});
   }
   sort(sorted_ctgs.begin(), sorted_ctgs.end(),
        [](auto &a, auto &b) {
          return a.second > b.second;
        });
-  return move(sorted_ctgs);
+  return sorted_ctgs;
 }
 
 
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, bool break_scaffolds,
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, int break_scaff_Ns,
                 QualityLevel quality_level, Contigs *ctgs) {
-  _graph = graph;
-  
   // The general approach is to have each rank do walks starting from its local vertices only.
-  // First, to prevent loops within a walk, the vertices visited locally are kept track of using a 'depth_remaining' hash 
-  // table, which allows for repeat use of vertices of high depth, e.g. if depth is 2x walk depth, then the 
-  // vertex could be used twice.
-  // Once walks starting from all local vertices have been completed, any conflicts (overlaps) between walks from different 
-  // ranks are resolved. These are resolved in favor of the longest walks (and for ties, the highest numbered rank). The walks 
+  // First, to prevent loops within a walk, the vertices visited locally are kept track of using a visited hash table.
+  // Once walks starting from all local vertices have been completed, any conflicts (overlaps) between walks are resolved.
+  // These are resolved in favor of the longest walks (and for ties, the highest numbered rank). The walks 
   // that lose are discarded, and the whole process is repeated, since there are potentially left-over vertices freed 
   // up when walks are dropped. 
-  // The vertices in winning walks are marked as visited.
+  // The vertices in winning walks are marked as visited in the vertex structure.
   // This is repeated until there are no more walks found.
-
+  _graph = graph;
+  
   Timer timer(__func__);
   vector<Walk> walks;
   WalkStats walk_stats = {0};
@@ -677,21 +654,23 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
         // first set all the vertex fields to empty
         for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
           v->walk_rank = -1;
-          v->walk_len = 0;
+          v->walk_score = 0;
         }
         barrier();
-        for (auto &walk : tmp_walks) {
+        for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
+          auto walk = &tmp_walks[walk_i];
           // resolve conflict in favor of longest walk - this marks the walk the vertex belongs to 
-          for (auto &w : walk.vertices) _graph->update_vertex_walk(w.first, walk.len);
+          for (auto &w : walk->vertices) _graph->update_vertex_walk(w.first, walk->len, walk_i);
         }
         barrier();
         int num_walks_added = 0;
         // now drop all walks where any vertex's rank does not match this rank
-        for (auto walk : tmp_walks) {
+        for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
+          auto walk = &tmp_walks[walk_i];
           bool add_walk = true;
-          for (auto &w : walk.vertices) {
+          for (auto &w : walk->vertices) {
             auto v = _graph->get_vertex(w.first);
-            if (v->walk_rank != rank_me()) {
+            if (v->walk_rank != rank_me() || v->walk_i != walk_i) {
               add_walk = false;
               break;
             }
@@ -699,8 +678,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
           if (add_walk) {
             num_walks_added++;
             // update depth remaining
-            for (auto &w : walk.vertices) _graph->set_vertex_visited(w.first);
-            walks.push_back(walk);
+            for (auto &w : walk->vertices) _graph->set_vertex_visited(w.first);
+            walks.push_back(*walk);
           }
         }
         barrier();
@@ -739,7 +718,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
                  tot_unvisited_len, "\n");
   walk_stats.print();
 
-  get_ctgs_from_walks(max_kmer_len, kmer_len, break_scaffolds, walks, ctgs);
+  get_ctgs_from_walks(max_kmer_len, kmer_len, break_scaff_Ns, walks, ctgs);
   
   barrier();
 }

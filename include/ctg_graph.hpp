@@ -215,10 +215,9 @@ struct Edge {
   // the sequence filling a positive gap - if the gap is non-positive, this is empty
   string seq;
   // these flags are set during graph construction to keep track of errors in edge construction
-  bool mismatch_error, conflict_error;
+  bool mismatch_error, conflict_error, excess_error;
   // contains information of reads that map to a positive gap - used for filling the gap
   vector<GapRead> gap_reads;
-  bool gap_updated; // edge has been checked for span inconsistency
 
   string serialize() {
     ostringstream os(stringstream::binary);
@@ -233,7 +232,7 @@ struct Edge {
     serialize_string(os, seq);
     os.write((char*)&mismatch_error, sizeof(mismatch_error));
     os.write((char*)&conflict_error, sizeof(conflict_error));
-    os.write((char*)&gap_updated, sizeof(gap_updated));
+    os.write((char*)&excess_error, sizeof(excess_error));
     serialize_vector(os, gap_reads);
     return os.str();
   }
@@ -251,7 +250,7 @@ struct Edge {
     deserialize_string(is, seq);
     is.read((char*)&mismatch_error, sizeof(mismatch_error));
     is.read((char*)&conflict_error, sizeof(conflict_error));
-    is.read((char*)&gap_updated, sizeof(gap_updated));
+    is.read((char*)&excess_error, sizeof(excess_error));
     deserialize_vector(is, gap_reads);
   }
 };
@@ -273,8 +272,9 @@ struct Vertex {
   vector<vector<cid_t> > end3_merged;
   // book-keeping fields for resolving walk conflicts between ranks - 
   // choose the walk with the longest scaffold, and if there is a tie, choose the highest rank
-  int walk_len;
+  int walk_score;
   int walk_rank;
+  int walk_i;
 
   string serialize() {
     ostringstream os(stringstream::binary);
@@ -287,8 +287,9 @@ struct Vertex {
     serialize_vector(os, end3);
     serialize_vector_of_vectors(os, end5_merged);
     serialize_vector_of_vectors(os, end3_merged);
-    os.write((char*)&walk_len, sizeof(walk_len));
+    os.write((char*)&walk_score, sizeof(walk_score));
     os.write((char*)&walk_rank, sizeof(walk_rank));
+    os.write((char*)&walk_i, sizeof(walk_i));
     return os.str();
   }
 
@@ -303,8 +304,9 @@ struct Vertex {
     deserialize_vector(is, end3);
     deserialize_vector_of_vectors(is, end5_merged);
     deserialize_vector_of_vectors(is, end3_merged);
-    is.read((char*)&walk_len, sizeof(walk_len));
+    is.read((char*)&walk_score, sizeof(walk_score));
     is.read((char*)&walk_rank, sizeof(walk_rank));
+    is.read((char*)&walk_i, sizeof(walk_i));
   }
 };
 
@@ -467,17 +469,27 @@ public:
                }, vertices, cid).wait();
   }
 
-  void update_vertex_walk(cid_t cid, int64_t walk_len) {
+  void update_vertex_walk(cid_t cid, int walk_score, int walk_i) {
     upcxx::rpc(get_vertex_target_rank(cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid, int64_t walk_len, int myrank) {
+               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid, int walk_score, int walk_i, int myrank) {
                  const auto it = vertices->find(cid);
                  if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto v = &it->second;
-                 if ((walk_len == v->walk_len && myrank > v->walk_rank) || walk_len > v->walk_len) {
-                   v->walk_len = walk_len;
-                   v->walk_rank = myrank;
+                 if (myrank == v->walk_rank) {
+                   // same rank, select in favor of highest score
+                   if (walk_score > v->walk_score) {
+                     v->walk_score = walk_score;
+                     v->walk_i = walk_i;
+                   }
+                 } else {
+                   // different rank, select highest score, break ties with highest rank
+                   if ((walk_score == v->walk_score && myrank > v->walk_rank) || walk_score > v->walk_score) {
+                     v->walk_score = walk_score;
+                     v->walk_rank = myrank;
+                     v->walk_i = walk_i;
+                   }
                  }
-               }, vertices, cid, walk_len, upcxx::rank_me()).wait();
+               }, vertices, cid, walk_score, walk_i, upcxx::rank_me()).wait();
   }
   
   Vertex *get_first_local_vertex() {
@@ -638,6 +650,20 @@ public:
     }
   }
   
+  int64_t purge_excess_edges() {
+    int64_t excess = 0;
+    for (auto it = edges->begin(); it != edges->end(); ) {
+      auto edge = make_shared<Edge>(it->second);
+      if (edge->excess_error) {
+        excess++;
+        it = edges->erase(it);
+      } else {
+        it++;
+      }
+    }
+    return excess;
+  }
+  
   void add_pos_gap_read(const string &read_name) {
     upcxx::rpc(get_read_target_rank(read_name),
                [](upcxx::dist_object<reads_map_t> &read_seqs, string read_name) {
@@ -687,7 +713,6 @@ public:
   }
 
   shared_ptr<Vertex> get_vertex_cached(cid_t cid) {
-    //return get_vertex(cid);
     auto it = vertex_cache.find(cid);
     if (it != vertex_cache.end()) {
       upcxx::progress();
@@ -701,7 +726,6 @@ public:
   }
 
   shared_ptr<Edge> get_edge_cached(cid_t cid1, cid_t cid2) {
-    //return get_edge(cid1, cid2);
     CidPair cids = { .cid1 = cid1, .cid2 = cid2 };
     if (cid1 < cid2) std::swap(cids.cid1, cids.cid2);
     auto it = edge_cache.find(cids);

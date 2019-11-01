@@ -364,8 +364,9 @@ inline int hamming_dist(const string &s1, const string &s2, bool require_equal_l
   if (require_equal_len && s2.size() != s1.size())//abs((int)(s2.size() - s1.size())) > 1)
     DIE("Hamming distance substring lengths don't match, ", s1.size(), ", ", s2.size(), "\n");
   int d = 0;
-  for (int i = 0; i < min(s1.size(), s2.size()); i++) 
-    if (s1[i] != s2[i]) d++;
+  int min_size = min(s1.size(), s2.size());
+  for (int i = 0; i < min_size; i++) 
+    d += (s1[i] != s2[i]);
   return d;
 }
 

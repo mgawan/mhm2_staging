@@ -34,7 +34,7 @@ struct AlnStats {
     ostringstream os;
     os.precision(2);
     os << fixed;
-    os << "Splints:\n";
+    os << "Edge stats:\n";
     //os << "    used:               " << perc_str(tot_nalns - nbad, tot_nalns) << endl;
     os << "    unaligned:          " << perc_str(tot_unaligned, tot_nalns) << endl;
     os << "    containments:       " << perc_str(tot_containments, tot_nalns) << endl;
@@ -68,21 +68,29 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
 
 
 // gets all the alns for a single read, and returns true if there are more alns
-static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln*> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
+static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
   string start_read_id = "";
   for (; i < alns.size(); i++) {
-    Aln *aln = &alns.get_aln(i);
+    Aln aln = alns.get_aln(i);
     // alns for a new read
-    if (start_read_id != "" && aln->read_id != start_read_id) return true;
+    if (start_read_id != "" && aln.read_id != start_read_id) return true;
     (*nalns)++;
-    int unaligned_left = min(aln->rstart, aln->cstart);
-    int unaligned_right = min(aln->rlen - aln->rstop, aln->clen - aln->cstop);
-    if (unaligned_left >= ALN_SLOP || unaligned_right >= ALN_SLOP) {
+    // convert to coords for use here
+    if (aln.orient == '-') {
+      int tmp = aln.cstart;
+      aln.cstart = aln.clen - aln.cstop;
+      aln.cstop = aln.clen - tmp;
+    }
+    int unaligned_left = min(aln.rstart, aln.cstart);
+    int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - aln.cstop);
+    if (unaligned_left > ALN_SLOP || unaligned_right > ALN_SLOP) {
       (*unaligned)++;
+      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
+          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");
     } else {
       alns_for_read.push_back(aln);
     }
-    start_read_id = aln->read_id;
+    start_read_id = aln.read_id;
     progress();
   }
   return false;
@@ -150,7 +158,7 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
   }
   Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1, .aln_len = min_aln_len,
                 .aln_score = min(aln1->score1, aln2->score1), .edge_type = EdgeType::SPLINT, .seq = "",
-                .mismatch_error = false, .conflict_error = false, .gap_reads = {}};
+                .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
   if (edge.gap > 0) {
     edge.gap_reads = vector<GapRead>{GapRead(aln1->read_id, gap_start, -1, -1, orient1, cids.cid1)};
     _graph->add_pos_gap_read(aln1->read_id);
@@ -164,14 +172,41 @@ static void set_nbs(AlnStats &stats)
 {
   Timer timer(__func__);
   {
+    int64_t clen_excess = 0;
+    int64_t num_excess_ctgs = 0;
+    int max_excess_degree = 0;
     ProgressBar progbar(_graph->get_local_num_edges(), "Updating edges");
     // add edges to vertices
     for (auto edge = _graph->get_first_local_edge(); edge != nullptr; edge = _graph->get_next_local_edge()) {
+      progbar.update();
+      for (cid_t cid : {edge->cids.cid1, edge->cids.cid2}) {
+        auto v = _graph->get_vertex(cid);
+        assert(!edge->excess_error);
+        if (v->end5.size() + v->end3.size() > MAX_CTG_GRAPH_DEGREE) {
+          edge->excess_error = true;
+          clen_excess += v->clen;
+          num_excess_ctgs++;
+          max_excess_degree = std::max(max_excess_degree, v->clen);
+          break;
+        }
+      }
+      if (edge->excess_error) continue;
+      // minor race condition here but it shouldn't lead to very high degrees
       _graph->add_vertex_nb(edge->cids.cid1, edge->cids.cid2, edge->end1);
       _graph->add_vertex_nb(edge->cids.cid2, edge->cids.cid1, edge->end2);
-      progbar.update();
     }
     progbar.done();
+    barrier();
+    auto tot_clen_excess = reduce_one(clen_excess, op_fast_add, 0).wait();
+    auto tot_num_excess_ctgs = reduce_one(num_excess_ctgs, op_fast_add, 0).wait();
+    int all_max_excess_clen = reduce_one(max_excess_degree, op_fast_max, 0).wait();
+    if (tot_num_excess_ctgs) 
+      SLOG_VERBOSE("Average excess clen ", ((double)tot_clen_excess / tot_num_excess_ctgs), " max ", all_max_excess_clen, "\n");
+    int64_t num_excess_edges = reduce_one(_graph->purge_excess_edges(), op_fast_add, 0).wait();
+    if (num_excess_edges) {
+      if (rank_me() == 0 && tot_num_excess_ctgs == 0) SDIE("We have no excess ctgs, but ", num_excess_edges, " excess edges");
+      SLOG_VERBOSE("Purged ", num_excess_edges, " excess degree edges\n");
+    }
   }
   barrier();
   SLOG_VERBOSE(stats.to_string());
@@ -217,7 +252,7 @@ static void add_span(int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
 
     Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1,
                   .aln_len = kmer_len, .aln_score = kmer_len, .edge_type = EdgeType::SPAN, .seq = "",
-                  .mismatch_error = false, .conflict_error = false, .gap_reads = {}};
+                  .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
     if (edge.gap > 0) {
       add_pos_gap_read(&edge, aln1);
       add_pos_gap_read(&edge, aln2);
@@ -236,23 +271,23 @@ static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
   int64_t num_pairs = 0;
   double my_av_ins = 0;
   int64_t num_alns = 0, unaligned = 0;
-  vector<Aln*> alns_for_read_prev;
+  vector<Aln> alns_for_read_prev;
   while (true) {
-    vector<Aln*> alns_for_read;
+    vector<Aln> alns_for_read;
     t_get_alns.start();
     if (!get_alns_for_read(alns, aln_i, alns_for_read, &num_alns, &unaligned)) break;
     t_get_alns.stop();
     progbar.update(aln_i);
     if (alns_for_read.size() && alns_for_read_prev.size()) {
       // reads are paired
-      auto rlen = alns_for_read[0]->read_id.length();
-      if (alns_for_read[0]->read_id.substr(0, rlen - 2) == alns_for_read_prev[0]->read_id.substr(0, rlen - 2)) {
+      auto rlen = alns_for_read[0].read_id.length();
+      if (alns_for_read[0].read_id.substr(0, rlen - 2) == alns_for_read_prev[0].read_id.substr(0, rlen - 2)) {
         num_pairs++;
         for (int i = 0; i < alns_for_read.size(); i++) {
-          auto aln1 = alns_for_read[i];
+          auto aln1 = &alns_for_read[i];
           for (int j = 0; j < alns_for_read_prev.size(); j++) {
             progress();
-            auto aln2 = alns_for_read_prev[j];
+            auto aln2 = &alns_for_read_prev[j];
             string read_id = aln1->read_id.substr(0, aln1->read_id.length() - 2);
             if (aln2->read_id.substr(0, read_id.length()) != read_id) 
               DIE("Mismatched read ids: ", aln1->read_id, " != ", aln2->read_id, "\n");
@@ -304,16 +339,16 @@ static AlnStats get_splints_from_alns(Alns &alns) {
   int64_t aln_i = 0;
   int64_t num_splints = 0;
   while (true) {
-    vector<Aln*> alns_for_read;
+    vector<Aln> alns_for_read;
     t_get_alns.start();
     if (!get_alns_for_read(alns, aln_i, alns_for_read, &stats.nalns, &stats.unaligned)) break;
     t_get_alns.stop();
     progbar.update(aln_i);
     for (int i = 0; i < alns_for_read.size(); i++) {
-      auto aln = alns_for_read[i];
+      auto aln = &alns_for_read[i];
       for (int j = i + 1; j < alns_for_read.size(); j++) {
         progress();
-        auto other_aln = alns_for_read[j];
+        auto other_aln = &alns_for_read[j];
         if (other_aln->read_id != aln->read_id) DIE("Mismatched read ids: ", other_aln->read_id, " != ", aln->read_id, "\n");
         if (add_splint(other_aln, aln, stats)) num_splints++;
       }
@@ -455,14 +490,15 @@ static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
     ProgressBar progbar(fqr.my_file_size(), "Parsing reads for gap sequences");
     size_t tot_bytes_read = 0;
     while (true) {
+      progress();
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
+      // this happens when we have a placeholder entry because reads merged
       if (kmer_len > seq.length()) continue;
       if (_graph->update_read_seq(id, seq)) num_seqs_added++;
       if (seq.length() > max_read_len) max_read_len = seq.length();
-      progress();
       num_reads++;
     }
     progbar.done();
@@ -712,8 +748,7 @@ void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<str
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  get_spans_from_alns(max_kmer_len, kmer_len, alns);
-  // purge mismatches and conflicts
+  //get_spans_from_alns(max_kmer_len, kmer_len, alns);
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);

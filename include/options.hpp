@@ -40,7 +40,7 @@ public:
   int qual_offset = 33;
   bool verbose = false;
   int max_kmer_store = ONE_MB;
-  int max_ctg_cache = 0;
+  int max_ctg_cache = 1000000;
   bool use_bloom = false;
   double dynamic_min_depth = 0.9;
   bool checkpoint = false;
