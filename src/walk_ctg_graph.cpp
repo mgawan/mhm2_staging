@@ -384,36 +384,42 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
     stats.term_multi_candidates++;
     DBG_WALK("      -> found ", candidate_branches.size(), " viable candidates\n");
     if (quality_level == QualityLevel::ALL || walk_depth <= 10) {
+      // FIXME: idea is to try extract all the candidates with aln_len > max_kmer_len, and then if there is only
+      // one of those, choose it. Otherwise, choose the most supported amongst them. If there are none, then fallback
+      // to doing exactly the same with the other lower aln lens.
+
+
       if (max_kmer_len > kmer_len) {
         // if one branch has much better aln len than the others, choose it
         int num_max_kmer_alns = 0;
-        vector<pair<int, int> > nbs_aln_lens;
+        vector<pair<int, int> > nbs_aln_scores;
         for (auto candidate : candidate_branches) {
           auto edge = nb_edges[candidate.first];
-          if (edge->aln_len >= max_kmer_len) {
+          if (edge->aln_score >= max_kmer_len) {
             num_max_kmer_alns++;
             if (num_max_kmer_alns > 1) break;
           }
-          nbs_aln_lens.push_back({edge->aln_len, candidate.first});
+          nbs_aln_scores.push_back({edge->aln_score, candidate.first});
         }
         if (num_max_kmer_alns < 2) {
-          sort(nbs_aln_lens.begin(), nbs_aln_lens.end(),
+          sort(nbs_aln_scores.begin(), nbs_aln_scores.end(),
                [](auto &a, auto &b) {
                  return a.first > b.first;
                });
-          DBG_WALK("    -> best aln len branch is ", nbs_aln_lens[0].second, " (", nbs_aln_lens[0].first, 
-                   "), next best is ", nbs_aln_lens[1].second, " (", nbs_aln_lens[1].first, ")\n");
+          DBG_WALK("    -> best aln score branch is ", nbs_aln_scores[0].second, " (", nbs_aln_scores[0].first, 
+                   "), next best is ", nbs_aln_scores[1].second, " (", nbs_aln_scores[1].first, ")\n");
           if (num_max_kmer_alns == 1) {
-            branch_chosen = nbs_aln_lens[0].second;
+            branch_chosen = nbs_aln_scores[0].second;
             DBG_WALK("    -> resolve only max aln len ", branch_chosen, "\n");
           } else {
-            if (nbs_aln_lens[0].first >= 2 * nbs_aln_lens[1].first) {
-              branch_chosen = nbs_aln_lens[0].second;
+            if (nbs_aln_scores[0].first >= 2 * nbs_aln_scores[1].first) {
+              branch_chosen = nbs_aln_scores[0].second;
               DBG_WALK("    -> resolve best aln len ", branch_chosen, "\n");
             }
           }
         }
       }
+
       if (branch_chosen == -1) {
         // if one branch has much higher edge support than the others, choose it
         vector<pair<int, int> > nbs_support;
