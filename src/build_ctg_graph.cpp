@@ -138,7 +138,7 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
     gap_start = ctg2.stop;
   }
   int min_aln_len = min(aln1->rstop - aln1->rstart, aln2->rstop - aln2->rstart);
-
+  int min_aln_score = min(aln1->score1, aln2->score1);
   if (gap < -min_aln_len) {
     stats.short_alns++;
     return false;
@@ -157,7 +157,7 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
     orient1 = aln2->orient;
   }
   Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1, .aln_len = min_aln_len,
-                .aln_score = min(aln1->score1, aln2->score1), .edge_type = EdgeType::SPLINT, .seq = "",
+                .aln_score = min_aln_score, .edge_type = EdgeType::SPLINT, .seq = "",
                 .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
   if (edge.gap > 0) {
     edge.gap_reads = vector<GapRead>{GapRead(aln1->read_id, gap_start, -1, -1, orient1, cids.cid1)};
@@ -752,6 +752,10 @@ void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<str
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);
+  
+  // FIXME: now iterate through contigs, and if a contig has one or more alns of >= max_kmer_len in a direction, mark all the other
+  // edges as dead. Then during the walks, just ignore dead edges as if they don't exist
+  
   parse_reads(kmer_len, reads_fname_list);
   merge_nbs();
 }

@@ -8,7 +8,8 @@ struct Aln {
   int rstart, rstop, rlen, cstart, cstop, clen;
   char orient;
   int score1, score2;
-  
+
+  // writes out in the format meraligner uses
   string to_string() {
     ostringstream os;
     os << read_id << "\t" << rstart + 1 << "\t" << rstop << "\t" << rlen << "\t"
@@ -75,12 +76,6 @@ public:
     size_t bytes_written = 0;
     int64_t i = 0;
     for (auto aln : alns) {
-      // aln was changed for cgraph usage. Need to change back so it looks the same as produced by meraligner, etc
-      if (aln.orient == '-') {
-        int tmp = aln.cstart;
-        aln.cstart = aln.clen - aln.cstop;
-        aln.cstop = aln.clen - tmp;
-      }
       out_buf << aln.to_string() << endl;
       progbar.update();
       i++;
