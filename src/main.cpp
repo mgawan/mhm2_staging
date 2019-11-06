@@ -42,8 +42,8 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
 void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns);
-void traverse_ctg_graph(int max_kmer_len, int kmer_len, int min_ctg_len, vector<string> &reads_fname_list, 
-                        int break_scaffolds, QualityLevel quality_level, Contigs *ctgs, Alns &alns);
+void traverse_ctg_graph(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int break_scaffolds,
+                        QualityLevel quality_level, Contigs *ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -103,7 +103,7 @@ int main(int argc, char **argv) {
       int seed_space = 1;//8;
       find_alignments(kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
-      traverse_ctg_graph(kmer_len, kmer_len, 0, options->reads_fname_list, BREAK_SCAFFS, QualityLevel::SINGLE_PATH_ONLY, &ctgs, alns);
+      traverse_ctg_graph(kmer_len, kmer_len, options->reads_fname_list, BREAK_SCAFFS, QualityLevel::SINGLE_PATH_ONLY, &ctgs, alns);
       */
       if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SLOG(KBLUE "_________________________\n", KNORM);
@@ -132,12 +132,12 @@ int main(int argc, char **argv) {
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
-      traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, CGRAPH_WALK_START_MIN_CTG_LEN, options->reads_fname_list,
-                         break_scaff_Ns, QualityLevel::ALL, &ctgs, alns);
+      traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, options->reads_fname_list, break_scaff_Ns, QualityLevel::ALL,
+                         &ctgs, alns);
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
         SLOG(KBLUE "_________________________\n", KNORM);
-        ctgs.print_stats(CLEN_THRES);
+        ctgs.print_stats(ASSM_CLEN_THRES);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       SLOG("\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________\n", KNORM);
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
   SLOG(KBLUE "_________________________\n", KNORM);
-  ctgs.print_stats(CLEN_THRES);
+  ctgs.print_stats(ASSM_CLEN_THRES);
   SLOG(KBLUE "_________________________\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,

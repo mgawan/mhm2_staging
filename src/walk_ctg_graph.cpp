@@ -20,6 +20,7 @@ static CtgGraph *_graph = nullptr;
 // used for building up scaffolds
 struct Walk {
   int64_t len;
+  int64_t start_clen;
   double depth;
   vector<pair<cid_t, Orient> > vertices;
 };
@@ -574,7 +575,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
     } // walk loop
     sum_scaff_lens += scaff_len;
     // unique ids are generated later
-    Walk walk = { .len = scaff_len, .depth = walk_depth, .vertices = {} };
+    Walk walk = { .len = scaff_len, .start_clen = start_v->clen, .depth = walk_depth, .vertices = {} };
     for (auto &w : walk_vertices) walk.vertices.push_back({w.first->cid, w.second});
     tmp_walks.push_back(walk);
   }
@@ -621,8 +622,7 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
 }
 
 
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len, int break_scaff_Ns,
-                QualityLevel quality_level, Contigs *ctgs) {
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, QualityLevel quality_level, Contigs *ctgs) {
   // The general approach is to have each rank do walks starting from its local vertices only.
   // First, to prevent loops within a walk, the vertices visited locally are kept track of using a visited hash table.
   // Once walks starting from all local vertices have been completed, any conflicts (overlaps) between walks are resolved.
@@ -637,70 +637,68 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
   vector<Walk> walks;
   WalkStats walk_stats = {0};
   int64_t num_rounds = 0;
-  //vector<int> min_clens = {3 * max_kmer_len, 2 * max_kmer_len, (int)(1.5 * max_kmer_len), max_kmer_len};
-  vector<int> min_clens = {min_ctg_len};
-  for (auto min_clen : min_clens) {
-    auto sorted_ctgs = sort_ctgs(min_clen);
-    barrier();
-    int64_t num_start_ctgs = reduce_one(sorted_ctgs.size(), op_fast_add, 0).wait();
-    SLOG_VERBOSE("Number of starting contigs: ", perc_str(num_start_ctgs, _graph->get_num_vertices()), "\n");
-    // need to repeat the sets of walks because there may be a conflicts between walks across ranks, which results
-    // in one of the walks being dropped. So this loop will repeat until no more scaffolds can be built.
-    {
-      IntermittentTimer next_nbs_timer("next_nbs");
-      IntermittentTimer walks_timer("walks");
-      while (true) {
-        walks_timer.start();
-        ProgressBar progbar(sorted_ctgs.size(), "Walking graph round " + to_string(num_rounds));
-        auto tmp_walks = do_walks(max_kmer_len, kmer_len, quality_level, sorted_ctgs, walk_stats, next_nbs_timer);
-        progbar.done();
-        walks_timer.stop();
-        barrier();
-        // now eliminate duplicate walks. Each vertex will get labeled with the rank that has the longest walk, 
-        // first set all the vertex fields to empty
-        for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
-          v->walk_rank = -1;
-          v->walk_score = 0;
-        }
-        barrier();
-        for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
-          auto walk = &tmp_walks[walk_i];
-          // resolve conflict in favor of longest walk - this marks the walk the vertex belongs to 
-          for (auto &w : walk->vertices) _graph->update_vertex_walk(w.first, walk->len, walk_i);
-        }
-        barrier();
-        int num_walks_added = 0;
-        // now drop all walks where any vertex's rank does not match this rank
-        for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
-          auto walk = &tmp_walks[walk_i];
-          bool add_walk = true;
-          for (auto &w : walk->vertices) {
-            auto v = _graph->get_vertex(w.first);
-            if (v->walk_rank != rank_me() || v->walk_i != walk_i) {
-              add_walk = false;
-              break;
-            }
-          }
-          if (add_walk) {
-            num_walks_added++;
-            // update depth remaining
-            for (auto &w : walk->vertices) _graph->set_vertex_visited(w.first);
-            walks.push_back(*walk);
+  auto sorted_ctgs = sort_ctgs(2 * max_kmer_len);
+  barrier();
+  int64_t num_start_ctgs = reduce_one(sorted_ctgs.size(), op_fast_add, 0).wait();
+  SLOG_VERBOSE("Number of starting contigs: ", perc_str(num_start_ctgs, _graph->get_num_vertices()), "\n");
+  // need to repeat the sets of walks because there may be a conflicts between walks across ranks, which results
+  // in one of the walks being dropped. So this loop will repeat until no more scaffolds can be built.
+  {
+    IntermittentTimer next_nbs_timer("next_nbs");
+    IntermittentTimer walks_timer("walks");
+    while (true) {
+      walks_timer.start();
+      ProgressBar progbar(sorted_ctgs.size(), "Walking graph round " + to_string(num_rounds));
+      auto tmp_walks = do_walks(max_kmer_len, kmer_len, quality_level, sorted_ctgs, walk_stats, next_nbs_timer);
+      progbar.done();
+      walks_timer.stop();
+      barrier();
+      // now eliminate duplicate walks. Each vertex will get labeled with the rank that has the longest walk, 
+      // first set all the vertex fields to empty
+      for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
+        v->walk_rank = -1;
+        v->walk_score = 0;
+      }
+      barrier();
+      for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
+        auto walk = &tmp_walks[walk_i];
+        // resolve conflict in favor of longest walk - this marks the walk the vertex belongs to 
+        for (auto &w : walk->vertices) _graph->update_vertex_walk(w.first, walk->len, walk_i);
+        // resolve in favor of longest starting ctg - reduces the msa on synth64d around 19%, with a reduction in ctgy too)
+        //for (auto &w : walk->vertices) _graph->update_vertex_walk(w.first, walk->start_clen, walk_i);
+      }
+      barrier();
+      int num_walks_added = 0;
+      // now drop all walks where any vertex's rank does not match this rank
+      for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
+        auto walk = &tmp_walks[walk_i];
+        bool add_walk = true;
+        for (auto &w : walk->vertices) {
+          auto v = _graph->get_vertex(w.first);
+          if (v->walk_rank != rank_me() || v->walk_i != walk_i) {
+            add_walk = false;
+            break;
           }
         }
-        barrier();
-        auto tot_walks_added = reduce_all(num_walks_added, op_fast_add).wait();
-        if (tot_walks_added == 0) break;
-        //SLOG_VERBOSE("Walk round ", num_rounds, " found ", tot_walks_added, " new walks\n");
-        num_rounds++;
-        if (num_rounds > rank_n() * 5) {
-          SWARN("breaking contig graph walk on high count\n");
-          break;
+        if (add_walk) {
+          num_walks_added++;
+          // update depth remaining
+          for (auto &w : walk->vertices) _graph->set_vertex_visited(w.first);
+          walks.push_back(*walk);
         }
-      } // loop until no more walks are found
-    }
-    barrier();
+      }
+      barrier();
+      auto tot_walks_added = reduce_all(num_walks_added, op_fast_add).wait();
+      if (tot_walks_added == 0) break;
+      //SLOG_VERBOSE("Walk round ", num_rounds, " found ", tot_walks_added, " new walks\n");
+      num_rounds++;
+      if (num_rounds > rank_n() * 5) {
+        SWARN("breaking contig graph walk on high count\n");
+        break;
+      }
+    } // loop until no more walks are found
   }
+  barrier();
   // now add any unvisited to the walks
   int64_t num_unvisited = 0;
   int64_t max_unvisited_len = 0;
@@ -710,7 +708,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int min_ctg_len
       num_unvisited++;
       if (v->clen > max_unvisited_len) max_unvisited_len = v->clen;
       unvisited_len += v->clen;
-      Walk walk = { .len = v->clen, .depth = v->depth, .vertices = { {v->cid, Orient::NORMAL} } };
+      Walk walk = { .len = v->clen, .start_clen = v->clen, .depth = v->depth, .vertices = { {v->cid, Orient::NORMAL} } };
       walks.push_back(walk);
       //DBG_WALK("unvisited ", v->cid, "\n");
     }

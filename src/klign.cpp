@@ -107,23 +107,24 @@ class KmerCtgDHT {
   dist_object<InsertKmer> insert_kmer;
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
-                  int cstart, int clen, char orient, Alns *read_alns, int extra_offset) {
+                  int cstart, int clen, char orient, Alns *read_alns, int ctg_extra_offset, int read_extra_offset, int overlap_len) {
     Aln aln;
     StripedSmithWaterman::Alignment ssw_aln;
 
     // use hamming distance for checking match first - works for > 90% of matches and reduces time spent doing SSW
-    //int hdist = hamming_dist(rseq, cseq, true);
-    //if (hdist < 3) {
-    //if (rseq == cseq) {
-    if (cseq.compare(extra_offset, rseq.length(), rseq) == 0) {
+    //int hdist = hamming_dist(rseq.substr(read_extra_offset, overlap_len), cseq.substr(ctg_extra_offset, overlap_len) , true);
+    // allow for ~1% read error and at least 1
+    // int max_hdist = max(overlap_len / 100, 1);
+    //if (hdist < max_hdist) {
+    if (cseq.compare(ctg_extra_offset, overlap_len, rseq, read_extra_offset, overlap_len) == 0) {
       num_perfect_alns++;
-      int aln_len = rseq.length();
-      ssw_aln.ref_begin = 0;
-      ssw_aln.ref_end = aln_len - 1;
-      ssw_aln.query_begin = extra_offset;
-      ssw_aln.query_end = extra_offset + aln_len - 1;
+      ssw_aln.ref_begin = read_extra_offset;
+      ssw_aln.ref_end = read_extra_offset + overlap_len - 1;
+      ssw_aln.query_begin = ctg_extra_offset;
+      ssw_aln.query_end = ctg_extra_offset + overlap_len - 1;
       // the mismatch penalty is 3 
-      ssw_aln.sw_score = aln_len;// - 3 * hdist;
+      ssw_aln.sw_score = overlap_len;
+      //ssw_aln.sw_score = overlap_len - 3 * hdist;
       ssw_aln.sw_score_next_best = 0;
     } else {
       // make sure upcxx progress is done before starting alignment
@@ -311,7 +312,7 @@ public:
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       // drop alns for reads with too many alns
-      if (read_alns->size() >= MAX_ALNS_PER_READ) continue;
+      if (read_alns->size() >= MAX_ALNS_PER_READ) break;
       int pos_in_read;
       bool read_kmer_is_rc;
       CtgLoc ctg_loc;
@@ -342,11 +343,16 @@ public:
 
       // add a few extra on either end if possible
       int ctg_aln_len = overlap_len + min(ctg_loc.clen - (cstart + overlap_len), ALIGN_EXPAND_BASES);
-      int extra_offset = min(cstart, ALIGN_EXPAND_BASES);
-      cstart -= extra_offset;
-      ctg_aln_len += extra_offset;
+      int ctg_extra_offset = min(cstart, ALIGN_EXPAND_BASES);
+      cstart -= ctg_extra_offset;
+      ctg_aln_len += ctg_extra_offset;
+
+      // use the whole read, to account for possible indels
+      int read_aln_len = rlen;
+      int read_extra_offset = rstart;
+      rstart = 0;
       
-      string read_subseq = rseq_ptr->substr(rstart, overlap_len);
+      string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
       string ctg_subseq;
       bool ctg_in_cache = false;
       // if max_ctg_seq_cache_size is > 0, then we are using a cache
@@ -379,7 +385,8 @@ public:
         delete[] seq_buf;
         ctg_seq_bytes_fetched += ctg_aln_len;
       }
-      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns, extra_offset);
+      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
+                 ctg_extra_offset, read_extra_offset, overlap_len);
       num_alns++;
     }
 
@@ -433,6 +440,7 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
   int64_t num_reads_aligned = 0;
+  chrono::duration<double> compute_alns_dt(0);
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
@@ -466,7 +474,15 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
           kmer = kmer_rc;
           is_rc = true;
         }
-        auto t = NOW();
+        
+        // FIXME: this is the code that takes 90% of the time. And it seems that the time is taken in the bare rpc
+        // itself, regardless of payload, so this is a latency issue.
+        // Can we aggregate these calls somehow? Collect all calls destined for each target rank, and then issue only
+        // one rpc and receive a bunch of vectors.
+        // Note: for the smaller seeds, we can keep track of whether we've fetched this kmer before, and not
+        // fetch it again (cache this result). For the longer seeds (99) this won't help because the seeds are almost
+        // unique
+        
         // add the fetched ctg into the unordered map
         auto fut = kmer_ctg_dht->get_ctgs_with_kmer(kmer).then(
           [=](vector<CtgLoc> aligned_ctgs) {
@@ -481,7 +497,9 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
       // when all the ctgs are fetched, do the alignments
       read_fut_chain.wait();
       if (aligned_ctgs_map->size()) num_reads_aligned++;
+      auto t = NOW();
       kmer_ctg_dht->compute_alns_for_read(aligned_ctgs_map, read_id, read_seq);
+      compute_alns_dt += (NOW() - t);
       num_reads++;
     }
     progbar.done();
@@ -511,6 +529,12 @@ static void do_alignments(KmerCtgDHT *kmer_ctg_dht, unsigned seed_space, vector<
   SLOG_VERBOSE("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
                "max ", setprecision(2), fixed, max_ssw_secs, " s, ",
                "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
+
+  double av_compute_alns_secs = reduce_one(compute_alns_dt.count(), op_fast_add, 0).wait() / rank_n();
+  double max_compute_alns_secs = reduce_one(compute_alns_dt.count(), op_fast_max, 0).wait();
+  SLOG_VERBOSE("Average compute_alns time ", setprecision(2), fixed, av_compute_alns_secs, " s, ",
+               "max ", setprecision(2), fixed, max_compute_alns_secs, " s, ",
+               "balance ", setprecision(2), fixed, av_compute_alns_secs / max_compute_alns_secs, "\n");
 }
 
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,

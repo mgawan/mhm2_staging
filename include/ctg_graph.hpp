@@ -766,7 +766,7 @@ public:
     vector<int64_t> clens;
     clens.reserve(get_local_num_vertices());
     for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
-      if (v->clen >= CLEN_THRES) {
+      if (v->clen >= ASSM_CLEN_THRES) {
         depths.push_back(round(v->depth));
         clens.push_back(v->clen);
       }
@@ -787,7 +787,7 @@ public:
         aln_scores.push_back(edge->aln_score);
         auto clen1 = get_vertex_clen(edge->cids.cid1);
         auto clen2 = get_vertex_clen(edge->cids.cid2);
-        if (clen1 >= CLEN_THRES || clen2 >= CLEN_THRES) {
+        if (clen1 >= ASSM_CLEN_THRES || clen2 >= ASSM_CLEN_THRES) {
           supports.push_back(edge->support);
           gaps.push_back(edge->gap);
         }
@@ -809,7 +809,7 @@ public:
     SLOG("    degree:    ", (double)num_edges / num_vertices, "\n");
     SLOG("    aln_len:   ", get_avg_min_max(aln_lens), "\n");
     SLOG("    aln_score: ", get_avg_min_max(aln_scores), "\n");
-    SLOG("  for contigs >= ", CLEN_THRES, " length:\n");
+    SLOG("  for contigs >= ", ASSM_CLEN_THRES, " length:\n");
     SLOG("    depth:     ", get_avg_min_max(depths), "\n");
     SLOG("    clen:      ", get_avg_min_max(clens), "\n");
     SLOG("    support:   ", get_avg_min_max(supports), "\n");
