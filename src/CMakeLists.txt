@@ -44,12 +44,14 @@ add_definitions(-DALN_SLOP=0)
 add_definitions(-DASSM_CLEN_THRES=500)
 #FIXME: these should not be defined here!!
 add_definitions(-DINSERT_AVG=320)
-add_definitions(-DINSERT_STDDEV=30)
+add_definitions(-DINSERT_STDDEV=28)
 add_definitions(-DBREAK_SCAFF_NS=20)
 add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
 add_definitions(-DWALK_SUPPORT_THRES=3)
 add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
+add_definitions(-DFIVE_PRIME_WIGGLE_ROOM=5)
+add_definitions(-DTHREE_PRIME_WIGGLE_ROOM=5)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)
@@ -72,7 +74,8 @@ include_directories("${CMAKE_SOURCE_DIR}/../include")
 add_subdirectory(ssw)
 
 add_executable(mhm
-    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp)
+    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp
+    spanner.cpp)
 
 target_link_libraries(mhm SSW_LIBRARY)
 target_link_libraries(mhm ${ZLIB_LIBRARIES})

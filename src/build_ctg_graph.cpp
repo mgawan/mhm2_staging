@@ -307,13 +307,14 @@ static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
     } 
     alns_for_read_prev = move(alns_for_read);
   }
+  progbar.done();
   barrier();
   auto tot_num_alns = reduce_one(num_alns, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed ", tot_num_alns, " alignments (", unaligned, " unaligned) and found ",
                perc_str(reduce_one(num_pairs, op_fast_add, 0).wait(), tot_num_alns), " pairs\n");
   auto all_num_same_ctg_pairs = reduce_one(num_same_ctg_pairs, op_fast_add, 0).wait();
   auto all_av_ins = reduce_one(my_av_ins, op_fast_add, 0).wait() / all_num_same_ctg_pairs;
-  DBG_SPANS("Num same ctg pairs ", all_num_same_ctg_pairs, ", average insert size ", all_av_ins, "\n");
+  SLOG_VERBOSE("Num same ctg pairs ", all_num_same_ctg_pairs, ", average insert size ", all_av_ins, "\n");
   // count the actual number of spans used
   int64_t num_spans_only = 0;
   int64_t num_pos_spans = 0;
@@ -748,7 +749,7 @@ void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<str
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  //get_spans_from_alns(max_kmer_len, kmer_len, alns);
+  get_spans_from_alns(max_kmer_len, kmer_len, alns);
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);

@@ -130,6 +130,7 @@ class KmerCtgDHT {
       // make sure upcxx progress is done before starting alignment
       discharge();
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
+      // this is also the way it's done in meraligner
       auto t = NOW();
       ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
       ssw_dt += (NOW() - t);
@@ -393,6 +394,11 @@ public:
     delete aligned_ctgs_map;
     // only add alns if there are not too many for this read
     if (read_alns->size() < MAX_ALNS_PER_READ) {
+      sort(read_alns->begin(), read_alns->end(), 
+           [](const auto &elem1, const auto &elem2) {
+             return elem1.score1 > elem2.score1;
+           });
+      // sort the alns from best score to worst - this could be used in spanner later
       for (int i = 0; i < read_alns->size(); i++) {
         alns->add_aln(read_alns->get_aln(i));
       }
