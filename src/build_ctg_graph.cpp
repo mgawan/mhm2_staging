@@ -67,6 +67,9 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
 }
 
 
+
+
+
 // gets all the alns for a single read, and returns true if there are more alns
 static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
   string start_read_id = "";
@@ -213,7 +216,7 @@ static void set_nbs(AlnStats &stats)
 }
 
 
-static void add_pos_gap_read(Edge* edge, Aln &aln) {
+void add_pos_gap_read(Edge* edge, Aln &aln) {
   int end = (aln.cid == edge->cids.cid1 ? edge->end1 : edge->end2);
   int gap_start;
   if (aln.cid == edge->cids.cid1) {
@@ -246,12 +249,14 @@ static void add_span(int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
       swap(cids.cid1, cids.cid2);
     }
     DBG("span gap ", gap, " ", cids.cid1, ".", end1, " <-> ", cids.cid2, ".", end2, 
-        "\n", aln1.cid, " ", aln1.orient, " read_id1 ", aln1.read_id, " rstart1 ", aln1.rstart, " rstop1 ", aln1.rstop, " cstart1 ", aln1.cstart, " cstop1 ", aln1.cstop, 
-        "\n", aln2.cid, " ", aln2.orient, " read_id2 ", aln2.read_id, " rstart2 ", aln2.rstart, " rstop2 ", aln2.rstop, " cstart2 ", aln2.cstart, " cstop2 ", aln2.cstop,
-        "\n");
+        "\n", aln1.cid, " ", aln1.orient, " read_id1 ", aln1.read_id, " rstart1 ", aln1.rstart, " rstop1 ", aln1.rstop,
+        " cstart1 ", aln1.cstart, " cstop1 ", aln1.cstop, 
+        "\n", aln2.cid, " ", aln2.orient, " read_id2 ", aln2.read_id, " rstart2 ", aln2.rstart, " rstop2 ", aln2.rstop,
+        " cstart2 ", aln2.cstart, " cstop2 ", aln2.cstop, "\n");
 
     Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1,
-                  .aln_len = kmer_len, .aln_score = kmer_len, .edge_type = EdgeType::SPAN, .seq = "",
+                  .aln_len = min(aln1.rstop - aln1.rstart, aln2.rstop - aln2.rstart), .aln_score = min(aln1.score1, aln2.score1),
+                  .edge_type = EdgeType::SPAN, .seq = "",
                   .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
     if (edge.gap > 0) {
       add_pos_gap_read(&edge, aln1);
@@ -744,18 +749,23 @@ static void merge_nbs()
 }
 
 
+void run_spanner(int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
+  
+
 void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
   Timer timer(__func__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  get_spans_from_alns(max_kmer_len, kmer_len, alns);
+  run_spanner(max_kmer_len, kmer_len, alns, graph);  
+  //get_spans_from_alns(max_kmer_len, kmer_len, alns);
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);
   
   // FIXME: now iterate through contigs, and if a contig has one or more alns of >= max_kmer_len in a direction, mark all the other
   // edges as dead. Then during the walks, just ignore dead edges as if they don't exist
+  // ??? - what was I thinking?
   
   parse_reads(kmer_len, reads_fname_list);
   merge_nbs();

@@ -29,7 +29,7 @@ using namespace upcxx;
 
 #define NOW std::chrono::high_resolution_clock::now
 
-#define DUMP_ALNS
+//#define DUMP_ALNS
 
 using cid_t = int64_t;
 
