@@ -19,8 +19,167 @@ void add_pos_gap_read(Edge* edge, Aln &aln);
 
 static CtgGraph *_graph = nullptr;
 
-static bool get_best_span_aln(vector<Aln> &alns, Aln &best_aln, string &read_status, string &type_status,
-                              int64_t *reject_5_trunc, int64_t *reject_3_trunc, int64_t *reject_uninf) {
+// functions for evaluating the gap correction analytically assuming Gaussian insert size distribution
+// this is taken from meraculaus bmaToLinks.pl 
+/*
+sub meanSpanningClone {
+    my ($g,$k,$l,$c1,$c2,$mu,$sigma) = @_;
+
+    my $x1 = $g+2*$k-1;
+    my $x2 = $g+$c1+$l;
+    my $alpha = $x2-$x1;
+    my $x3 = $g+$c2+$l;
+    my $x4 = $x3+$alpha;
+
+    my $num = 0;
+    my $den = 0;
+
+    my $N1 = G2($x1,$x2,$mu,$sigma)-$x1*G1($x1,$x2,$mu,$sigma);
+    my $N2 = ($x2-$x1)*G1($x2,$x3,$mu,$sigma);
+    my $N3 = $x4*G1($x3,$x4,$mu,$sigma)-G2($x3,$x4,$mu,$sigma);
+    
+    my $D1 = G1($x1,$x2,$mu,$sigma)-$x1*G0($x1,$x2,$mu,$sigma);
+    my $D2 = ($x2-$x1)*G0($x2,$x3,$mu,$sigma);
+    my $D3 = $x4*G0($x3,$x4,$mu,$sigma)-G1($x3,$x4,$mu,$sigma);
+    
+    $num = $N1+$N2+$N3;
+    $den = $D1+$D2+$D3;
+
+    if ($den) {
+        return $num/$den;
+    } else {
+        print STDERR "Warning: meanSpanningClone failed for ($g,$k,$l,$c1,$c2,$mu,$sigma)\n";
+        return 0;
+    }
+}
+
+
+
+sub erf {
+    my ($x) = @_;
+    
+    my $absX = ($x < 0) ? -$x : $x;
+    my $t = 1/(1+0.5*$absX);
+
+    my $t2 = $t*$t;
+    my $t3 = $t*$t2;
+    my $t4 = $t*$t3;
+    my $t5 = $t*$t4;
+    my $t6 = $t*$t5;
+    my $t7 = $t*$t6;
+    my $t8 = $t*$t7;
+    my $t9 = $t*$t8;
+
+    my $a0 = -1.26551223;
+    my $a1 = 1.00002368;
+    my $a2 = 0.37409196;
+    my $a3 = 0.09678418;
+    my $a4 = -0.18628806;
+    my $a5 = 0.27886807;
+    my $a6 = -1.13520398;
+    my $a7 = 1.48851587;
+    my $a8 = -0.82215223;
+    my $a9 = 0.17087277;
+
+    my $tau = $t*exp(-$x*$x + $a0 + $a1*$t + $a2*$t2 + $a3*$t3 + $a4*$t4 +
+                     $a5*$t5 + $a6*$t6 + $a7*$t7 + $a8*$t8 + $a9*$t9);
+
+    if ($x < 0) {
+        return ($tau-1);
+    } else {
+        return (1-$tau);
+    }
+}
+
+sub G0 {
+    my ($a,$b,$mu,$sigma) = @_;
+
+    my $rt2sig = $sqrtTwo*$sigma;
+    my $erfa = erf(($a-$mu)/$rt2sig);
+    my $erfb = erf(($b-$mu)/$rt2sig);
+
+    return ($sqrtPi/$sqrtTwo)*$sigma*($erfb-$erfa);
+}
+
+sub G1 {
+    my ($a,$b,$mu,$sigma) = @_;
+
+    my $za = ($a-$mu)/$sigma;
+    my $zb = ($b-$mu)/$sigma;
+    
+    my $expa = exp(-0.5*$za*$za);
+    my $expb = exp(-0.5*$zb*$zb);
+
+    my $g0 = G0($a,$b,$mu,$sigma);
+
+    return ($sigma*$sigma*($expa-$expb) + $mu*$g0);
+}
+
+sub G2 {
+    my ($a,$b,$mu,$sigma) = @_;
+
+    my $za = ($a-$mu)/$sigma;
+    my $zb = ($b-$mu)/$sigma;
+    
+    my $expa = exp(-0.5*$za*$za);
+    my $expb = exp(-0.5*$zb*$zb);
+
+    my $g0 = G0($a,$b,$mu,$sigma);
+    my $g1 = G1($a,$b,$mu,$sigma);
+
+    my $sigma2 = $sigma*$sigma;
+
+    return ($sigma2*$g0 + $mu*$g1 + $sigma2*($a*$expa - $b*$expb));
+}
+
+//my ($meanAnchor,$k,$l,$c1,$c2,$mu,$sigma) = @_;
+int estimate_gap_size(int mean_anchor, int kmer_len, int read_len, int clen1, int clen2, int insert_avg, int insert_stddev) {
+  int g_max = insert_avg + 3 * insert_stddev - 2 * kmer_len;
+    my $gMax = $mu+3*$sigma-2*$k;
+    my $gMin = -($k-2);
+    my $gMid = $mu-$meanAnchor;
+
+    if ($gMid < $gMin) {
+        $gMid = $gMin+1;
+    } elsif ($gMid > $gMax) {
+        $gMid = $gMax-1;
+    }
+
+    my $aMax = meanSpanningClone($gMax,$k,$l,$c1,$c2,$mu,$sigma) - $gMax;
+    my $aMin = meanSpanningClone($gMin,$k,$l,$c1,$c2,$mu,$sigma) - $gMin;
+    my $aMid = meanSpanningClone($gMid,$k,$l,$c1,$c2,$mu,$sigma) - $gMid;
+
+    my $deltaG = $gMax-$gMin;
+
+    my $iterations = 0;
+
+    while ($deltaG > 10) {
+        $iterations++;
+        if ($meanAnchor > $aMid) {
+            $gMax = $gMid;
+            $aMax = $aMid;
+            $gMid = ($gMid+$gMin)/2;
+            $aMid = meanSpanningClone($gMid,$k,$l,$c1,$c2,$mu,$sigma) - $gMid;
+        } elsif ($meanAnchor < $aMid) {
+            $gMin = $gMid;
+            $aMin = $aMid;
+            $gMid = ($gMid+$gMax)/2;
+            $aMid = meanSpanningClone($gMid,$k,$l,$c1,$c2,$mu,$sigma) - $gMid;
+        } else {
+            last;
+        }
+        $deltaG = $gMax-$gMin;
+    }
+
+#    print STDERR "#ITER $iterations\n";
+    return $gMid;
+
+}
+*/
+
+
+static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &alns, Aln &best_aln, string &read_status,
+                              string &type_status, int64_t *reject_5_trunc, int64_t *reject_3_trunc, int64_t *reject_uninf) {
   if (alns.size() == 0) return false;
   int min_rstart = -1;
   read_status = "";
@@ -71,7 +230,7 @@ static bool get_best_span_aln(vector<Aln> &alns, Aln &best_aln, string &read_sta
       continue;
     }
 
-    int endDistance = INSERT_AVG + 3 * INSERT_STDDEV;
+    int endDistance = insert_avg + 3 * insert_stddev;
     // Assess alignment location relative to scaffold (pointing out, pointing in, or in the middle)
     if ((aln.orient == '+' && projected_start > aln.clen - endDistance) ||
         (aln.orient == '-' && projected_start < endDistance)) {
@@ -119,31 +278,31 @@ static bool get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_
 
 enum class ProcessPairResult { FAIL_SMALL, FAIL_SELF_LINK, FAIL_EDIST, FAIL_MIN_GAP, SUCCESS };
  
-ProcessPairResult process_pair(Aln &aln1, Aln &aln2, const string &type_status1, const string &type_status2,
-                               const string &read_status1, const string &read_status2, zstr::ofstream &spans_file,
-                               int max_kmer_len) {
+ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln &aln2, const string &type_status1,
+                               const string &type_status2, const string &read_status1, const string &read_status2,
+                               zstr::ofstream &spans_file, int max_kmer_len) {
 #ifdef DUMP_SPANS
   spans_file << "PAIR\t" << type_status1 << "." << type_status2 << "\t"
              << get_ctg_aln_str(aln1, read_status1) << "\t" << get_ctg_aln_str(aln2, read_status2) << endl;
 #endif
-  auto get_dist = [](int &d, Aln &aln) -> bool {
+  auto get_dist = [=](int &d, Aln &aln) -> bool {
     aln.rstart++;
     aln.cstart++;
     // Omit alignments to very short (potentially "popped-out") scaffolds
-    if (aln.clen < INSERT_AVG / 2) return false;
+    if (aln.clen < insert_avg / 2) return false;
     d = (aln.orient == '+' ? (aln.clen - aln.cstart + 1) + (aln.rstart - 1) : aln.cstop + (aln.rstart - 1));
     return true;
   };
 
   // check for inappropriate self-linkage
   if (aln1.cid == aln2.cid) return ProcessPairResult::FAIL_SELF_LINK;
-  int end_distance = INSERT_AVG + 3 * INSERT_STDDEV;
+  int end_distance = insert_avg + 3 * insert_stddev;
   int d1, d2;
   if (!get_dist(d1, aln1)) return ProcessPairResult::FAIL_SMALL;
   if (!get_dist(d2, aln2)) return ProcessPairResult::FAIL_SMALL;
   if (d1 >= end_distance || d2 >= end_distance) return ProcessPairResult::FAIL_EDIST;
   
-  int end_separation = INSERT_AVG - (d1 + d2);
+  int end_separation = insert_avg - (d1 + d2);
   //if (end_separation < -max_kmer_len * 2) return ProcessPairResult::FAIL_MIN_GAP;
   CidPair cids = { .cid1 = aln1.cid, .cid2 = aln2.cid };
   int end1 = aln1.orient == '+' ? 3 : 5;
@@ -166,7 +325,7 @@ ProcessPairResult process_pair(Aln &aln1, Aln &aln2, const string &type_status1,
 
 
 // so the way meraculous spanner seems to work is that it only makes a pair out of the alignments with the shortest rstart. 
-void run_spanner(int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
+void run_spanner(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
   _graph = graph;
   Timer timer(__func__);
   IntermittentTimer t_get_alns("get alns spanner");
@@ -189,7 +348,8 @@ void run_spanner(int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
     t_get_alns.stop();
     progbar.update(aln_i);
     Aln best_aln = { .read_id = "" };
-    if (get_best_span_aln(alns_for_read, best_aln, read_status, type_status, &reject_5_trunc, &reject_3_trunc, &reject_uninf)) {
+    if (get_best_span_aln(insert_avg, insert_stddev, alns_for_read, best_aln, read_status, type_status, &reject_5_trunc,
+                          &reject_3_trunc, &reject_uninf)) {
       if (!prev_best_aln.read_id.empty()) {
         auto read_id_len = best_aln.read_id.length();
         if (best_aln.read_id.compare(0, read_id_len - 2, prev_best_aln.read_id, 0, read_id_len - 2) == 0) {
@@ -197,8 +357,8 @@ void run_spanner(int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
             reject_uninf++;
           } else {
             num_pairs++;
-            auto res = process_pair(prev_best_aln, best_aln, prev_type_status, type_status, prev_read_status, read_status,
-                                    spans_file, max_kmer_len);
+            auto res = process_pair(insert_avg, insert_stddev, prev_best_aln, best_aln, prev_type_status, type_status,
+                                    prev_read_status, read_status, spans_file, max_kmer_len);
             result_counts[(int)res]++;
             // there will be no previous one next time 
             prev_best_aln.read_id = "";
@@ -250,8 +410,6 @@ void run_spanner(int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
   auto tot_num_spans_only = reduce_one(num_spans_only, op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
   SLOG_VERBOSE("Found ", perc_str(reduce_one(num_pos_spans, op_fast_add, 0).wait(), tot_num_spans_only), " pos gap spans\n");
-  
-  //exit(0);
 }
 
 

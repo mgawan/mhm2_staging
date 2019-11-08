@@ -45,6 +45,8 @@ public:
   double dynamic_min_depth = 0.9;
   bool checkpoint = false;
   string ctgs_fname;
+  int insert_avg = 320;
+  int insert_stddev = 30;
 
   
   void load(int argc, char **argv) {
@@ -60,7 +62,8 @@ public:
       "-c    string          File with contigs for restart\n" +
       "-b    bool            Use bloom filter to reduce memory at the increase of runtime\n" +
       "-x    bool            Checkpoint after each contig round\n" +
-      "-s    scaffkmerlens   kmer lengths for scaffolding rounds\n" +
+      "-s    scaffkmerlens   Kmer lengths for scaffolding rounds\n" +
+      "-i    insavg:stddev   Average insert length:standard deviation in insert size\n" + 
       "-v                    Verbose mode\n" + 
       "-h                    Display help message\n";
 
@@ -91,6 +94,12 @@ public:
       for (auto scaff_kmer_len : scaff_kmer_lens_split) scaff_kmer_lens.push_back(std::stoi(scaff_kmer_len.c_str()));
     }
 
+    string ins_size_params = "";
+    if (args("-i") >> ins_size_params) {
+      auto ins_size_params_split = split(ins_size_params, ':');
+      insert_avg = std::stoi(ins_size_params_split[0]);
+      insert_stddev = std::stoi(ins_size_params_split[1]);
+    }
     args("-Q") >> qual_offset;
     args("-m") >> max_kmer_store;
     args("-C") >> max_ctg_cache;
@@ -116,6 +125,7 @@ public:
       SLOG("  (-C) max ctg cache:         ", max_ctg_cache, "\n");
       SLOG("  (-D) dynamic min depth:     ", dynamic_min_depth, "\n");
       if (!ctgs_fname.empty()) SLOG("  (-c) contig file name:      ", ctgs_fname, "\n");
+      SLOG("  (-i) insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  (-b) use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  (-x) checkpoint:            ", YES_NO(checkpoint), "\n");
       SLOG("  (-v) verbose:               ", YES_NO(verbose), "\n");

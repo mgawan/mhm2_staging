@@ -42,8 +42,8 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
 void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns *alns);
-void traverse_ctg_graph(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int break_scaffolds,
-                        QualityLevel quality_level, Contigs *ctgs, Alns &alns);
+void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
+                        int break_scaffolds, QualityLevel quality_level, Contigs *ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -132,8 +132,8 @@ int main(int argc, char **argv) {
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
-      traverse_ctg_graph(max_scaff_kmer_len, scaff_kmer_len, options->reads_fname_list, break_scaff_Ns, QualityLevel::ALL,
-                         &ctgs, alns);
+      traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_scaff_kmer_len, scaff_kmer_len, options->reads_fname_list,
+                         break_scaff_Ns, QualityLevel::ALL, &ctgs, alns);
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
         SLOG(KBLUE "_________________________\n", KNORM);

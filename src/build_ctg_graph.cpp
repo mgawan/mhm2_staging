@@ -236,8 +236,8 @@ void add_pos_gap_read(Edge* edge, Aln &aln) {
 }
 
   
-static void add_span(int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
-  int gap = INSERT_AVG - aln1.rstart - aln1.clen + aln1.cstart - aln2.rstart - aln2.clen + aln2.cstart;
+static void add_span(int insert_avg, int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
+  int gap = insert_avg - aln1.rstart - aln1.clen + aln1.cstart - aln2.rstart - aln2.clen + aln2.cstart;
   
   int end1 = aln1.orient == '+' ? 3 : 5;
   int end2 = aln2.orient == '+' ? 3 : 5;
@@ -267,7 +267,7 @@ static void add_span(int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
 }
 
 
-static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
+static void get_spans_from_alns(int insert_avg, int max_kmer_len, int kmer_len, Alns &alns) {
   Timer timer(__func__);
   IntermittentTimer t_get_alns("get alns spans");
   int64_t num_same_ctg_pairs = 0;
@@ -301,7 +301,7 @@ static void get_spans_from_alns(int max_kmer_len, int kmer_len, Alns &alns) {
               int ins_size = (aln1->cstart - aln1->rstart + aln2->cstart + aln2->rstart);
               my_av_ins += ins_size;
             } else {
-              add_span(max_kmer_len, kmer_len, *aln1, *aln2);
+              add_span(insert_avg, max_kmer_len, kmer_len, *aln1, *aln2);
             }
           }
         }
@@ -749,16 +749,17 @@ static void merge_nbs()
 }
 
 
-void run_spanner(int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
+void run_spanner(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
   
 
-void build_ctg_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
+void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
+                     vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
   Timer timer(__func__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  run_spanner(max_kmer_len, kmer_len, alns, graph);  
-  //get_spans_from_alns(max_kmer_len, kmer_len, alns);
+  run_spanner(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);  
+  //get_spans_from_alns(insert_avg, max_kmer_len, kmer_len, alns);
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);

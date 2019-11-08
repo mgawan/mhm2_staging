@@ -43,8 +43,6 @@ add_definitions(-DMAX_QUEUE_SIZE=100)
 add_definitions(-DALN_SLOP=0)
 add_definitions(-DASSM_CLEN_THRES=500)
 #FIXME: these should not be defined here!!
-add_definitions(-DINSERT_AVG=320)
-add_definitions(-DINSERT_STDDEV=28)
 add_definitions(-DBREAK_SCAFF_NS=20)
 add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
 add_definitions(-DWALK_SUPPORT_THRES=3)
