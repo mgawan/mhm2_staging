@@ -215,7 +215,7 @@ struct Edge {
   // the sequence filling a positive gap - if the gap is non-positive, this is empty
   string seq;
   // these flags are set during graph construction to keep track of errors in edge construction
-  bool mismatch_error, conflict_error, excess_error;
+  bool mismatch_error, conflict_error, excess_error, short_aln;
   // contains information of reads that map to a positive gap - used for filling the gap
   vector<GapRead> gap_reads;
 
@@ -233,6 +233,7 @@ struct Edge {
     os.write((char*)&mismatch_error, sizeof(mismatch_error));
     os.write((char*)&conflict_error, sizeof(conflict_error));
     os.write((char*)&excess_error, sizeof(excess_error));
+    os.write((char*)&short_aln, sizeof(short_aln));
     serialize_vector(os, gap_reads);
     return os.str();
   }
@@ -251,6 +252,7 @@ struct Edge {
     is.read((char*)&mismatch_error, sizeof(mismatch_error));
     is.read((char*)&conflict_error, sizeof(conflict_error));
     is.read((char*)&excess_error, sizeof(excess_error));
+    is.read((char*)&short_aln, sizeof(short_aln));
     deserialize_vector(is, gap_reads);
   }
 };
@@ -538,6 +540,15 @@ public:
     return s;
   }
 
+  void mark_edge_short_aln(CidPair cids) {
+    upcxx::rpc(get_edge_target_rank(cids),
+               [](upcxx::dist_object<edge_map_t> &edges, CidPair cids) {
+                 const auto it = edges->find(cids);
+                 if (it == edges->end()) DIE("Can't find edge ", cids);
+                 it->second.short_aln = true;
+               }, edges, cids);
+  }
+
   shared_ptr<Edge> get_edge(cid_t cid1, cid_t cid2) {
     CidPair cids = { .cid1 = cid1, .cid2 = cid2 };
     if (cid1 < cid2) std::swap(cids.cid1, cids.cid2);
@@ -662,6 +673,47 @@ public:
       }
     }
     return excess;
+  }
+
+  void remove_nb(cid_t cid, int end, cid_t nb) {
+    upcxx::rpc(get_vertex_target_rank(cid),
+               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid, int end, cid_t nb) {
+                 const auto it = vertices->find(cid);
+                 if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
+                 auto v = &it->second;
+                 if (end == 3) {
+                   for (auto it = v->end3.begin(); it != v->end3.end(); it++) {
+                     if (*it == nb) {
+                       v->end3.erase(it);
+                       return;
+                     }
+                   }
+                 } else {
+                   for (auto it = v->end5.begin(); it != v->end5.end(); it++) {
+                     if (*it == nb) {
+                       v->end5.erase(it);
+                       return;
+                     }
+                   }
+                 }
+                 DIE("Could not find the nb to remove");
+               }, vertices, cid, end, nb).wait();
+  }
+               
+  int64_t purge_short_aln_edges() {
+    int64_t num_short = 0;
+    for (auto it = edges->begin(); it != edges->end(); ) {
+      auto edge = make_shared<Edge>(it->second);
+      if (edge->short_aln) {
+        num_short++;
+        remove_nb(edge->cids.cid1, edge->end1, edge->cids.cid2);
+        remove_nb(edge->cids.cid2, edge->end2, edge->cids.cid1);
+        it = edges->erase(it);
+      } else {
+        it++;
+      }
+    }
+    return num_short;
   }
   
   void add_pos_gap_read(const string &read_name) {

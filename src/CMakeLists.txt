@@ -50,6 +50,7 @@ add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
 add_definitions(-DFIVE_PRIME_WIGGLE_ROOM=5)
 add_definitions(-DTHREE_PRIME_WIGGLE_ROOM=5)
+add_definitions(-DTMP_READ_LEN=150)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)

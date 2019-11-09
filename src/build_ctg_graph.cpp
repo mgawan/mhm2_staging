@@ -161,7 +161,7 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
   }
   Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1, .aln_len = min_aln_len,
                 .aln_score = min_aln_score, .edge_type = EdgeType::SPLINT, .seq = "",
-                .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
+                .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
   if (edge.gap > 0) {
     edge.gap_reads = vector<GapRead>{GapRead(aln1->read_id, gap_start, -1, -1, orient1, cids.cid1)};
     _graph->add_pos_gap_read(aln1->read_id);
@@ -257,7 +257,7 @@ static void add_span(int insert_avg, int max_kmer_len, int kmer_len, Aln aln1, A
     Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1,
                   .aln_len = min(aln1.rstop - aln1.rstart, aln2.rstop - aln2.rstart), .aln_score = min(aln1.score1, aln2.score1),
                   .edge_type = EdgeType::SPAN, .seq = "",
-                  .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
+                  .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
     if (edge.gap > 0) {
       add_pos_gap_read(&edge, aln1);
       add_pos_gap_read(&edge, aln2);
@@ -415,7 +415,7 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge)
     auto seq = _graph->get_read_seq(gap_read.read_name);
     if (seq == "") DIE("Could not find read seq for read ", gap_read.read_name, "\n");
     if (gap_read.gap_start < kmer_len) {
-      WARN("Positive gap overlap is less than kmer length, ", gap_read.gap_start, " < ", kmer_len, "\n");
+      //WARN("Positive gap overlap is less than kmer length, ", gap_read.gap_start, " < ", kmer_len, "\n");
       continue;
     }
     int rstart = gap_read.gap_start - (kmer_len - 1);
@@ -751,6 +751,35 @@ static void merge_nbs()
 
 void run_spanner(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
   
+void mark_short_aln_edges(int max_kmer_len) {
+  Timer timer(__func__);
+  // make sure we don't use an out-of-date edge
+  barrier();
+  _graph->clear_caches();
+  {
+    ProgressBar progbar(_graph->get_local_num_vertices(), "Mark short aln edges");
+    for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
+      for (auto cid_list : { v->end5, v->end3 }) {
+        vector<CidPair> drop_edges = {};
+        bool long_aln_found = false;
+        for (auto i = 0; i < cid_list.size(); i++) {
+          auto edge = _graph->get_edge(v->cid, cid_list[i]);
+          if (edge->aln_len >= max_kmer_len) long_aln_found = true;
+          else drop_edges.push_back(edge->cids);
+        }
+        if (long_aln_found) {
+          for (auto cids : drop_edges) _graph->mark_edge_short_aln(cids);
+        }
+      }
+      progbar.update();
+    }
+    progbar.done();
+  }
+  barrier();
+  int64_t num_edges = _graph->get_num_edges();
+  int64_t num_short = _graph->purge_short_aln_edges();
+  SLOG_VERBOSE("Purged ", perc_str(reduce_one(num_short, op_fast_add, 0).wait(), num_edges), " short aln edges\n");
+}
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
                      vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
@@ -758,16 +787,14 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  run_spanner(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);  
+  run_spanner(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);
+  //exit(0);
+  //AlnStats aln_stats;
   //get_spans_from_alns(insert_avg, max_kmer_len, kmer_len, alns);
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);
-  
-  // FIXME: now iterate through contigs, and if a contig has one or more alns of >= max_kmer_len in a direction, mark all the other
-  // edges as dead. Then during the walks, just ignore dead edges as if they don't exist
-  // ??? - what was I thinking?
-  
+  //mark_short_aln_edges(max_kmer_len);
   parse_reads(kmer_len, reads_fname_list);
   merge_nbs();
 }

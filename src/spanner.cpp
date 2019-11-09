@@ -14,6 +14,7 @@
 using namespace std;
 using namespace upcxx;
 
+#define DUMP_LINKS
 
 void add_pos_gap_read(Edge* edge, Aln &aln);
 
@@ -21,161 +22,124 @@ static CtgGraph *_graph = nullptr;
 
 // functions for evaluating the gap correction analytically assuming Gaussian insert size distribution
 // this is taken from meraculaus bmaToLinks.pl 
-/*
-sub meanSpanningClone {
-    my ($g,$k,$l,$c1,$c2,$mu,$sigma) = @_;
 
-    my $x1 = $g+2*$k-1;
-    my $x2 = $g+$c1+$l;
-    my $alpha = $x2-$x1;
-    my $x3 = $g+$c2+$l;
-    my $x4 = $x3+$alpha;
+int erf(int x) {
+  int absX = (x < 0) ? -x : x;
+  int t = 1 / (1 + 0.5 * absX);
+  int t2 = t * t;
+  int t3 = t * t2;
+  int t4 = t * t3;
+  int t5 = t * t4;
+  int t6 = t * t5;
+  int t7 = t * t6;
+  int t8 = t * t7;
+  int t9 = t * t8;
+  int a0 = -1.26551223;
+  int a1 = 1.00002368;
+  int a2 = 0.37409196;
+  int a3 = 0.09678418;
+  int a4 = -0.18628806;
+  int a5 = 0.27886807;
+  int a6 = -1.13520398;
+  int a7 = 1.48851587;
+  int a8 = -0.82215223;
+  int a9 = 0.17087277;
+  int tau = t * exp(-x * x + a0 + a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5 + a6 * t6 + a7 * t7 + a8 * t8 + a9 * t9);
+  if (x < 0) return (tau - 1);
+  else return (1 - tau);
+}
 
-    my $num = 0;
-    my $den = 0;
 
-    my $N1 = G2($x1,$x2,$mu,$sigma)-$x1*G1($x1,$x2,$mu,$sigma);
-    my $N2 = ($x2-$x1)*G1($x2,$x3,$mu,$sigma);
-    my $N3 = $x4*G1($x3,$x4,$mu,$sigma)-G2($x3,$x4,$mu,$sigma);
-    
-    my $D1 = G1($x1,$x2,$mu,$sigma)-$x1*G0($x1,$x2,$mu,$sigma);
-    my $D2 = ($x2-$x1)*G0($x2,$x3,$mu,$sigma);
-    my $D3 = $x4*G0($x3,$x4,$mu,$sigma)-G1($x3,$x4,$mu,$sigma);
-    
-    $num = $N1+$N2+$N3;
-    $den = $D1+$D2+$D3;
+int G0(int a, int b, int mu, int sigma) {
+  const int sqrtTwo = sqrt(2);
+  const int pi = 3.14159265359;
+  const int sqrtPi = sqrt(pi);
 
-    if ($den) {
-        return $num/$den;
+  int rt2sig = sqrtTwo * sigma;
+  int erfa = erf((a - mu)/rt2sig);
+  int erfb = erf((b - mu)/rt2sig);
+  return (sqrtPi/sqrtTwo) * sigma * (erfb - erfa);
+}
+
+
+int G1(int a, int b, int mu, int sigma) {
+  int za = (a - mu) / sigma;
+  int zb = (b - mu) / sigma;
+  int expa = exp(-0.5 * za * za);
+  int expb = exp(-0.5 * zb * zb);
+  int g0 = G0(a, b, mu, sigma);
+  return (sigma * sigma * (expa-expb) + mu * g0);
+}
+
+
+int G2(int a, int b, int mu, int sigma) {
+  int za = (a - mu) / sigma;
+  int zb = (b - mu) / sigma;
+  int expa = exp(-0.5 * za * za);
+  int expb = exp(-0.5 * zb * zb);
+  int g0 = G0(a, b, mu, sigma);
+  int g1 = G1(a, b, mu, sigma);
+  int sigma2 = sigma * sigma;
+  return (sigma2 * g0 + mu * g1 + sigma2 * (a * expa - b * expb));
+}
+
+
+int mean_spanning_clone(int g, int k, int l, int c1, int c2, int mu, int sigma) {
+  int x1 = g + 2 * k - 1;
+  int x2 = g + c1 + l;
+  int alpha = x2 - x1;
+  int x3 = g + c2 + l;
+  int x4 = x3 + alpha;
+  int num = 0;
+  int den = 0;
+  int N1 = G2(x1, x2, mu, sigma) - x1 * G1(x1, x2, mu, sigma);
+  int N2 = (x2 - x1) * G1(x2, x3, mu, sigma);
+  int N3 = x4 * G1(x3, x4, mu, sigma) - G2(x3, x4, mu, sigma);
+  int D1 = G1(x1, x2, mu, sigma) - x1 * G0(x1, x2, mu, sigma);
+  int D2 = (x2 - x1) * G0(x2, x3, mu, sigma);
+  int D3 = x4 * G0(x3, x4, mu, sigma) - G1(x3, x4, mu, sigma);
+  num = N1 + N2 + N3;
+  den = D1 + D2 + D3;
+  if (den) {
+    return num/den;
+  } else {
+    //WARN("mean_spanning_clone failed for (g,k,l,c1,c2,mu,sigma)");
+    return 0;
+  }
+}
+
+
+int estimate_gap_size(int meanAnchor, int k, int l, int c1, int c2, int mu, int sigma) {
+  int gMax = mu+3 * sigma - 2 * k;
+  int gMin = -(k - 2);
+  int gMid = mu-meanAnchor;
+  // Negative gap size padding disabled for metagenomes
+  //if (gMid < gMin) gMid = gMin + 1;
+  if (gMid > gMax) gMid = gMax - 1;
+  int aMax = mean_spanning_clone(gMax, k, l, c1, c2, mu, sigma) - gMax;
+  int aMin = mean_spanning_clone(gMin, k, l, c1, c2, mu, sigma) - gMin;
+  int aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
+  int deltaG = gMax-gMin;
+  int iterations = 0;
+  while (deltaG > 10) {
+    iterations++;
+    if (meanAnchor > aMid) {
+      gMax = gMid;
+      aMax = aMid;
+      gMid = (gMid+gMin) / 2;
+      aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
+    } else if (meanAnchor < aMid) {
+      gMin = gMid;
+      aMin = aMid;
+      gMid = (gMid+gMax) / 2;
+      aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
     } else {
-        print STDERR "Warning: meanSpanningClone failed for ($g,$k,$l,$c1,$c2,$mu,$sigma)\n";
-        return 0;
+      break;
     }
+    deltaG = gMax-gMin;
+  }
+  return gMid;
 }
-
-
-
-sub erf {
-    my ($x) = @_;
-    
-    my $absX = ($x < 0) ? -$x : $x;
-    my $t = 1/(1+0.5*$absX);
-
-    my $t2 = $t*$t;
-    my $t3 = $t*$t2;
-    my $t4 = $t*$t3;
-    my $t5 = $t*$t4;
-    my $t6 = $t*$t5;
-    my $t7 = $t*$t6;
-    my $t8 = $t*$t7;
-    my $t9 = $t*$t8;
-
-    my $a0 = -1.26551223;
-    my $a1 = 1.00002368;
-    my $a2 = 0.37409196;
-    my $a3 = 0.09678418;
-    my $a4 = -0.18628806;
-    my $a5 = 0.27886807;
-    my $a6 = -1.13520398;
-    my $a7 = 1.48851587;
-    my $a8 = -0.82215223;
-    my $a9 = 0.17087277;
-
-    my $tau = $t*exp(-$x*$x + $a0 + $a1*$t + $a2*$t2 + $a3*$t3 + $a4*$t4 +
-                     $a5*$t5 + $a6*$t6 + $a7*$t7 + $a8*$t8 + $a9*$t9);
-
-    if ($x < 0) {
-        return ($tau-1);
-    } else {
-        return (1-$tau);
-    }
-}
-
-sub G0 {
-    my ($a,$b,$mu,$sigma) = @_;
-
-    my $rt2sig = $sqrtTwo*$sigma;
-    my $erfa = erf(($a-$mu)/$rt2sig);
-    my $erfb = erf(($b-$mu)/$rt2sig);
-
-    return ($sqrtPi/$sqrtTwo)*$sigma*($erfb-$erfa);
-}
-
-sub G1 {
-    my ($a,$b,$mu,$sigma) = @_;
-
-    my $za = ($a-$mu)/$sigma;
-    my $zb = ($b-$mu)/$sigma;
-    
-    my $expa = exp(-0.5*$za*$za);
-    my $expb = exp(-0.5*$zb*$zb);
-
-    my $g0 = G0($a,$b,$mu,$sigma);
-
-    return ($sigma*$sigma*($expa-$expb) + $mu*$g0);
-}
-
-sub G2 {
-    my ($a,$b,$mu,$sigma) = @_;
-
-    my $za = ($a-$mu)/$sigma;
-    my $zb = ($b-$mu)/$sigma;
-    
-    my $expa = exp(-0.5*$za*$za);
-    my $expb = exp(-0.5*$zb*$zb);
-
-    my $g0 = G0($a,$b,$mu,$sigma);
-    my $g1 = G1($a,$b,$mu,$sigma);
-
-    my $sigma2 = $sigma*$sigma;
-
-    return ($sigma2*$g0 + $mu*$g1 + $sigma2*($a*$expa - $b*$expb));
-}
-
-//my ($meanAnchor,$k,$l,$c1,$c2,$mu,$sigma) = @_;
-int estimate_gap_size(int mean_anchor, int kmer_len, int read_len, int clen1, int clen2, int insert_avg, int insert_stddev) {
-  int g_max = insert_avg + 3 * insert_stddev - 2 * kmer_len;
-    my $gMax = $mu+3*$sigma-2*$k;
-    my $gMin = -($k-2);
-    my $gMid = $mu-$meanAnchor;
-
-    if ($gMid < $gMin) {
-        $gMid = $gMin+1;
-    } elsif ($gMid > $gMax) {
-        $gMid = $gMax-1;
-    }
-
-    my $aMax = meanSpanningClone($gMax,$k,$l,$c1,$c2,$mu,$sigma) - $gMax;
-    my $aMin = meanSpanningClone($gMin,$k,$l,$c1,$c2,$mu,$sigma) - $gMin;
-    my $aMid = meanSpanningClone($gMid,$k,$l,$c1,$c2,$mu,$sigma) - $gMid;
-
-    my $deltaG = $gMax-$gMin;
-
-    my $iterations = 0;
-
-    while ($deltaG > 10) {
-        $iterations++;
-        if ($meanAnchor > $aMid) {
-            $gMax = $gMid;
-            $aMax = $aMid;
-            $gMid = ($gMid+$gMin)/2;
-            $aMid = meanSpanningClone($gMid,$k,$l,$c1,$c2,$mu,$sigma) - $gMid;
-        } elsif ($meanAnchor < $aMid) {
-            $gMin = $gMid;
-            $aMin = $aMid;
-            $gMid = ($gMid+$gMax)/2;
-            $aMid = meanSpanningClone($gMid,$k,$l,$c1,$c2,$mu,$sigma) - $gMid;
-        } else {
-            last;
-        }
-        $deltaG = $gMax-$gMin;
-    }
-
-#    print STDERR "#ITER $iterations\n";
-    return $gMid;
-
-}
-*/
 
 
 static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &alns, Aln &best_aln, string &read_status,
@@ -314,7 +278,7 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
   Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = end_separation, .support = 1,
                 .aln_len = min(aln1.rstop - aln1.rstart, aln2.rstop - aln2.rstart), .aln_score = min(aln1.score1, aln2.score1),
                 .edge_type = EdgeType::SPAN, .seq = "",
-                .mismatch_error = false, .conflict_error = false, .excess_error = false, .gap_reads = {}};
+                .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
   if (edge.gap > 0) {
     add_pos_gap_read(&edge, aln1);
     add_pos_gap_read(&edge, aln2);
@@ -391,17 +355,21 @@ void run_spanner(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_l
   for (auto edge = _graph->get_first_local_edge(); edge != nullptr; edge = _graph->get_next_local_edge()) {
     if (edge->edge_type == EdgeType::SPAN) {
       num_spans_only++;
-      // FIXME: at this point, bmaToLinks uses some complex code for estimating the gap size as the weighted mean of spans,
-      // assuming a Gaussian insert size distr. Is this even valid for metagenomes? Maybe not worth it...?
-      // (what is the weight? contig length?)
-      edge->gap /= edge->support;
+      
+      int mean_gap_estimate = edge->gap / edge->support;
+      int mean_offset = insert_avg - mean_gap_estimate;
+      int clen1 = _graph->get_vertex(edge->cids.cid1)->clen;
+      int clen2 = _graph->get_vertex(edge->cids.cid2)->clen;
+      if (clen1 >= clen2) swap(clen1, clen2);
+      edge->gap = estimate_gap_size(mean_offset, kmer_len, TMP_READ_LEN, clen1, clen2, insert_avg, insert_stddev);
+      
       if (edge->gap > 0) num_pos_spans++;
       // debug print in form comparable to mhm
       string ctg1 = "Contig" + to_string(edge->cids.cid1) + "." + to_string(edge->end1);
       string ctg2 = "Contig" + to_string(edge->cids.cid2) + "." + to_string(edge->end2);
       string link = (ctg1 < ctg2 ? ctg1 + "<=>" + ctg2 : ctg2 + "<=>" + ctg1);
 #ifdef DUMP_LINKS
-      links_file << "SPAN\t" << link << "\t0|" << edge->support << "\t" << edge->gap << endl;
+      links_file << "SPAN\t" << link << "\t0|" << edge->support << "\t" << edge->gap << "\t" << mean_gap_estimate << endl;
 #endif
     }
   }
@@ -411,5 +379,3 @@ void run_spanner(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_l
   SLOG_VERBOSE("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
   SLOG_VERBOSE("Found ", perc_str(reduce_one(num_pos_spans, op_fast_add, 0).wait(), tot_num_spans_only), " pos gap spans\n");
 }
-
-
