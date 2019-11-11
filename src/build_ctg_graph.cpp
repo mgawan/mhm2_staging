@@ -14,6 +14,8 @@
 using namespace std;
 using namespace upcxx;
 
+void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
+
 
 struct AlnStats {
   int64_t nalns, unaligned, short_alns, containments, circular, mismatched, conflicts, bad_overlaps, empty_spans;
@@ -65,9 +67,6 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
   auto num_vertices = _graph->get_num_vertices();
   SLOG_VERBOSE("Added ", num_vertices, " vertices\n");
 }
-
-
-
 
 
 // gets all the alns for a single read, and returns true if there are more alns
@@ -233,107 +232,6 @@ void add_pos_gap_read(Edge* edge, Aln &aln) {
   }
   edge->gap_reads.push_back(GapRead(aln.read_id, gap_start, aln.rstart, aln.rstop, aln.orient, aln.cid));
   _graph->add_pos_gap_read(aln.read_id);
-}
-
-  
-static void add_span(int insert_avg, int max_kmer_len, int kmer_len, Aln aln1, Aln aln2) {
-  int gap = insert_avg - aln1.rstart - aln1.clen + aln1.cstart - aln2.rstart - aln2.clen + aln2.cstart;
-  
-  int end1 = aln1.orient == '+' ? 3 : 5;
-  int end2 = aln2.orient == '+' ? 3 : 5;
-
-  if (gap >= -(max_kmer_len - 1) && gap < aln1.rlen + aln2.rlen - 2 * kmer_len) {
-    CidPair cids = { .cid1 = aln1.cid, .cid2 = aln2.cid };
-    if (cids.cid1 < cids.cid2) {
-      swap(end1, end2);
-      swap(cids.cid1, cids.cid2);
-    }
-    DBG("span gap ", gap, " ", cids.cid1, ".", end1, " <-> ", cids.cid2, ".", end2, 
-        "\n", aln1.cid, " ", aln1.orient, " read_id1 ", aln1.read_id, " rstart1 ", aln1.rstart, " rstop1 ", aln1.rstop,
-        " cstart1 ", aln1.cstart, " cstop1 ", aln1.cstop, 
-        "\n", aln2.cid, " ", aln2.orient, " read_id2 ", aln2.read_id, " rstart2 ", aln2.rstart, " rstop2 ", aln2.rstop,
-        " cstart2 ", aln2.cstart, " cstop2 ", aln2.cstop, "\n");
-
-    Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1,
-                  .aln_len = min(aln1.rstop - aln1.rstart, aln2.rstop - aln2.rstart), .aln_score = min(aln1.score1, aln2.score1),
-                  .edge_type = EdgeType::SPAN, .seq = "",
-                  .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
-    if (edge.gap > 0) {
-      add_pos_gap_read(&edge, aln1);
-      add_pos_gap_read(&edge, aln2);
-    }
-    _graph->add_or_update_edge(edge);
-  }
-}
-
-
-static void get_spans_from_alns(int insert_avg, int max_kmer_len, int kmer_len, Alns &alns) {
-  Timer timer(__func__);
-  IntermittentTimer t_get_alns("get alns spans");
-  int64_t num_same_ctg_pairs = 0;
-  ProgressBar progbar(alns.size(), "Adding edges to graph from spans");
-  int64_t aln_i = 0;
-  int64_t num_pairs = 0;
-  double my_av_ins = 0;
-  int64_t num_alns = 0, unaligned = 0;
-  vector<Aln> alns_for_read_prev;
-  while (true) {
-    vector<Aln> alns_for_read;
-    t_get_alns.start();
-    if (!get_alns_for_read(alns, aln_i, alns_for_read, &num_alns, &unaligned)) break;
-    t_get_alns.stop();
-    progbar.update(aln_i);
-    if (alns_for_read.size() && alns_for_read_prev.size()) {
-      // reads are paired
-      auto rlen = alns_for_read[0].read_id.length();
-      if (alns_for_read[0].read_id.substr(0, rlen - 2) == alns_for_read_prev[0].read_id.substr(0, rlen - 2)) {
-        num_pairs++;
-        for (int i = 0; i < alns_for_read.size(); i++) {
-          auto aln1 = &alns_for_read[i];
-          for (int j = 0; j < alns_for_read_prev.size(); j++) {
-            progress();
-            auto aln2 = &alns_for_read_prev[j];
-            string read_id = aln1->read_id.substr(0, aln1->read_id.length() - 2);
-            if (aln2->read_id.substr(0, read_id.length()) != read_id) 
-              DIE("Mismatched read ids: ", aln1->read_id, " != ", aln2->read_id, "\n");
-            if (aln1->cid == aln2->cid) {
-              num_same_ctg_pairs++;
-              int ins_size = (aln1->cstart - aln1->rstart + aln2->cstart + aln2->rstart);
-              my_av_ins += ins_size;
-            } else {
-              add_span(insert_avg, max_kmer_len, kmer_len, *aln1, *aln2);
-            }
-          }
-        }
-        // there will be no previous one next time 
-        alns_for_read_prev.clear();
-        continue;
-      }
-    } 
-    alns_for_read_prev = move(alns_for_read);
-  }
-  progbar.done();
-  barrier();
-  auto tot_num_alns = reduce_one(num_alns, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Processed ", tot_num_alns, " alignments (", unaligned, " unaligned) and found ",
-               perc_str(reduce_one(num_pairs, op_fast_add, 0).wait(), tot_num_alns), " pairs\n");
-  auto all_num_same_ctg_pairs = reduce_one(num_same_ctg_pairs, op_fast_add, 0).wait();
-  auto all_av_ins = reduce_one(my_av_ins, op_fast_add, 0).wait() / all_num_same_ctg_pairs;
-  SLOG_VERBOSE("Num same ctg pairs ", all_num_same_ctg_pairs, ", average insert size ", all_av_ins, "\n");
-  // count the actual number of spans used
-  int64_t num_spans_only = 0;
-  int64_t num_pos_spans = 0;
-  for (auto edge = _graph->get_first_local_edge(); edge != nullptr; edge = _graph->get_next_local_edge()) {
-    if (edge->edge_type == EdgeType::SPAN) {
-      num_spans_only++;
-      edge->gap /= edge->support;
-      if (edge->gap > 0) num_pos_spans++;
-    }
-  }
-  barrier();
-  auto tot_num_spans_only = reduce_one(num_spans_only, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
-  SLOG_VERBOSE("Found ", perc_str(reduce_one(num_pos_spans, op_fast_add, 0).wait(), tot_num_spans_only), " pos gap spans\n");
 }
 
 
@@ -787,10 +685,7 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   auto aln_stats = get_splints_from_alns(alns);
-  run_spanner(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);
-  //exit(0);
-  //AlnStats aln_stats;
-  //get_spans_from_alns(insert_avg, max_kmer_len, kmer_len, alns);
+  get_spans_from_alns(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);
   _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
   barrier();
   set_nbs(aln_stats);

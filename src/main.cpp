@@ -74,7 +74,6 @@ int main(int argc, char **argv) {
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
 
-  const bool BREAK_SCAFFS = true;
   Contigs ctgs;
 
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
@@ -103,7 +102,8 @@ int main(int argc, char **argv) {
       int seed_space = 1;//8;
       find_alignments(kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
-      traverse_ctg_graph(kmer_len, kmer_len, options->reads_fname_list, BREAK_SCAFFS, QualityLevel::SINGLE_PATH_ONLY, &ctgs, alns);
+      traverse_ctg_graph(options->insert_avg, options->insert_stddev, kmer_len, kmer_len, options->reads_fname_list, 
+                         1, QualityLevel::SINGLE_PATH_ONLY, &ctgs, alns);
       */
       if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SLOG(KBLUE "_________________________\n", KNORM);
@@ -124,8 +124,8 @@ int main(int argc, char **argv) {
       Kmer::k = scaff_kmer_len;
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
-      //int seed_space = 1;
-      int seed_space = (scaff_kmer_len == max_scaff_kmer_len ? 1 : 8);
+      // seed space of 1 reduces msa compared to 4 or 8
+      int seed_space = (scaff_kmer_len == max_scaff_kmer_len ? 1 : 4);
       find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, &alns);
 #ifdef DEBUG      
@@ -143,7 +143,6 @@ int main(int argc, char **argv) {
       SLOG("\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
            get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n");
       barrier();
-      //exit(0);
     }
   }
   SLOG(KBLUE "_________________________\n", KNORM);
