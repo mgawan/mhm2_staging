@@ -15,40 +15,7 @@ using namespace std;
 using namespace upcxx;
 
 void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
-
-
-struct AlnStats {
-  int64_t nalns, unaligned, short_alns, containments, circular, mismatched, conflicts, bad_overlaps, empty_spans;
-  
-  string to_string() const {
-    int64_t tot_nalns = reduce_one(nalns, op_fast_add, 0).wait();
-    int64_t tot_unaligned = reduce_one(unaligned, op_fast_add, 0).wait();
-    int64_t tot_containments = reduce_one(containments, op_fast_add, 0).wait();
-    int64_t tot_short_alns = reduce_one(short_alns, op_fast_add, 0).wait();
-    int64_t tot_circular = reduce_one(circular, op_fast_add, 0).wait();
-    int64_t tot_mismatched = reduce_one(mismatched, op_fast_add, 0).wait();
-    int64_t tot_conflicts = reduce_one(conflicts, op_fast_add, 0).wait();
-    int64_t tot_bad_overlaps = reduce_one(bad_overlaps, op_fast_add, 0).wait();
-    int64_t tot_empty_spans = reduce_one(empty_spans, op_fast_add, 0).wait();
-    int64_t nbad = tot_unaligned + tot_containments + tot_short_alns + tot_circular +
-      tot_mismatched + tot_conflicts + tot_bad_overlaps;
-    
-    ostringstream os;
-    os.precision(2);
-    os << fixed;
-    os << "Edge stats:\n";
-    //os << "    used:               " << perc_str(tot_nalns - nbad, tot_nalns) << endl;
-    os << "    unaligned:          " << perc_str(tot_unaligned, tot_nalns) << endl;
-    os << "    containments:       " << perc_str(tot_containments, tot_nalns) << endl;
-    os << "    short alns:         " << perc_str(tot_short_alns, tot_nalns) << endl;
-    os << "    circular:           " << perc_str(tot_circular, tot_nalns) << endl;
-    os << "    mismatched:         " << perc_str(tot_mismatched, tot_nalns) << endl;
-    os << "    conflicts:          " << perc_str(tot_conflicts, tot_nalns) << endl;
-    os << "    bad overlaps:       " << perc_str(tot_bad_overlaps, tot_nalns) << endl;
-    os << "    empty spans:        " << perc_str(tot_empty_spans, tot_nalns) << endl;
-    return os.str();
-  }
-};
+void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 
 
 static CtgGraph *_graph = nullptr;
@@ -69,109 +36,7 @@ static void add_vertices_from_ctgs(Contigs *ctgs) {
 }
 
 
-// gets all the alns for a single read, and returns true if there are more alns
-static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
-  string start_read_id = "";
-  for (; i < alns.size(); i++) {
-    Aln aln = alns.get_aln(i);
-    // alns for a new read
-    if (start_read_id != "" && aln.read_id != start_read_id) return true;
-    (*nalns)++;
-    // convert to coords for use here
-    if (aln.orient == '-') {
-      int tmp = aln.cstart;
-      aln.cstart = aln.clen - aln.cstop;
-      aln.cstop = aln.clen - tmp;
-    }
-    int unaligned_left = min(aln.rstart, aln.cstart);
-    int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - aln.cstop);
-    if (unaligned_left > ALN_SLOP || unaligned_right > ALN_SLOP) {
-      (*unaligned)++;
-      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
-          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");
-    } else {
-      alns_for_read.push_back(aln);
-    }
-    start_read_id = aln.read_id;
-    progress();
-  }
-  return false;
-}
-
-
-static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
-  struct AlnCoords {
-    int start, stop;
-  };
-
-  auto get_aln_coords = [](const Aln *aln) -> AlnCoords {
-    // get contig start and end positions in read coordinate set
-    return { .start = aln->rstart - aln->cstart, .stop = aln->rstop + (aln->clen - aln->cstop) };
-  };
-
-  AlnCoords ctg1 = get_aln_coords(aln1);
-  AlnCoords ctg2 = get_aln_coords(aln2);
-  
-  if (aln1->cid == aln2->cid) {
-    stats.circular++;
-    return false;
-  }
-  auto is_contained = [](const AlnCoords &ctg1, const AlnCoords &ctg2) -> bool {
-    if (ctg1.start >= ctg2.start && ctg1.stop <= ctg2.stop) return true;
-    else return false;
-  };
-  
-  if (is_contained(ctg1, ctg2) || is_contained(ctg2, ctg1)) {
-    stats.containments++;
-    return false;
-  }
-  int end1, end2;
-  int gap;
-  int gap_start;
-  if (ctg1.start <= ctg2.start) {
-    end1 = aln1->orient == '+' ? 3 : 5;
-    end2 = aln2->orient == '+' ? 5 : 3;
-    gap = ctg2.start - ctg1.stop;
-    gap_start = ctg1.stop;
-  } else {
-    end1 = aln1->orient == '+' ? 5 : 3;
-    end2 = aln2->orient == '+' ? 3 : 5;
-    gap = ctg1.start - ctg2.stop;
-    gap_start = ctg2.stop;
-  }
-  int min_aln_len = min(aln1->rstop - aln1->rstart, aln2->rstop - aln2->rstart);
-  int min_aln_score = min(aln1->score1, aln2->score1);
-  if (gap < -min_aln_len) {
-    stats.short_alns++;
-    return false;
-  }
-  if (gap < -aln1->rlen) DIE("Gap is too small: ", gap, ", read length ", aln1->rlen, "\n");
-  // check for bad overlaps
-  if (gap < 0 && (aln1->clen < -gap || aln2->clen < -gap)) {
-    stats.bad_overlaps++;
-    return false;
-  }
-  char orient1 = aln1->orient;
-  CidPair cids = { .cid1 = aln1->cid, .cid2 = aln2->cid };
-  if (aln1->cid < aln2->cid) {
-    swap(end1, end2);
-    swap(cids.cid1, cids.cid2);
-    orient1 = aln2->orient;
-  }
-  Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1, .aln_len = min_aln_len,
-                .aln_score = min_aln_score, .edge_type = EdgeType::SPLINT, .seq = "",
-                .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
-  if (edge.gap > 0) {
-    edge.gap_reads = vector<GapRead>{GapRead(aln1->read_id, gap_start, -1, -1, orient1, cids.cid1)};
-    _graph->add_pos_gap_read(aln1->read_id);
-  }
-  _graph->add_or_update_edge(edge);
-  return true;
-}
-
-
-static void set_nbs(AlnStats &stats)
-{
+static void set_nbs() {
   Timer timer(__func__);
   {
     int64_t clen_excess = 0;
@@ -202,68 +67,16 @@ static void set_nbs(AlnStats &stats)
     auto tot_clen_excess = reduce_one(clen_excess, op_fast_add, 0).wait();
     auto tot_num_excess_ctgs = reduce_one(num_excess_ctgs, op_fast_add, 0).wait();
     int all_max_excess_clen = reduce_one(max_excess_degree, op_fast_max, 0).wait();
+    auto num_edges = _graph->get_num_edges();
     if (tot_num_excess_ctgs) 
       SLOG_VERBOSE("Average excess clen ", ((double)tot_clen_excess / tot_num_excess_ctgs), " max ", all_max_excess_clen, "\n");
     int64_t num_excess_edges = reduce_one(_graph->purge_excess_edges(), op_fast_add, 0).wait();
     if (num_excess_edges) {
       if (rank_me() == 0 && tot_num_excess_ctgs == 0) SDIE("We have no excess ctgs, but ", num_excess_edges, " excess edges");
-      SLOG_VERBOSE("Purged ", num_excess_edges, " excess degree edges\n");
+      SLOG_VERBOSE("Purged ", perc_str(num_excess_edges, num_edges), " excess degree edges\n");
     }
   }
   barrier();
-  SLOG_VERBOSE(stats.to_string());
-}
-
-
-void add_pos_gap_read(Edge* edge, Aln &aln) {
-  int end = (aln.cid == edge->cids.cid1 ? edge->end1 : edge->end2);
-  int gap_start;
-  if (aln.cid == edge->cids.cid1) {
-    if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-')) gap_start = aln.rstop;
-    else gap_start = aln.rlen - aln.rstart;
-    if (gap_start == aln.rlen) return;
-  } else if (aln.cid == edge->cids.cid2) {
-    // head
-    if ((edge->end2 == 5 && aln.orient == '+') || (edge->end2 == 3 && aln.orient == '-')) gap_start = aln.rstart;
-    else gap_start = aln.rlen - aln.rstop;
-    if (gap_start == 0) return;
-  } else {
-    DIE("cid doesn't match in pos edge\n");
-  }
-  edge->gap_reads.push_back(GapRead(aln.read_id, gap_start, aln.rstart, aln.rstop, aln.orient, aln.cid));
-  _graph->add_pos_gap_read(aln.read_id);
-}
-
-
-static AlnStats get_splints_from_alns(Alns &alns) {
-  Timer timer(__func__);
-  AlnStats stats = {0};
-  IntermittentTimer t_get_alns("get alns splints");
-  ProgressBar progbar(alns.size(), "Adding edges to graph from splints");
-  int64_t aln_i = 0;
-  int64_t num_splints = 0;
-  while (true) {
-    vector<Aln> alns_for_read;
-    t_get_alns.start();
-    if (!get_alns_for_read(alns, aln_i, alns_for_read, &stats.nalns, &stats.unaligned)) break;
-    t_get_alns.stop();
-    progbar.update(aln_i);
-    for (int i = 0; i < alns_for_read.size(); i++) {
-      auto aln = &alns_for_read[i];
-      for (int j = i + 1; j < alns_for_read.size(); j++) {
-        progress();
-        auto other_aln = &alns_for_read[j];
-        if (other_aln->read_id != aln->read_id) DIE("Mismatched read ids: ", other_aln->read_id, " != ", aln->read_id, "\n");
-        if (add_splint(other_aln, aln, stats)) num_splints++;
-      }
-    }
-  }
-  progbar.done();
-  barrier();
-  auto tot_nalns = reduce_one(stats.nalns, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Processed ", tot_nalns, " alignments and found ",
-               perc_str(reduce_one(num_splints, op_fast_add, 0).wait(), tot_nalns), " splints\n");
-  return stats;
 }
 
 
@@ -338,7 +151,7 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
   int max_len = 0;
   for (auto gap_read : edge->gap_reads) {
     if (gap_read.cid != cid) continue;
-    sprintf(buf, "gs %3d rs %3d rp %3d %c ", gap_read.gap_start, gap_read.rstart, gap_read.rstop, gap_read.orient);
+    //sprintf(buf, "gs %3d rs %3d rp %3d %c ", gap_read.gap_start, gap_read.rstart, gap_read.rstop, gap_read.orient);
     auto gap_seq = _graph->get_read_seq(gap_read.read_name);
     if (gap_seq == "") DIE("Could not find read seq for read ", gap_read.read_name, "\n");
     if (tail) {
@@ -347,14 +160,14 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
         gap_seq.erase(0, gap_read.gap_start - kmer_len);
         gap_read.gap_start = kmer_len;
       }
-      DBG_SPANS(buf, gap_seq, "\n");
+      //DBG_SPANS(buf, gap_seq, "\n");
     } else {
       if ((edge->end2 == 3 && gap_read.orient == '+') || (edge->end2 == 5 && gap_read.orient == '-')) gap_seq = revcomp(gap_seq);
       if (gap_read.gap_start + kmer_len < gap_seq.size()) gap_seq.erase(gap_read.gap_start + kmer_len);
       // pad the front of the gap sequence with Ns to make them all the same length
       string offset_padding(1 + _graph->max_read_len - kmer_len - gap_read.gap_start, 'N');
       gap_seq = offset_padding + gap_seq;
-      DBG_SPANS(buf, gap_seq, "\n");
+      //DBG_SPANS(buf, gap_seq, "\n");
     }
     seqs.push_back(gap_seq);
     if (gap_seq.size() > max_len) max_len = gap_seq.size();
@@ -647,8 +460,6 @@ static void merge_nbs()
 }
 
 
-void run_spanner(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
-  
 void mark_short_aln_edges(int max_kmer_len) {
   Timer timer(__func__);
   // make sure we don't use an out-of-date edge
@@ -684,11 +495,17 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max
   Timer timer(__func__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
-  auto aln_stats = get_splints_from_alns(alns);
+  get_splints_from_alns(alns, graph);
   get_spans_from_alns(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);
-  _graph->purge_error_edges(&aln_stats.mismatched, &aln_stats.conflicts, &aln_stats.empty_spans);
+  int64_t mismatched = 0, conflicts = 0, empty_spans = 0;
+  _graph->purge_error_edges(&mismatched, &conflicts, &empty_spans);
+  auto num_edges = _graph->get_num_edges();
+  SLOG_VERBOSE("Purged edges:\n");
+  SLOG_VERBOSE("  mismatched:  ", perc_str(reduce_one(mismatched, op_fast_add, 0).wait(), num_edges), "\n");
+  SLOG_VERBOSE("  conflicts:   ", perc_str(reduce_one(conflicts, op_fast_add, 0).wait(), num_edges), "\n");
+  SLOG_VERBOSE("  empty spans: ", perc_str(reduce_one(empty_spans, op_fast_add, 0).wait(), num_edges), "\n");
   barrier();
-  set_nbs(aln_stats);
+  set_nbs();
   //mark_short_aln_edges(max_kmer_len);
   parse_reads(kmer_len, reads_fname_list);
   merge_nbs();

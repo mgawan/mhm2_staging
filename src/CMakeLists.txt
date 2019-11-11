@@ -74,7 +74,7 @@ add_subdirectory(ssw)
 
 add_executable(mhm
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp
-    spanner.cpp)
+    spanner.cpp splinter.cpp)
 
 target_link_libraries(mhm SSW_LIBRARY)
 target_link_libraries(mhm ${ZLIB_LIBRARIES})

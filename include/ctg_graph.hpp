@@ -137,19 +137,20 @@ struct GapRead {
   // used for resolving positive splints
   int gap_start;
   // used for resolving positive spans
-  int rstart, rstop;
+  //int rstart, rstop;
   char orient;
   cid_t cid;
 
   GapRead() {}
   
-  GapRead(const string &read_name, int gap_start, int rstart, int rstop, int orient, cid_t cid) {
+  //GapRead(const string &read_name, int gap_start, int rstart, int rstop, int orient, cid_t cid) {
+  GapRead(const string &read_name, int gap_start, int orient, cid_t cid) {
     if (read_name.size() >= MAX_RNAME_LEN)
       DIE("Read name exceeds buffer size: ", read_name.size(), " > ", MAX_RNAME_LEN, "\n");
     strcpy(this->read_name, read_name.c_str());
     this->gap_start = gap_start;
-    this->rstart = rstart;
-    this->rstop = rstop;
+    //this->rstart = rstart;
+    //this->rstop = rstop;
     this->orient = orient;
     this->cid = cid;
   }

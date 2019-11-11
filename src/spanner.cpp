@@ -16,7 +16,6 @@ using namespace upcxx;
 
 #define DUMP_LINKS
 
-void add_pos_gap_read(Edge* edge, Aln &aln);
 
 static CtgGraph *_graph = nullptr;
 
@@ -143,6 +142,8 @@ int estimate_gap_size(int meanAnchor, int k, int l, int c1, int c2, int mu, int 
 }
 
 
+
+
 static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &alns, Aln &best_aln, string &read_status,
                               string &type_status, int64_t *reject_5_trunc, int64_t *reject_3_trunc, int64_t *reject_uninf) {
   if (alns.size() == 0) return false;
@@ -241,6 +242,27 @@ static bool get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_
   return false;
 }
 
+
+static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
+  int end = (aln.cid == edge->cids.cid1 ? edge->end1 : edge->end2);
+  int gap_start;
+  if (aln.cid == edge->cids.cid1) {
+    if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-')) gap_start = aln.rstop;
+    else gap_start = aln.rlen - aln.rstart;
+    if (gap_start == aln.rlen) return;
+  } else if (aln.cid == edge->cids.cid2) {
+    // head
+    if ((edge->end2 == 5 && aln.orient == '+') || (edge->end2 == 3 && aln.orient == '-')) gap_start = aln.rstart;
+    else gap_start = aln.rlen - aln.rstop;
+    if (gap_start == 0) return;
+  } else {
+    DIE("cid doesn't match in pos edge\n");
+  }
+  edge->gap_reads.push_back(GapRead(aln.read_id, gap_start, aln.orient, aln.cid));
+  _graph->add_pos_gap_read(aln.read_id);
+}
+
+
 enum class ProcessPairResult { FAIL_SMALL, FAIL_SELF_LINK, FAIL_EDIST, FAIL_MIN_GAP, SUCCESS };
  
 ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln &aln2, const string &type_status1,
@@ -281,8 +303,8 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
                 .edge_type = EdgeType::SPAN, .seq = "",
                 .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
   if (edge.gap > 0) {
-    add_pos_gap_read(&edge, aln1);
-    add_pos_gap_read(&edge, aln2);
+    add_span_pos_gap_read(&edge, aln1);
+    add_span_pos_gap_read(&edge, aln2);
   }
   _graph->add_or_update_edge(edge);
   return ProcessPairResult::SUCCESS;
