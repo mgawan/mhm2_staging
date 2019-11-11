@@ -25,7 +25,7 @@ struct AlnStats {
   void print() {
     int64_t tot_nalns = reduce_one(nalns, op_fast_add, 0).wait();
     SLOG_VERBOSE(setprecision(2), fixed,
-                 "Alignment for splint stats:\n",
+                 "Processed ", tot_nalns, " alignments:\n",
                  "    unaligned:          ", perc_str(reduce_one(unaligned, op_fast_add, 0).wait(), tot_nalns), "\n",
                  "    containments:       ", perc_str(reduce_one(containments, op_fast_add, 0).wait(), tot_nalns), "\n",
                  "    short alns:         ", perc_str(reduce_one(short_alns, op_fast_add, 0).wait(), tot_nalns), "\n",
@@ -162,10 +162,8 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   }
   progbar.done();
   barrier();
-  auto tot_nalns = reduce_one(stats.nalns, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Processed ", tot_nalns, " alignments and found ",
-               perc_str(reduce_one(num_splints, op_fast_add, 0).wait(), tot_nalns), " splints\n");
   stats.print();
+  SLOG_VERBOSE("Found ", reduce_one(num_splints, op_fast_add, 0).wait(), " splints\n");
 }
 
 
