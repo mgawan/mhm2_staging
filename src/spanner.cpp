@@ -169,9 +169,9 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
     int missing_start_bases = unaligned_start - projected_off;
     if (unaligned_start == 0) {
       start_status = "FULL";
-    } else if (projected_off > 0 && missing_start_bases < FIVE_PRIME_WIGGLE_ROOM) {
+    } else if (projected_off > 0 && missing_start_bases < ALN_WIGGLE) {
       start_status = "GAP";
-    } else if (unaligned_start < FIVE_PRIME_WIGGLE_ROOM) {
+    } else if (unaligned_start < ALN_WIGGLE) {
       start_status = "INC";
     } else {
       (*reject_5_trunc)++;
@@ -187,9 +187,9 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
     int missing_end_bases = unaligned_end - projected_off;
     if (unaligned_end == 0) {
       end_status = "FULL";
-    } else if (projected_off > 0 && missing_end_bases < THREE_PRIME_WIGGLE_ROOM) {
+    } else if (projected_off > 0 && missing_end_bases < ALN_WIGGLE) {
       end_status = "GAP";
-    } else if (unaligned_end < THREE_PRIME_WIGGLE_ROOM) {
+    } else if (unaligned_end < ALN_WIGGLE) {
       end_status = "INC";
     } else {
       (*reject_3_trunc)++;
@@ -229,17 +229,16 @@ static string get_ctg_aln_str(Aln &aln, const string &read_status) {
 }
 
 
-// gets all the alns for a single read, and returns true if there are more alns
-static bool get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read) {
+// gets all the alns for a single read
+static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read) {
   string start_read_id = "";
   for (; i < alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
-    if (start_read_id != "" && aln.read_id != start_read_id) return true;
+    if (start_read_id != "" && aln.read_id != start_read_id) return;
     alns_for_read.push_back(aln);
     start_read_id = aln.read_id;
   }
-  return false;
 }
 
 
@@ -328,10 +327,10 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
   string spans_fname = "spanner-" + to_string(kmer_len) + ".spans.gz";
   get_rank_path(spans_fname, rank_me());
   zstr::ofstream spans_file(spans_fname);
-  while (true) {
+  while (aln_i < alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
-    if (!get_all_alns_for_read(alns, aln_i, alns_for_read)) break;
+    get_all_alns_for_read(alns, aln_i, alns_for_read);
     t_get_alns.stop();
     progbar.update(aln_i);
     Aln best_aln = { .read_id = "" };
@@ -347,12 +346,13 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
             auto res = process_pair(insert_avg, insert_stddev, prev_best_aln, best_aln, prev_type_status, type_status,
                                     prev_read_status, read_status, spans_file, max_kmer_len);
             result_counts[(int)res]++;
+          }
             // there will be no previous one next time 
             prev_best_aln.read_id = "";
             prev_read_status = "";
             prev_type_status = "";
             continue;
-          }
+            //}
         }
       }
     }

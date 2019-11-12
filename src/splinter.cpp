@@ -35,13 +35,13 @@ struct AlnStats {
 };
 
 
-// gets all the alns for a single read, and returns true if there are more alns
-static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
+// gets all the alns for a single read
+static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
   string start_read_id = "";
   for (; i < alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
-    if (start_read_id != "" && aln.read_id != start_read_id) return true;
+    if (start_read_id != "" && aln.read_id != start_read_id) return;
     (*nalns)++;
     // convert to coords for use here
     if (aln.orient == '-') {
@@ -61,7 +61,6 @@ static bool get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read
     start_read_id = aln.read_id;
     progress();
   }
-  return false;
 }
 
 
@@ -144,10 +143,10 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   ProgressBar progbar(alns.size(), "Adding edges to graph from splints");
   int64_t aln_i = 0;
   int64_t num_splints = 0;
-  while (true) {
+  while (aln_i < alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
-    if (!get_alns_for_read(alns, aln_i, alns_for_read, &stats.nalns, &stats.unaligned)) break;
+    get_alns_for_read(alns, aln_i, alns_for_read, &stats.nalns, &stats.unaligned);
     t_get_alns.stop();
     progbar.update(aln_i);
     for (int i = 0; i < alns_for_read.size(); i++) {
