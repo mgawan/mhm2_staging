@@ -57,6 +57,9 @@ add_definitions(-DLASSM_MIN_KMER_LEN=21)
 add_definitions(-DLASSM_SHIFT_SIZE=8)
 add_definitions(-DLASSM_MIN_QUAL=10)
 add_definitions(-DLASSM_MIN_HI_QUAL=20)
+add_definitions(-DLASSM_MIN_VIABLE_DEPTH=0.2)
+add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.5)
+add_definitions(-DLASSM_RATING_THRES=2)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)

@@ -94,7 +94,7 @@ static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsT
         num_read_maps_found++;
         for (auto &ctg : ctgs) {
           if (ctg.orient == '-') {
-            seq = revcomp(id);
+            seq = revcomp(seq);
             reverse(quals.begin(), quals.end());
           }
           ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq, quals});
