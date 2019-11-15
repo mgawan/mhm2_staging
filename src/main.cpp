@@ -41,9 +41,11 @@ void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fna
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
-                     int max_ctg_cache, Contigs &ctgs, Alns *alns);
+                     int max_ctg_cache, Contigs &ctgs, Alns &alns);
+void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev, int qual_offset,
+               Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
-                        int break_scaffolds, QualityLevel quality_level, Contigs *ctgs, Alns &alns);
+                        int break_scaffolds, QualityLevel quality_level, Contigs &ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -78,8 +80,9 @@ int main(int argc, char **argv) {
 
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
 
+  int max_kmer_len = 0;
   if (options->kmer_lens.size()) {
-    int max_kmer_len = options->kmer_lens.back();
+    max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem_gb();
@@ -97,14 +100,18 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
       ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
-      /*
       Alns alns;
-      int seed_space = 1;//8;
+      int seed_space = 1;
+      if (kmer_len < 22) seed_space = 4;
+      else if (kmer_len < 56) seed_space = 2;
+      
+      seed_space = 8;
+      
       find_alignments(kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                      ctgs, &alns);
-      traverse_ctg_graph(options->insert_avg, options->insert_stddev, kmer_len, kmer_len, options->reads_fname_list, 
-                         1, QualityLevel::SINGLE_PATH_ONLY, &ctgs, alns);
-      */
+                      ctgs, alns);
+      localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
+                options->qual_offset, ctgs, alns);
+
       if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SLOG(KBLUE "_________________________\n", KNORM);
       ctgs.print_stats(500);
@@ -115,9 +122,8 @@ int main(int argc, char **argv) {
     }
   }
   if (options->scaff_kmer_lens.size()) {
-    auto max_scaff_kmer_len = options->scaff_kmer_lens.front();
+    if (!max_kmer_len) max_kmer_len = options->scaff_kmer_lens.front();
 // FIXME: need to derive this even when not given it on the command line    
-    max_scaff_kmer_len = 99;
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem_gb();
@@ -125,15 +131,15 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
       // seed space of 1 reduces msa compared to 4 or 8
-      int seed_space = (scaff_kmer_len == max_scaff_kmer_len ? 1 : 4);
+      int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 4);
       find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                      ctgs, &alns);
+                      ctgs, alns);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
-      traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_scaff_kmer_len, scaff_kmer_len, options->reads_fname_list,
-                         break_scaff_Ns, QualityLevel::ALL, &ctgs, alns);
+      traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, options->reads_fname_list,
+                         break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
         SLOG(KBLUE "_________________________\n", KNORM);

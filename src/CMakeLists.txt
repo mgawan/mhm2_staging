@@ -17,7 +17,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_COMPILER upcxx)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 
-add_definitions(-DMAX_KMER_LEN=128)
+add_definitions(-DMAX_KMER_LEN=160)
 # quality encoding is logarithmic, so the probability of an error is:
 # cutoff 10: 10% chance
 # cutoff 20: 1% chance
@@ -42,14 +42,21 @@ add_definitions(-DMAX_SEARCH_LEVEL=5)
 add_definitions(-DMAX_QUEUE_SIZE=100)
 add_definitions(-DALN_SLOP=0)
 add_definitions(-DASSM_CLEN_THRES=500)
-#FIXME: these should not be defined here!!
+# FIXME: these should not be defined here!!
 add_definitions(-DBREAK_SCAFF_NS=20)
 add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
 add_definitions(-DWALK_SUPPORT_THRES=3)
 add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
 add_definitions(-DALN_WIGGLE=5)
+# FIXME: this should be a parameter
 add_definitions(-DTMP_READ_LEN=150)
+# FIXME: this should be a parameter
+add_definitions(-DLASSM_MAX_KMER_LEN=121)
+add_definitions(-DLASSM_MIN_KMER_LEN=21)
+add_definitions(-DLASSM_SHIFT_SIZE=8)
+add_definitions(-DLASSM_MIN_QUAL=10)
+add_definitions(-DLASSM_MIN_HI_QUAL=20)
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)
@@ -73,7 +80,7 @@ add_subdirectory(ssw)
 
 add_executable(mhm
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp
-    spanner.cpp splinter.cpp)
+    spanner.cpp splinter.cpp localassm.cpp localassm_walk.cpp)
 
 target_link_libraries(mhm SSW_LIBRARY)
 target_link_libraries(mhm ${ZLIB_LIBRARIES})

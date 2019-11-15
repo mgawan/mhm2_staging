@@ -92,7 +92,7 @@ struct GapStats {
 };
 
 
-static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs *ctgs) {
+static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs &ctgs) {
   Timer timer(__func__);
 
   int num_break_scaffs = 0;
@@ -189,7 +189,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
           else gap_stats.mismatched_spans++;
           gap_stats.gaps++;
           // save current scaffold
-          ctgs->add_contig(ctg);
+          ctgs.add_contig(ctg);
           // start new scaffold
           ctg.depth = v->depth;
           ctg.seq = seq;
@@ -198,13 +198,13 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
       prev_v = v;
     }
     // done with all walk vertices
-    if (ctg.seq != "") ctgs->add_contig(ctg);
+    if (ctg.seq != "") ctgs.add_contig(ctg);
   }
   barrier();
   SLOG_VERBOSE("Number of scaffold breaks ", reduce_one(num_break_scaffs, op_fast_add, 0).wait(), "\n");
   gap_stats.print();
   // now get unique ids for all the contigs
-  size_t num_ctgs = ctgs->size();
+  size_t num_ctgs = ctgs.size();
   atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
   global_ptr<size_t> counter = nullptr;
   if (!rank_me()) counter = new_<size_t>(0);
@@ -213,7 +213,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
   // wait until all ranks have updated the global counter
   barrier();
   ad.destroy();
-  for (auto it = ctgs->begin(); it != ctgs->end(); it++) it->id = my_counter++;
+  for (auto it = ctgs.begin(); it != ctgs.end(); it++) it->id = my_counter++;
 }
 
 
@@ -622,7 +622,7 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
 }
 
 
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, QualityLevel quality_level, Contigs *ctgs) {
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, QualityLevel quality_level, Contigs &ctgs) {
   // The general approach is to have each rank do walks starting from its local vertices only.
   // First, to prevent loops within a walk, the vertices visited locally are kept track of using a visited hash table.
   // Once walks starting from all local vertices have been completed, any conflicts (overlaps) between walks are resolved.
@@ -721,9 +721,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
     SLOG_VERBOSE("Didn't visit ", tot_unvisited, " vertices, max len ", tot_max_unvisited_len, " total length ", 
                  tot_unvisited_len, "\n");
   walk_stats.print();
-
   get_ctgs_from_walks(max_kmer_len, kmer_len, break_scaff_Ns, walks, ctgs);
-  
   barrier();
 }
 

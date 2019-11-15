@@ -413,11 +413,25 @@ static void write_num_file(string fname, int64_t maxReadLength) {
 }
 
 static string get_size_str(int64_t sz) {
-  if (sz >= ONE_GB * 1024l) return to_string(sz / (ONE_GB * 1024l)) + "TB";
-  else if (sz >= ONE_GB) return to_string(sz / ONE_GB) + "GB";
-  else if (sz >= ONE_MB) return to_string(sz / ONE_MB) + "MB";
-  else if (sz >= 1024) return to_string(sz / 1024) + "KB";
-  else return to_string(sz) + "B";
+  if (sz < 1024) return to_string(sz) + "B";
+  double frac = 0;
+  string units = "";
+  if (sz >= ONE_GB * 1024l) {
+    frac = (double)sz / (ONE_GB * 1024l);
+    units = "TB";
+  } else if (sz >= ONE_GB) {
+    frac = (double)sz / ONE_GB;
+    units = "GB";
+  } else if (sz >= ONE_MB) {
+    frac = (double)sz / ONE_MB;
+    units = "MB";
+  } else if (sz >= 1024) {
+    frac = (double)sz / 1024;
+    units = "KB";
+  }
+  ostringstream os;
+  os << std::fixed << std::setprecision(2) << frac << units;
+  return os.str();
 }
 
 static string remove_file_ext(const string &fname) {

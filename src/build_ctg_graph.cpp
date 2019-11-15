@@ -21,10 +21,10 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 static CtgGraph *_graph = nullptr;
 
 
-static void add_vertices_from_ctgs(Contigs *ctgs) {
+static void add_vertices_from_ctgs(Contigs &ctgs) {
   Timer timer(__func__);
-  ProgressBar progbar(ctgs->size(), "Adding contig vertices to graph");
-  for (auto ctg : *ctgs) {
+  ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
+  for (auto ctg : ctgs) {
     Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
     _graph->add_vertex(v, ctg.seq);
     progbar.update();
@@ -491,7 +491,7 @@ void mark_short_aln_edges(int max_kmer_len) {
 }
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
-                     vector<string> &reads_fname_list, Contigs *ctgs, Alns &alns) {
+                     vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns) {
   Timer timer(__func__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
