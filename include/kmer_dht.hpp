@@ -83,6 +83,27 @@ struct ExtCounts {
     if (count_A + count_C + count_G + count_T == 0) return true;
     return false;
   }
+
+  void inc(char ext, int count) {
+    switch (ext) {
+      case 'A': 
+        count += count_A;
+        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'C': 
+        count += count_C;
+        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'G':
+        count += count_G;
+        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'T': 
+        count += count_T;
+        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+    }
+  }
   
 };
 
@@ -156,8 +177,10 @@ class KmerDHT {
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X',
                                    .count = 1, .from_ctg = false, .visited = -1, .start_walk_us = 0 };
-        inc_ext(kmer_counts.left_exts, merarr_and_ext.left, 1);
-        inc_ext(kmer_counts.right_exts, merarr_and_ext.right, 1);
+        //inc_ext(kmer_counts.left_exts, merarr_and_ext.left, 1);
+        //inc_ext(kmer_counts.right_exts, merarr_and_ext.right, 1);
+        kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
+        kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
         kmers->insert({new_kmer, kmer_counts});
         if (prev_bucket_count < kmers->bucket_count())
@@ -166,8 +189,10 @@ class KmerDHT {
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;
-        inc_ext(kmer->left_exts, merarr_and_ext.left, 1);
-        inc_ext(kmer->right_exts, merarr_and_ext.right, 1);
+        //inc_ext(kmer->left_exts, merarr_and_ext.left, 1);
+        //inc_ext(kmer->right_exts, merarr_and_ext.right, 1);
+        kmer->left_exts.inc(merarr_and_ext.left, 1);
+        kmer->right_exts.inc(merarr_and_ext.right, 1);
       }
     }
   };
@@ -205,8 +230,10 @@ class KmerDHT {
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = 1,
                                    .from_ctg = false, .visited = -1, .start_walk_us = 0 };
-        inc_ext(kmer_counts.left_exts, merarr_and_ext.left, 1);
-        inc_ext(kmer_counts.right_exts, merarr_and_ext.right, 1);
+        //inc_ext(kmer_counts.left_exts, merarr_and_ext.left, 1);
+        //inc_ext(kmer_counts.right_exts, merarr_and_ext.right, 1);
+        kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
+        kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
         kmers->insert({new_kmer, kmer_counts});
         // this shouldn't happen 
@@ -215,8 +242,10 @@ class KmerDHT {
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;
-        inc_ext(kmer->left_exts, merarr_and_ext.left, 1);
-        inc_ext(kmer->right_exts, merarr_and_ext.right, 1);
+        //inc_ext(kmer->left_exts, merarr_and_ext.left, 1);
+        //inc_ext(kmer->right_exts, merarr_and_ext.right, 1);
+        kmer->left_exts.inc(merarr_and_ext.left, 1);
+        kmer->right_exts.inc(merarr_and_ext.right, 1);
       }
     }
   };
@@ -256,22 +285,26 @@ class KmerDHT {
           auto kmer = &it->second;
           int new_count = kmer->count + merarr_and_ext.count;
           kmer->count = (new_count < numeric_limits<uint16_t>::max()) ? new_count : numeric_limits<uint16_t>::max();
-          inc_ext(kmer->left_exts, merarr_and_ext.left, merarr_and_ext.count);
-          inc_ext(kmer->right_exts, merarr_and_ext.right, merarr_and_ext.count);
+          //inc_ext(kmer->left_exts, merarr_and_ext.left, merarr_and_ext.count);
+          //inc_ext(kmer->right_exts, merarr_and_ext.right, merarr_and_ext.count);
+          kmer->left_exts.inc(merarr_and_ext.left, merarr_and_ext.count);
+          kmer->right_exts.inc(merarr_and_ext.right, merarr_and_ext.count);
         }
       }
       if (insert) {
         uint16_t count = merarr_and_ext.count;
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = count,
                                    .from_ctg = true, .visited = -1, .start_walk_us = 0 };
-        inc_ext(kmer_counts.left_exts, merarr_and_ext.left, count);
-        inc_ext(kmer_counts.right_exts, merarr_and_ext.right, count);
+        //inc_ext(kmer_counts.left_exts, merarr_and_ext.left, count);
+        //inc_ext(kmer_counts.right_exts, merarr_and_ext.right, count);
+        kmer_counts.left_exts.inc(merarr_and_ext.left, count);
+        kmer_counts.right_exts.inc(merarr_and_ext.right, count);
         (*kmers)[new_kmer] = kmer_counts;
       }
     }
   };
   dist_object<InsertCtgKmer> insert_ctg_kmer;
-  
+  /*
   static void inc_ext(ExtCounts &ext_counts, char ext, int count) {
     switch (ext) {
       case 'A': 
@@ -292,7 +325,7 @@ class KmerDHT {
         break;
     }
   }
-
+  */
 public:
 
   KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom)

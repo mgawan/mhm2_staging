@@ -16,7 +16,8 @@ using namespace std;
 using namespace upcxx;
 
 
-void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, int insert_avg, int insert_stddev, int max_mer_len, int kmer_len, int qual_offset);
+void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, int insert_avg, int insert_stddev, int max_mer_len, int kmer_len, int qual_offset,
+                 double dynamic_min_depth);
 
 
 enum class AlnStatus { NO_ALN, OVERLAPS_CONTIG, EXTENDS_CONTIG };
@@ -24,7 +25,6 @@ enum class AlnStatus { NO_ALN, OVERLAPS_CONTIG, EXTENDS_CONTIG };
 struct CtgInfo {
   int64_t cid;
   char orient;
-  int pair_num;
   char side;
 };
 
@@ -44,8 +44,8 @@ public:
     reads_to_ctgs_map->reserve(initial_size);
   }
   
-  void add(const string &read_id, int64_t cid, char orient, int pair_num, char side) {
-    CtgInfo ctg_info = { .cid = cid, .orient = orient, .pair_num = pair_num, .side = side };
+  void add(const string &read_id, int64_t cid, char orient, char side) {
+    CtgInfo ctg_info = { .cid = cid, .orient = orient, .side = side };
     rpc(get_target_rank(read_id),
         [](dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id, CtgInfo ctg_info) {
           const auto it = reads_to_ctgs_map->find(read_id);
@@ -89,15 +89,17 @@ static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsT
       // this happens when we have a placeholder entry because reads merged
       if (kmer_len > seq.length()) continue;
       num_reads++;
+      string seq_rc = revcomp(seq);
+      string quals_rc = quals;
+      reverse(quals_rc.begin(), quals_rc.end());
       auto ctgs = reads_to_ctgs.get_ctgs(id);
       if (ctgs.size()) {
         num_read_maps_found++;
         for (auto &ctg : ctgs) {
-          if (ctg.orient == '-') {
-            seq = revcomp(seq);
-            reverse(quals.begin(), quals.end());
-          }
-          ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq, quals});
+          if ((ctg.orient == '-' && ctg.side == 'R') || (ctg.orient == '+' && ctg.side == 'L'))
+            ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq_rc, quals_rc});
+          else
+            ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq, quals});
         }
       }
     }
@@ -181,16 +183,18 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
     int pair_num = aln.read_id.back() - '0';
     // add a direct extension to the contig, start or end
     if (start_status == AlnStatus::EXTENDS_CONTIG) {
-      reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient, pair_num, aln.orient == '+' ? 'S' : 'E');
+      reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient, aln.orient == '+' ? 'L' : 'R');
       num_direct++;
     } else if (end_status == AlnStatus::EXTENDS_CONTIG) {
-      reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient, pair_num, aln.orient == '+' ? 'E' : 'S');
+      reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient, aln.orient == '+' ? 'R' : 'L');
       num_direct++;
     }
     // add mate pair if feasible
     if (!pair_overlap(aln, min_pair_len)) {
       // indicate the other pair_num
-      reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient == '+' ? '-' : '+', pair_num == 1 ? 2 : 1, aln.orient == '+' ? 'E' : 'S');
+      string pair_read_id = aln.read_id;
+      pair_read_id[aln.read_id.length() - 1] = (pair_num == 1 ? '2' : '1');
+      reads_to_ctgs.add(pair_read_id, aln.cid, aln.orient == '+' ? '-' : '+', aln.orient == '+' ? 'R' : 'L');
       num_proj++;
     }
     progress();
@@ -221,8 +225,8 @@ void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 }
 
 
-void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev, int qual_offset,
-               Contigs &ctgs, Alns &alns) {
+void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
+               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns) {
   Timer timer(__func__, true);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
   add_ctgs(ctgs_dht, ctgs);
@@ -232,5 +236,7 @@ void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
   // extract read seqs and add to ctgs
   process_reads(max_kmer_len, reads_fname_list, reads_to_ctgs, ctgs_dht);
   // extend contigs using locally mapped reads
-  extend_ctgs(ctgs_dht, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset);
+  extend_ctgs(ctgs_dht, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, dynamic_min_depth);
+  // add extended ctg sequences back to the original ctgs
+  
 }

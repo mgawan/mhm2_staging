@@ -20,8 +20,8 @@ struct CtgWithReads {
   int64_t cid;
   string seq;
   double depth;
-  vector<ReadSeq> reads_start;
-  vector<ReadSeq> reads_end;
+  vector<ReadSeq> reads_left;
+  vector<ReadSeq> reads_right;
 };
 
 
@@ -48,7 +48,7 @@ public:
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
           const auto it = ctgs_map->find(cid);
           if (it != ctgs_map->end()) DIE("Found duplicate ctg ", cid);
-          CtgWithReads ctg_with_reads = { .cid = cid, .seq = seq, .depth = depth, .reads_start = {}, .reads_end = {} };
+          CtgWithReads ctg_with_reads = { .cid = cid, .seq = seq, .depth = depth, .reads_left = {}, .reads_right = {} };
           ctgs_map->insert({cid, ctg_with_reads });
         }, ctgs_map, ctg.id, ctg.seq, ctg.depth).wait();
   }
@@ -58,8 +58,8 @@ public:
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
           const auto it = ctgs_map->find(cid);
           if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
-          if (side == 'S') it->second.reads_start.push_back({read_id, seq, quals});
-          else it->second.reads_end.push_back({read_id, seq, quals});
+          if (side == 'L') it->second.reads_left.push_back({read_id, seq, quals});
+          else it->second.reads_right.push_back({read_id, seq, quals});
         }, ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals);
   }
   
