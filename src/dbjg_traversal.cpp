@@ -290,6 +290,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
 }
 
 
+/*
 void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
   Timer timer(__func__);
   ProgressBar progbar(ctgs.size(), "Computing contig kmer depths");
@@ -313,4 +314,4 @@ void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Conti
   progbar.done();
   barrier();
 }
-
+*/

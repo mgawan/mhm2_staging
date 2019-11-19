@@ -81,15 +81,15 @@ include_directories("${CMAKE_SOURCE_DIR}/../include")
 
 add_subdirectory(ssw)
 
-add_executable(mhm
+add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp
-    spanner.cpp splinter.cpp localassm.cpp localassm_walk.cpp)
+    spanner.cpp splinter.cpp localassm.cpp)
 
-target_link_libraries(mhm SSW_LIBRARY)
-target_link_libraries(mhm ${ZLIB_LIBRARIES})
+target_link_libraries(mhmxx SSW_LIBRARY)
+target_link_libraries(mhmxx ${ZLIB_LIBRARIES})
 
 
-#install(TARGETS mhm DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+#install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
 # Set up version
 find_package(Git)

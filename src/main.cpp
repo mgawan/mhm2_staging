@@ -39,7 +39,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
-void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
+//void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
 void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
                      int max_ctg_cache, Contigs &ctgs, Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
@@ -72,18 +72,10 @@ int main(int argc, char **argv) {
     SLOG("Total size of ", options->reads_fname_list.size(), " input file", (options->reads_fname_list.size() > 1 ? "s" : ""),
          " is ", (tot_file_size / ONE_GB), " GB\n");
   }
-
   // first merge reads - the results will go in the per_rank directory
   merge_reads(options->reads_fname_list, options->qual_offset);
-
   Contigs ctgs;
-
-  bool use_starting_ctgs = false;
-  if (!options->ctgs_fname.empty()) {
-    ctgs.load_contigs(options->ctgs_fname);
-    use_starting_ctgs = true;
-  }
-
+  if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   int max_kmer_len = 0;
   if (options->kmer_lens.size()) {
     max_kmer_len = options->kmer_lens.back();
@@ -92,33 +84,28 @@ int main(int argc, char **argv) {
       auto free_mem = get_free_mem_gb();
       SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
       Kmer::k = kmer_len;
-      if (use_starting_ctgs) {
-        use_starting_ctgs = false;
-      } else {
-        auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-        dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
-        barrier();
-        analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                      options->dynamic_min_depth, ctgs, kmer_dht);
-        barrier();
-        traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-        barrier();
+      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
+      barrier();
+      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+                    options->dynamic_min_depth, ctgs, kmer_dht);
+      barrier();
+      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+      barrier();
       //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
-        ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
+      ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
+      if (kmer_len < options->kmer_lens.back()) {
+        Alns alns;
+        int seed_space = 1;
+        if (kmer_len < 22) seed_space = 4;
+        else if (kmer_len < 56) seed_space = 2;
+        find_alignments(kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
+                        ctgs, alns);
+        localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
+                  options->qual_offset, options->dynamic_min_depth, ctgs, alns);
       }
-      Alns alns;
-      int seed_space = 1;
-      if (kmer_len < 22) seed_space = 4;
-      else if (kmer_len < 56) seed_space = 2;
-      
-      seed_space = 8;
-      
-      find_alignments(kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                      ctgs, alns);
-      localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
-                options->qual_offset, options->dynamic_min_depth, ctgs, alns);
       if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SLOG(KBLUE "_________________________\n", KNORM);
       ctgs.print_stats(500);
@@ -138,7 +125,7 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
       // seed space of 1 reduces msa compared to 4 or 8
-      int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 4);
+      int seed_space = 1;//(scaff_kmer_len == max_kmer_len ? 1 : 4);
       find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, alns);
 #ifdef DEBUG      

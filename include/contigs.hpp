@@ -35,8 +35,9 @@ struct Contig {
   int64_t id;
   string seq;
   double depth;
-  vector<uint16_t> kmer_depths;
+  //vector<uint16_t> kmer_depths;
 
+  /*
   uint16_t get_kmer_depth(int start_pos, int kmer_len, int prev_kmer_len) {
     int len_diff = kmer_len - prev_kmer_len;
     int d = 0;
@@ -47,6 +48,7 @@ struct Contig {
     d /= len_diff;
     return d;
   }
+  */
 };
 
 class Contigs {
@@ -61,8 +63,12 @@ public:
     contigs.clear();
     vector<Contig>().swap(contigs);
   }
-    
-  void add_contig(Contig &contig) {
+
+  void set_capacity(int64_t sz) {
+    contigs.reserve(sz);
+  }
+  
+  void add_contig(Contig contig) {
     contigs.push_back(contig);
   }
 

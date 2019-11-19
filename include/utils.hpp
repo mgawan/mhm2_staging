@@ -43,7 +43,10 @@ extern ofstream _logstream;
 extern bool _verbose;
 
 inline void init_logger() {
-  if (!upcxx::rank_me()) _logstream.open("mhm.log");
+  if (!upcxx::rank_me()) {
+    _logstream.open("mhm.log", ofstream::out | ofstream::app);
+    _logstream << "\n\n=======================================\n\n";
+  }
 }
 
 inline void set_logger_verbose(bool verbose) {

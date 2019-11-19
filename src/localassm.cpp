@@ -9,28 +9,24 @@
 #include "contigs.hpp"
 #include "alignments.hpp"
 #include "fastq.hpp"
-#include "localassm.hpp"
+#include "kmer_dht.hpp"
 
+
+#define USE_GLOBAL_DBJG_APPROACH
 
 using namespace std;
 using namespace upcxx;
 
 
-void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, int insert_avg, int insert_stddev, int max_mer_len, int kmer_len, int qual_offset,
-                 double dynamic_min_depth);
-
-
 enum class AlnStatus { NO_ALN, OVERLAPS_CONTIG, EXTENDS_CONTIG };
 
-struct CtgInfo {
-  int64_t cid;
-  char orient;
-  char side;
-};
-
-
 class ReadsToCtgsDHT {
-  
+  struct CtgInfo {
+    int64_t cid;
+    char orient;
+    char side;
+  };
+
   using reads_to_ctgs_map_t = unordered_map<string, vector<CtgInfo> >;
   dist_object<reads_to_ctgs_map_t> reads_to_ctgs_map;
 
@@ -69,6 +65,191 @@ public:
 
 };
 
+
+struct ReadSeq {
+  string read_id;
+  string seq;
+  string quals;
+};
+
+
+struct CtgWithReads {
+  int64_t cid;
+  string seq;
+  double depth;
+  vector<ReadSeq> reads_left;
+  vector<ReadSeq> reads_right;
+};
+
+
+class CtgsWithReadsDHT {
+  
+  using ctgs_map_t = unordered_map<int64_t, CtgWithReads>;
+  dist_object<ctgs_map_t> ctgs_map;
+  ctgs_map_t::iterator ctgs_map_iter;
+
+  size_t get_target_rank(int64_t cid) {
+    return std::hash<int64_t>{}(cid) % rank_n();
+  }
+  
+public:
+
+  CtgsWithReadsDHT(int64_t num_ctgs)
+    : ctgs_map({}) {
+    // pad the local ctg count a bit for this estimate
+    ctgs_map->reserve(num_ctgs * 1.2);
+  }
+
+  void add_ctg(Contig &ctg) {
+    rpc(get_target_rank(ctg.id),
+        [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
+          const auto it = ctgs_map->find(cid);
+          if (it != ctgs_map->end()) DIE("Found duplicate ctg ", cid);
+          CtgWithReads ctg_with_reads = { .cid = cid, .seq = seq, .depth = depth, .reads_left = {}, .reads_right = {} };
+          ctgs_map->insert({cid, ctg_with_reads });
+        }, ctgs_map, ctg.id, ctg.seq, ctg.depth).wait();
+  }
+
+  void add_read(int64_t cid, char side, ReadSeq read_seq) {
+    rpc(get_target_rank(cid),
+        [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
+          const auto it = ctgs_map->find(cid);
+          if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
+          if (side == 'L') it->second.reads_left.push_back({read_id, seq, quals});
+          else it->second.reads_right.push_back({read_id, seq, quals});
+        }, ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals);
+  }
+  
+  int64_t get_num_ctgs() {
+    return reduce_one(ctgs_map->size(), op_fast_add, 0).wait();
+  }
+
+  int64_t get_local_num_ctgs() {
+    return ctgs_map->size();
+  }
+
+  CtgWithReads *get_first_local_ctg() {
+    ctgs_map_iter = ctgs_map->begin();
+    if (ctgs_map_iter == ctgs_map->end()) return nullptr;
+    auto ctg = &ctgs_map_iter->second;
+    ctgs_map_iter++;
+    return ctg;
+  }
+  
+  CtgWithReads *get_next_local_ctg() {
+    if (ctgs_map_iter == ctgs_map->end()) return nullptr;
+    auto ctg = &ctgs_map_iter->second;
+    ctgs_map_iter++;
+    return ctg;
+  }
+};
+
+
+struct MerFreqs {
+  // how many times this kmer has occurred: don't need to count beyond 65536
+  // count of high quality extensions and low quality extensions - structure comes from kmer_dht.hpp
+  ExtCounts hi_q_exts, low_q_exts;
+  // the final extensions chosen - A,C,G,T, or F,X
+  char ext;
+  // the count of the final extension
+  int count;
+
+#ifdef USE_GLOBAL_DBJG_APPROACH    
+  void set_ext(double dynamic_min_depth, int count) {
+    // this sets extensions according to the algorithm used for global dbjg traversals
+    auto sorted_exts = hi_q_exts.get_sorted();
+    ext = sorted_exts[0].first;
+    int ext_max = sorted_exts[0].second;
+    int ext_min = sorted_exts[1].second;
+    int dmin_dyn = (1.0 - dynamic_min_depth) * count;      // integer floor
+    if (dmin_dyn < 2) dmin_dyn = 2;
+    count = ext_max;
+    if (ext_max < dmin_dyn) {
+      ext = 'X';
+      count = 0;
+    } else if (ext_min >= dmin_dyn) {
+      ext = 'F';
+      count = 0;
+    }
+  }
+  
+#else
+  struct MerBase {
+    char base;
+    uint16_t nvotes_hi_q, nvotes, rating;
+
+    uint16_t get_base_rating(int depth) {
+      double min_viable = max(LASSM_MIN_VIABLE_DEPTH * depth, 2.0);
+      double min_expected_depth = max(LASSM_MIN_EXPECTED_DEPTH * depth, 2.0);
+      if (nvotes == 0) return 0;
+      if (nvotes == 1) return 1;
+      if (nvotes < min_viable) return 2;
+      if (min_expected_depth > nvotes && nvotes >= min_viable && nvotes_hi_q < min_viable) return 3;
+      if (min_expected_depth > nvotes && nvotes >= min_viable && nvotes_hi_q >= min_viable) return 4;
+      if (nvotes >= min_expected_depth && nvotes_hi_q < min_viable) return 5;
+      if (nvotes >= min_expected_depth && min_viable < nvotes_hi_q && nvotes_hi_q < min_expected_depth) return 6;
+      return 7;
+    }
+  };
+  
+  void set_ext(double dynamic_min_depth, int seq_depth) {
+    // set extension similarly to how it is done with localassm in mhm
+    MerBase mer_bases[4] = {{.base = 'A', .nvotes_hi_q = hi_q_exts.count_A, .nvotes = low_q_exts.count_A},
+                            {.base = 'C', .nvotes_hi_q = hi_q_exts.count_C, .nvotes = low_q_exts.count_C},
+                            {.base = 'G', .nvotes_hi_q = hi_q_exts.count_G, .nvotes = low_q_exts.count_G},
+                            {.base = 'T', .nvotes_hi_q = hi_q_exts.count_T, .nvotes = low_q_exts.count_T}};
+    for (int i = 0; i < 4; i++) {
+      mer_bases[i].rating = mer_bases[i].get_base_rating(seq_depth);
+    }
+    // sort bases in descending order of quality
+    sort(mer_bases, mer_bases + sizeof(mer_bases) / sizeof(mer_bases[0]),
+         [](const auto &elem1, const auto &elem2) {
+           if (elem1.rating > elem2.rating) return 1;
+           if (elem1.rating < elem2.rating) return -1;
+           if (elem1.nvotes_hi_q > elem2.nvotes_hi_q) return 1;
+           if (elem1.nvotes_hi_q < elem2.nvotes_hi_q) return -1;
+           if (elem1.nvotes > elem2.nvotes) return 1;
+           if (elem1.nvotes < elem2.nvotes) return -1;
+           return 0;
+         });
+    int top_rating = mer_bases[0].rating;
+    int runner_up_rating = mer_bases[1].rating;
+    assert(top_rating > runner_up_rating);
+    int top_rated_base = mer_bases[0].base;
+    ext = 'X';
+    count = 0;
+    // no extension (base = 0) if the runner up is close to the top rating
+    // except, if rating is 7 (best quality), then all bases of rating 7 are forks
+    if (top_rating > LASSM_RATING_THRES) {         // must have at least minViable bases
+      if (top_rating <= 3) {    // must be uncontested
+        if (runner_up_rating == 0) ext = top_rated_base;
+      } else if (top_rating < 6) {
+        if (runner_up_rating < 3) ext = top_rated_base;
+      } else if (top_rating == 6) {  // viable and fair hiQ support
+        if (runner_up_rating < 4) ext = top_rated_base;
+      } else {                     // strongest rating trumps
+        if (runner_up_rating < 7) {
+          ext = top_rated_base;
+        } else {
+          if (mer_bases[2].rating == 7 || mer_bases[0].nvotes == mer_bases[1].nvotes) ext = 'F'; 
+          else if (mer_bases[0].nvotes > mer_bases[1].nvotes) ext = mer_bases[0].base;
+          else if (mer_bases[1].nvotes > mer_bases[0].nvotes) ext = mer_bases[1].base;
+        }
+      }
+    }
+    for (int i = 0; i < 4; i++) {
+      if (mer_bases[i].base == ext) {
+        count = mer_bases[i].nvotes;
+        break;
+      }
+    }
+  }
+#endif
+  
+};
+
+
+using MerMap = unordered_map<string, MerFreqs>;
 
 static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsToCtgsDHT &reads_to_ctgs, CtgsWithReadsDHT &ctgs_dht) {
   Timer timer(__func__, true);
@@ -210,7 +391,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
 }
 
 
-void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
+static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
   Timer timer(__func__, true);
   // process the local ctgs and insert into the distributed hash table
   ProgressBar progbar(ctgs.size(), "Adding contigs to distributed hash table");
@@ -225,6 +406,173 @@ void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 }
 
 
+static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
+                       double dynamic_min_depth) {
+  // split reads into kmers and count frequency of high quality extensions
+  for (auto &read_seq : reads) {
+    if (mer_len >= read_seq.seq.length()) continue;
+    int num_mers = read_seq.seq.length() - mer_len;
+    for (int start = 0; start < num_mers; start++) {
+      // skip mers that contain Ns
+      if (read_seq.seq.find("N", start) != string::npos) continue;
+      string mer = read_seq.seq.substr(start, mer_len);
+      auto it = mers_ht.find(mer);
+      if (it == mers_ht.end()) {
+        mers_ht.insert({mer, {.hi_q_exts = {0}, .low_q_exts = {0}, .ext = 0, .count = 0}});
+        it = mers_ht.find(mer);
+      }
+      int ext_pos = start + mer_len;
+      assert(ext_pos < read_seq.seq.length());
+      char ext = read_seq.seq[ext_pos];
+      if (ext == 'N') continue;
+      int qual = read_seq.quals[ext_pos] - qual_offset;
+      if (qual >= LASSM_MIN_QUAL) it->second.low_q_exts.inc(ext, 1);
+      if (qual > LASSM_MIN_HI_QUAL) it->second.hi_q_exts.inc(ext, 1);
+    }
+  }
+  // now set extension choices
+  for (auto &elem : mers_ht) {
+    elem.second.set_ext(dynamic_min_depth, seq_depth);
+  }    
+}
+
+// return the result of the walk (f, r or x)
+static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int &walk_depth, int mer_len, int walk_len_limit) {
+  bool have_forked = false;
+  int nsteps = 0;
+  unordered_map<string, bool> loop_check_ht;
+  char walk_result = 'X';
+  walk_depth = 0;
+  for (int nsteps = 0; nsteps < walk_len_limit; nsteps++) {
+    // check for a cycle in the graph
+    if (loop_check_ht.find(mer) != loop_check_ht.end()) {
+      walk_result = 'R';
+      break;
+    } else {
+      loop_check_ht.insert({mer, true});
+    }
+    auto it = mers_ht.find(mer);
+    if (it == mers_ht.end()) {
+      walk_result = 'X';
+      break;
+    }
+    char ext = it->second.ext;
+    if (ext == 'F' || ext == 'X') {
+      walk_result = ext;
+      break;
+    }
+    mer.erase(0, 1);
+    mer += ext;
+    walk += ext;
+    walk_depth += it->second.count;
+  }
+  walk_depth /= walk.length();
+  return walk_result;
+}
+
+
+static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads, int max_mer_len, int kmer_len,
+                              int qual_offset, double dynamic_min_depth, int walk_len_limit, array<int64_t, 3> &term_counts,
+                              int64_t &num_walks, int64_t &max_walk_len, int64_t &sum_ext) {
+  int min_mer_len = LASSM_MIN_KMER_LEN;
+  max_mer_len = min(max_mer_len, (int)seq.length());
+  // iteratively walk starting from kmer_size, increasing mer size on a fork (F) or repeat (R),
+  // and decreasing on an end of path (X)
+  // look for the longest walk. Note we have to restart from the beginning for each walk to ensure
+  // that all loops will be detected
+  string longest_walk = "";
+  int shift = 0;
+  DBG("  reads:\n");
+#ifdef DEBUG
+  for (auto &read_seq : reads) {
+    DBG("    ", read_seq.read_id, "\n", read_seq.seq, "\n");
+  }
+#endif
+  for (int mer_len = kmer_len; mer_len >= min_mer_len && mer_len <= max_mer_len; mer_len += shift) {
+    MerMap mers_ht;
+    count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth);
+    string mer = seq.substr(seq.length() - mer_len);
+    string walk = "";
+    char walk_result = walk_mers(mers_ht, mer, walk, walk_depth, mer_len, walk_len_limit);
+    int walk_len = walk.length();
+    if (walk_len > longest_walk.length()) longest_walk = walk;
+    if (walk_result == 'X') {
+      term_counts[0]++;
+      // walk reaches a dead-end, downshift, unless we were upshifting
+      if (shift == LASSM_SHIFT_SIZE) break;
+      shift = -LASSM_SHIFT_SIZE;
+    } else {
+      if (walk_result == 'F') term_counts[1]++;
+      else term_counts[2]++;
+      // otherwise walk must end with a fork or repeat, so upshift
+      if (shift == -LASSM_SHIFT_SIZE) break;
+      if (mer_len > seq.length()) break;
+      shift = LASSM_SHIFT_SIZE;
+    }
+  }
+  if (!longest_walk.empty()) {
+    num_walks++;
+    max_walk_len = max(max_walk_len, (int64_t)longest_walk.length());
+    sum_ext += longest_walk.length();
+  }
+  return longest_walk;
+}
+
+
+static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_avg, int insert_stddev, int max_kmer_len,
+                        int kmer_len, int qual_offset, double dynamic_min_depth) {
+  Timer timer(__func__, true);
+  // walk should never be more than this. Note we use the maximum insert size from all libraries
+  int walk_len_limit = insert_avg + 2 * insert_stddev;
+  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0;
+  array<int64_t, 3> term_counts = {0};
+  ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
+  for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
+    progbar.update();
+    sum_clen += ctg->seq.length();
+    if (ctg->reads_right.size()) {
+      num_sides++;
+      num_reads += ctg->reads_right.size();
+      DBG("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
+      // have to do right first because the contig needs to be revcomped for the left
+      string right_walk = iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset,
+                                          dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext);
+      if (!right_walk.empty()) ctg->seq += right_walk;
+    }
+    if (ctg->reads_left.size()) {
+      num_sides++;
+      num_reads += ctg->reads_left.size();
+      string seq_rc = revcomp(ctg->seq);
+      DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
+      string left_walk = iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset,
+                                         dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext);
+      if (!left_walk.empty()) {
+        left_walk = revcomp(left_walk);
+        ctg->seq.insert(0, left_walk);
+      }
+    }
+    ctgs.add_contig({.id = ctg->cid, .seq = ctg->seq, .depth = ctg->depth});
+  }
+  progbar.done();
+  barrier();
+  SLOG_VERBOSE("Walk terminations: ",
+               reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
+               reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ",
+               reduce_one(term_counts[2], op_fast_add, 0).wait(), " R\n");
+              
+  auto tot_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
+  auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
+  auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();
+  auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
+  SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
+               " contig sides\n");
+  SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ", 
+               (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
+  if (tot_num_walks) 
+    SLOG_VERBOSE("Average walk length ", tot_sum_ext / tot_num_walks, ", max walk length ", tot_max_walk_len, "\n");
+}
+
+
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
                int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns) {
   Timer timer(__func__, true);
@@ -235,8 +583,10 @@ void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
   process_alns(alns, reads_to_ctgs, insert_avg, insert_stddev);
   // extract read seqs and add to ctgs
   process_reads(max_kmer_len, reads_fname_list, reads_to_ctgs, ctgs_dht);
+  // clear out the local contigs
+  ctgs.clear();
+  ctgs.set_capacity(ctgs_dht.get_local_num_ctgs());
   // extend contigs using locally mapped reads
-  extend_ctgs(ctgs_dht, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, dynamic_min_depth);
-  // add extended ctg sequences back to the original ctgs
-  
+  extend_ctgs(ctgs_dht, ctgs, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, dynamic_min_depth);
 }
+
