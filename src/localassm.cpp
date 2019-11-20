@@ -412,12 +412,11 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
 }
 
 // return the result of the walk (f, r or x)
-static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int &walk_depth, int mer_len, int walk_len_limit) {
+static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, int walk_len_limit) {
   bool have_forked = false;
   int nsteps = 0;
   unordered_map<string, bool> loop_check_ht;
   char walk_result = 'X';
-  walk_depth = 0;
   for (int nsteps = 0; nsteps < walk_len_limit; nsteps++) {
     // check for a cycle in the graph
     if (loop_check_ht.find(mer) != loop_check_ht.end()) {
@@ -439,9 +438,7 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int &walk_dept
     mer.erase(0, 1);
     mer += ext;
     walk += ext;
-    walk_depth += it->second.count;
   }
-  walk_depth /= walk.length();
   return walk_result;
 }
 
@@ -468,8 +465,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
     count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth);
     string mer = seq.substr(seq.length() - mer_len);
     string walk = "";
-    int walk_depth;
-    char walk_result = walk_mers(mers_ht, mer, walk, walk_depth, mer_len, walk_len_limit);
+    char walk_result = walk_mers(mers_ht, mer, walk, mer_len, walk_len_limit);
     int walk_len = walk.length();
     if (walk_len > longest_walk.length()) longest_walk = walk;
     if (walk_result == 'X') {
@@ -542,8 +538,9 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
   SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
                " contig sides\n");
-  SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ", 
-               (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
+  if (tot_sum_clen) 
+    SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ", 
+                 (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
   if (tot_num_walks) 
     SLOG_VERBOSE("Average walk length ", tot_sum_ext / tot_num_walks, ", max walk length ", tot_max_walk_len, "\n");
 }
