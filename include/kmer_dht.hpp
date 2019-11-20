@@ -121,24 +121,31 @@ struct KmerCounts {
   int32_t visited;
   int32_t start_walk_us;
 
-  pair<char, char> get_exts() {
-    auto sorted_lefts = left_exts.get_sorted();
-    auto sorted_rights = right_exts.get_sorted();
-    char left = sorted_lefts[0].first;
-    int leftmax = sorted_lefts[0].second;
-    int leftmin = sorted_lefts[1].second;
-    char right = sorted_rights[0].first;
-    int rightmax = sorted_rights[0].second;
-    int rightmin = sorted_rights[1].second;
-    assert(_dynamic_min_depth > 0);
-    int dmin_dyn = (1.0 - _dynamic_min_depth) * count;      // integer floor
-    if (dmin_dyn < 2) dmin_dyn = 2;
-    if (leftmax < dmin_dyn) left = 'X';
-    else if (leftmin >= dmin_dyn) left = 'F';
-    if (rightmax < dmin_dyn) right = 'X';
-    else if (rightmin >= dmin_dyn) right = 'F';
-    return {left, right};
+  char get_ext(ExtCounts &ext_counts) {
+    auto sorted_counts = ext_counts.get_sorted();
+    int top_count = sorted_counts[0].second;
+    int runner_up_count = sorted_counts[1].second;
+    int dmin_dyn = max((1.0 - _dynamic_min_depth) * count, 2.0);
+    if (top_count < dmin_dyn) return 'X';
+    if (runner_up_count >= dmin_dyn) return 'F';
+    return sorted_counts[0].first;
+    /*
+    // FIXME: this is not very helpful. With qual_cutoff = 20) it increases ctgy & coverage a little bit, but at a cost
+    // of increased msa. We really need to try both low q (qual cutoff 10) and hi q, as we do with localassm.
+    double dmin_dyn = max(2.0, LASSM_MIN_EXPECTED_DEPTH * count);
+    if ((top_count < dmin_dyn && runner_up_count > 0) || (top_count >= dmin_dyn && runner_up_count >= dmin_dyn)) return 'F';
+    return sorted_counts[0].first;
+    */
   }
+
+  char get_left_ext() {
+    return get_ext(left_exts);
+  }
+
+  char get_right_ext() {
+    return get_ext(right_exts);
+  }
+  
 };
   
 #ifdef USE_BYTELL
@@ -263,8 +270,9 @@ class KmerDHT {
                          "G", kmer_counts->right_exts.count_G, " T", kmer_counts->right_exts.count_T, "\n");
         if (!kmer_counts->from_ctg) {
           // existing kmer is from a read, only replace with new contig kmer if the existing kmer is not UU
-          auto exts = kmer_counts->get_exts();
-          if (exts.first == 'X' || exts.first == 'F' || exts.second == 'X' || exts.second == 'F') {
+          char left_ext = kmer_counts->get_left_ext();
+          char right_ext = kmer_counts->get_right_ext();
+          if (left_ext == 'X' || left_ext == 'F' || right_ext == 'X' || right_ext == 'F') {
             // non-UU, replace
             insert = true;
             // but keep the count from the read kmer
@@ -513,9 +521,8 @@ public:
     Timer timer(__func__);
     for (auto &elem : *kmers) {
       auto kmer_counts = &elem.second;
-      auto exts = kmer_counts->get_exts();
-      kmer_counts->left = exts.first;
-      kmer_counts->right = exts.second;
+      kmer_counts->left = kmer_counts->get_left_ext();
+      kmer_counts->right = kmer_counts->get_right_ext();
     }
  }
   
