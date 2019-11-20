@@ -15,7 +15,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_CXX_COMPILER upcxx)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
+endif()
 
 add_definitions(-DMAX_KMER_LEN=160)
 # quality encoding is logarithmic, so the probability of an error is:
