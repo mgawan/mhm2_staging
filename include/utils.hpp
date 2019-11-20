@@ -443,8 +443,15 @@ static string remove_file_ext(const string &fname) {
   return fname.substr(0, lastdot); 
 }
 
+static string get_basename(const string &fname) {
+  size_t i = fname.rfind('/', fname.length());
+  if (i != string::npos) return(fname.substr(i + 1, fname.length() - i));
+  return "";
+}
+    
 static string get_merged_reads_fname(const string &reads_fname) {
-  string out_fname = remove_file_ext(reads_fname) + "-merged.fastq.gz";
+  // always relative to the current working directory
+  string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq.gz";
   get_rank_path(out_fname, upcxx::rank_me());
   return out_fname;
 }
