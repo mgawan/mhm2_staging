@@ -12,8 +12,6 @@
 #include "kmer_dht.hpp"
 
 
-//#define USE_GLOBAL_DBJG_APPROACH
-
 using namespace std;
 using namespace upcxx;
 
@@ -154,26 +152,6 @@ struct MerFreqs {
   // the count of the final extension
   int count;
 
-#ifdef USE_GLOBAL_DBJG_APPROACH    
-  void set_ext(double dynamic_min_depth, int count) {
-    // this sets extensions according to the algorithm used for global dbjg traversals
-    auto sorted_exts = hi_q_exts.get_sorted();
-    ext = sorted_exts[0].first;
-    int ext_max = sorted_exts[0].second;
-    int ext_min = sorted_exts[1].second;
-    int dmin_dyn = (1.0 - dynamic_min_depth) * count;      // integer floor
-    if (dmin_dyn < 2) dmin_dyn = 2;
-    count = ext_max;
-    if (ext_max < dmin_dyn) {
-      ext = 'X';
-      count = 0;
-    } else if (ext_min >= dmin_dyn) {
-      ext = 'F';
-      count = 0;
-    }
-  }
-  
-#else
   struct MerBase {
     char base;
     uint16_t nvotes_hi_q, nvotes, rating;
@@ -242,7 +220,6 @@ struct MerFreqs {
       }
     }
   }
-#endif
   
 };
 

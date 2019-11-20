@@ -177,8 +177,6 @@ class KmerDHT {
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X',
                                    .count = 1, .from_ctg = false, .visited = -1, .start_walk_us = 0 };
-        //inc_ext(kmer_counts.left_exts, merarr_and_ext.left, 1);
-        //inc_ext(kmer_counts.right_exts, merarr_and_ext.right, 1);
         kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
         kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
@@ -189,8 +187,6 @@ class KmerDHT {
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;
-        //inc_ext(kmer->left_exts, merarr_and_ext.left, 1);
-        //inc_ext(kmer->right_exts, merarr_and_ext.right, 1);
         kmer->left_exts.inc(merarr_and_ext.left, 1);
         kmer->right_exts.inc(merarr_and_ext.right, 1);
       }
@@ -230,8 +226,6 @@ class KmerDHT {
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = 1,
                                    .from_ctg = false, .visited = -1, .start_walk_us = 0 };
-        //inc_ext(kmer_counts.left_exts, merarr_and_ext.left, 1);
-        //inc_ext(kmer_counts.right_exts, merarr_and_ext.right, 1);
         kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
         kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
@@ -242,8 +236,6 @@ class KmerDHT {
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;
-        //inc_ext(kmer->left_exts, merarr_and_ext.left, 1);
-        //inc_ext(kmer->right_exts, merarr_and_ext.right, 1);
         kmer->left_exts.inc(merarr_and_ext.left, 1);
         kmer->right_exts.inc(merarr_and_ext.right, 1);
       }
@@ -285,8 +277,6 @@ class KmerDHT {
           auto kmer = &it->second;
           int new_count = kmer->count + merarr_and_ext.count;
           kmer->count = (new_count < numeric_limits<uint16_t>::max()) ? new_count : numeric_limits<uint16_t>::max();
-          //inc_ext(kmer->left_exts, merarr_and_ext.left, merarr_and_ext.count);
-          //inc_ext(kmer->right_exts, merarr_and_ext.right, merarr_and_ext.count);
           kmer->left_exts.inc(merarr_and_ext.left, merarr_and_ext.count);
           kmer->right_exts.inc(merarr_and_ext.right, merarr_and_ext.count);
         }
@@ -295,8 +285,6 @@ class KmerDHT {
         uint16_t count = merarr_and_ext.count;
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = count,
                                    .from_ctg = true, .visited = -1, .start_walk_us = 0 };
-        //inc_ext(kmer_counts.left_exts, merarr_and_ext.left, count);
-        //inc_ext(kmer_counts.right_exts, merarr_and_ext.right, count);
         kmer_counts.left_exts.inc(merarr_and_ext.left, count);
         kmer_counts.right_exts.inc(merarr_and_ext.right, count);
         (*kmers)[new_kmer] = kmer_counts;
@@ -304,28 +292,7 @@ class KmerDHT {
     }
   };
   dist_object<InsertCtgKmer> insert_ctg_kmer;
-  /*
-  static void inc_ext(ExtCounts &ext_counts, char ext, int count) {
-    switch (ext) {
-      case 'A': 
-        count += ext_counts.count_A;
-        ext_counts.count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'C': 
-        count += ext_counts.count_C;
-        ext_counts.count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'G':
-        count += ext_counts.count_G;
-        ext_counts.count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'T': 
-        count += ext_counts.count_T;
-        ext_counts.count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-    }
-  }
-  */
+  
 public:
 
   KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom)
@@ -479,7 +446,8 @@ public:
 
     double init_mem_free = get_free_mem_gb();
     barrier();
-    initial_kmer_dht_reservation = (int64_t) (cardinality2 * (1+BLOOM_FP) * (1+BLOOM_FP) + 1000); // two bloom false positive rates applied
+    // two bloom false positive rates applied
+    initial_kmer_dht_reservation = (int64_t) (cardinality2 * (1+BLOOM_FP) * (1+BLOOM_FP) + 1000); 
     kmers->reserve( initial_kmer_dht_reservation );
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer) + sizeof(KmerCounts));
     SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",

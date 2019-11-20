@@ -187,8 +187,6 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
   Timer timer(__func__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
-  //double tot_depth_diff = 0;
-  //int max_depth_diff = 0, min_depth_diff = 100000;
   ProgressBar progbar(ctgs.size(), "Adding extra contig kmers");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
@@ -198,13 +196,6 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
-        /*
-        uint16_t depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
-        int depth_diff = depth - ctg->depth;
-        tot_depth_diff += depth_diff;
-        max_depth_diff = max(depth_diff, max_depth_diff);
-        min_depth_diff = min(depth_diff, min_depth_diff);
-        */
         uint16_t depth = ctg->depth;
         kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], depth, CTG_KMERS_PASS);
         num_kmers++;
@@ -213,8 +204,6 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
     progress();
   }
   progbar.done();
-  //SOUT("av depth diff over ", num_kmers, " kmers: ", tot_depth_diff /  num_kmers, " max ", max_depth_diff,
-  //       " min ", min_depth_diff, "\n");
   kmer_dht->flush_updates(CTG_KMERS_PASS);
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
