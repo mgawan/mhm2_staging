@@ -12,7 +12,7 @@
 #include "kmer_dht.hpp"
 
 
-#define USE_GLOBAL_DBJG_APPROACH
+//#define USE_GLOBAL_DBJG_APPROACH
 
 using namespace std;
 using namespace upcxx;
@@ -203,18 +203,16 @@ struct MerFreqs {
     }
     // sort bases in descending order of quality
     sort(mer_bases, mer_bases + sizeof(mer_bases) / sizeof(mer_bases[0]),
-         [](const auto &elem1, const auto &elem2) {
-           if (elem1.rating > elem2.rating) return 1;
-           if (elem1.rating < elem2.rating) return -1;
-           if (elem1.nvotes_hi_q > elem2.nvotes_hi_q) return 1;
-           if (elem1.nvotes_hi_q < elem2.nvotes_hi_q) return -1;
-           if (elem1.nvotes > elem2.nvotes) return 1;
-           if (elem1.nvotes < elem2.nvotes) return -1;
-           return 0;
+         [](const auto &elem1, const auto &elem2) -> bool {
+           if (elem1.rating != elem2.rating) return elem1.rating > elem2.rating;
+           if (elem1.nvotes_hi_q != elem2.nvotes_hi_q) return elem1.nvotes_hi_q > elem2.nvotes_hi_q;
+           if (elem1.nvotes != elem2.nvotes) return elem1.nvotes > elem2.nvotes;
+           return true;
          });
     int top_rating = mer_bases[0].rating;
     int runner_up_rating = mer_bases[1].rating;
-    assert(top_rating > runner_up_rating);
+    if (top_rating < runner_up_rating) DIE("top_rating ", top_rating, " < ", runner_up_rating, "\n");
+    assert(top_rating >= runner_up_rating);
     int top_rated_base = mer_bases[0].base;
     ext = 'X';
     count = 0;
@@ -427,7 +425,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
       if (ext == 'N') continue;
       int qual = read_seq.quals[ext_pos] - qual_offset;
       if (qual >= LASSM_MIN_QUAL) it->second.low_q_exts.inc(ext, 1);
-      if (qual > LASSM_MIN_HI_QUAL) it->second.hi_q_exts.inc(ext, 1);
+      if (qual >= LASSM_MIN_HI_QUAL) it->second.hi_q_exts.inc(ext, 1);
     }
   }
   // now set extension choices
@@ -493,6 +491,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
     count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth);
     string mer = seq.substr(seq.length() - mer_len);
     string walk = "";
+    int walk_depth;
     char walk_result = walk_mers(mers_ht, mer, walk, walk_depth, mer_len, walk_len_limit);
     int walk_len = walk.length();
     if (walk_len > longest_walk.length()) longest_walk = walk;
