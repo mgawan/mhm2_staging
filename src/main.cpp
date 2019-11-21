@@ -40,8 +40,8 @@ void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fna
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 //void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
-void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
-                     int max_ctg_cache, Contigs &ctgs, Alns &alns);
+void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, 
+                     int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
                int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
@@ -101,8 +101,10 @@ int main(int argc, char **argv) {
         int seed_space = 1;
         if (kmer_len < 22) seed_space = 4;
         else if (kmer_len < 56) seed_space = 2;
-        find_alignments(kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                        ctgs, alns);
+        find_alignments(kmer_len, seed_space, options->reads_fname_list,
+                        options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
+        barrier();
+        exit(0);
         localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
                   options->qual_offset, options->dynamic_min_depth, ctgs, alns);
       }

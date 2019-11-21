@@ -278,6 +278,19 @@ public:
                  return it->second;
                }, kmer.get_array(), kmer_map);
   }
+/*
+  future<> get_ctgs_with_kmer(Kmer &kmer) {
+    return rpc(get_target_rank(kmer),
+               [](MerArray merarr, dist_object<kmer_map_t> &kmer_map) {
+
+                   Kmer kmer(merarr);
+                   const auto it = kmer_map->find(kmer);
+                   if (it == kmer_map->end()) return {};
+                   return it->second;
+
+               }, kmer.get_array(), kmer_map);
+  }
+*/
 
   // this is really only for debugging
   void dump_ctg_kmers() {
@@ -305,12 +318,12 @@ public:
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
   
-  void compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, string rseq) {
+  void compute_alns_for_read(aligned_ctgs_map_t &aligned_ctgs_map, const string &rname, string rseq) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     future<> all_fut = make_future();
     Alns read_alns;
-    for (auto &elem : *aligned_ctgs_map) {
+    for (auto &elem : aligned_ctgs_map) {
       progress();
       // drop alns for reads with too many alns
       if (read_alns.size() >= MAX_ALNS_PER_READ) break;
@@ -391,7 +404,6 @@ public:
       num_alns++;
     }
 
-    delete aligned_ctgs_map;
     // only add alns if there are not too many for this read
     if (read_alns.size() < MAX_ALNS_PER_READ) {
       sort(read_alns.begin(), read_alns.end(), 
@@ -440,12 +452,16 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
   }
 }
 
+
 static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<string> &reads_fname_list) {
   Timer timer(__func__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
   int64_t num_reads_aligned = 0;
-  chrono::duration<double> compute_alns_dt(0);
+  IntermittentTimer compute_alns_timer("Compute alns");
+  IntermittentTimer get_reads_timer("Get reads");
+  IntermittentTimer get_kmers_timer("Get kmers");
+  IntermittentTimer get_ctgs_timer("Get ctgs with kmer");
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
@@ -453,10 +469,13 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
     string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
-    // keep track of all futures to enable asynchrony at the file level
-    vector<future<> > reads_futures;
+    aligned_ctgs_map_t aligned_ctgs_map;
+    // should be enough to cover any short read size
+    aligned_ctgs_map.reserve(250);
     while (true) {
+      get_reads_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
+      get_reads_timer.stop();
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
@@ -464,12 +483,14 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
       // accumulate all the ctgs that align to this read at any position in a hash table to filter out duplicates
       // this is dynamically allocated and deleted in the final .then callback when the computation is over
       // a mapping of cid to {pos in read, is_rc, ctg location)
-      auto aligned_ctgs_map = new aligned_ctgs_map_t();
+      get_kmers_timer.start();
       auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq);
+      get_kmers_timer.stop();
       tot_num_kmers += kmers.size();
       // get all the seeds/kmers for a read, and add all the potential ctgs for aln to the aligned_ctgs_map
       // when the read future chain is completed, all the ctg info will be collected and the alignment can happen
       // FIXME: if using a seed > 1 and no alns are found, repeat with a seed of 1
+      get_ctgs_timer.start();
       future<> read_fut_chain = make_future();
       for (int i = 0; i < kmers.size(); i += seed_space) {
         Kmer kmer = kmers[i];
@@ -487,13 +508,13 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
         // Note: for the smaller seeds, we can keep track of whether we've fetched this kmer before, and not
         // fetch it again (cache this result). For the longer seeds (99) this won't help because the seeds are almost
         // unique
-        
+
         // add the fetched ctg into the unordered map
         auto fut = kmer_ctg_dht.get_ctgs_with_kmer(kmer).then(
-          [=](vector<CtgLoc> aligned_ctgs) {
+          [&](vector<CtgLoc> aligned_ctgs) {
             for (auto ctg_loc : aligned_ctgs) {
               // ensures only the first kmer to cid mapping is retained - copies will not be inserted
-              aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
+              aligned_ctgs_map.insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
             }
           });
         read_fut_chain = when_all(read_fut_chain, fut);
@@ -501,10 +522,12 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
       }
       // when all the ctgs are fetched, do the alignments
       read_fut_chain.wait();
-      if (aligned_ctgs_map->size()) num_reads_aligned++;
-      auto t = NOW();
+      get_ctgs_timer.stop();
+      if (aligned_ctgs_map.size()) num_reads_aligned++;
+      compute_alns_timer.start();
       kmer_ctg_dht.compute_alns_for_read(aligned_ctgs_map, read_id, read_seq);
-      compute_alns_dt += (NOW() - t);
+      compute_alns_timer.stop();
+      aligned_ctgs_map.clear();
       num_reads++;
     }
     progbar.done();
@@ -534,16 +557,14 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
   SLOG_VERBOSE("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
                "max ", setprecision(2), fixed, max_ssw_secs, " s, ",
                "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
-
-  double av_compute_alns_secs = reduce_one(compute_alns_dt.count(), op_fast_add, 0).wait() / rank_n();
-  double max_compute_alns_secs = reduce_one(compute_alns_dt.count(), op_fast_max, 0).wait();
-  SLOG_VERBOSE("Average compute_alns time ", setprecision(2), fixed, av_compute_alns_secs, " s, ",
-               "max ", setprecision(2), fixed, max_compute_alns_secs, " s, ",
-               "balance ", setprecision(2), fixed, av_compute_alns_secs / max_compute_alns_secs, "\n");
+  compute_alns_timer.done_barrier();
+  get_reads_timer.done_barrier();
+  get_kmers_timer.done_barrier();
+  get_ctgs_timer.done_barrier();
 }
 
-void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, int max_store_size,
-                     int max_ctg_cache, Contigs &ctgs, Alns &alns) {
+void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, 
+                     int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns) {
   Timer timer(__func__, true);
   _num_dropped = 0;
   SLOG("Aligning with seed length ", kmer_len, " and seed space ", seed_space, "\n");

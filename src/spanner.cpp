@@ -363,7 +363,8 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
   progbar.done();
   spans_file.close();
   barrier();
-
+  t_get_alns.done_barrier();
+  
   auto tot_num_pairs = reduce_one(num_pairs, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs and rejected:\n");
   SLOG_VERBOSE("  small:     ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SMALL], op_fast_add, 0).wait(), "\n");

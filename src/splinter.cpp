@@ -161,6 +161,7 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   }
   progbar.done();
   barrier();
+  t_get_alns.done_barrier();
   stats.print();
   SLOG_VERBOSE("Found ", reduce_one(num_splints, op_fast_add, 0).wait(), " splints\n");
 }
