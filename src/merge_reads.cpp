@@ -144,10 +144,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
   for (auto const &reads_fname : reads_fname_list) {
     string out_fname = get_merged_reads_fname(reads_fname);
     // skip if the file already exists
-    if (file_exists(out_fname)) {
-      SLOG("File ", out_fname, " already exists, skipping...\n");
-      continue;
-    }
+    if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, overwriting...\n");
 
     // FIXME: unique number id (uint64_t) for reads
     // - do a reduction to find the max of all those estimates
