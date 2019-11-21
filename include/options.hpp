@@ -7,7 +7,7 @@
 #include <upcxx/upcxx.hpp>
 
 #include "utils.hpp"
-#include "argh.hpp"
+#include "CLI11.hpp"
 
 using std::cout;
 using std::endl;
@@ -25,13 +25,6 @@ class Options {
     return split_content;
   }
 
-  void get_options(argh::parser &parser, string &usage) {
-    vector<string> lines = splitter(R"(\n)", usage);
-    for (string line: lines) {
-      parser.add_param(line.substr(0, 2));
-    }
-  }
-  
 public:
   
   vector<string> reads_fname_list;
@@ -45,69 +38,50 @@ public:
   double dynamic_min_depth = 0.9;
   bool checkpoint = false;
   string ctgs_fname;
-  int insert_avg = 320;
-  int insert_stddev = 30;
+  int insert_avg = 0;
+  int insert_stddev = 0;
 
   
   void load(int argc, char **argv) {
-    string usage = string(argv[0]) + "\n" +
-      "-r    readsfile       Files containing merged and unmerged reads in FASTQ format (comma separated)\n" + 
-      "-k    kmerlens        kmer lengths\n" +
-      "-k    prevkmerlen     prev kmer length used for generating contigs (optional)\n" +
-      "-Q    qualoffset      Phred encoding offset\n" +
-      "-m    maxkmerstore    Maximum size for kmer store\n" +
-      "-C    maxctgcache     Maximum number of entries for contig cache in aligner\n" + 
-      "-d    mindepthcutoff  Min. allowable depth\n" +
-      "-D    dynamicmindepth Dynamic min depth setting\n" +
-      "-c    string          File with contigs for restart\n" +
-      "-b    bool            Use bloom filter to reduce memory at the increase of runtime\n" +
-      "-x    bool            Checkpoint after each contig round\n" +
-      "-s    scaffkmerlens   Kmer lengths for scaffolding rounds\n" +
-      "-i    insavg:stddev   Average insert length:standard deviation in insert size\n" + 
-      "-v                    Verbose mode\n" + 
-      "-h                    Display help message\n";
-
-    SLOG(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
-
-    argh::parser args;
-    get_options(args, usage);
-    args.parse(argc, argv);
+    //SLOG(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
+    CLI::App app("MHM (version) " + string(MHM_VERSION));
 
     string reads_fnames;
-    if (!(args("-r") >> reads_fnames) || args["-h"]) {
-      SOUT(usage);
+    string kmer_lens_str;
+    string scaff_kmer_lens_str;
+    string ins_size_params;
+
+    app.add_option("-r, --reads", reads_fnames, "Files containing merged and unmerged reads in FASTQ format (comma separated)")
+      -> required();
+    app.add_option("-k, --kmer-lens", kmer_lens_str, "kmer lengths (comma separated)");
+    app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens_str, "kmer lengths for scaffolding (comma separated)");
+    app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
+    app.add_option("--max-kmer-store", max_kmer_store,
+                   "Maximum size for kmer store (default " + to_string(max_kmer_store) + ")");
+    app.add_option("--max-ctg-cache", max_ctg_cache,
+                   "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
+    app.add_option("--dynamic-min-depth", dynamic_min_depth,
+                   "Dynamic min. depth for DeBruijn graph traversal (default " + to_string(dynamic_min_depth) + ")");
+    app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
+    app.add_flag("--use-bloom, !--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
+    app.add_flag("--checkpoint, !--checkpoint", checkpoint, "Checkpoint after each contig round");
+    app.add_flag("-v, --verbose, !-v, !--verbose", verbose, "Verbose output");
+    app.add_option("-i, --insert", ins_size_params, "Average insert length:standard deviation in insert size")
+      ->required();
+
+    try {
+      app.parse(argc, argv);
+    } catch(const CLI::ParseError &e) {
+      if (upcxx::rank_me() == 0) exit(app.exit(e));
       upcxx::barrier();
-      upcxx::finalize();
-      exit(0);
     }
+
     reads_fname_list = split(reads_fnames, ',');
-    
-    string kmer_lens_str = "";
-    if (args("-k") >> kmer_lens_str) {
-      auto kmer_lens_split = split(kmer_lens_str, ',');
-      for (auto kmer_len : kmer_lens_split) kmer_lens.push_back(std::stoi(kmer_len.c_str()));
-    }
-
-    string scaff_kmer_lens_str = "";
-    if (args("-s") >> scaff_kmer_lens_str) {
-      auto scaff_kmer_lens_split = split(scaff_kmer_lens_str, ',');
-      for (auto scaff_kmer_len : scaff_kmer_lens_split) scaff_kmer_lens.push_back(std::stoi(scaff_kmer_len.c_str()));
-    }
-
-    string ins_size_params = "";
-    if (args("-i") >> ins_size_params) {
-      auto ins_size_params_split = split(ins_size_params, ':');
-      insert_avg = std::stoi(ins_size_params_split[0]);
-      insert_stddev = std::stoi(ins_size_params_split[1]);
-    }
-    args("-Q") >> qual_offset;
-    args("-m") >> max_kmer_store;
-    args("-C") >> max_ctg_cache;
-    args("-D") >> dynamic_min_depth;
-    args("-c") >> ctgs_fname;
-    if (args["-b"]) use_bloom = true;
-    if (args["-x"]) checkpoint = true;
-    if (args["-v"]) verbose = true;
+    for (auto kmer_len : split(kmer_lens_str, ',')) kmer_lens.push_back(std::stoi(kmer_len.c_str()));
+    for (auto scaff_kmer_len : split(scaff_kmer_lens_str, ',')) scaff_kmer_lens.push_back(std::stoi(scaff_kmer_len.c_str()));
+    auto ins_size_params_list = split(ins_size_params, ':');
+    insert_avg = std::stoi(ins_size_params_list[0]);
+    insert_stddev = std::stoi(ins_size_params_list[1]);
 
     if (upcxx::rank_me() == 0) {
       // print out all compiler definitions
@@ -117,9 +91,15 @@ public:
       for (auto &def : all_defs) SLOG("  ", def, "\n");
       SLOG(KLBLUE, "_________________________\n");
       SLOG("MHM options:\n");
-      SLOG("  (-r) reads files:           ", reads_fnames, "\n");
-      SLOG("  (-k) kmer lengths:          ", kmer_lens_str, "\n");
-      SLOG("  (-s) scaffold kmer lengths: ", scaff_kmer_lens_str, "\n");
+      SLOG("  (-r) reads files:           ");
+      for (auto read_fname : reads_fname_list) SLOG(read_fname, ",");
+      SLOG("\n");
+      SLOG("  (-k) kmer lengths:          ");
+      for (auto kmer_len : kmer_lens) SLOG(kmer_len, ",");
+      SLOG("\n");
+      SLOG("  (-s) scaffold kmer lengths: ");
+      for (auto scaff_kmer_len : scaff_kmer_lens) SLOG(scaff_kmer_len, ",");
+      SLOG("\n");
       SLOG("  (-Q) quality offset:        ", qual_offset, "\n");
       SLOG("  (-m) max kmer store:        ", max_kmer_store, "\n");
       SLOG("  (-C) max ctg cache:         ", max_ctg_cache, "\n");
