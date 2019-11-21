@@ -34,9 +34,9 @@ public:
   bool verbose = false;
   int max_kmer_store = ONE_MB;
   int max_ctg_cache = 1000000;
-  bool use_bloom = false;
+  bool use_bloom = true;
   double dynamic_min_depth = 0.9;
-  bool checkpoint = false;
+  bool checkpoint = true;
   string ctgs_fname;
   int insert_avg = 0;
   int insert_stddev = 0;
@@ -53,21 +53,21 @@ public:
 
     app.add_option("-r, --reads", reads_fnames, "Files containing merged and unmerged reads in FASTQ format (comma separated)")
       -> required();
+    app.add_option("-i, --insert", ins_size_params, "Average insert length:standard deviation in insert size")
+      ->required();
     app.add_option("-k, --kmer-lens", kmer_lens_str, "kmer lengths (comma separated)");
     app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens_str, "kmer lengths for scaffolding (comma separated)");
     app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
+    app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
+    app.add_option("--dynamic-min-depth", dynamic_min_depth,
+                   "Dynamic min. depth for DeBruijn graph traversal (default " + to_string(dynamic_min_depth) + ")");
     app.add_option("--max-kmer-store", max_kmer_store,
                    "Maximum size for kmer store (default " + to_string(max_kmer_store) + ")");
     app.add_option("--max-ctg-cache", max_ctg_cache,
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
-    app.add_option("--dynamic-min-depth", dynamic_min_depth,
-                   "Dynamic min. depth for DeBruijn graph traversal (default " + to_string(dynamic_min_depth) + ")");
-    app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
-    app.add_flag("--use-bloom, !--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
-    app.add_flag("--checkpoint, !--checkpoint", checkpoint, "Checkpoint after each contig round");
-    app.add_flag("-v, --verbose, !-v, !--verbose", verbose, "Verbose output");
-    app.add_option("-i, --insert", ins_size_params, "Average insert length:standard deviation in insert size")
-      ->required();
+    app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
+    app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round");
+    app.add_flag("-v, --verbose", verbose, "Verbose output");
 
     try {
       app.parse(argc, argv);
