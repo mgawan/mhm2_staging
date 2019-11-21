@@ -10,6 +10,7 @@
 #include <limits>
 #include <upcxx/upcxx.hpp>
 
+#include "bytell_hash_map.hpp"
 #include "colors.h"
 
 using std::string;
@@ -31,6 +32,14 @@ using std::min;
 
 #define ONE_MB (1024*1024)
 #define ONE_GB (ONE_MB*1024)
+
+#ifdef USE_BYTELL
+#define HASH_TABLE ska::bytell_hash_map
+#else
+#define HASH_TABLE std::unordered_map
+#endif
+
+
 
 // this shouldn't really be defined here, but I didn't want yet another header file
 enum class QualityLevel {

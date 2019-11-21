@@ -9,7 +9,6 @@
 #include <stdarg.h>
 #include <upcxx/upcxx.hpp>
 
-#include "bytell_hash_map.hpp"
 #include "progressbar.hpp"
 #include "utils.hpp"
 #include "kmer.hpp"
@@ -148,11 +147,7 @@ struct KmerCounts {
   
 };
   
-#ifdef USE_BYTELL
-using KmerMap = ska::bytell_hash_map<Kmer, KmerCounts, KmerHash, KmerEqual>;
-#else
-using KmerMap = std::unordered_map<Kmer, KmerCounts, KmerHash, KmerEqual>;
-#endif
+using KmerMap = HASH_TABLE<Kmer, KmerCounts, KmerHash, KmerEqual>;
 
 
 class KmerDHT {

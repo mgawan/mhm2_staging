@@ -25,7 +25,7 @@ class ReadsToCtgsDHT {
     char side;
   };
 
-  using reads_to_ctgs_map_t = unordered_map<string, vector<CtgInfo> >;
+  using reads_to_ctgs_map_t = HASH_TABLE<string, vector<CtgInfo> >;
   dist_object<reads_to_ctgs_map_t> reads_to_ctgs_map;
 
   size_t get_target_rank(string read_id) {
@@ -82,7 +82,7 @@ struct CtgWithReads {
 
 class CtgsWithReadsDHT {
   
-  using ctgs_map_t = unordered_map<int64_t, CtgWithReads>;
+  using ctgs_map_t = HASH_TABLE<int64_t, CtgWithReads>;
   dist_object<ctgs_map_t> ctgs_map;
   ctgs_map_t::iterator ctgs_map_iter;
 
@@ -224,7 +224,7 @@ struct MerFreqs {
 };
 
 
-using MerMap = unordered_map<string, MerFreqs>;
+using MerMap = HASH_TABLE<string, MerFreqs>;
 
 static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsToCtgsDHT &reads_to_ctgs, CtgsWithReadsDHT &ctgs_dht) {
   Timer timer(__func__, true);
@@ -416,7 +416,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
 static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, int walk_len_limit) {
   bool have_forked = false;
   int nsteps = 0;
-  unordered_map<string, bool> loop_check_ht;
+  HASH_TABLE<string, bool> loop_check_ht;
   char walk_result = 'X';
   for (int nsteps = 0; nsteps < walk_len_limit; nsteps++) {
     // check for a cycle in the graph

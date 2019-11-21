@@ -44,7 +44,7 @@ struct CtgLoc {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 
-using aligned_ctgs_map_t = unordered_map<cid_t, tuple<int, bool, CtgLoc>>;
+using aligned_ctgs_map_t = HASH_TABLE<cid_t, tuple<int, bool, CtgLoc>>;
 
 
 class KmerCtgDHT {
@@ -56,7 +56,7 @@ class KmerCtgDHT {
 
   AggrStore<MerarrAndCtgLoc> kmer_store;
   
-  using kmer_map_t = unordered_map<Kmer, vector<CtgLoc> >;
+  using kmer_map_t = HASH_TABLE<Kmer, vector<CtgLoc> >;
   dist_object<kmer_map_t> kmer_map;
 #ifdef DUMP_ALNS
   zstr::ofstream *alns_file;
@@ -68,7 +68,7 @@ class KmerCtgDHT {
   
   chrono::duration<double> ssw_dt;
   int max_ctg_seq_cache_size;
-  unordered_map<cid_t, string> ctg_seq_cache;
+  HASH_TABLE<cid_t, string> ctg_seq_cache;
   int num_ctg_seq_cache_hits;
   int64_t ctg_seq_bytes_fetched;
   
@@ -269,6 +269,7 @@ public:
     barrier();
   }
 
+
   future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer &kmer) {
     return rpc(get_target_rank(kmer),
                [](MerArray merarr, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
@@ -276,21 +277,10 @@ public:
                  const auto it = kmer_map->find(kmer);
                  if (it == kmer_map->end()) return {};
                  return it->second;
+                 return {};
                }, kmer.get_array(), kmer_map);
   }
-/*
-  future<> get_ctgs_with_kmer(Kmer &kmer) {
-    return rpc(get_target_rank(kmer),
-               [](MerArray merarr, dist_object<kmer_map_t> &kmer_map) {
 
-                   Kmer kmer(merarr);
-                   const auto it = kmer_map->find(kmer);
-                   if (it == kmer_map->end()) return {};
-                   return it->second;
-
-               }, kmer.get_array(), kmer_map);
-  }
-*/
 
   // this is really only for debugging
   void dump_ctg_kmers() {
@@ -339,10 +329,6 @@ public:
         pos_in_read = rlen - (kmer_len + pos_in_read);
         rseq_ptr = &rseq_rc;
       }
-
-      // FIXME: keep track of all alignments to each contig, and for each seed, look to see if there's already an alignment to
-      // the contig that covers that seed. If so, don't align it.
-
       // calculate available bases before and after the seeded kmer
       int ctg_bases_left_of_kmer = ctg_loc.pos_in_ctg;
       int ctg_bases_right_of_kmer = ctg_loc.clen - ctg_bases_left_of_kmer - kmer_len;

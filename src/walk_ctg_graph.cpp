@@ -242,7 +242,7 @@ static string vertex_list_to_cid_string(vector<shared_ptr<Vertex> > &vertices) {
 
 static cid_t bfs_branch(shared_ptr<Vertex> curr_v, int end, double walk_depth) {
   queue<pair<shared_ptr<Vertex>, int> > q;
-  unordered_map<cid_t, bool> visited;
+  HASH_TABLE<cid_t, bool> visited;
 
   vector<shared_ptr<Vertex> > frontier = {};
   
@@ -348,7 +348,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
   for (auto nb_cids : nbs_cids) nb_edges.push_back(_graph->get_edge_cached(curr_v->cid, nb_cids.back()));
   
   vector<pair<int, int> > candidate_branches;
-  unordered_map<cid_t, int> candidates;
+  HASH_TABLE<cid_t, int> candidates;
   bool bulge = false;
   // candidate first search from each of the neighbors (branches)
   for (int i = 0; i < nb_vertices.size(); i++) {
@@ -469,7 +469,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
 
 static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel quality_level, vector<pair<cid_t, int32_t> > &sorted_ctgs,
                              WalkStats &walk_stats, IntermittentTimer &next_nbs_timer) {
-  auto is_visited = [](unordered_map<cid_t, bool> &visited, shared_ptr<Vertex> v) {
+  auto is_visited = [](HASH_TABLE<cid_t, bool> &visited, shared_ptr<Vertex> v) {
     if (v->visited) return true;
     if (visited.find(v->cid) == visited.end()) return false;
     return true;
@@ -502,7 +502,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
     Orient orient = Orient::NORMAL;
 
     double walk_depth = start_v->depth;
-    unordered_map<cid_t, bool> visited;
+    HASH_TABLE<cid_t, bool> visited;
     visited[start_v->cid] = true;
                 
     walk_vertices.push_front({start_v, orient});

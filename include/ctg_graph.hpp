@@ -19,7 +19,6 @@
 using std::pair;
 using std::string;
 using std::vector;
-using std::unordered_map;
 using std::endl;
 using std::istream;
 using std::ostream;
@@ -316,14 +315,14 @@ struct Vertex {
 
 class CtgGraph {
 private:
-  using vertex_map_t = unordered_map<cid_t, Vertex>;
-  using edge_map_t = unordered_map<CidPair, Edge>;
-  using reads_map_t = unordered_map<string, string>;
+  using vertex_map_t = HASH_TABLE<cid_t, Vertex>;
+  using edge_map_t = HASH_TABLE<CidPair, Edge>;
+  using reads_map_t = HASH_TABLE<string, string>;
   upcxx::dist_object<vertex_map_t> vertices;
   upcxx::dist_object<edge_map_t> edges;
   upcxx::dist_object<reads_map_t> read_seqs;
-  unordered_map<cid_t, shared_ptr<Vertex> > vertex_cache;
-  unordered_map<CidPair, shared_ptr<Edge> > edge_cache;
+  HASH_TABLE<cid_t, shared_ptr<Vertex> > vertex_cache;
+  HASH_TABLE<CidPair, shared_ptr<Edge> > edge_cache;
   const int MAX_CACHE_SIZE = 2000000;
 
   struct VertexDepthInfo {
