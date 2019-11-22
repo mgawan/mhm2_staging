@@ -22,6 +22,11 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 endif()
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
+    # ignore annoying warning on icc
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
+endif()
+
 add_definitions(-DMAX_KMER_LEN=160)
 # quality encoding is logarithmic, so the probability of an error is:
 # cutoff 10: 10% chance
