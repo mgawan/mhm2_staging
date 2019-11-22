@@ -29,6 +29,7 @@ public:
   
   vector<string> reads_fname_list;
   vector<unsigned> kmer_lens = {};
+  int max_kmer_len = 0;
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
@@ -56,6 +57,7 @@ public:
     app.add_option("-i, --insert", ins_size_params, "Average insert length:standard deviation in insert size")
       ->required();
     app.add_option("-k, --kmer-lens", kmer_lens_str, "kmer lengths (comma separated)");
+    app.add_option("--max-kmer-len", max_kmer_len, "Maximum kmer length (only need specify if -k is not specified)");
     app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens_str, "kmer lengths for scaffolding (comma separated)");
     app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
     app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
@@ -91,24 +93,25 @@ public:
       for (auto &def : all_defs) SLOG("  ", def, "\n");
       SLOG(KLBLUE, "_________________________\n");
       SLOG("MHM options:\n");
-      SLOG("  (-r) reads files:           ");
+      SLOG("  reads files:           ");
       for (auto read_fname : reads_fname_list) SLOG(read_fname, ",");
       SLOG("\n");
-      SLOG("  (-k) kmer lengths:          ");
+      SLOG("  kmer lengths:          ");
       for (auto kmer_len : kmer_lens) SLOG(kmer_len, ",");
       SLOG("\n");
-      SLOG("  (-s) scaffold kmer lengths: ");
+      if (max_kmer_len) SLOG("  max kmer length:       ", max_kmer_len, "\n");
+      SLOG("  scaffold kmer lengths: ");
       for (auto scaff_kmer_len : scaff_kmer_lens) SLOG(scaff_kmer_len, ",");
       SLOG("\n");
-      SLOG("  (-Q) quality offset:        ", qual_offset, "\n");
-      SLOG("  (-m) max kmer store:        ", max_kmer_store, "\n");
-      SLOG("  (-C) max ctg cache:         ", max_ctg_cache, "\n");
-      SLOG("  (-D) dynamic min depth:     ", dynamic_min_depth, "\n");
-      if (!ctgs_fname.empty()) SLOG("  (-c) contig file name:      ", ctgs_fname, "\n");
-      SLOG("  (-i) insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
-      SLOG("  (-b) use bloom:             ", YES_NO(use_bloom), "\n");
-      SLOG("  (-x) checkpoint:            ", YES_NO(checkpoint), "\n");
-      SLOG("  (-v) verbose:               ", YES_NO(verbose), "\n");
+      SLOG("  quality offset:        ", qual_offset, "\n");
+      SLOG("  max kmer store:        ", max_kmer_store, "\n");
+      SLOG("  max ctg cache:         ", max_ctg_cache, "\n");
+      SLOG("  dynamic min depth:     ", dynamic_min_depth, "\n");
+      if (!ctgs_fname.empty()) SLOG("  contig file name:      ", ctgs_fname, "\n");
+      SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
+      SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
+      SLOG("  checkpoint:            ", YES_NO(checkpoint), "\n");
+      SLOG("  verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
       
       double start_mem_free = get_free_mem_gb();

@@ -110,7 +110,6 @@ class KmerCtgDHT {
                   int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset, int overlap_len) {
     Aln aln;
     StripedSmithWaterman::Alignment ssw_aln;
-
     // use hamming distance for checking match first - works for > 90% of matches and reduces time spent doing SSW
     //int hdist = hamming_dist(rseq.substr(read_extra_offset, overlap_len), cseq.substr(ctg_extra_offset, overlap_len) , true);
     // allow for ~1% read error and at least 1
@@ -150,10 +149,6 @@ class KmerCtgDHT {
 #ifdef DUMP_ALNS
     *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
 #endif
-          
-    // FIXME: check to see if this alignment is a duplicate of an existing contig alignment. It's a duplicate
-    // if another alignment aligns to exactly the same position in the contig.
-    
     read_alns.add_aln(aln);
   }
   
@@ -310,7 +305,6 @@ public:
   void compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, string rseq) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
-    future<> all_fut = make_future();
     Alns read_alns;
     for (auto &elem : *aligned_ctgs_map) {
       progress();
@@ -438,7 +432,7 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
 }
 
 
-static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<string> &reads_fname_list) {
+static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_list) {
   Timer timer(__func__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
@@ -454,9 +448,6 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
     string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
-    auto aligned_ctgs_map = new aligned_ctgs_map_t;
-    // should be enough to cover any short read size
-    aligned_ctgs_map->reserve(250);
     while (true) {
       get_reads_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
@@ -472,50 +463,66 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
       auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq);
       get_kmers_timer.stop();
       tot_num_kmers += kmers.size();
+      auto aligned_ctgs_map = new aligned_ctgs_map_t;
+      // should be enough to cover any short read size
+      aligned_ctgs_map->reserve(250);
       // get all the seeds/kmers for a read, and add all the potential ctgs for aln to the aligned_ctgs_map
       // when the read future chain is completed, all the ctg info will be collected and the alignment can happen
-      // FIXME: if using a seed > 1 and no alns are found, repeat with a seed of 1
       get_ctgs_timer.start();
-      future<> read_fut_chain = make_future();
-      for (int i = 0; i < kmers.size(); i += seed_space) {
-        Kmer kmer = kmers[i];
-        Kmer kmer_rc = kmer.revcomp();
-        bool is_rc = false;
-        if (kmer_rc < kmer) {
-          kmer = kmer_rc;
-          is_rc = true;
-        }
+      // start with a very high seed space, and then if no alignments are found, halve the seed space and try again,
+      // making sure not to revisit previous positions (hence the hash table
+      unsigned seed_space = 16;
+      HASH_TABLE<int, bool> seed_pos_visited;
+      for (int offset = 0; ; offset++) {
+        future<> read_fut_chain = make_future();
+        for (int i = offset; i < kmers.size(); i += seed_space) {
+          if (aligned_ctgs_map->size() >= MAX_ALNS_PER_READ) break;
+          progress();
+          if (seed_pos_visited.find(i) != seed_pos_visited.end()) continue;
+          seed_pos_visited[i] = true;
+          Kmer kmer = kmers[i];
+          Kmer kmer_rc = kmer.revcomp();
+          bool is_rc = false;
+          if (kmer_rc < kmer) {
+            kmer = kmer_rc;
+            is_rc = true;
+          }
         
-        // FIXME: this is the code that takes 90% of the time. And it seems that the time is taken in the bare rpc
-        // itself, regardless of payload, so this is a latency issue.
-        // Can we aggregate these calls somehow? Collect all calls destined for each target rank, and then issue only
-        // one rpc and receive a bunch of vectors.
-        // Note: for the smaller seeds, we can keep track of whether we've fetched this kmer before, and not
-        // fetch it again (cache this result). For the longer seeds (99) this won't help because the seeds are almost
-        // unique
+          // FIXME: this is the code that takes 90% of the time. And it seems that the time is taken in the bare rpc
+          // itself, regardless of payload, so this is a latency issue.
+          // Can we aggregate these calls somehow? Collect all calls destined for each target rank, and then issue only
+          // one rpc and receive a bunch of vectors.
+          // Note: for the smaller seeds, we can keep track of whether we've fetched this kmer before, and not
+          // fetch it again (cache this result). For the longer seeds (99) this won't help because the seeds are almost
+          // unique
 
-        // add the fetched ctg into the unordered map
-        auto fut = kmer_ctg_dht.get_ctgs_with_kmer(kmer).then(
-          [=](vector<CtgLoc> aligned_ctgs) {
-            for (auto ctg_loc : aligned_ctgs) {
-              // ensures only the first kmer to cid mapping is retained - copies will not be inserted
-              aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
-            }
-          });
-        read_fut_chain = when_all(read_fut_chain, fut);
-        progress();
+          // add the fetched ctg into the hash table
+          auto fut = kmer_ctg_dht.get_ctgs_with_kmer(kmer).then(
+            [=](vector<CtgLoc> aligned_ctgs) {
+              for (auto ctg_loc : aligned_ctgs) {
+                // ensures only the first kmer to cid mapping is retained - copies will not be inserted
+                aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
+                if (aligned_ctgs_map->size() >= MAX_ALNS_PER_READ) break;
+              }
+            });
+          read_fut_chain = when_all(read_fut_chain, fut);
+        }
+        read_fut_chain.wait();
+        if (aligned_ctgs_map->size()) break;
+        if (seed_space == 1) break;
+        seed_space /= 2;
       }
-      // when all the ctgs are fetched, do the alignments
-      read_fut_chain.wait();
       get_ctgs_timer.stop();
-      if (aligned_ctgs_map->size()) num_reads_aligned++;
-      compute_alns_timer.start();
-      kmer_ctg_dht.compute_alns_for_read(aligned_ctgs_map, read_id, read_seq);
-      compute_alns_timer.stop();
-      aligned_ctgs_map->clear();
+      if (aligned_ctgs_map->size()) {
+        // when all the ctgs are fetched, do the alignments
+        num_reads_aligned++;
+        compute_alns_timer.start();
+        kmer_ctg_dht.compute_alns_for_read(aligned_ctgs_map, read_id, read_seq);
+        compute_alns_timer.stop();
+      }
+      delete aligned_ctgs_map;
       num_reads++;
     }
-    delete aligned_ctgs_map;
     progbar.done();
     barrier();
   }
@@ -549,11 +556,10 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
   get_ctgs_timer.done_barrier();
 }
 
-void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, 
+void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
                      int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns) {
   Timer timer(__func__, true);
   _num_dropped = 0;
-  SLOG("Aligning with seed length ", kmer_len, " and seed space ", seed_space, "\n");
   //_get_ctgs_dt = std::chrono::duration<double>(0);
   KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();
@@ -561,7 +567,7 @@ void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &rea
 #ifdef DEBUG
   kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, seed_space, reads_fname_list);
+  do_alignments(kmer_ctg_dht, reads_fname_list);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");

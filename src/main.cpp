@@ -40,7 +40,7 @@ void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fna
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 //void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
-void find_alignments(unsigned kmer_len, unsigned seed_space, vector<string> &reads_fname_list, 
+void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
                      int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
                int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns);
@@ -98,12 +98,7 @@ int main(int argc, char **argv) {
 #endif
       if (kmer_len < options->kmer_lens.back()) {
         Alns alns;
-        unsigned seed_space = 8;
-        //unsigned seed_space = 1;
-        //if (kmer_len < 22) seed_space = 4;
-        //else if (kmer_len < 56) seed_space = 2;
-        find_alignments(kmer_len, seed_space, options->reads_fname_list,
-                        options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
+        find_alignments(kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
         barrier();
         localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
                   options->qual_offset, options->dynamic_min_depth, ctgs, alns);
@@ -118,19 +113,17 @@ int main(int argc, char **argv) {
     }
   }
   if (options->scaff_kmer_lens.size()) {
-    if (!max_kmer_len) max_kmer_len = options->scaff_kmer_lens.front();
-// FIXME: need to derive this even when not given it on the command line    
+    if (!max_kmer_len) {
+      if (options->max_kmer_len) max_kmer_len = options->max_kmer_len;
+      else max_kmer_len = options->scaff_kmer_lens.front();
+    }
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem_gb();
       Kmer::k = scaff_kmer_len;
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
-      // seed space of 1 reduces msa compared to 4 or 8
-      //int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 4);
-      int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 8);
-      find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
-                      ctgs, alns);
+      find_alignments(scaff_kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
