@@ -307,12 +307,12 @@ public:
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
   
-  void compute_alns_for_read(aligned_ctgs_map_t &aligned_ctgs_map, const string &rname, string rseq) {
+  void compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, string rseq) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     future<> all_fut = make_future();
     Alns read_alns;
-    for (auto &elem : aligned_ctgs_map) {
+    for (auto &elem : *aligned_ctgs_map) {
       progress();
       // drop alns for reads with too many alns
       if (read_alns.size() >= MAX_ALNS_PER_READ) break;
@@ -454,9 +454,9 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
     string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
-    aligned_ctgs_map_t aligned_ctgs_map;
+    auto aligned_ctgs_map = new aligned_ctgs_map_t;
     // should be enough to cover any short read size
-    aligned_ctgs_map.reserve(250);
+    aligned_ctgs_map->reserve(250);
     while (true) {
       get_reads_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
@@ -496,10 +496,10 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
 
         // add the fetched ctg into the unordered map
         auto fut = kmer_ctg_dht.get_ctgs_with_kmer(kmer).then(
-          [&](vector<CtgLoc> aligned_ctgs) {
+          [=](vector<CtgLoc> aligned_ctgs) {
             for (auto ctg_loc : aligned_ctgs) {
               // ensures only the first kmer to cid mapping is retained - copies will not be inserted
-              aligned_ctgs_map.insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
+              aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
             }
           });
         read_fut_chain = when_all(read_fut_chain, fut);
@@ -508,13 +508,14 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, unsigned seed_space, vector<
       // when all the ctgs are fetched, do the alignments
       read_fut_chain.wait();
       get_ctgs_timer.stop();
-      if (aligned_ctgs_map.size()) num_reads_aligned++;
+      if (aligned_ctgs_map->size()) num_reads_aligned++;
       compute_alns_timer.start();
       kmer_ctg_dht.compute_alns_for_read(aligned_ctgs_map, read_id, read_seq);
       compute_alns_timer.stop();
-      aligned_ctgs_map.clear();
+      aligned_ctgs_map->clear();
       num_reads++;
     }
+    delete aligned_ctgs_map;
     progbar.done();
     barrier();
   }
