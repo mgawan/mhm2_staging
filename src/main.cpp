@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
 #endif
 
   auto options = make_shared<Options>();
-  options->load(argc, argv);
+  if (!options->load(argc, argv)) return 0;
   set_logger_verbose(options->verbose);
   // get total file size across all libraries
   double tot_file_size = 0;

@@ -43,7 +43,7 @@ public:
   int insert_stddev = 0;
 
   
-  void load(int argc, char **argv) {
+  bool load(int argc, char **argv) {
     //SLOG(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
     CLI::App app("MHM (version) " + string(MHM_VERSION));
 
@@ -74,8 +74,8 @@ public:
     try {
       app.parse(argc, argv);
     } catch(const CLI::ParseError &e) {
-      if (upcxx::rank_me() == 0) exit(app.exit(e));
-      upcxx::barrier();
+      if (upcxx::rank_me() == 0) app.exit(e);
+      return false;
     }
 
     reads_fname_list = split(reads_fnames, ',');
@@ -122,6 +122,7 @@ public:
 #endif
     }
     upcxx::barrier();
+    return true;
   }
 };
 
