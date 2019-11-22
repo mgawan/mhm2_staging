@@ -98,13 +98,13 @@ int main(int argc, char **argv) {
 #endif
       if (kmer_len < options->kmer_lens.back()) {
         Alns alns;
-        int seed_space = 1;
-        if (kmer_len < 22) seed_space = 4;
-        else if (kmer_len < 56) seed_space = 2;
+        unsigned seed_space = 8;
+        //unsigned seed_space = 1;
+        //if (kmer_len < 22) seed_space = 4;
+        //else if (kmer_len < 56) seed_space = 2;
         find_alignments(kmer_len, seed_space, options->reads_fname_list,
                         options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
         barrier();
-        exit(0);
         localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
                   options->qual_offset, options->dynamic_min_depth, ctgs, alns);
       }
@@ -127,7 +127,8 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
       // seed space of 1 reduces msa compared to 4 or 8
-      int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 4);
+      //int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 4);
+      int seed_space = (scaff_kmer_len == max_kmer_len ? 1 : 8);
       find_alignments(scaff_kmer_len, seed_space, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache,
                       ctgs, alns);
 #ifdef DEBUG      
