@@ -277,7 +277,6 @@ public:
                  const auto it = kmer_map->find(kmer);
                  if (it == kmer_map->end()) return {};
                  return it->second;
-                 return {};
                }, kmer.get_array(), kmer_map);
   }
 
