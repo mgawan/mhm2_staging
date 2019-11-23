@@ -41,8 +41,6 @@ public:
   string ctgs_fname;
   int insert_avg = 0;
   int insert_stddev = 0;
-  bool compress_reads = true;
-
   
   bool load(int argc, char **argv) {
     //SLOG(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
@@ -70,7 +68,6 @@ public:
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
     app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
     app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round");
-    app.add_flag("--compress-reads", compress_reads, "Compress read files after merge");
     app.add_flag("-v, --verbose", verbose, "Verbose output");
 
     try {
@@ -112,7 +109,6 @@ public:
       if (!ctgs_fname.empty()) SLOG("  contig file name:      ", ctgs_fname, "\n");
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
-      SLOG("  compress reads:        ", YES_NO(compress_reads), "\n");
       SLOG("  verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
       

@@ -24,7 +24,7 @@ using namespace upcxx;
 extern ofstream _dbgstream;
 extern ofstream _logstream;
 
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list, bool compress_reads) {
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list) {
   Timer timer(__func__, true);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -32,7 +32,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list,
   int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
   for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname, compress_reads);
+    string merged_reads_fname = get_merged_reads_fname(reads_fname);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of kmers");
@@ -70,7 +70,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list,
 }
 
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list,
-                        dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type, bool compress_reads) {
+                        dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type) {
   Timer timer(__func__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
@@ -89,7 +89,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
   };
   //char special = qual_offset + 2;
   for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname, compress_reads);
+    string merged_reads_fname = get_merged_reads_fname(reads_fname);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), progbar_prefix);
@@ -213,18 +213,18 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
 }
 
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool compress_reads) {
+                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__func__, true);
   
   _dynamic_min_depth = dynamic_min_depth;
     
   if (use_bloom) {
-    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_SET_PASS, compress_reads);
+    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_SET_PASS);
     if (ctgs.size()) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
     kmer_dht->reserve_space_and_clear_bloom1();
-    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_COUNT_PASS, compress_reads);
+    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
   } else {
-    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, NO_BLOOM_PASS, compress_reads);
+    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, NO_BLOOM_PASS);
   }
   barrier();
   SLOG_VERBOSE("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");

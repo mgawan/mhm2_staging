@@ -472,10 +472,9 @@ static string get_basename(const string &fname) {
   return "";
 }
     
-static string get_merged_reads_fname(const string &reads_fname, bool compressed) {
+static string get_merged_reads_fname(const string &reads_fname) {
   // always relative to the current working directory
-  string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq";
-  if (compressed) out_fname += ".gz";
+  string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq.gz";
   get_rank_path(out_fname, upcxx::rank_me());
   return out_fname;
 }

@@ -127,7 +127,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
   return mismatches;
 }
 
-void merge_reads(vector<string> reads_fname_list, int qual_offset, bool compress_reads) {
+void merge_reads(vector<string> reads_fname_list, int qual_offset) {
   Timer timer(__func__, true);
 
   int64_t num_ambiguous = 0;
@@ -142,7 +142,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, bool compress
   uint64_t read_id = rank_me() * max_num_reads * 2;
     
   for (auto const &reads_fname : reads_fname_list) {
-    string out_fname = get_merged_reads_fname(reads_fname, compress_reads);
+    string out_fname = get_merged_reads_fname(reads_fname); 
     // skip if the file already exists
     if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, overwriting...");
 
@@ -153,10 +153,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, bool compress
     
     FastqReader fqr(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
-    ofstream *out_file = nullptr;
-    zstr::ofstream *out_file_gz = nullptr;
-    if (compress_reads) out_file_gz = new zstr::ofstream(out_fname);
-    else out_file = new ofstream(out_fname);
+    zstr::ofstream out_file_gz(out_fname);
     ostringstream out_buf;
     
     int64_t bytes_written = 0;
@@ -348,8 +345,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, bool compress
         out_buf << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
       }
       if (!(num_pairs % 1000)) {
-        if (compress_reads) *out_file_gz << out_buf.str();
-        else *out_file << out_buf.str();
+        out_file_gz << out_buf.str();
         bytes_written += out_buf.str().length();
         out_buf = ostringstream();
       }
@@ -357,17 +353,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, bool compress
       read_id += 2;
     }
     if (!out_buf.str().empty()) {
-      if (compress_reads) *out_file_gz << out_buf.str();
-      else *out_file << out_buf.str();
+      out_file_gz << out_buf.str();
       bytes_written += out_buf.str().length();
     }
-    if (compress_reads) delete out_file_gz;
-    else delete out_file;
+    out_file_gz.close();
     progbar.done();
-    if (compress_reads) {
-      // store the uncompressed size in a secondary file
-      write_uncompressed_file_size(get_merged_reads_fname(reads_fname, true) + ".uncompressedSize", bytes_written);
-    }
+    // store the uncompressed size in a secondary file
+    write_uncompressed_file_size(get_merged_reads_fname(reads_fname) + ".uncompressedSize", bytes_written);
     
     auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
     auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
