@@ -131,10 +131,16 @@ public:
     }
     if (is_compressed) {
       gzf = gzopen(fname.c_str(), "r");
-      if (!gzf) DIE("Could not open file ", fname, ": ", strerror(errno));
+      if (!gzf) {
+        if (!upcxx::rank_me()) DIE("Could not open file ", fname, ": ", strerror(errno));
+        upcxx::barrier();
+      }
     } else {
       f = fopen(fname.c_str(), "r");
-      if (!f) DIE("Could not open file ", fname, ": ", strerror(errno));
+      if (!f) {
+        if (!upcxx::rank_me()) DIE("Could not open file ", fname, ": ", strerror(errno));
+        upcxx::barrier();
+      }
     }
     // just a part of the file is read by this thread
     int max_rank = (per_rank_file ? 1 : rank_n());

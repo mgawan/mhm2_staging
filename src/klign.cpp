@@ -432,7 +432,7 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
 }
 
 
-static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_list) {
+static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_list, bool compress_reads) {
   Timer timer(__func__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
@@ -443,7 +443,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   IntermittentTimer get_ctgs_timer("Get ctgs with kmer");
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
+    string merged_reads_fname = get_merged_reads_fname(reads_fname, compress_reads);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
     string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
@@ -556,8 +556,8 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   get_ctgs_timer.done_barrier();
 }
 
-void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
-                     int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns) {
+void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int max_store_size, int max_ctg_cache,
+                     Contigs &ctgs, Alns &alns, bool compress_reads) {
   Timer timer(__func__, true);
   _num_dropped = 0;
   //_get_ctgs_dt = std::chrono::duration<double>(0);
@@ -567,7 +567,7 @@ void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list,
 #ifdef DEBUG
   kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, reads_fname_list);
+  do_alignments(kmer_ctg_dht, reads_fname_list, compress_reads);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");

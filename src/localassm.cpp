@@ -226,12 +226,13 @@ struct MerFreqs {
 
 using MerMap = HASH_TABLE<string, MerFreqs>;
 
-static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsToCtgsDHT &reads_to_ctgs, CtgsWithReadsDHT &ctgs_dht) {
+static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsToCtgsDHT &reads_to_ctgs,
+                          CtgsWithReadsDHT &ctgs_dht, bool compress_reads) {
   Timer timer(__func__, true);
   int64_t num_reads = 0;
   int64_t num_read_maps_found = 0;
   for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
+    string merged_reads_fname = get_merged_reads_fname(reads_fname, compress_reads);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Processing reads");
@@ -548,7 +549,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 
 
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
-               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns) {
+               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns, bool compress_reads) {
   Timer timer(__func__, true);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
   add_ctgs(ctgs_dht, ctgs);
@@ -556,7 +557,7 @@ void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
   // extract read id to ctg id mappings from alignments
   process_alns(alns, reads_to_ctgs, insert_avg, insert_stddev);
   // extract read seqs and add to ctgs
-  process_reads(max_kmer_len, reads_fname_list, reads_to_ctgs, ctgs_dht);
+  process_reads(max_kmer_len, reads_fname_list, reads_to_ctgs, ctgs_dht, compress_reads);
   // clear out the local contigs
   ctgs.clear();
   ctgs.set_capacity(ctgs_dht.get_local_num_ctgs());

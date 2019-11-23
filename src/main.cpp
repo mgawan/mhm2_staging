@@ -20,7 +20,6 @@ ofstream _dbgstream;
 
 #include "utils.hpp"
 #include "options.hpp"
-#include "merge_reads.hpp"
 #include "kmer.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
@@ -35,22 +34,29 @@ bool _verbose = false;
 unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
+void merge_reads(vector<string> reads_fname_list, int qual_offset, bool compress_reads);
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list, bool compress_reads);
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
+                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool compress_reads);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 //void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs);
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
-                     int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
+                     int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns, bool compress_reads);
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
-               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns);
+               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns, bool compress_reads);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
-                        int break_scaffolds, QualityLevel quality_level, Contigs &ctgs, Alns &alns);
+                        int break_scaffolds, QualityLevel quality_level, Contigs &ctgs, Alns &alns, bool compress_reads);
 
 
 int main(int argc, char **argv) {
   upcxx::init();
   init_logger();
+  IntermittentTimer merge_reads_dt("Merge reads"),
+    analyze_kmers_dt("Analyze kmers"),
+    dbjg_traversal_dt("Traverse deBruijn graph"),
+    alignments_dt("Alignments"),
+    localassm_dt("Local assembly"),
+    cgraph_dt("Traverse contig graph");
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
 
@@ -73,7 +79,9 @@ int main(int argc, char **argv) {
          " is ", (tot_file_size / ONE_GB), " GB\n");
   }
   // first merge reads - the results will go in the per_rank directory
-  merge_reads(options->reads_fname_list, options->qual_offset);
+  merge_reads_dt.start();
+  merge_reads(options->reads_fname_list, options->qual_offset, options->compress_reads);
+  merge_reads_dt.stop();
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   int max_kmer_len = 0;
@@ -84,13 +92,17 @@ int main(int argc, char **argv) {
       auto free_mem = get_free_mem_gb();
       SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
       Kmer::k = kmer_len;
-      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+      analyze_kmers_dt.start();
+      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list, options->compress_reads);
       dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
       barrier();
       analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                    options->dynamic_min_depth, ctgs, kmer_dht);
+                    options->dynamic_min_depth, ctgs, kmer_dht, options->compress_reads);
+      analyze_kmers_dt.stop();
       barrier();
+      dbjg_traversal_dt.start();
       traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+      dbjg_traversal_dt.stop();
       barrier();
       //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
@@ -98,10 +110,15 @@ int main(int argc, char **argv) {
 #endif
       if (kmer_len < options->kmer_lens.back()) {
         Alns alns;
-        find_alignments(kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
+        alignments_dt.start();
+        find_alignments(kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns,
+                        options->compress_reads);
+        alignments_dt.stop();
         barrier();
+        localassm_dt.start();
         localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
-                  options->qual_offset, options->dynamic_min_depth, ctgs, alns);
+                  options->qual_offset, options->dynamic_min_depth, ctgs, alns, options->compress_reads);
+        localassm_dt.stop();
       }
       if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
       SLOG(KBLUE "_________________________\n", KNORM);
@@ -123,13 +140,18 @@ int main(int argc, char **argv) {
       Kmer::k = scaff_kmer_len;
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
-      find_alignments(scaff_kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
+      alignments_dt.start();
+      find_alignments(scaff_kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns,
+                      options->compress_reads);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
+      alignments_dt.stop();
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
+      cgraph_dt.start();
       traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, options->reads_fname_list,
-                         break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
+                         break_scaff_Ns, QualityLevel::ALL, ctgs, alns, options->compress_reads);
+      cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
         SLOG(KBLUE "_________________________\n", KNORM);
@@ -146,6 +168,14 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________\n", KNORM);
   ctgs.print_stats(ASSM_CLEN_THRES);
   SLOG(KBLUE "_________________________\n", KNORM);
+  SLOG(KBLUE "Stage timing:\n");
+  SLOG("  " + merge_reads_dt.get_final() + "\n");
+  SLOG("  " + analyze_kmers_dt.get_final() + "\n");
+  SLOG("  " + dbjg_traversal_dt.get_final() + "\n");
+  SLOG("  " + alignments_dt.get_final() + "\n");
+  SLOG("  " + localassm_dt.get_final() + "\n");
+  SLOG("  " + cgraph_dt.get_final() + "\n");
+  SLOG("_________________________\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
        " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");

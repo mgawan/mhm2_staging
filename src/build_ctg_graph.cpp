@@ -194,14 +194,14 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
 }
 
 
-static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
+static void parse_reads(int kmer_len, const vector<string> &reads_fname_list, bool compress_reads) {
   Timer timer(__func__);
 
   int64_t num_seqs_added = 0;
   int64_t num_reads = 0;
   int max_read_len = 0;
   for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
+    string merged_reads_fname = get_merged_reads_fname(reads_fname, compress_reads);
     FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Parsing reads for gap sequences");
@@ -496,7 +496,7 @@ void mark_short_aln_edges(int max_kmer_len) {
 }
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
-                     vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns) {
+                     vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns, bool compress_reads) {
   Timer timer(__func__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
@@ -512,6 +512,6 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max
   barrier();
   set_nbs();
   //mark_short_aln_edges(max_kmer_len);
-  parse_reads(kmer_len, reads_fname_list);
+  parse_reads(kmer_len, reads_fname_list, compress_reads);
   merge_nbs();
 }
