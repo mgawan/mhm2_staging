@@ -87,6 +87,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
+  IntermittentTimer read_io_timer("Read IO");
   //char special = qual_offset + 2;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
@@ -95,7 +96,9 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     ProgressBar progbar(fqr.my_file_size(), progbar_prefix);
     size_t tot_bytes_read = 0;
     while (true) {
+      read_io_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      read_io_timer.stop();
       if (!bytes_read) break;
       num_lines += 4;
       num_reads++;
@@ -146,6 +149,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     progbar.done();
     kmer_dht->flush_updates(pass_type);
   }
+  read_io_timer.done();
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();

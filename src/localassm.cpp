@@ -28,7 +28,7 @@ class ReadsToCtgsDHT {
   using reads_to_ctgs_map_t = HASH_TABLE<string, vector<CtgInfo> >;
   dist_object<reads_to_ctgs_map_t> reads_to_ctgs_map;
 
-  size_t get_target_rank(string read_id) {
+  size_t get_target_rank(const string &read_id) {
     return std::hash<string>{}(read_id) % rank_n();
   }
   
