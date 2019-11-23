@@ -33,7 +33,7 @@ public:
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store = ONE_MB;
+  int max_kmer_store = 50 * ONE_MB;
   int max_ctg_cache = 1000000;
   bool use_bloom = true;
   double dynamic_min_depth = 0.9;

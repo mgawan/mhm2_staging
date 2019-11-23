@@ -100,9 +100,10 @@ public:
     auto time_delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - prev_time).count();
     //if (time_delta < 1000) return;
     if (prev_time == start_time) std::cout << std::endl;
+    double free_mem = get_free_mem_gb();
     std::cout << std::setprecision(2) << std::fixed;
     std::cout << "  " << int(progress * 100.0) << "% " << (float(time_elapsed) / 1000.0) << "s " 
-              << (float(time_delta) / 1000.0) << "s " << std::flush << std::endl;
+              << (float(time_delta) / 1000.0) << "s " << free_mem << "GB" << std::flush << std::endl;
     prev_time = now;
 #endif    
   }

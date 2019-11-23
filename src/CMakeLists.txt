@@ -41,7 +41,7 @@ add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
 # 4MB in flight
 add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
 add_definitions(-DUSE_COLORS)
-add_definitions(-DUSE_BYTELL)
+#add_definitions(-DUSE_BYTELL)
 add_definitions(-DMIN_CTG_PRINT_LEN=500)
 add_definitions(-DDEPTH_DIFF_THRES=0.1)
 add_definitions(-DUSE_PROGBAR)

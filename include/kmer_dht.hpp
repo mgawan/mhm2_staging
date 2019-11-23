@@ -340,9 +340,8 @@ public:
   }
   
   void clear() {
-    for (auto it = kmers->begin(); it != kmers->end(); ) {
-      it = kmers->erase(it);
-    }
+    kmers->clear();
+    KmerMap().swap(*kmers);
   }
   
   ~KmerDHT() {

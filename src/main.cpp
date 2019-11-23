@@ -91,17 +91,20 @@ int main(int argc, char **argv) {
       auto free_mem = get_free_mem_gb();
       SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
       Kmer::k = kmer_len;
-      analyze_kmers_dt.start();
-      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
-      barrier();
-      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                    options->dynamic_min_depth, ctgs, kmer_dht);
-      analyze_kmers_dt.stop();
-      barrier();
-      dbjg_traversal_dt.start();
-      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-      dbjg_traversal_dt.stop();
+      {
+        // duration of kmer_dht
+        analyze_kmers_dt.start();
+        auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+        dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
+        barrier();
+        analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+                      options->dynamic_min_depth, ctgs, kmer_dht);
+        analyze_kmers_dt.stop();
+        barrier();
+        dbjg_traversal_dt.start();
+        traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+        dbjg_traversal_dt.stop();
+      }
       barrier();
       //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
