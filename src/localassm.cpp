@@ -331,12 +331,13 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
   AlnStatus start_status, end_status;
   ProgressBar progbar(alns.size(), "Getting read-to-contig mappings from alignments");
   while (aln_i < alns.size()) {
+    progress();
     Aln aln;
     t_get_alns.start();
     get_best_aln_for_read(alns, aln_i, aln, start_status, end_status, num_alns_found, num_alns_invalid);
     t_get_alns.stop();
     progbar.update(aln_i);
-    int pair_num = aln.read_id.back() - '0';
+    if (aln.read_id.empty()) continue;
     // add a direct extension to the contig, start or end
     if (start_status == AlnStatus::EXTENDS_CONTIG) {
       reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient, aln.orient == '+' ? 'L' : 'R');
@@ -345,15 +346,18 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
       reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient, aln.orient == '+' ? 'R' : 'L');
       num_direct++;
     }
+    // FIXME: if read is longer than one pair read length, don't look for mate since it is a merged read
     // add mate pair if feasible
     if (!pair_overlap(aln, min_pair_len)) {
-      // indicate the other pair_num
-      string pair_read_id = aln.read_id;
-      pair_read_id[aln.read_id.length() - 1] = (pair_num == 1 ? '2' : '1');
-      reads_to_ctgs.add(pair_read_id, aln.cid, aln.orient == '+' ? '-' : '+', aln.orient == '+' ? 'R' : 'L');
+      // indicate the other pair number
+      int len = aln.read_id.length();
+      assert(len > 1);
+      if (aln.read_id[len - 1] == '1') aln.read_id[len - 1] = '2';
+      else if (aln.read_id[len - 1] == '2') aln.read_id[len - 1] = '1';
+      else DIE("Bad pair number ", (int)aln.read_id[len - 1], " in read: ", aln.read_id);
+      reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient == '+' ? '-' : '+', aln.orient == '+' ? 'R' : 'L');
       num_proj++;
     }
-    progress();
   }
   progbar.done();
   barrier();

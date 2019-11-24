@@ -15,6 +15,8 @@
 using std::string;
 
 
+#define RANK_FOR_PROGRESS 0
+
 class ProgressBar {
 private:
   int64_t ticks = 0;
@@ -40,7 +42,7 @@ public:
     , complete_char{complete}
     , incomplete_char{incomplete} {
 #ifdef USE_PROGBAR      
-      if (!upcxx::rank_me()) {
+      if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
         ten_perc = total / 10;
         if (ten_perc == 0) ten_perc = 1;
         //std::cout << KLGREEN << "* " << std::setw(prefix_width) << std::left << prefix_str << ": " << std::flush;
@@ -61,7 +63,7 @@ public:
     , complete_char{complete}
     , incomplete_char{incomplete} {
 #ifdef USE_PROGBAR      
-      if (!upcxx::rank_me()) {
+      if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
         /*
         struct stat stat_buf;
         stat(fname.c_str(), &stat_buf);
@@ -90,7 +92,7 @@ public:
   
   void display(bool is_last = false) {
 #ifdef USE_PROGBAR      
-    if (upcxx::rank_me()) return;
+    if (upcxx::rank_me() != RANK_FOR_PROGRESS) return;
     if (total_ticks == 0) return;
     float progress = (float) ticks / total_ticks;
     int pos = (int) (bar_width * progress);
@@ -117,7 +119,7 @@ public:
     double max_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_max, 0).wait() / 1000;
     double tot_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_add, 0).wait() / 1000;
     double av_time = tot_time / upcxx::rank_n();
-    if (!upcxx::rank_me()) {
+    if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
       std::cout << std::setprecision(2) << std::fixed;
       std::cout << "  Average " << av_time << " max " << max_time << " (balance " <<  (max_time == 0.0 ? 1.0 : (av_time / max_time))
                 << ")"<< KNORM << std::endl;

@@ -93,7 +93,7 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
 #define DIE(...)                                                        \
   logger(cerr, true, false, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 #define SWARN(...)                                                      \
-  logger(cerr, false, true, true, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, true, true, KRED, "WARNING: ", ##__VA_ARGS__, KNORM, "\n")
 #define SDIE(...)                                                       \
   logger(cerr, true, true, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 

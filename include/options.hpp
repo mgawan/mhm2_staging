@@ -116,7 +116,7 @@ public:
       SLOG("Initial free memory on node 0: ", std::setprecision(3), std::fixed, start_mem_free, " GB\n");
       SLOG("Running on ", upcxx::rank_n(), " ranks\n");
 #ifdef DEBUG
-      SLOG(KLRED "WARNING: Running low-performance debug mode\n", KNORM);
+      SWARN("Running low-performance debug mode", KNORM);
 #endif
     }
     upcxx::barrier();
