@@ -300,8 +300,8 @@ public:
     }
     progbar.done();
     barrier();
-    SOUT("Found ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs\n");
-    SOUT("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
+    SOUT_VERBOSE("Found ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs\n");
+    SOUT_VERBOSE("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
   }
   
 };
