@@ -176,9 +176,7 @@ public:
   }
   
   void start() {
-    if (!interval_label.empty()) {
-      SLOG(KBLUE, std::left, std::setw(40), interval_label + ":", KNORM);
-    }
+    if (!interval_label.empty() && !_verbose) SLOG(KBLUE, std::left, std::setw(40), interval_label + ":", KNORM);
     t = std::chrono::high_resolution_clock::now();
   }
   
