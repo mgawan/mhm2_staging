@@ -78,10 +78,6 @@ class KmerCtgDHT {
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
   
-  size_t get_target_rank(Kmer &kmer) {
-    return std::hash<Kmer>{}(kmer) % rank_n();
-  }
-
   struct InsertKmer {
     void operator()(MerarrAndCtgLoc &merarr_and_ctg_loc, dist_object<kmer_map_t> &kmer_map) {
       Kmer kmer(merarr_and_ctg_loc.merarr);
@@ -200,6 +196,10 @@ public:
 #endif
   }
 
+  size_t get_target_rank(Kmer &kmer) {
+    return std::hash<Kmer>{}(kmer) % rank_n();
+  }
+
   int64_t get_num_kmers(bool all = false) {
     if (!all) return reduce_one(kmer_map->size(), op_fast_add, 0).wait();
     else return reduce_all(kmer_map->size(), op_fast_add).wait();
@@ -264,7 +264,6 @@ public:
     barrier();
   }
 
-
   future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer &kmer) {
     return rpc(get_target_rank(kmer),
                [](MerArray merarr, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
@@ -275,7 +274,21 @@ public:
                }, kmer.get_array(), kmer_map);
   }
 
-
+  future<vector<pair<MerArray, vector<CtgLoc>>>> get_ctgs_with_kmers(int target_rank, vector<Kmer> &kmers) {
+    vector<MerArray> merarr_list;
+    for (auto kmer : kmers) merarr_list.push_back(kmer.get_array());
+    return rpc(target_rank,
+               [](vector<MerArray> merarr_list, dist_object<kmer_map_t> &kmer_map) -> vector<pair<MerArray, vector<CtgLoc>>> {
+                 vector<pair<MerArray, vector<CtgLoc>>> ctg_locs;
+                 for (auto &merarr : merarr_list) {
+                   Kmer kmer(merarr);
+                   const auto it = kmer_map->find(kmer);
+                   if (it == kmer_map->end()) continue;
+                   ctg_locs.push_back({merarr, it->second});
+                 }
+                 return ctg_locs;
+               }, merarr_list, kmer_map);
+  }
   // this is really only for debugging
   void dump_ctg_kmers() {
     Timer timer(__func__);
@@ -432,6 +445,52 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
 }
 
 
+struct ReadRecord {
+  string id;
+  string seq;
+  string quals;
+  vector<CtgLoc> ctg_locs;
+  
+  ReadRecord(const string &id, const string &seq, const string &quals) : id(id), seq(seq), quals(quals) {}
+};
+
+
+static void align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<ReadRecord*>> &kmer_read_map,
+                        vector<ReadRecord*> &read_records) {
+  // extract a list of kmers for each target rank
+  auto kmer_lists = new vector<Kmer>[rank_n()];
+  for (auto &elem : kmer_read_map) {
+    auto kmer = elem.first;
+    auto read_list = elem.second;
+    kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
+  }
+  size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
+  future<> fut_chain = make_future();
+  // fetch ctgs for each set of kmers from target ranks
+  for (int i = 0; i < rank_n(); i++) {
+    min_kmers = min(min_kmers, kmer_lists[i].size());
+    max_kmers = max(max_kmers, kmer_lists[i].size());
+    num_kmers += kmer_lists[i].size();
+    auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
+      [=](vector<pair<MerArray, vector<CtgLoc>>> aligned_ctgs) {
+        /*
+        for (auto ctg_loc : aligned_ctgs) {
+          // ensures only the first kmer to cid mapping is retained - copies will not be inserted
+          aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
+          if (aligned_ctgs_map->size() >= MAX_ALNS_PER_READ) break;
+        }
+        */
+      });
+    fut_chain = when_all(fut_chain, fut);
+  }
+  fut_chain.wait();
+  kmer_read_map.clear();
+  //SLOG_VERBOSE("kmers dispatched min ", min_kmers, " max ", max_kmers, "\n");
+  for (auto read_record : read_records) delete read_record;
+  read_records.clear();
+}
+
+
 static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_list) {
   Timer timer(__func__);
   int64_t tot_num_kmers = 0;
@@ -448,6 +507,8 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
     string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
+    vector<ReadRecord*> read_records;
+    HASH_TABLE<Kmer, vector<ReadRecord*>> kmer_read_map;
     while (true) {
       get_reads_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
@@ -463,6 +524,24 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
       auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq);
       get_kmers_timer.stop();
       tot_num_kmers += kmers.size();
+      ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
+      read_records.push_back(read_record);
+      bool filled = false;
+      for (int i = 0; i < kmers.size(); i += 8) {
+        Kmer kmer = kmers[i];
+        Kmer kmer_rc = kmer.revcomp();
+        bool is_rc = false;
+        if (kmer_rc < kmer) {
+          kmer = kmer_rc;
+          is_rc = true;
+        }
+        auto it = kmer_read_map.find(kmer);
+        if (it == kmer_read_map.end()) kmer_read_map.insert({kmer, {read_record}});
+        else it->second.push_back(read_record);
+        if (kmer_read_map.size() >= MAX_NUM_GET_CTGS) filled = true;
+      }
+      if (filled) align_kmers(kmer_ctg_dht, kmer_read_map, read_records);
+      /*
       auto aligned_ctgs_map = new aligned_ctgs_map_t;
       // should be enough to cover any short read size
       aligned_ctgs_map->reserve(250);
@@ -521,8 +600,10 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
         compute_alns_timer.stop();
       }
       delete aligned_ctgs_map;
+      */
       num_reads++;
     }
+    if (read_records.size()) align_kmers(kmer_ctg_dht, kmer_read_map, read_records);
     progbar.done();
     barrier();
   }
@@ -554,6 +635,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   get_reads_timer.done_barrier();
   get_kmers_timer.done_barrier();
   get_ctgs_timer.done_barrier();
+  exit(0);
 }
 
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int max_store_size, int max_ctg_cache,
@@ -565,7 +647,7 @@ void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int ma
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
-  kmer_ctg_dht.dump_ctg_kmers();
+  //kmer_ctg_dht.dump_ctg_kmers();
 #endif
   do_alignments(kmer_ctg_dht, reads_fname_list);
   barrier();

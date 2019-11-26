@@ -794,6 +794,7 @@ public:
   void print_stats(string graph_fname="") {
     Timer timer(__func__);
     auto get_avg_min_max = [](vector<int64_t> &vals) {
+      assert(vals.size());
       int64_t total = std::accumulate(vals.begin(), vals.end(), 0);
       int64_t max_val = *std::max_element(vals.begin(), vals.end());
       int64_t min_val = *std::min_element(vals.begin(), vals.end());
