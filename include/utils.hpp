@@ -89,11 +89,11 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
     logger(cout, false, true, true, ##__VA_ARGS__);      \
   } while (0)
 #define WARN(...)                                                       \
-  logger(cerr, false, false, true, KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
 #define DIE(...)                                                        \
   logger(cerr, true, false, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 #define SWARN(...)                                                      \
-  logger(cerr, false, true, true, KRED, "WARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, true, true, KRED, "\nWARNING: ", ##__VA_ARGS__, KNORM, "\n")
 #define SDIE(...)                                                       \
   logger(cerr, true, true, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 
@@ -142,12 +142,12 @@ static double get_free_mem_gb(void) {
 class IntermittentTimer {
   
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
-  double t_elapsed;
-  string name;
+  double t_elapsed, t_interval;
+  string name, interval_label;
 public:
-  IntermittentTimer(const string &name) {
-    this->name = name;
+  IntermittentTimer(const string &name, string interval_label = "") : name{name}, interval_label{interval_label} {
     t_elapsed = 0;
+    t_interval = 0;
   }
 
   void done_barrier() {
@@ -170,12 +170,23 @@ public:
   }
   
   void start() {
+    if (!interval_label.empty()) {
+      SLOG(KBLUE, std::left, std::setw(40), interval_label + ":", KNORM);
+    }
     t = std::chrono::high_resolution_clock::now();
   }
   
   void stop() {
     std::chrono::duration<double> interval = std::chrono::high_resolution_clock::now() - t;
-    t_elapsed += interval.count();
+    t_interval = interval.count();
+    t_elapsed += t_interval;
+    if (!interval_label.empty()) {
+      SLOG(KBLUE, std::setprecision(2), std::fixed, t_elapsed, " s", KNORM, "\n");
+    }
+  }
+
+  double get_interval() {
+    return t_interval;
   }
 };
 

@@ -42,7 +42,7 @@ static const double Q2Perror[] = {
 };
 
 uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
-  Timer timer(__func__, true);
+  Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
@@ -128,7 +128,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 }
 
 void merge_reads(vector<string> reads_fname_list, int qual_offset) {
-  Timer timer(__func__, true);
+  Timer timer(__func__);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
@@ -367,13 +367,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     auto all_merged_len = upcxx::reduce_one(merged_len, op_fast_add, 0).wait();
     auto all_overlap_len = upcxx::reduce_one(overlap_len, op_fast_add, 0).wait();
     auto all_max_read_len = upcxx::reduce_one(max_read_len, op_fast_max, 0).wait();
-    SLOG("Merged reads in file ", reads_fname, ":\n");
-    SLOG("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
-    SLOG("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
-    SLOG("  average merged length ", (double)all_merged_len / all_num_merged, "\n");
-    SLOG("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
-    SLOG("  max read length ", all_max_read_len, "\n");
-    SLOG("Total bytes read ", tot_bytes_read, "\n");
+    SLOG_VERBOSE("Merged reads in file ", reads_fname, ":\n");
+    SLOG_VERBOSE("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
+    SLOG_VERBOSE("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
+    SLOG_VERBOSE("  average merged length ", (double)all_merged_len / all_num_merged, "\n");
+    SLOG_VERBOSE("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
+    SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
+    SLOG_VERBOSE("Total bytes read ", tot_bytes_read, "\n");
 
     barrier();
     num_reads += num_pairs * 2;

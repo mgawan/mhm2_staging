@@ -25,7 +25,7 @@ extern ofstream _dbgstream;
 extern ofstream _logstream;
 
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list) {
-  Timer timer(__func__, true);
+  Timer timer(__func__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
@@ -65,7 +65,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
   SLOG_VERBOSE("Processed ", percent, " % of the estimated total of ", all_num_lines,
                " lines (", all_num_reads, " reads), and found a maximum of ", all_num_kmers, " kmers\n");
   int my_num_kmers = all_num_kmers / rank_n();
-  SLOG("Number of kmers estimated as ", my_num_kmers, "\n");
+  SLOG_VERBOSE("Number of kmers estimated as ", my_num_kmers, "\n");
   return my_num_kmers;
 }
 
@@ -218,7 +218,7 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
 
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
-  Timer timer(__func__, true);
+  Timer timer(__func__);
   
   _dynamic_min_depth = dynamic_min_depth;
     

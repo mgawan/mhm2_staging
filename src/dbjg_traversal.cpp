@@ -182,7 +182,7 @@ static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_pt
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
-  Timer timer(__func__, true);
+  Timer timer(__func__);
   // allocate space for biggest possible uutig in global storage
   const int MAX_UUTIG_LEN = 10000000;
   global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_LEN);

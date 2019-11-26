@@ -30,6 +30,8 @@ using namespace upcxx;
 
 ofstream _logstream;
 bool _verbose = false;
+bool _show_progress = false;
+
 
 unsigned int Kmer::k = 0;
 
@@ -50,12 +52,12 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
 int main(int argc, char **argv) {
   upcxx::init();
   init_logger();
-  IntermittentTimer merge_reads_dt("Merge reads"),
-    analyze_kmers_dt("Analyze kmers"),
-    dbjg_traversal_dt("Traverse deBruijn graph"),
-    alignments_dt("Alignments"),
-    localassm_dt("Local assembly"),
-    cgraph_dt("Traverse contig graph");
+  IntermittentTimer merge_reads_dt("Merge reads", "Merging reads"),
+    analyze_kmers_dt("Analyze kmers", "Analyzing kmers"),
+    dbjg_traversal_dt("Traverse deBruijn graph", "Traversing deBruijn graph"),
+    alignments_dt("Alignments", "Aligning reads to contigs"),
+    localassm_dt("Local assembly", "Locally assembling ends of contigs"),
+    cgraph_dt("Traverse contig graph", "Traversing contig graph");
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
 
@@ -70,6 +72,7 @@ int main(int argc, char **argv) {
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   set_logger_verbose(options->verbose);
+  _show_progress = options->show_progress;
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
@@ -78,9 +81,11 @@ int main(int argc, char **argv) {
          " is ", (tot_file_size / ONE_GB), " GB\n");
   }
   // first merge reads - the results will go in the per_rank directory
-  merge_reads_dt.start();
-  merge_reads(options->reads_fname_list, options->qual_offset);
-  merge_reads_dt.stop();
+  {
+    merge_reads_dt.start();
+    merge_reads(options->reads_fname_list, options->qual_offset);
+    merge_reads_dt.stop();
+  }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   int max_kmer_len = 0;
@@ -91,20 +96,18 @@ int main(int argc, char **argv) {
       auto free_mem = get_free_mem_gb();
       SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
       Kmer::k = kmer_len;
-      {
-        // duration of kmer_dht
-        analyze_kmers_dt.start();
-        auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-        dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
-        barrier();
-        analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                      options->dynamic_min_depth, ctgs, kmer_dht);
-        analyze_kmers_dt.stop();
-        barrier();
-        dbjg_traversal_dt.start();
-        traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-        dbjg_traversal_dt.stop();
-      }
+      // duration of kmer_dht
+      analyze_kmers_dt.start();
+      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
+      barrier();
+      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+                    options->dynamic_min_depth, ctgs, kmer_dht);
+      analyze_kmers_dt.stop();
+      barrier();
+      dbjg_traversal_dt.start();
+      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+      dbjg_traversal_dt.stop();
       barrier();
       //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
@@ -125,8 +128,8 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\n", KNORM);
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      SLOG("\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n");
+      SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
+           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
       barrier();
     }
   }
@@ -158,8 +161,8 @@ int main(int argc, char **argv) {
         ctgs.print_stats(ASSM_CLEN_THRES);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      SLOG("\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n");
+      SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
+           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
       barrier();
     }
   }

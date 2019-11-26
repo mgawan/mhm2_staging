@@ -539,7 +539,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   if (num_overlaps)
     SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");
   auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
-  SLOG("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
+  SLOG_VERBOSE("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
 
   SLOG_VERBOSE("Ctg cache hits ", perc_str(kmer_ctg_dht.get_ctg_seq_cache_hits(), tot_num_alns), "\n");
@@ -558,7 +558,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
 
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int max_store_size, int max_ctg_cache,
                      Contigs &ctgs, Alns &alns) {
-  Timer timer(__func__, true);
+  Timer timer(__func__);
   _num_dropped = 0;
   //_get_ctgs_dt = std::chrono::duration<double>(0);
   KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
