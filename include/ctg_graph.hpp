@@ -855,17 +855,17 @@ public:
 
     auto num_vertices = get_num_vertices();
     auto num_edges = get_num_edges();
-    SLOG("Graph statistics:\n");
-    SLOG("    vertices:  ", num_vertices, "\n");
-    SLOG("    edges:     ", num_edges, "\n");
-    SLOG("    degree:    ", (double)num_edges / num_vertices, "\n");
-    SLOG("    aln_len:   ", get_avg_min_max(aln_lens), "\n");
-    SLOG("    aln_score: ", get_avg_min_max(aln_scores), "\n");
-    SLOG("  for contigs >= ", ASSM_CLEN_THRES, " length:\n");
-    SLOG("    depth:     ", get_avg_min_max(depths), "\n");
-    SLOG("    clen:      ", get_avg_min_max(clens), "\n");
-    SLOG("    support:   ", get_avg_min_max(supports), "\n");
-    SLOG("    gap:       ", get_avg_min_max(gaps), "\n");
+    SLOG_VERBOSE("Graph statistics:\n");
+    SLOG_VERBOSE("    vertices:  ", num_vertices, "\n");
+    SLOG_VERBOSE("    edges:     ", num_edges, "\n");
+    SLOG_VERBOSE("    degree:    ", (double)num_edges / num_vertices, "\n");
+    SLOG_VERBOSE("    aln_len:   ", get_avg_min_max(aln_lens), "\n");
+    SLOG_VERBOSE("    aln_score: ", get_avg_min_max(aln_scores), "\n");
+    SLOG_VERBOSE("  for contigs >= ", ASSM_CLEN_THRES, " length:\n");
+    SLOG_VERBOSE("    depth:     ", get_avg_min_max(depths), "\n");
+    SLOG_VERBOSE("    clen:      ", get_avg_min_max(clens), "\n");
+    SLOG_VERBOSE("    support:   ", get_avg_min_max(supports), "\n");
+    SLOG_VERBOSE("    gap:       ", get_avg_min_max(gaps), "\n");
   }
 
 };

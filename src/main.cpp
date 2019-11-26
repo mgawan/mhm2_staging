@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
     analyze_kmers_dt("Analyze kmers", "Analyzing kmers"),
     dbjg_traversal_dt("Traverse deBruijn graph", "Traversing deBruijn graph"),
     alignments_dt("Alignments", "Aligning reads to contigs"),
-    localassm_dt("Local assembly", "Locally assembling ends of contigs"),
+    localassm_dt("Local assembly", "Locally extending ends of contigs"),
     cgraph_dt("Traverse contig graph", "Traversing contig graph");
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
