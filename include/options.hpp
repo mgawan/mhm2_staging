@@ -85,6 +85,7 @@ public:
     auto ins_size_params_list = split(ins_size_params, ':');
     insert_avg = std::stoi(ins_size_params_list[0]);
     insert_stddev = std::stoi(ins_size_params_list[1]);
+    if (show_progress) verbose = true;
 
     if (upcxx::rank_me() == 0) {
       // print out all compiler definitions

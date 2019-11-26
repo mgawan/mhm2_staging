@@ -145,8 +145,10 @@ public:
       num_ns += count(ctg.seq.begin(), ctg.seq.end(), 'N');
       lens.push_back(len);
     }
+    /*
     // Compute local N50 and then take the median across all of them. This gives a very good approx of the exact N50 and is much
     // cheaper to compute
+    // Actually, the approx is only decent if there are not too many ranks
     sort(lens.rbegin(), lens.rend());
     int64_t sum_lens = 0;
     int64_t n50 = 0;
@@ -172,13 +174,13 @@ public:
     }
     // barrier to ensure the other ranks dist_objects don't go out of scope before rank 0 is done
     barrier();
-    
+    */    
     int64_t all_num_ctgs = reduce_one(num_ctgs, op_fast_add, 0).wait();
     int64_t all_tot_len = reduce_one(tot_len, op_fast_add, 0).wait();
     int64_t all_max_len = reduce_one(max_len, op_fast_max, 0).wait();
     double all_tot_depth = reduce_one(tot_depth, op_fast_add, 0).wait();
     int64_t all_num_ns = reduce_one(num_ns, op_fast_add, 0).wait();
-    int64_t all_n50s = reduce_one(n50, op_fast_add, 0).wait();
+    //int64_t all_n50s = reduce_one(n50, op_fast_add, 0).wait();
     
     SLOG("Assembly statistics (contig lengths >= ", min_ctg_len, ")\n");
     SLOG("    Number of contigs:       ", all_num_ctgs, "\n");
@@ -186,7 +188,7 @@ public:
     SLOG("    Average contig depth:    ", all_tot_depth / all_num_ctgs, "\n");
     SLOG("    Number of Ns/100kbp:     ", (double)all_num_ns * 100000.0 / all_tot_len, " (", all_num_ns, ")", KNORM, "\n");
     //SLOG("    Approx N50 (average):    ", all_n50s / rank_n(), " (rank 0 only ", n50, ")\n");
-    SLOG("    Approx N50:              ", median_n50, "\n");
+    //SLOG("    Approx N50:              ", median_n50, "\n");
     SLOG("    Max. contig length:      ", all_max_len, "\n");
     SLOG("    Contig lengths:\n");
     for (auto &length_sum : length_sums) {
@@ -300,8 +302,8 @@ public:
     }
     progbar.done();
     barrier();
-    SOUT_VERBOSE("Found ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs\n");
-    SOUT_VERBOSE("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
+    SLOG_VERBOSE("Found ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs\n");
+    SLOG_VERBOSE("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
   }
   
 };

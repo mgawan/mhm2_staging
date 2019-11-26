@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <fstream>
 #include <limits>
+#include <regex>
 #include <upcxx/upcxx.hpp>
 
 #include "bytell_hash_map.hpp"
@@ -80,6 +81,8 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
     std::cerr << "\n" << KNORM;
     throw std::runtime_error(os.str());
   }
+  //string outstr = os.str();
+  //for (auto c : COLORS) std::regex_replace(outstr, std::regex(s), "");
   stream << os.str();
   if (flush) stream.flush();
 }
@@ -89,13 +92,16 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
     logger(cout, false, true, true, ##__VA_ARGS__);      \
   } while (0)
 #define WARN(...)                                                       \
-  logger(cerr, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
+         "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
 #define DIE(...)                                                        \
-  logger(cerr, true, false, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, true, false, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+         "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 #define SWARN(...)                                                      \
-  logger(cerr, false, true, true, KRED, "\nWARNING: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, false, true, true, KRED, "\nWARNING: ", ##__VA_ARGS__, KNORM, "\n\n")
 #define SDIE(...)                                                       \
-  logger(cerr, true, true, true, KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
+  logger(cerr, true, true, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+         "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
 
 
 #define SLOG(...) do {                                              \
@@ -180,9 +186,7 @@ public:
     std::chrono::duration<double> interval = std::chrono::high_resolution_clock::now() - t;
     t_interval = interval.count();
     t_elapsed += t_interval;
-    if (!interval_label.empty()) {
-      SLOG(KBLUE, std::setprecision(2), std::fixed, t_elapsed, " s", KNORM, "\n");
-    }
+    if (!interval_label.empty() && !_verbose) SLOG(KBLUE, std::setprecision(2), std::fixed, t_interval, " s", KNORM, "\n");
   }
 
   double get_interval() {

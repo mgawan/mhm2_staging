@@ -27,6 +27,8 @@
 #ifndef __COLORS_H
 #define __COLORS_H
 
+#include <array>
+
 #ifdef USE_COLORS
 
 #define KNORM  "\x1B[0m"
@@ -50,13 +52,9 @@
 #define KGREENBK "\x1B[44m"
 #define KLGREENBK "\x1B[102m"
 
-/*
- * static const char* COLORS[] = {
- *  KLRED, KLGREEN, KLYELLOW, KLBLUE,
- *  KLMAGENTA, KLCYAN, KRED, KGREEN,
- *  KYELLOW, KBLUE, KMAGENTA, KCYAN,
- *  KLGRAY, KDGRAY, KWHITE, KNORM};
- */
+static const std::array<std::string, 15> COLORS = {KNORM, KBLACK, KRED, KGREEN, KYELLOW, KCYAN, KWHITE, KGRAY,
+                                                   KLRED, KLGREEN, KLYELLOW, KLBLUE, KLMAGENTA, KLCYAN, KLWHITE};
+                                                  
 #else
 
 #define KNORM  ""
