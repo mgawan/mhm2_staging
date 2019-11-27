@@ -60,7 +60,7 @@ add_definitions(-DWALK_SUPPORT_THRES=3)
 add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
 add_definitions(-DALN_WIGGLE=5)
-add_definitions(-DMAX_NUM_GET_CTGS=100000)
+add_definitions(-DMAX_NUM_GET_CTGS=1000000)
 # FIXME: this should be a parameter
 add_definitions(-DTMP_READ_LEN=150)
 # FIXME: this should be a parameter

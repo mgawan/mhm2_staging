@@ -41,10 +41,15 @@ struct CtgLoc {
   bool is_rc;
 };
 
+
+struct ReadAndCtgLoc {
+  int pos_in_read;
+  bool read_is_rc;
+  CtgLoc ctg_loc;
+};
+
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
-
-using aligned_ctgs_map_t = HASH_TABLE<cid_t, tuple<int, bool, CtgLoc>>;
 
 
 class KmerCtgDHT {
@@ -55,7 +60,6 @@ class KmerCtgDHT {
   };
 
   AggrStore<MerarrAndCtgLoc> kmer_store;
-  
   using kmer_map_t = HASH_TABLE<Kmer, vector<CtgLoc> >;
   dist_object<kmer_map_t> kmer_map;
 #ifdef DUMP_ALNS
@@ -103,7 +107,8 @@ class KmerCtgDHT {
   dist_object<InsertKmer> insert_kmer;
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
-                  int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset, int overlap_len) {
+                  int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset,
+                  int overlap_len) {
     Aln aln;
     StripedSmithWaterman::Alignment ssw_aln;
     // use hamming distance for checking match first - works for > 90% of matches and reduces time spent doing SSW
@@ -315,7 +320,7 @@ public:
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
   
-  void compute_alns_for_read(aligned_ctgs_map_t *aligned_ctgs_map, const string &rname, string rseq) {
+  void compute_alns_for_read(HASH_TABLE<cid_t, ReadAndCtgLoc> *aligned_ctgs_map, const string &rname, string rseq) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     Alns read_alns;
@@ -323,10 +328,9 @@ public:
       progress();
       // drop alns for reads with too many alns
       if (read_alns.size() >= MAX_ALNS_PER_READ) break;
-      int pos_in_read;
-      bool read_kmer_is_rc;
-      CtgLoc ctg_loc;
-      tie(pos_in_read, read_kmer_is_rc, ctg_loc) = elem.second;
+      int pos_in_read = elem.second.pos_in_read;
+      bool read_kmer_is_rc = elem.second.read_is_rc;
+      CtgLoc ctg_loc = elem.second.ctg_loc;
       char orient = '+';
       string *rseq_ptr = &rseq;
       if (ctg_loc.is_rc != read_kmer_is_rc) {
@@ -449,45 +453,84 @@ struct ReadRecord {
   string id;
   string seq;
   string quals;
-  vector<CtgLoc> ctg_locs;
+  
+  HASH_TABLE<cid_t, ReadAndCtgLoc> aligned_ctgs_map;
   
   ReadRecord(const string &id, const string &seq, const string &quals) : id(id), seq(seq), quals(quals) {}
 };
 
 
-static void align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<ReadRecord*>> &kmer_read_map,
-                        vector<ReadRecord*> &read_records) {
+struct KmerToRead {
+  ReadRecord *read_record;
+  int pos_in_read;
+  bool is_rc;
+};
+
+
+static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToRead>> &kmer_read_map,
+                       vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer) {
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer>[rank_n()];
   for (auto &elem : kmer_read_map) {
     auto kmer = elem.first;
-    auto read_list = elem.second;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
   size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
   future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
+    progress();
     min_kmers = min(min_kmers, kmer_lists[i].size());
     max_kmers = max(max_kmers, kmer_lists[i].size());
     num_kmers += kmer_lists[i].size();
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
-      [=](vector<pair<MerArray, vector<CtgLoc>>> aligned_ctgs) {
-        /*
-        for (auto ctg_loc : aligned_ctgs) {
-          // ensures only the first kmer to cid mapping is retained - copies will not be inserted
-          aligned_ctgs_map->insert({ctg_loc.cid, {i, is_rc, ctg_loc}});
-          if (aligned_ctgs_map->size() >= MAX_ALNS_PER_READ) break;
+      [=](vector<pair<MerArray, vector<CtgLoc>>> kmer_ctg_locs) {
+        // iterate through the kmers, each one has an associated vector of ctg locations
+        for (auto &kmer_ctg_loc : kmer_ctg_locs) {
+          Kmer kmer(kmer_ctg_loc.first);
+          auto ctg_locs = kmer_ctg_loc.second;
+          // get the reads that this kmer mapped to
+          auto kmer_read_map_it = kmer_read_map.find(kmer);
+          if (kmer_read_map_it == kmer_read_map.end()) DIE("Could not find kmer ", kmer);
+          // this is a list of the reads
+          auto &kmer_to_reads = kmer_read_map_it->second;
+          // iterate through the ctg locations for this kmer returned by the dht
+          for (auto &ctg_loc : ctg_locs) {
+            // now add the ctg loc to all the reads
+            for (auto &kmer_to_read : kmer_to_reads) {
+              auto read_record = kmer_to_read.read_record;
+              int pos_in_read = kmer_to_read.pos_in_read;
+              bool read_is_rc = kmer_to_read.is_rc;
+              if (read_record->aligned_ctgs_map.size() > MAX_ALNS_PER_READ) continue;
+              read_record->aligned_ctgs_map.insert({ctg_loc.cid, {pos_in_read, read_is_rc, ctg_loc}});
+            }
+          }
         }
-        */
       });
     fut_chain = when_all(fut_chain, fut);
   }
   fut_chain.wait();
+  delete[] kmer_lists;
   kmer_read_map.clear();
-  //SLOG_VERBOSE("kmers dispatched min ", min_kmers, " max ", max_kmers, "\n");
-  for (auto read_record : read_records) delete read_record;
+  compute_alns_timer.start();
+  int num_reads_aligned = 0;
+  SLOG_VERBOSE("kmers dispatched min ", min_kmers, " max ", max_kmers, "\n");
+  for (auto read_record : read_records) {
+    progress();
+    // compute alignments
+    if (read_record->aligned_ctgs_map.size()) {
+      num_reads_aligned++;
+      // when all the ctgs are fetched, do the alignments
+      //num_reads_aligned++;
+      //compute_alns_timer.start();
+      kmer_ctg_dht.compute_alns_for_read(&read_record->aligned_ctgs_map, read_record->id, read_record->seq);
+      //compute_alns_timer.stop();
+    }
+    delete read_record;
+  }
   read_records.clear();
+  compute_alns_timer.stop();
+  return num_reads_aligned;
 }
 
 
@@ -508,8 +551,9 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
     vector<ReadRecord*> read_records;
-    HASH_TABLE<Kmer, vector<ReadRecord*>> kmer_read_map;
+    HASH_TABLE<Kmer, vector<KmerToRead>> kmer_read_map;
     while (true) {
+      progress();
       get_reads_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
       get_reads_timer.stop();
@@ -536,13 +580,13 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
           is_rc = true;
         }
         auto it = kmer_read_map.find(kmer);
-        if (it == kmer_read_map.end()) kmer_read_map.insert({kmer, {read_record}});
-        else it->second.push_back(read_record);
+        if (it == kmer_read_map.end()) it = kmer_read_map.insert({kmer, {}}).first;
+        it->second.push_back({read_record, i, is_rc});
         if (kmer_read_map.size() >= MAX_NUM_GET_CTGS) filled = true;
       }
-      if (filled) align_kmers(kmer_ctg_dht, kmer_read_map, read_records);
+      if (filled) num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer);
       /*
-      auto aligned_ctgs_map = new aligned_ctgs_map_t;
+      auto aligned_ctgs_map = new HASH_TABLE<cid_t, ReadAndCtgLoc>;
       // should be enough to cover any short read size
       aligned_ctgs_map->reserve(250);
       // get all the seeds/kmers for a read, and add all the potential ctgs for aln to the aligned_ctgs_map
@@ -603,7 +647,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
       */
       num_reads++;
     }
-    if (read_records.size()) align_kmers(kmer_ctg_dht, kmer_read_map, read_records);
+    if (read_records.size()) num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer);
     progbar.done();
     barrier();
   }
