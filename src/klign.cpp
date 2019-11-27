@@ -29,7 +29,7 @@ using namespace upcxx;
 
 #define NOW std::chrono::high_resolution_clock::now
 
-#define DUMP_ALNS
+//#define DUMP_ALNS
 
 using cid_t = int64_t;
 
@@ -468,24 +468,25 @@ struct KmerToRead {
 
 
 static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToRead>> &kmer_read_map,
-                       vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer, IntermittentTimer &get_ctgs_timer) {
+                       vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer,
+                       IntermittentTimer &get_ctgs_timer) {
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer>[rank_n()];
   for (auto &elem : kmer_read_map) {
     auto kmer = elem.first;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
-  size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
+  //size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
   get_ctgs_timer.start();
   future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
     progress();
-    min_kmers = min(min_kmers, kmer_lists[i].size());
-    max_kmers = max(max_kmers, kmer_lists[i].size());
-    num_kmers += kmer_lists[i].size();
+    //min_kmers = min(min_kmers, kmer_lists[i].size());
+    //max_kmers = max(max_kmers, kmer_lists[i].size());
+    //num_kmers += kmer_lists[i].size();
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
-      [=](vector<pair<MerArray, vector<CtgLoc>>> kmer_ctg_locs) {
+      [&](vector<pair<MerArray, vector<CtgLoc>>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated vector of ctg locations
         for (auto &kmer_ctg_loc : kmer_ctg_locs) {
           Kmer kmer(kmer_ctg_loc.first);
@@ -516,7 +517,7 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
   kmer_read_map.clear();
   compute_alns_timer.start();
   int num_reads_aligned = 0;
-  SLOG_VERBOSE("kmers dispatched min ", min_kmers, " max ", max_kmers, "\n");
+  //SLOG_VERBOSE("kmers dispatched min ", min_kmers, " max ", max_kmers, "\n");
   for (auto read_record : read_records) {
     progress();
     // compute alignments
@@ -678,7 +679,6 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   compute_alns_timer.done_barrier();
   get_reads_timer.done_barrier();
   get_ctgs_timer.done_barrier();
-  exit(0);
 }
 
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int max_store_size, int max_ctg_cache,
