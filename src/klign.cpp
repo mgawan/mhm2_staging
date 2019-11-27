@@ -29,7 +29,7 @@ using namespace upcxx;
 
 #define NOW std::chrono::high_resolution_clock::now
 
-//#define DUMP_ALNS
+#define DUMP_ALNS
 
 using cid_t = int64_t;
 
@@ -468,7 +468,7 @@ struct KmerToRead {
 
 
 static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToRead>> &kmer_read_map,
-                       vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer) {
+                       vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer, IntermittentTimer &get_ctgs_timer) {
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer>[rank_n()];
   for (auto &elem : kmer_read_map) {
@@ -476,6 +476,7 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
   size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
+  get_ctgs_timer.start();
   future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
@@ -510,6 +511,7 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
     fut_chain = when_all(fut_chain, fut);
   }
   fut_chain.wait();
+  get_ctgs_timer.stop();
   delete[] kmer_lists;
   kmer_read_map.clear();
   compute_alns_timer.start();
@@ -541,7 +543,6 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   int64_t num_reads_aligned = 0;
   IntermittentTimer compute_alns_timer("Compute alns");
   IntermittentTimer get_reads_timer("Get reads");
-  IntermittentTimer get_kmers_timer("Get kmers");
   IntermittentTimer get_ctgs_timer("Get ctgs with kmer");
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
@@ -564,9 +565,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
       // accumulate all the ctgs that align to this read at any position in a hash table to filter out duplicates
       // this is dynamically allocated and deleted in the final .then callback when the computation is over
       // a mapping of cid to {pos in read, is_rc, ctg location)
-      get_kmers_timer.start();
       auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq);
-      get_kmers_timer.stop();
       tot_num_kmers += kmers.size();
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
@@ -584,7 +583,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
         it->second.push_back({read_record, i, is_rc});
         if (kmer_read_map.size() >= MAX_NUM_GET_CTGS) filled = true;
       }
-      if (filled) num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer);
+      if (filled) num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
       /*
       auto aligned_ctgs_map = new HASH_TABLE<cid_t, ReadAndCtgLoc>;
       // should be enough to cover any short read size
@@ -647,7 +646,8 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
       */
       num_reads++;
     }
-    if (read_records.size()) num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer);
+    if (read_records.size())
+      num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
     progbar.done();
     barrier();
   }
@@ -677,7 +677,6 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
                "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
   compute_alns_timer.done_barrier();
   get_reads_timer.done_barrier();
-  get_kmers_timer.done_barrier();
   get_ctgs_timer.done_barrier();
   exit(0);
 }
