@@ -176,7 +176,7 @@ public:
   }
   
   void start() {
-    if (!interval_label.empty() && !_verbose) SLOG(KBLUE, std::left, std::setw(40), interval_label + ":", KNORM);
+    if (!interval_label.empty() && !_verbose) SOUT(KBLUE, std::left, std::setw(40), interval_label + ":", KNORM);
     t = std::chrono::high_resolution_clock::now();
   }
   
@@ -184,7 +184,7 @@ public:
     std::chrono::duration<double> interval = std::chrono::high_resolution_clock::now() - t;
     t_interval = interval.count();
     t_elapsed += t_interval;
-    if (!interval_label.empty() && !_verbose) SLOG(KBLUE, std::setprecision(2), std::fixed, t_interval, " s", KNORM, "\n");
+    if (!interval_label.empty() && !_verbose) SOUT(KBLUE, std::setprecision(2), std::fixed, t_interval, " s", KNORM, "\n");
   }
 
   double get_interval() {
