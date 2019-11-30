@@ -71,9 +71,9 @@ class KmerCtgDHT {
   int64_t num_overlaps;
   
   chrono::duration<double> ssw_dt;
-  int max_ctg_seq_cache_size;
+  int64_t max_ctg_seq_cache_size;
   HASH_TABLE<cid_t, string> ctg_seq_cache;
-  int num_ctg_seq_cache_hits;
+  int64_t num_ctg_seq_cache_hits;
   int64_t ctg_seq_bytes_fetched;
   
   Alns *alns;
