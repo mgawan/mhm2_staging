@@ -38,15 +38,20 @@ class FastqReader {
   }
 
   bool get_fq_name(string &header) {
-    if (header[0] != '@') return false;
+    if (header[0] != '@') {
+      //WARN("unknown format ", header, " missing @\n");
+      return false;
+    }
     // trim off '@'
     header.erase(0, 1);
+    // strip trailing spaces
+    //header = std::regex_replace(header, std::regex("\\s+$"), std::string(""));
+    rtrim(header);
     // convert if new illumina 2 format  or HudsonAlpha format
     int len = header.length();
     if (header[len - 2] != '/') {
       if (header[len - 2] == 'R') {
         // HudsonAlpha format  (@pair-R1,  @pair-R2)
-        char *end = &header[len - 3];
         // replace with @pair/1 or @pair/2 */
         char rNum = header[len - 1];
         header[len - 3] = '/';
@@ -56,7 +61,7 @@ class FastqReader {
       } else {
         // Latest Illumina header format
         auto end_pos = header.find('\t');
-        if (end_pos != string::npos) {
+        if (end_pos == string::npos) {
           end_pos = header.find(' ');
           // no comment, just return without modification
           if (end_pos == string::npos) return true;
@@ -70,7 +75,8 @@ class FastqReader {
         }
         if ((len < end_pos + 7) || header[end_pos + 2] != ':' || header[end_pos + 4] != ':' || header[end_pos + 6] != ':' ||
             (header[end_pos + 1] != '1' && header[end_pos + 1] != '2')) {
-          // unknown pairing format 
+          // unknown pairing format
+          //WARN("unknown format ", header, " end pos ", end_pos, "\n");
           return false;
         }
         // @pair 1:Y:.:.: or @pair 2:Y:.:.:

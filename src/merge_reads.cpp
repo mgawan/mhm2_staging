@@ -158,8 +158,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     
     int64_t bytes_written = 0;
     int max_read_len = 0;
-    int overlap_len = 0;
-    int merged_len = 0;
+    int64_t overlap_len = 0;
+    int64_t merged_len = 0;
     
     const int16_t MIN_OVERLAP = 12;
     const int16_t EXTRA_TEST_OVERLAP = 2;
