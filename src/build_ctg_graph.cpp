@@ -22,7 +22,7 @@ static CtgGraph *_graph = nullptr;
 
 
 static void add_vertices_from_ctgs(Contigs &ctgs) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
   for (auto ctg : ctgs) {
     Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
@@ -37,7 +37,7 @@ static void add_vertices_from_ctgs(Contigs &ctgs) {
 
 
 static void set_nbs() {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   {
     int64_t clen_excess = 0;
     int64_t num_excess_ctgs = 0;
@@ -195,7 +195,7 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
 
 
 static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
 
   int64_t num_seqs_added = 0;
   int64_t num_reads = 0;
@@ -413,15 +413,17 @@ static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vecto
 static void merge_nbs()
 {
   barrier();
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_merges = 0;
   int64_t num_orphans = 0;
   int max_orphan_len = 0;
   int64_t num_nbs = 0, num_merged_nbs = 0, max_nbs = 0;
   double max_orphan_depth = 0;
   {
-    IntermittentTimer t_merge_ends("merge ends"), t_merge_get_nbs("merge get nbs"), t_merge_sort_nbs("merge sort nbs"), 
-      t_merge_output_nbs("merge output nbs");
+    IntermittentTimer t_merge_ends(__FILENAME__ + string(":") + "merge ends"),
+      t_merge_get_nbs(__FILENAME__ + string(":") + "merge get nbs"),
+      t_merge_sort_nbs(__FILENAME__ + string(":") + "merge sort nbs"), 
+      t_merge_output_nbs(__FILENAME__ + string(":") + "merge output nbs");
     ProgressBar progbar(_graph->get_local_num_vertices(), "Merge nbs");
     // mark all the vertices that have forks and the side of the forks. Note that in many cases what look like forks are
     // actually vertices that should be merged into a single neighbor
@@ -466,7 +468,7 @@ static void merge_nbs()
 
 
 void mark_short_aln_edges(int max_kmer_len) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   // make sure we don't use an out-of-date edge
   barrier();
   _graph->clear_caches();
@@ -497,7 +499,7 @@ void mark_short_aln_edges(int max_kmer_len) {
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
                      vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   get_splints_from_alns(alns, graph);

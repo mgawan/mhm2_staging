@@ -314,7 +314,7 @@ public:
     , bloom1_cardinality(0) {
 
     // main purpose of the timer here is to track memory usage
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes);
     else kmer_store.set_size("kmers", max_kmer_store_bytes);
     if (use_bloom) {
@@ -431,7 +431,7 @@ public:
   }
 
   void reserve_space_and_clear_bloom1() {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     // at this point we're done with generating the bloom filters, so we can drop the first bloom filter and
     // allocate the kmer hash table
 
@@ -458,7 +458,7 @@ public:
   }
 
   void flush_updates(PASS_TYPE pass_type) {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     barrier();
     if (pass_type == BLOOM_SET_PASS) {
       kmer_store_bloom.flush_updates(bloom_set, bloom_filter1, bloom_filter2);
@@ -477,7 +477,7 @@ public:
   }
 
   void purge_kmers(int threshold) {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     auto num_prior_kmers = get_num_kmers();
     int64_t num_purged = 0;
     for (auto it = kmers->begin(); it != kmers->end(); ) {
@@ -495,7 +495,7 @@ public:
   }
 
   void purge_fx_kmers() {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     auto num_prior_kmers = get_num_kmers();
     int64_t num_purged = 0;
     for (auto it = kmers->begin(); it != kmers->end(); ) {
@@ -512,7 +512,7 @@ public:
   }
 
   void compute_kmer_exts() {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     for (auto &elem : *kmers) {
       auto kmer_counts = &elem.second;
       kmer_counts->left = kmer_counts->get_left_ext();
@@ -525,7 +525,7 @@ public:
   // where L is left extension and R is right extension, one char, either X, F or A, C, G, T
   // where N is the count of the kmer frequency
   void dump_kmers(int k) {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     string dump_fname = "kmers-" + to_string(k) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);

@@ -27,7 +27,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
 
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
                         int break_scaff_Ns, QualityLevel quality_level, Contigs &ctgs, Alns &alns) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   
   CtgGraph graph;
   build_ctg_graph(&graph, insert_avg, insert_stddev, max_kmer_len, kmer_len, reads_fname_list, ctgs, alns);

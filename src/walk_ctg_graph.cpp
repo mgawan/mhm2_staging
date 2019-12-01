@@ -93,7 +93,7 @@ struct GapStats {
 
 
 static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs &ctgs) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
 
   int num_break_scaffs = 0;
   GapStats gap_stats = {0};
@@ -584,7 +584,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
 
 
 static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
-  Timer timer("sort_ctgs");
+  Timer timer(__FILEFUNC__);
   vector<pair<cid_t, int32_t> > sorted_ctgs;
   for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
     // don't start on a contig that has already been used
@@ -633,7 +633,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
   // This is repeated until there are no more walks found.
   _graph = graph;
   
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   vector<Walk> walks;
   WalkStats walk_stats = {0};
   int64_t num_rounds = 0;
@@ -644,8 +644,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
   // need to repeat the sets of walks because there may be a conflicts between walks across ranks, which results
   // in one of the walks being dropped. So this loop will repeat until no more scaffolds can be built.
   {
-    IntermittentTimer next_nbs_timer("next_nbs");
-    IntermittentTimer walks_timer("walks");
+    IntermittentTimer next_nbs_timer(__FILENAME__ + string(":") + "next_nbs"),
+      walks_timer(__FILENAME__ + string(":") + "walks");
     while (true) {
       walks_timer.start();
       ProgressBar progbar(sorted_ctgs.size(), "Walking graph round " + to_string(num_rounds));

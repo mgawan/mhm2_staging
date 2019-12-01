@@ -263,7 +263,7 @@ public:
   }
 
   void flush_add_kmers() {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     barrier();
     kmer_store.flush_updates(insert_kmer, kmer_map);
     barrier();
@@ -296,7 +296,7 @@ public:
   }
   // this is really only for debugging
   void dump_ctg_kmers() {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
@@ -418,7 +418,7 @@ public:
 
 
 static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
@@ -538,13 +538,13 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
 
 
 static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_list) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
   int64_t num_reads_aligned = 0;
-  IntermittentTimer compute_alns_timer("Compute alns");
-  IntermittentTimer get_reads_timer("Get reads");
-  IntermittentTimer get_ctgs_timer("Get ctgs with kmer");
+  IntermittentTimer compute_alns_timer(__FILENAME__ + string(":") + "Compute alns");
+  IntermittentTimer get_reads_timer(__FILENAME__ + string(":") + "Get reads");
+  IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
@@ -620,7 +620,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
 
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int max_store_size, int max_ctg_cache,
                      Contigs &ctgs, Alns &alns) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   _num_dropped = 0;
   KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();

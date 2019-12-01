@@ -52,12 +52,12 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
 int main(int argc, char **argv) {
   upcxx::init();
   init_logger();
-  IntermittentTimer merge_reads_dt("Merge reads", "Merging reads"),
-    analyze_kmers_dt("Analyze kmers", "Analyzing kmers"),
-    dbjg_traversal_dt("Traverse deBruijn graph", "Traversing deBruijn graph"),
-    alignments_dt("Alignments", "Aligning reads to contigs"),
-    localassm_dt("Local assembly", "Locally extending ends of contigs"),
-    cgraph_dt("Traverse contig graph", "Traversing contig graph");
+  IntermittentTimer merge_reads_dt(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
+    analyze_kmers_dt(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
+    dbjg_traversal_dt(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
+    alignments_dt(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
+    localassm_dt(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
+    cgraph_dt(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph");
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
 

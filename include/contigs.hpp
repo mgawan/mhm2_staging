@@ -198,7 +198,7 @@ public:
   }
 
   void dump_contigs(const string &fname, int min_ctg_len) {
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     string tmpfname = fname + ".tmp"; // make a .tmp file and rename on success
     string fasta = "";
     for (auto it = contigs.begin(); it != contigs.end(); ++it) {
@@ -265,7 +265,7 @@ public:
       return f.tellg();
     };
 
-    Timer timer(__func__);
+    Timer timer(__FILEFUNC__);
     contigs.clear();
     string line;
     string ctg_prefix = ">Contig";

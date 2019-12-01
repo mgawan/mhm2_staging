@@ -136,10 +136,10 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
 
 
 void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   _graph = graph;
   AlnStats stats = {0};
-  IntermittentTimer t_get_alns("get alns splints");
+  IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns splints");
   ProgressBar progbar(alns.size(), "Adding edges to graph from splints");
   int64_t aln_i = 0;
   int64_t num_splints = 0;

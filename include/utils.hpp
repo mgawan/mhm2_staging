@@ -30,6 +30,7 @@ using std::min;
 #endif
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#define __FILEFUNC__ (__FILENAME__ + string(":") + __func__)
 
 #define ONE_MB (1024*1024)
 #define ONE_GB (ONE_MB*1024)
@@ -39,7 +40,6 @@ using std::min;
 #else
 #define HASH_TABLE std::unordered_map
 #endif
-
 
 
 // this shouldn't really be defined here, but I didn't want yet another header file
@@ -159,14 +159,14 @@ public:
   void done_barrier() {
     auto max_t_elapsed = upcxx::reduce_one(t_elapsed, upcxx::op_fast_max, 0).wait();
     auto avg_t_elapsed = upcxx::reduce_one(t_elapsed, upcxx::op_fast_add, 0).wait() / upcxx::rank_n();
-    SLOG_VERBOSE(KLCYAN, "--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, " avg ", avg_t_elapsed,
+    SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, " avg ", avg_t_elapsed,
                  " s max ", max_t_elapsed, " s balance ", (avg_t_elapsed / max_t_elapsed), " ---\n", KNORM);
-    DBG("--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
+    DBG("--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
   }
 
   void done() {
-    SLOG_VERBOSE(KLCYAN, "--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
-    DBG("--- Elapsed time for ", name, ": ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
+    SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
+    DBG("--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
   }
 
   string get_final() {

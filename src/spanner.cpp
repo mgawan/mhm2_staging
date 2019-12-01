@@ -313,8 +313,8 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
 // so the way meraculous spanner seems to work is that it only makes a pair out of the alignments with the shortest rstart. 
 void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
   _graph = graph;
-  Timer timer(__func__);
-  IntermittentTimer t_get_alns("get alns spans");
+  Timer timer(__FILEFUNC__);
+  IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns spans");
   ProgressBar progbar(alns.size(), "Adding edges to graph from spans");
   int64_t reject_5_trunc = 0;
   int64_t reject_3_trunc = 0;

@@ -182,7 +182,7 @@ static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_pt
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   // allocate space for biggest possible uutig in global storage
   const int MAX_UUTIG_LEN = 10000000;
   global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_LEN);
@@ -292,7 +292,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
 
 /*
 void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Computing contig kmer depths");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;

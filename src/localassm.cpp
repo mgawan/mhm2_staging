@@ -227,7 +227,7 @@ struct MerFreqs {
 using MerMap = HASH_TABLE<string, MerFreqs>;
 
 static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsToCtgsDHT &reads_to_ctgs, CtgsWithReadsDHT &ctgs_dht) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_read_maps_found = 0;
   for (auto const &reads_fname : reads_fname_list) {
@@ -322,11 +322,11 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
     return false;
   };
 
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_alns_found = 0, num_alns_invalid = 0, num_direct = 0, num_proj = 0;
   int min_pair_len = insert_avg + 3 * insert_stddev;
   int64_t max_alns = 0;
-  IntermittentTimer t_get_alns("get alns reads to contigs");
+  IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns reads to contigs");
   int64_t aln_i = 0;
   AlnStatus start_status, end_status;
   ProgressBar progbar(alns.size(), "Getting read-to-contig mappings from alignments");
@@ -372,7 +372,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
 
 
 static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   // process the local ctgs and insert into the distributed hash table
   ProgressBar progbar(ctgs.size(), "Adding contigs to distributed hash table");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
@@ -390,10 +390,10 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
                        double dynamic_min_depth) {
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
-    progress();
     if (mer_len >= read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
+      progress();
       // skip mers that contain Ns
       if (read_seq.seq.find("N", start) != string::npos) continue;
       string mer = read_seq.seq.substr(start, mer_len);
@@ -505,12 +505,13 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
 
 static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_avg, int insert_stddev, int max_kmer_len,
                         int kmer_len, int qual_offset, double dynamic_min_depth) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
   int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0;
   array<int64_t, 3> term_counts = {0};
-  IntermittentTimer count_mers_timer("count_mers"), walk_mers_timer("walk_mers");
+  IntermittentTimer count_mers_timer(__FILENAME__ + string(":") + "count_mers"),
+    walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
     progress();
@@ -549,11 +550,13 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
                reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
                reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ",
                reduce_one(term_counts[2], op_fast_add, 0).wait(), " R\n");
-              
+  auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
+  auto max_num_reads = reduce_one(num_reads, op_fast_max, 0).wait();
   auto tot_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
   auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
   auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();
   auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
+  SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, avg ", (tot_num_reads / rank_n()), ", max ", max_num_reads, "\n");
   SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
                " contig sides\n");
   if (tot_sum_clen) 
@@ -566,7 +569,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
                int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
   add_ctgs(ctgs_dht, ctgs);
   ReadsToCtgsDHT reads_to_ctgs(100);

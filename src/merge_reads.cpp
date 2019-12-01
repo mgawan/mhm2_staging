@@ -42,7 +42,7 @@ static const double Q2Perror[] = {
 };
 
 uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
@@ -128,7 +128,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 }
 
 void merge_reads(vector<string> reads_fname_list, int qual_offset) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;

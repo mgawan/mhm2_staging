@@ -25,7 +25,7 @@ extern ofstream _dbgstream;
 extern ofstream _logstream;
 
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
@@ -71,7 +71,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
 
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list,
                         dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
   // and Q = -10 log10(P)
@@ -87,7 +87,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
-  IntermittentTimer read_io_timer("Read IO");
+  IntermittentTimer read_io_timer(__FILENAME__ + string(":") + "Read IO");
   //char special = qual_offset + 2;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
@@ -161,7 +161,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
 
 // count ctg kmers if using bloom
 static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
@@ -188,7 +188,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
 }
 
 static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
   ProgressBar progbar(ctgs.size(), "Adding extra contig kmers");
@@ -218,7 +218,7 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
 
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
-  Timer timer(__func__);
+  Timer timer(__FILEFUNC__);
   
   _dynamic_min_depth = dynamic_min_depth;
     
