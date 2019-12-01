@@ -390,10 +390,10 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
                        double dynamic_min_depth) {
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
+    progress();
     if (mer_len >= read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
-      progress();
       // skip mers that contain Ns
       if (read_seq.seq.find("N", start) != string::npos) continue;
       string mer = read_seq.seq.substr(start, mer_len);
@@ -508,7 +508,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   Timer timer(__FILEFUNC__);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
-  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0;
+  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0;
   array<int64_t, 3> term_counts = {0};
   IntermittentTimer count_mers_timer(__FILENAME__ + string(":") + "count_mers"),
     walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
@@ -520,6 +520,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
     if (ctg->reads_right.size()) {
       num_sides++;
       num_reads += ctg->reads_right.size();
+      max_num_reads = max(max_num_reads, (int64_t)ctg->reads_right.size());
       DBG("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
       // have to do right first because the contig needs to be revcomped for the left
       string right_walk = iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset,
@@ -530,6 +531,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
     if (ctg->reads_left.size()) {
       num_sides++;
       num_reads += ctg->reads_left.size();
+      max_num_reads = max(max_num_reads, (int64_t)ctg->reads_left.size());
       string seq_rc = revcomp(ctg->seq);
       DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
       string left_walk = iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset,
@@ -551,12 +553,13 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
                reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ",
                reduce_one(term_counts[2], op_fast_add, 0).wait(), " R\n");
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto max_num_reads = reduce_one(num_reads, op_fast_max, 0).wait();
+  auto tot_max_num_reads = reduce_one(max_num_reads, op_fast_max, 0).wait();
   auto tot_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
   auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
   auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();
   auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
-  SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, avg ", (tot_num_reads / rank_n()), ", max ", max_num_reads, "\n");
+  SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", max_num_reads, " avg per ctg ",
+               (tot_num_reads / ctgs_dht.get_num_ctgs()), "\n");
   SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
                " contig sides\n");
   if (tot_sum_clen) 
