@@ -124,7 +124,7 @@ struct KmerCounts {
     auto sorted_counts = ext_counts.get_sorted();
     int top_count = sorted_counts[0].second;
     int runner_up_count = sorted_counts[1].second;
-    int dmin_dyn = max((1.0 - _dynamic_min_depth) * count, 2.0);
+    int dmin_dyn = max((1.0 - _dynamic_min_depth) * count, DMIN_THRES);
     if (top_count < dmin_dyn) return 'X';
     if (runner_up_count >= dmin_dyn) return 'F';
     return sorted_counts[0].first;

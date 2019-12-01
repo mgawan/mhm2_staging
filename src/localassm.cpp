@@ -452,7 +452,8 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, i
 
 static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads, int max_mer_len, int kmer_len,
                               int qual_offset, double dynamic_min_depth, int walk_len_limit, array<int64_t, 3> &term_counts,
-                              int64_t &num_walks, int64_t &max_walk_len, int64_t &sum_ext) {
+                              int64_t &num_walks, int64_t &max_walk_len, int64_t &sum_ext, IntermittentTimer &count_mers_timer,
+                              IntermittentTimer &walk_mers_timer) {
   int min_mer_len = LASSM_MIN_KMER_LEN;
   max_mer_len = min(max_mer_len, (int)seq.length());
   // iteratively walk starting from kmer_size, increasing mer size on a fork (F) or repeat (R),
@@ -468,11 +469,15 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
   }
 #endif
   for (int mer_len = kmer_len; mer_len >= min_mer_len && mer_len <= max_mer_len; mer_len += shift) {
+    count_mers_timer.start();
     MerMap mers_ht;
     count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth);
+    count_mers_timer.stop();
     string mer = seq.substr(seq.length() - mer_len);
     string walk = "";
+    walk_mers_timer.start();
     char walk_result = walk_mers(mers_ht, mer, walk, mer_len, walk_len_limit);
+    walk_mers_timer.stop();
     int walk_len = walk.length();
     if (walk_len > longest_walk.length()) longest_walk = walk;
     if (walk_result == 'X') {
@@ -505,6 +510,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   int walk_len_limit = insert_avg + 2 * insert_stddev;
   int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0;
   array<int64_t, 3> term_counts = {0};
+  IntermittentTimer count_mers_timer("count_mers"), walk_mers_timer("walk_mers");
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
     progress();
@@ -516,7 +522,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       DBG("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
       // have to do right first because the contig needs to be revcomped for the left
       string right_walk = iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset,
-                                          dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext);
+                                          dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
+                                          count_mers_timer, walk_mers_timer);
       if (!right_walk.empty()) ctg->seq += right_walk;
     }
     if (ctg->reads_left.size()) {
@@ -525,7 +532,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       string seq_rc = revcomp(ctg->seq);
       DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
       string left_walk = iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset,
-                                         dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext);
+                                         dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
+                                         count_mers_timer, walk_mers_timer);
       if (!left_walk.empty()) {
         left_walk = revcomp(left_walk);
         ctg->seq.insert(0, left_walk);
@@ -534,6 +542,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
     ctgs.add_contig({.id = ctg->cid, .seq = ctg->seq, .depth = ctg->depth});
   }
   progbar.done();
+  count_mers_timer.done_barrier();
+  walk_mers_timer.done_barrier();
   barrier();
   SLOG_VERBOSE("Walk terminations: ",
                reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
