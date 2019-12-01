@@ -203,8 +203,8 @@ public:
     t = std::chrono::high_resolution_clock::now();
     this->name = name;
     if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
-    if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
-    else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
+    //if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
+    //else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
   }
   
   ~Timer() {
@@ -212,12 +212,13 @@ public:
     DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --\n", KNORM);
     upcxx::barrier();
     t_elapsed = std::chrono::high_resolution_clock::now() - t;
+    auto curr_free_mem = get_free_mem_gb();
     if (always_show) {
       SLOG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-           (init_free_mem - get_free_mem_gb()), " GB) --\n", KNORM);
+           (init_free_mem - curr_free_mem), " GB, free ", curr_free_mem, " GB) --\n", KNORM);
     } else {
       SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-                   (init_free_mem - get_free_mem_gb()), " GB) --\n", KNORM);
+                   (init_free_mem - curr_free_mem), " GB, free ", curr_free_mem, " GB) --\n", KNORM);
     }
   }
 };
