@@ -388,8 +388,11 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 
 static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
                        double dynamic_min_depth) {
+  int num_reads = 0;
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
+    num_reads++;
+    if (num_reads > LASSM_MAX_COUNT_MERS_READS) break;
     progress();
     if (mer_len >= read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
