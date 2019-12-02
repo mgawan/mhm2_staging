@@ -387,12 +387,15 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 
 
 static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
-                       double dynamic_min_depth) {
+                       double dynamic_min_depth, int64_t &excess_reads) {
   int num_reads = 0;
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
     num_reads++;
-    if (num_reads > LASSM_MAX_COUNT_MERS_READS) break;
+    if (num_reads > LASSM_MAX_COUNT_MERS_READS) {
+      excess_reads += reads.size() - LASSM_MAX_COUNT_MERS_READS;
+      break;
+    }
     progress();
     if (mer_len >= read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
@@ -456,7 +459,7 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, i
 static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads, int max_mer_len, int kmer_len,
                               int qual_offset, double dynamic_min_depth, int walk_len_limit, array<int64_t, 3> &term_counts,
                               int64_t &num_walks, int64_t &max_walk_len, int64_t &sum_ext, IntermittentTimer &count_mers_timer,
-                              IntermittentTimer &walk_mers_timer) {
+                              IntermittentTimer &walk_mers_timer, int64_t &excess_reads) {
   int min_mer_len = LASSM_MIN_KMER_LEN;
   max_mer_len = min(max_mer_len, (int)seq.length());
   // iteratively walk starting from kmer_size, increasing mer size on a fork (F) or repeat (R),
@@ -474,7 +477,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
   for (int mer_len = kmer_len; mer_len >= min_mer_len && mer_len <= max_mer_len; mer_len += shift) {
     count_mers_timer.start();
     MerMap mers_ht;
-    count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth);
+    count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth, excess_reads);
     count_mers_timer.stop();
     string mer = seq.substr(seq.length() - mer_len);
     string walk = "";
@@ -511,7 +514,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   Timer timer(__FILEFUNC__);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
-  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0;
+  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0,
+    excess_reads = 0;
   array<int64_t, 3> term_counts = {0};
   IntermittentTimer count_mers_timer(__FILENAME__ + string(":") + "count_mers"),
     walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
@@ -528,7 +532,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       // have to do right first because the contig needs to be revcomped for the left
       string right_walk = iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset,
                                           dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
-                                          count_mers_timer, walk_mers_timer);
+                                          count_mers_timer, walk_mers_timer, excess_reads);
       if (!right_walk.empty()) ctg->seq += right_walk;
     }
     if (ctg->reads_left.size()) {
@@ -539,7 +543,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
       string left_walk = iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset,
                                          dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
-                                         count_mers_timer, walk_mers_timer);
+                                         count_mers_timer, walk_mers_timer, excess_reads);
       if (!left_walk.empty()) {
         left_walk = revcomp(left_walk);
         ctg->seq.insert(0, left_walk);
@@ -561,8 +565,10 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
   auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();
   auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
+  auto tot_excess_reads = reduce_one(excess_reads, op_fast_add, 0).wait();
   SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", max_num_reads, " avg per ctg ",
-               (tot_num_reads / ctgs_dht.get_num_ctgs()), "\n");
+               (tot_num_reads / ctgs_dht.get_num_ctgs()), " dropped ", perc_str(tot_excess_reads, tot_num_reads),
+               " excess reads\n");
   SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
                " contig sides\n");
   if (tot_sum_clen) 

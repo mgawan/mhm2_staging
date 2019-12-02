@@ -59,6 +59,7 @@ using ext_count_t = uint16_t;
 
 // global variables to avoid passing dist objs to rpcs
 static double _dynamic_min_depth = 0;
+static int _dmin_thres = 2.0;
 
 
 struct ExtCounts {
@@ -124,7 +125,8 @@ struct KmerCounts {
     auto sorted_counts = ext_counts.get_sorted();
     int top_count = sorted_counts[0].second;
     int runner_up_count = sorted_counts[1].second;
-    int dmin_dyn = max((1.0 - _dynamic_min_depth) * count, DMIN_THRES);
+    // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
+    int dmin_dyn = max((int)(1.0 - _dynamic_min_depth) * count, _dmin_thres);
     if (top_count < dmin_dyn) return 'X';
     if (runner_up_count >= dmin_dyn) return 'F';
     return sorted_counts[0].first;

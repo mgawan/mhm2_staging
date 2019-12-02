@@ -217,10 +217,11 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
 }
 
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
+                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__FILEFUNC__);
   
   _dynamic_min_depth = dynamic_min_depth;
+  _dmin_thres = dmin_thres;
     
   if (use_bloom) {
     count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_SET_PASS);

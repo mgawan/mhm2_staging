@@ -39,7 +39,7 @@ unsigned int Kmer::k = 0;
 void merge_reads(vector<string> reads_fname_list, int qual_offset);
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   double dynamic_min_depth, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
+                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
                      int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
       dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
       barrier();
       analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
-                    options->dynamic_min_depth, ctgs, kmer_dht);
+                    options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
       analyze_kmers_dt.stop();
       barrier();
       dbjg_traversal_dt.start();

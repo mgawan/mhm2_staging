@@ -37,6 +37,7 @@ public:
   int max_ctg_cache = 1000000;
   bool use_bloom = true;
   double dynamic_min_depth = 0.9;
+  int dmin_thres = 2.0;
   bool checkpoint = true;
   bool show_progress = false;
   string ctgs_fname;
@@ -62,7 +63,10 @@ public:
     app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
     app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
     app.add_option("--dynamic-min-depth", dynamic_min_depth,
-                   "Dynamic min. depth for DeBruijn graph traversal (default " + to_string(dynamic_min_depth) + ")");
+                   "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome (default " +
+                   to_string(dynamic_min_depth) + ")");
+    app.add_option("--min-depth-thres", dmin_thres,
+                   "Absolute mininimum depth threshold for DeBruijn graph traversal (default " + to_string(dmin_thres) + ")");
     app.add_option("--max-kmer-store", max_kmer_store,
                    "Maximum size for kmer store (default " + to_string(max_kmer_store) + ")");
     app.add_option("--max-ctg-cache", max_ctg_cache,
@@ -89,11 +93,11 @@ public:
 
     if (upcxx::rank_me() == 0) {
       // print out all compiler definitions
-      SLOG(KBLUE "_________________________\nCompiler definitions:\n");
+      SLOG_VERBOSE(KBLUE "_________________________\nCompiler definitions:\n");
       std::istringstream all_defs_ss(ALL_DEFNS);
       vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
       for (auto &def : all_defs) SLOG("  ", def, "\n");
-      SLOG(KLBLUE, "_________________________\n");
+      SLOG_VERBOSE(KLBLUE, "_________________________\n");
       SLOG("MHM options:\n");
       SLOG("  reads files:           ");
       for (auto read_fname : reads_fname_list) SLOG(read_fname, ",");
@@ -109,6 +113,7 @@ public:
       SLOG("  max kmer store:        ", max_kmer_store, "\n");
       SLOG("  max ctg cache:         ", max_ctg_cache, "\n");
       SLOG("  dynamic min depth:     ", dynamic_min_depth, "\n");
+      SLOG("  min depth threshold:   ", dmin_thres, "\n");
       if (!ctgs_fname.empty()) SLOG("  contig file name:      ", ctgs_fname, "\n");
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
