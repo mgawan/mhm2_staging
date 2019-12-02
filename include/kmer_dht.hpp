@@ -126,7 +126,7 @@ struct KmerCounts {
     int top_count = sorted_counts[0].second;
     int runner_up_count = sorted_counts[1].second;
     // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
-    int dmin_dyn = max((int)(1.0 - _dynamic_min_depth) * count, _dmin_thres);
+    int dmin_dyn = max((int)((1.0 - _dynamic_min_depth) * count), _dmin_thres);
     if (top_count < dmin_dyn) return 'X';
     if (runner_up_count >= dmin_dyn) return 'F';
     return sorted_counts[0].first;
