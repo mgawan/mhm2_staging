@@ -96,7 +96,7 @@ public:
       SLOG_VERBOSE(KBLUE "_________________________\nCompiler definitions:\n");
       std::istringstream all_defs_ss(ALL_DEFNS);
       vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
-      for (auto &def : all_defs) SLOG("  ", def, "\n");
+      for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
       SLOG_VERBOSE(KLBLUE, "_________________________\n");
       SLOG("MHM options:\n");
       SLOG("  reads files:           ");
