@@ -72,7 +72,7 @@ add_definitions(-DLASSM_MIN_HI_QUAL=20)
 add_definitions(-DLASSM_MIN_VIABLE_DEPTH=0.2)
 add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.3)
 add_definitions(-DLASSM_RATING_THRES=0)
-add_definitions(-DLASSM_MAX_COUNT_MERS_READS=1000)
+add_definitions(-DLASSM_MAX_COUNT_MERS_READS=3000)
 # FIXME: should be a parameter
 add_definitions(-DDMIN_THRES=2.0)
 #add_definitions(-DDMIN_THRES=4.0)
