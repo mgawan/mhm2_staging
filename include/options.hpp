@@ -45,8 +45,7 @@ public:
   int insert_stddev = 0;
   
   bool load(int argc, char **argv) {
-    //SLOG(KBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
-    CLI::App app("MHM (version) " + string(MHM_VERSION));
+    CLI::App app("MHM (" + string(MHM_VERSION) + ")");
 
     string reads_fnames;
     string kmer_lens_str;
@@ -92,12 +91,15 @@ public:
     if (show_progress) verbose = true;
 
     if (upcxx::rank_me() == 0) {
+      SLOG(KBLUE, "MHM version ", MHM_VERSION, "\n");
       // print out all compiler definitions
-      SLOG_VERBOSE(KBLUE "_________________________\nCompiler definitions:\n");
-      std::istringstream all_defs_ss(ALL_DEFNS);
-      vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
-      for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
-      SLOG_VERBOSE(KLBLUE, "_________________________\n");
+      if (verbose) {
+        SLOG("_________________________\nCompiler definitions:\n");
+        std::istringstream all_defs_ss(ALL_DEFNS);
+        vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
+        for (auto &def : all_defs) SLOG("  ", def, "\n");
+        SLOG("_________________________\n");
+      }
       SLOG("MHM options:\n");
       SLOG("  reads files:           ");
       for (auto read_fname : reads_fname_list) SLOG(read_fname, ",");

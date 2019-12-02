@@ -3,7 +3,7 @@ project(MHM)
 
 message("Building ${CMAKE_BUILD_TYPE} version")
 
-find_package(UPCXX)
+find_package(UPCXX REQUIRED)
 find_package(ZLIB 1.2.3 REQUIRED)
 include_directories(BEFORE ${ZLIB_INCLUDE_DIRECTORIES})
 get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
