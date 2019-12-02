@@ -567,7 +567,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
   auto tot_excess_reads = reduce_one(excess_reads, op_fast_add, 0).wait();
   SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", max_num_reads, " avg per ctg ",
-               (tot_num_reads / ctgs_dht.get_num_ctgs()), " dropped ", perc_str(tot_excess_reads, tot_num_reads),
+               (tot_num_reads / ctgs_dht.get_num_ctgs()), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
                " excess reads\n");
   SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
                " contig sides\n");
