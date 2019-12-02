@@ -14,7 +14,7 @@
 using namespace std;
 using namespace upcxx;
 
-#define DUMP_LINKS
+//#define DUMP_LINKS
 
 
 static CtgGraph *_graph = nullptr;
