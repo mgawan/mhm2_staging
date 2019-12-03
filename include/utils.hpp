@@ -42,6 +42,14 @@ using std::min;
 #endif
 
 
+inline void find_and_replace(std::string& subject, const std::string& search, const std::string& replace) {
+  size_t pos = 0;
+  while ((pos = subject.find(search, pos)) != std::string::npos) {
+    subject.replace(pos, search.length(), replace);
+    pos += replace.length();
+  }
+}
+
 // this shouldn't really be defined here, but I didn't want yet another header file
 enum class QualityLevel {
   SINGLE_PATH_ONLY,
@@ -54,7 +62,8 @@ extern bool _verbose;
 
 inline void init_logger() {
   if (!upcxx::rank_me()) {
-    _logstream.open("mhm.log", ofstream::out | ofstream::app);
+    // FIXME: if the file already exists, move it to a timestamped version as backup
+    _logstream.open("mhm.log");
     _logstream << "\n\n=======================================\n\n";
   }
 }
@@ -81,9 +90,14 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
     std::cerr << "\n" << KNORM;
     throw std::runtime_error(os.str());
   }
-  //string outstr = os.str();
-  //for (auto c : COLORS) std::regex_replace(outstr, std::regex(s), "");
-  stream << os.str();
+  if (stream.rdbuf() != std::cout.rdbuf() && stream.rdbuf() != std::cerr.rdbuf()) {
+    // strip out colors for log file
+    string outstr = os.str();
+    for (auto c : COLORS) find_and_replace(outstr, c, "");
+    stream << outstr;
+  } else {
+    stream << os.str();
+  }
   if (flush) stream.flush();
 }
 
@@ -91,12 +105,18 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
 #define SOUT(...) do {                                   \
     logger(cout, false, true, true, ##__VA_ARGS__);      \
   } while (0)
-#define WARN(...)                                                       \
-  logger(cerr, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
-         "> WARNING: ", ##__VA_ARGS__, KNORM, "\n")
-#define DIE(...)                                                        \
-  logger(cerr, true, false, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
-         "> ERROR: ", ##__VA_ARGS__, KNORM, "\n")
+#define WARN(...) do {                                                  \
+    logger(_logstream, false, true, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
+           "> WARNING: ", ##__VA_ARGS__, KNORM, "\n");                  \
+    logger(cerr, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
+           "> WARNING: ", ##__VA_ARGS__, KNORM, "\n");                  \
+  } while (0)
+#define DIE(...) do {                                                   \
+    logger(_logstream, false, true, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+           "> ERROR: ", ##__VA_ARGS__, KNORM, "\n");                    \
+    logger(cerr, true, false, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+           "> ERROR: ", ##__VA_ARGS__, KNORM, "\n");                    \
+  } while (0)
 #define SWARN(...)                                                      \
   logger(cerr, false, true, true, KRED, "\nWARNING: ", ##__VA_ARGS__, KNORM, "\n\n")
 #define SDIE(...)                                                       \

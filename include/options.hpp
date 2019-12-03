@@ -90,17 +90,17 @@ public:
     insert_stddev = std::stoi(ins_size_params_list[1]);
     if (show_progress) verbose = true;
 
+    set_logger_verbose(verbose);
+
     if (upcxx::rank_me() == 0) {
-      SLOG(KBLUE, "MHM version ", MHM_VERSION, "\n");
+      SLOG(KLBLUE, "MHM version ", MHM_VERSION, "\n");
       // print out all compiler definitions
-      if (verbose) {
-        SLOG("_________________________\nCompiler definitions:\n");
-        std::istringstream all_defs_ss(ALL_DEFNS);
-        vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
-        for (auto &def : all_defs) SLOG("  ", def, "\n");
-        SLOG("_________________________\n");
-      }
-      SLOG("MHM options:\n");
+      SLOG_VERBOSE("_________________________\nCompiler definitions:\n");
+      std::istringstream all_defs_ss(ALL_DEFNS);
+      vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
+      for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
+      SLOG_VERBOSE("_________________________\n");
+      SLOG("Options:\n");
       SLOG("  reads files:           ");
       for (auto read_fname : reads_fname_list) SLOG(read_fname, ",");
       SLOG("\n");

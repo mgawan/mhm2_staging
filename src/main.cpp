@@ -71,7 +71,6 @@ int main(int argc, char **argv) {
 
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
-  set_logger_verbose(options->verbose);
   _show_progress = options->show_progress;
   // get total file size across all libraries
   double tot_file_size = 0;
