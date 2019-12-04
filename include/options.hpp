@@ -26,7 +26,7 @@ class Options {
   }
 
 public:
-  
+
   vector<string> reads_fname_list;
   vector<unsigned> kmer_lens = {};
   int max_kmer_len = 0;
@@ -43,7 +43,7 @@ public:
   string ctgs_fname;
   int insert_avg = 0;
   int insert_stddev = 0;
-  
+
   bool load(int argc, char **argv) {
     CLI::App app("MHM (" + string(MHM_VERSION) + ")");
 
@@ -93,9 +93,9 @@ public:
     set_logger_verbose(verbose);
 
     if (upcxx::rank_me() == 0) {
-      SLOG(KLBLUE, "MHM version ", MHM_VERSION, "\n");
+      SLOG(KLBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
       // print out all compiler definitions
-      SLOG_VERBOSE("_________________________\nCompiler definitions:\n");
+      SLOG_VERBOSE(KLBLUE, "_________________________\nCompiler definitions:", KNORM, "\n");
       std::istringstream all_defs_ss(ALL_DEFNS);
       vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
       for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
@@ -122,12 +122,12 @@ public:
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");
       SLOG("  verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
-      
+
       double start_mem_free = get_free_mem_gb();
       SLOG("Initial free memory on node 0: ", std::setprecision(3), std::fixed, start_mem_free, " GB\n");
       SLOG("Running on ", upcxx::rank_n(), " ranks\n");
 #ifdef DEBUG
-      SWARN("Running low-performance debug mode", KNORM);
+      SWARN("Running low-performance debug mode");
 #endif
     }
     upcxx::barrier();
