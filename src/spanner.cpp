@@ -16,7 +16,6 @@ using namespace upcxx;
 
 //#define DUMP_LINKS
 
-
 static CtgGraph *_graph = nullptr;
 
 
@@ -266,11 +265,7 @@ enum class ProcessPairResult { FAIL_SMALL, FAIL_SELF_LINK, FAIL_EDIST, FAIL_MIN_
  
 ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln &aln2, const string &type_status1,
                                const string &type_status2, const string &read_status1, const string &read_status2,
-                               zstr::ofstream &spans_file, int max_kmer_len) {
-#ifdef DUMP_SPANS
-  spans_file << "PAIR\t" << type_status1 << "." << type_status2 << "\t"
-             << get_ctg_aln_str(aln1, read_status1) << "\t" << get_ctg_aln_str(aln2, read_status2) << endl;
-#endif
+                               int max_kmer_len) {
   auto get_dist = [=](int &d, Aln &aln) -> bool {
     aln.rstart++;
     aln.cstart++;
@@ -324,9 +319,6 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
   int64_t aln_i = 0;
   Aln prev_best_aln = { .read_id = "" };
   string read_status = "", type_status = "", prev_read_status = "", prev_type_status = "";
-  string spans_fname = "spanner-" + to_string(kmer_len) + ".spans.gz";
-  get_rank_path(spans_fname, rank_me());
-  zstr::ofstream spans_file(spans_fname);
   while (aln_i < alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
@@ -344,7 +336,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
           } else {
             num_pairs++;
             auto res = process_pair(insert_avg, insert_stddev, prev_best_aln, best_aln, prev_type_status, type_status,
-                                    prev_read_status, read_status, spans_file, max_kmer_len);
+                                    prev_read_status, read_status, max_kmer_len);
             result_counts[(int)res]++;
           }
             // there will be no previous one next time 
@@ -361,7 +353,6 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
     prev_type_status = type_status;
   }
   progbar.done();
-  spans_file.close();
   barrier();
   t_get_alns.done_barrier();
   
@@ -371,9 +362,11 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
   SLOG_VERBOSE("  self link: ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SELF_LINK], op_fast_add, 0).wait(), "\n");
   SLOG_VERBOSE("  edist:     ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_EDIST], op_fast_add, 0).wait(), "\n");
   SLOG_VERBOSE("  min gap:   ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_MIN_GAP], op_fast_add, 0).wait(), "\n");
+#ifdef DUMP_LINKS
   string links_fname = "links-" + to_string(kmer_len) + ".spans.gz";
   get_rank_path(links_fname, rank_me());
   zstr::ofstream links_file(links_fname);
+#endif
   int64_t num_spans_only = 0;
   int64_t num_pos_spans = 0;
   for (auto edge = _graph->get_first_local_edge(); edge != nullptr; edge = _graph->get_next_local_edge()) {
@@ -397,7 +390,9 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
 #endif
     }
   }
+#ifdef DUMP_LINKS
   links_file.close();
+#endif
   barrier();
   auto tot_num_spans_only = reduce_one(num_spans_only, op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
