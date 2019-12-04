@@ -140,6 +140,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
   SLOG_VERBOSE("Max number reads for any rank ", max_num_reads, "\n");
   // double the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
   uint64_t read_id = rank_me() * max_num_reads * 2;
+
+  IntermittentTimer reads_io_timer(__FILENAME__ + string(":") + "reads_io");
     
   for (auto const &reads_fname : reads_fname_list) {
     string out_fname = get_merged_reads_fname(reads_fname); 
@@ -177,9 +179,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     int64_t num_pairs = 0;
     size_t tot_bytes_read = 0;
     for (; ; num_pairs++) {
+      reads_io_timer.start();
       size_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
+      reads_io_timer.stop();
       if (!bytes_read1) break;
+      reads_io_timer.start();
       size_t bytes_read2 = fqr.get_next_fq_record(id2, seq2, quals2);
+      reads_io_timer.stop();
       if (!bytes_read2) break;
       tot_bytes_read += bytes_read1 + bytes_read2;
       progbar.update(tot_bytes_read);
@@ -374,8 +380,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     SLOG_VERBOSE("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
     SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
     SLOG_VERBOSE("Total bytes read ", tot_bytes_read, "\n");
-
-    barrier();
+    reads_io_timer.done_barrier();
     num_reads += num_pairs * 2;
   }
 }
