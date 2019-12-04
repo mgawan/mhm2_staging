@@ -43,15 +43,11 @@ public:
     , bar_width{width}
     , complete_char{complete}
     , incomplete_char{incomplete} {
-      if (_show_progress) {
-        if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
-          ten_perc = total / 10;
-          if (ten_perc == 0) ten_perc = 1;
-          //std::cout << KLGREEN << "* " << std::setw(prefix_width) << std::left << prefix_str << ": " << std::flush;
-          std::cout << KLGREEN << "* " << prefix_str << "... " << std::flush;
-          //std::cout << std::endl;
-          prev_time = start_time;
-        }
+      if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
+        ten_perc = total / 10;
+        if (ten_perc == 0) ten_perc = 1;
+        SLOG_VERBOSE(KLGREEN, "* ", prefix_str, "... ");
+        prev_time = start_time;
       }
     }
 
@@ -64,27 +60,17 @@ public:
     , bar_width{width}
     , complete_char{complete}
     , incomplete_char{incomplete} {
-      if (_show_progress) {
-        if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
-          /*
-            struct stat stat_buf;
-            stat(fname.c_str(), &stat_buf);
-            total_ticks = stat_buf.st_size;
-          */
-          bool is_compressed = has_ending(fname, ".gz");
-          int64_t sz = is_compressed ? get_uncompressed_file_size(fname) : get_file_size(fname);
-          if (sz < 0) std::cout << KRED << "Could not read the file size for: " << fname << std::flush;
-          total_ticks = sz;
-          ten_perc = total_ticks / 10;
-          if (ten_perc == 0) ten_perc = 1;
-          ticks = 0;
-          prev_ticks = ticks;
-          //std::cout << KLGREEN << "* " << std::setw(prefix_width) << std::left << (prefix_str + ":") << std::flush;
-          std::cout << KLGREEN << "* " << (prefix_str + " ") << (fname.substr(fname.find_last_of("/\\") + 1) + " " + get_size_str(sz))
-                    << "... " << std::flush;
-          //std::cout << std::endl;
-          prev_time = start_time;
-        }
+      if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
+        bool is_compressed = has_ending(fname, ".gz");
+        int64_t sz = is_compressed ? get_uncompressed_file_size(fname) : get_file_size(fname);
+        if (sz < 0) std::cout << KRED << "Could not read the file size for: " << fname << std::flush;
+        total_ticks = sz;
+        ten_perc = total_ticks / 10;
+        if (ten_perc == 0) ten_perc = 1;
+        ticks = 0;
+        prev_ticks = ticks;
+        SLOG_VERBOSE(KLGREEN, "* ", (prefix_str + " "), (fname.substr(fname.find_last_of("/\\") + 1), " ", get_size_str(sz)));
+        prev_time = start_time;
       }
   }
 
@@ -113,19 +99,15 @@ public:
   }
 
   void done() {
-    if (_show_progress) {
-      //display(true);
-      std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-      auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
-      DBG("Time ", prefix_str, ": ", (double)time_elapsed / 1000, "\n");
-      double max_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_max, 0).wait() / 1000;
-      double tot_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_add, 0).wait() / 1000;
-      double av_time = tot_time / upcxx::rank_n();
-      if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
-        std::cout << std::setprecision(2) << std::fixed;
-        std::cout << "  Average " << av_time << " max " << max_time << " (balance " <<  (max_time == 0.0 ? 1.0 : (av_time / max_time))
-                  << ")"<< KNORM << std::endl;
-      }
+    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+    DBG("Time ", prefix_str, ": ", (double)time_elapsed / 1000, "\n");
+    double max_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_max, 0).wait() / 1000;
+    double tot_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_add, 0).wait() / 1000;
+    double av_time = tot_time / upcxx::rank_n();
+    if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
+      SLOG_VERBOSE(std::setprecision(2), std::fixed, "  Average ", av_time, " max ", max_time,
+                   " (balance ", (max_time == 0.0 ? 1.0 : (av_time / max_time)), ")", KNORM, "\n");
     }
   }
   

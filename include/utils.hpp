@@ -508,7 +508,7 @@ static string remove_file_ext(const string &fname) {
 static string get_basename(const string &fname) {
   size_t i = fname.rfind('/', fname.length());
   if (i != string::npos) return(fname.substr(i + 1, fname.length() - i));
-  return "";
+  return fname;
 }
     
 static string get_merged_reads_fname(const string &reads_fname) {
