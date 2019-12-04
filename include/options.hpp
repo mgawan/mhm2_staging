@@ -16,7 +16,6 @@ using std::vector;
 #define YES_NO(X) ((X) ? "YES" : "NO")
 
 class Options {
-
   vector<string> splitter(string in_pattern, string& content) {
     vector<string> split_content;
     std::regex pattern(in_pattern);
