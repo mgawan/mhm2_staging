@@ -27,8 +27,6 @@
 using namespace std;
 using namespace upcxx;
 
-#define NOW std::chrono::high_resolution_clock::now
-
 //#define DUMP_ALNS
 
 using cid_t = int64_t;
@@ -131,9 +129,9 @@ class KmerCtgDHT {
       discharge();
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
-      auto t = NOW();
+      auto t = CLOCK_NOW();
       ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
-      ssw_dt += (NOW() - t);
+      ssw_dt += (CLOCK_NOW() - t);
     }
 
     int rstop = rstart + ssw_aln.ref_end + 1;

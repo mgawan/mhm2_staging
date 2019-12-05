@@ -20,6 +20,7 @@ using upcxx::rank_n;
 
 #define PER_RANK_FILE true
 
+
 class FastqReader {
 
   FILE *f;
@@ -30,6 +31,8 @@ class FastqReader {
   string fname;
   int max_read_len;
   char buf[BUF_SIZE + 1];
+
+  IntermittentTimer io_t;
 
   void rtrim(string &s) {
     auto pos = s.length() - 1;
@@ -87,17 +90,24 @@ class FastqReader {
     }
     return true;
   }
-  
+
   int64_t get_fptr_for_next_record(int64_t offset) {
+    io_t.start();
     // first record is the first record, include it.  Every other partition will be at least 1 full record after offset.
     if (offset == 0) return 0;
     if (offset >= file_size) return file_size;
     if (fseek(f, offset, SEEK_SET) != 0) DIE("Could not fseek in ", fname, " to ", offset, ": ", strerror(errno));
     // skip first (likely partial) line after this offset to ensure we start at the beginning of a line
-    if (!fgets(buf, BUF_SIZE, f)) return ftell(f);
+    if (!fgets(buf, BUF_SIZE, f)) {
+      io_t.stop();
+      return ftell(f);
+    }
 
     for (int i = 0; ; i++) {
-      if (!fgets(buf, BUF_SIZE, f)) return ftell(f);
+      if (!fgets(buf, BUF_SIZE, f)) {
+        io_t.stop();
+        return ftell(f);
+      }
       // keep reading new lines until we find a valid header ending in 2 for the second of the pair
       if (buf[0] == '@') {
         string header(buf);
@@ -114,17 +124,21 @@ class FastqReader {
       }
       if (i > 13) DIE("Could not find a valid line in the fastq file ", fname, ", last line: ", buf);
     }
+    io_t.stop();
     return ftell(f);
   }
-  
+
 public:
-  
+
+  static double overall_io_t;
+
   FastqReader(const string &fname, bool per_rank_file=false)
     : fname(fname)
     , f(nullptr)
     , gzf(nullptr)
-    , max_read_len(0) {
-    
+    , max_read_len(0)
+    , io_t("fastq IO for " + fname) {
+
     bool is_compressed = has_ending(fname, ".gz");
     if (!per_rank_file) {
       if (is_compressed) DIE("Single gzipped input file ", fname, " not supported\n");
@@ -168,6 +182,8 @@ public:
   ~FastqReader() {
     if (f) fclose(f);
     if (gzf) gzclose(gzf);
+    io_t.done();
+    FastqReader::overall_io_t += io_t.get_elapsed();
   }
 
   size_t my_file_size() {
@@ -177,13 +193,14 @@ public:
   long tell() {
     return (f ? ftell(f) : gztell(gzf));
   }
-  
+
   size_t get_next_fq_record(string &id, string &seq, string &quals) {
     if (f) {
       if (feof(f) || ftell(f) >= end_read) return 0;
     } else {
       if (gzeof(gzf) || gztell(gzf) >= end_read) return 0;
     }
+    io_t.start();
     size_t bytes_read = 0;
     for (int i = 0; i < 4; i++) {
       char *bytes = (f ? fgets(buf, BUF_SIZE, f) : gzgets(gzf, buf, BUF_SIZE));
@@ -207,18 +224,11 @@ public:
     if (seq.length() != quals.length())
       DIE("Invalid FASTQ in ", fname, ": sequence length ", seq.length(), " != ", quals.length(), " quals length\n");
     if (seq.length() > max_read_len) max_read_len = seq.length();
+    io_t.stop();
     return bytes_read;
   }
 
-  size_t get_next_fq_record(uint64_t &id, uint8_t pair_idx, string &seq, string &quals) {
-    string id_str;
-    auto res = get_next_fq_record(id_str, seq, quals);
-    if (id_str[0] != 'r') DIE("Expected compressed read id beginning with r and then a number. Found ", id_str);
-    id = std::stoull(id_str.substr(1, id_str.length() - 3));
-    pair_idx = id_str[id_str.length() - 1] == '1' ? 1 : 2;
-    return res;
-  }
-    
 };
+
 
 #endif

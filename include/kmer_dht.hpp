@@ -338,7 +338,7 @@ public:
                    cardinality, " entries (", kmers->bucket_count(), " buckets)\n");
       barrier();
     }
-    start_t = std::chrono::high_resolution_clock::now();
+    start_t = CLOCK_NOW();
   }
   
   void clear() {
@@ -558,7 +558,7 @@ public:
   }
 
   int32_t get_time_offset_us() {
-    std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - start_t;
+    std::chrono::duration<double> t_elapsed = CLOCK_NOW() - start_t;
     return std::chrono::duration_cast<std::chrono::microseconds>(t_elapsed).count();
   }      
     

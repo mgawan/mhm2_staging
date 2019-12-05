@@ -20,6 +20,7 @@ ofstream _dbgstream;
 
 #include "utils.hpp"
 #include "options.hpp"
+#include "fastq.hpp"
 #include "kmer.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
@@ -31,6 +32,7 @@ using namespace upcxx;
 ofstream _logstream;
 bool _verbose = false;
 bool _show_progress = false;
+double FastqReader::overall_io_t = 0;
 
 
 unsigned int Kmer::k = 0;
@@ -171,12 +173,13 @@ int main(int argc, char **argv) {
   ctgs.print_stats(ASSM_CLEN_THRES);
   SLOG(KBLUE "_________________________\n", KNORM);
   SLOG("Stage timing:\n");
-  SLOG("    " + merge_reads_dt.get_final() + "\n");
-  SLOG("    " + analyze_kmers_dt.get_final() + "\n");
-  SLOG("    " + dbjg_traversal_dt.get_final() + "\n");
-  SLOG("    " + alignments_dt.get_final() + "\n");
-  SLOG("    " + localassm_dt.get_final() + "\n");
-  SLOG("    " + cgraph_dt.get_final() + "\n");
+  SLOG("    ", merge_reads_dt.get_final(), "\n");
+  SLOG("    ", analyze_kmers_dt.get_final(), "\n");
+  SLOG("    ", dbjg_traversal_dt.get_final(), "\n");
+  SLOG("    ", alignments_dt.get_final(), "\n");
+  SLOG("    ", localassm_dt.get_final(), "\n");
+  SLOG("    ", cgraph_dt.get_final(), "\n");
+  SLOG("    IO time for fastq reads: ", FastqReader::overall_io_t, "\n");
   SLOG(KBLUE "_________________________\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,

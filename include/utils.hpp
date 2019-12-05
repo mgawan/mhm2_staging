@@ -41,6 +41,8 @@ using std::min;
 #define HASH_TABLE std::unordered_map
 #endif
 
+#define CLOCK_NOW std::chrono::high_resolution_clock::now
+
 
 inline void find_and_replace(std::string& subject, const std::string& search, const std::string& replace) {
   size_t pos = 0;
@@ -71,7 +73,7 @@ inline void init_logger() {
 inline void set_logger_verbose(bool verbose) {
   _verbose = verbose;
 }
-  
+
 inline void logger(ostringstream &os) {}
 
 template <typename T, typename... Params>
@@ -171,7 +173,7 @@ static double get_free_mem_gb(void) {
 }
 
 class IntermittentTimer {
-  
+
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
   double t_elapsed, t_interval;
   string name, interval_label;
@@ -199,14 +201,18 @@ public:
     os << name << ": " << std::setprecision(2) << std::fixed << t_elapsed;
     return os.str();
   }
-  
+
+  double get_elapsed() {
+    return t_elapsed;
+  }
+
   void start() {
     if (!interval_label.empty() && !_verbose) SOUT(KBLUE, std::left, std::setw(40), interval_label + ":", KNORM);
-    t = std::chrono::high_resolution_clock::now();
+    t = CLOCK_NOW();
   }
-  
+
   void stop() {
-    std::chrono::duration<double> interval = std::chrono::high_resolution_clock::now() - t;
+    std::chrono::duration<double> interval = CLOCK_NOW() - t;
     t_interval = interval.count();
     t_elapsed += t_interval;
     if (!interval_label.empty() && !_verbose) SOUT(KBLUE, std::setprecision(2), std::fixed, t_interval, " s", KNORM, "\n");
@@ -225,18 +231,18 @@ class Timer {
   bool always_show;
 public:
   Timer(const string &name, bool always_show=false) : always_show(always_show) {
-    t = std::chrono::high_resolution_clock::now();
+    t = CLOCK_NOW();
     this->name = name;
     if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
     //if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
     //else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
   }
-  
+
   ~Timer() {
-    std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
+    std::chrono::duration<double> t_elapsed = CLOCK_NOW() - t;
     DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --\n", KNORM);
     upcxx::barrier();
-    t_elapsed = std::chrono::high_resolution_clock::now() - t;
+    t_elapsed = CLOCK_NOW() - t;
     auto curr_free_mem = get_free_mem_gb();
     if (always_show) {
       SLOG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
@@ -260,7 +266,7 @@ inline string head(const string &s, int n) {
 inline string perc_str(int64_t num, int64_t tot) {
   ostringstream os;
   os.precision(2);
-  os << std::fixed; 
+  os << std::fixed;
   os << num << " (" << 100.0 * num / tot << "%)";
   return os.str();
 }
@@ -294,7 +300,7 @@ inline string revcomp(const string &seq) {
       case 'T': seq_rc += 'A'; break;
       case 'N': seq_rc += 'N'; break;
       default:
-        DIE("Illegal char in revcomp of '", seq, "'\n"); 
+        DIE("Illegal char in revcomp of '", seq, "'\n");
     }
   }
   return seq_rc;
@@ -303,12 +309,12 @@ inline string revcomp(const string &seq) {
 inline char comp_nucleotide(char ch) {
   switch (ch) {
       case 'A': return 'T';
-      case 'C': return 'G'; 
+      case 'C': return 'G';
       case 'G': return 'C';
       case 'T': return 'A';
       case 'N': return 'N';
       case '0': return '0';
-      default: DIE("Illegal char in revcomp of '", ch, "'\n"); 
+      default: DIE("Illegal char in revcomp of '", ch, "'\n");
   }
   return 0;
 }
@@ -430,7 +436,7 @@ inline int hamming_dist(const string &s1, const string &s2, bool require_equal_l
     DIE("Hamming distance substring lengths don't match, ", s1.size(), ", ", s2.size(), "\n");
   int d = 0;
   int min_size = min(s1.size(), s2.size());
-  for (int i = 0; i < min_size; i++) 
+  for (int i = 0; i < min_size; i++)
     d += (s1[i] != s2[i]);
   return d;
 }
@@ -459,7 +465,7 @@ inline std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, 
 }
 
 static bool has_ending (string const &full_string, string const &ending) {
-  if (full_string.length() >= ending.length()) 
+  if (full_string.length() >= ending.length())
     return (0 == full_string.compare(full_string.length() - ending.length(), ending.length(), ending));
   return false;
 }
@@ -502,7 +508,7 @@ static string get_size_str(int64_t sz) {
 static string remove_file_ext(const string &fname) {
   size_t lastdot = fname.find_last_of(".");
   if (lastdot == std::string::npos) return fname;
-  return fname.substr(0, lastdot); 
+  return fname.substr(0, lastdot);
 }
 
 static string get_basename(const string &fname) {
@@ -510,7 +516,7 @@ static string get_basename(const string &fname) {
   if (i != string::npos) return(fname.substr(i + 1, fname.length() - i));
   return fname;
 }
-    
+
 static string get_merged_reads_fname(const string &reads_fname) {
   // always relative to the current working directory
   string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq.gz";
@@ -544,5 +550,5 @@ inline void switch_orient(int &start, int &stop, int &len) {
   start = len - stop;
   stop = len - tmp;
 }
-  
+
 #endif
