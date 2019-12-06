@@ -141,9 +141,13 @@ public:
 
     bool is_compressed = has_ending(fname, ".gz");
     if (!per_rank_file) {
-      if (is_compressed) DIE("Single gzipped input file ", fname, " not supported\n");
-      // only one rank gets the file size, to prevent many hits on metadata
-      if (!rank_me()) file_size = get_file_size(fname);
+      if (is_compressed) {
+        SWARN("Single gzipped input file ", fname, " may not be read correctly\n");
+        if (!rank_me()) file_size = get_uncompressed_file_size(fname);
+      } else {
+        // only one rank gets the file size, to prevent many hits on metadata
+        if (!rank_me()) file_size = get_file_size(fname);
+      }
       file_size = upcxx::broadcast(file_size, 0).wait();
     } else {
       if (is_compressed) file_size = get_uncompressed_file_size(fname);
@@ -188,10 +192,6 @@ public:
 
   size_t my_file_size() {
     return end_read - start_read;
-  }
-
-  long tell() {
-    return (f ? ftell(f) : gztell(gzf));
   }
 
   size_t get_next_fq_record(string &id, string &seq, string &quals) {

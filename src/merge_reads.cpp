@@ -41,7 +41,8 @@ static const double Q2Perror[] = {
   2.512e-08,	1.995e-08,	1.585e-08,	1.259e-08,	1e-08
 };
 
-uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
+static uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
+  // estimate reads in this rank's section of all the files
   Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -65,11 +66,11 @@ uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
       if (records_processed > 100000) break; 
     }
     total_records_processed += records_processed;
-    estimated_total_records += records_processed * fqr.my_file_size() / fqr.tell();
+    int64_t bytes_per_record = tot_bytes_read / records_processed;
+    estimated_total_records += fqr.my_file_size() / bytes_per_record;
     progbar.done();
     barrier();
   }
-  double fraction = (double) total_records_processed / (double) estimated_total_records;
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
   return estimated_total_records;
 }
@@ -127,25 +128,77 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
   return mismatches;
 }
 
-void merge_reads(vector<string> reads_fname_list, int qual_offset) {
+
+static void dump_merged_reads(const string &reads_fname, ostringstream &out_buf) {
+  Timer timer(__FILEFUNC__);
+  /*
+  string out_str = out_buf.str();
+  string out_fname = get_merged_reads_fname(reads_fname, PER_RANK_FILE); 
+  if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, overwriting...");
+  int64_t bytes_written = 0;
+  zstr::ofstream out_file_gz(out_fname);
+  if (!out_str.empty()) {
+    out_file_gz << out_str;
+    bytes_written += out_str.length();
+  }
+  out_file_gz.close();
+  // store the uncompressed size in a secondary file
+  write_uncompressed_file_size(out_fname + ".uncompressedSize", bytes_written);
+  */
+  string out_str = out_buf.str();
+  string out_fname = get_merged_reads_fname(reads_fname); 
+  auto sz = out_str.size();
+  atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
+  global_ptr<size_t> fpos = nullptr;
+  if (!rank_me()) fpos = new_<size_t>(0);
+  fpos = broadcast(fpos, 0).wait();
+  size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
+  // wait until all ranks have updated the global counter
+  barrier();
+  int fileno = -1;
+  size_t fsize = 0;
+  if (!rank_me()) {
+    fsize = ad.load(fpos, memory_order_relaxed).wait();
+    // rank 0 creates the file and truncates it to the correct length
+    fileno = open(out_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+    if (fileno == -1) WARN("Error trying to create file ", out_fname, ": ", strerror(errno), "\n");
+    if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", out_fname, " to ", fsize, " bytes\n");
+  }
+  barrier();
+  ad.destroy();
+  // wait until rank 0 has finished setting up the file
+  if (rank_me()) fileno = open(out_fname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+  if (fileno == -1) WARN("Error trying to open file ", out_fname, ": ", strerror(errno), "\n");
+  auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
+  close(fileno);
+  if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
+  barrier();
+  auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
+  barrier();
+  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", out_fname, "\n");
+}
+
+
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t) {
   Timer timer(__FILEFUNC__);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
   int64_t num_reads = 0;
-  
-  // for unique read id, estimate number of reads in our section of the file
+  // for unique read id need to estimate number of reads in our sections of all files
   auto my_num_reads_estimate = estimate_num_reads(reads_fname_list);
   auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
-  SLOG_VERBOSE("Max number reads for any rank ", max_num_reads, "\n");
+  auto tot_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_add).wait();
+  SLOG_VERBOSE("Estimated total number of reads as ", tot_num_reads, ", and max for any rank ", max_num_reads, "\n");
   // double the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
   uint64_t read_id = rank_me() * max_num_reads * 2;
-
+  IntermittentTimer dump_reads_t("dump_reads");
   for (auto const &reads_fname : reads_fname_list) {
     string out_fname = get_merged_reads_fname(reads_fname); 
-    // skip if the file already exists
-    if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, overwriting...");
-
+    if (file_exists(out_fname)) {
+      SWARN("File ", out_fname, " already exists, skipping...");
+      continue;
+    }
     // FIXME: unique number id (uint64_t) for reads
     // - do a reduction to find the max of all those estimates
     // - double the max to be sure - this becomes the block size
@@ -153,10 +206,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     
     FastqReader fqr(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
-    zstr::ofstream out_file_gz(out_fname);
     ostringstream out_buf;
     
-    int64_t bytes_written = 0;
     int max_read_len = 0;
     int64_t overlap_len = 0;
     int64_t merged_len = 0;
@@ -344,23 +395,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
         out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
         out_buf << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
       }
-      if (!(num_pairs % 1000)) {
-        out_file_gz << out_buf.str();
-        bytes_written += out_buf.str().length();
-        out_buf = ostringstream();
-      }
       // inc by 2 so that we can use a later optimization of treating the even as /1 and the odd as /2
       read_id += 2;
     }
-    if (!out_buf.str().empty()) {
-      out_file_gz << out_buf.str();
-      bytes_written += out_buf.str().length();
-    }
-    out_file_gz.close();
     progbar.done();
-    // store the uncompressed size in a secondary file
-    write_uncompressed_file_size(get_merged_reads_fname(reads_fname) + ".uncompressedSize", bytes_written);
-    
+    dump_reads_t.start();    
+    dump_merged_reads(reads_fname, out_buf);
+    dump_reads_t.stop();
     auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
     auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
     auto all_num_ambiguous = upcxx::reduce_one(num_ambiguous, op_fast_add, 0).wait();
@@ -376,6 +417,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset) {
     SLOG_VERBOSE("Total bytes read ", tot_bytes_read, "\n");
     num_reads += num_pairs * 2;
   }
+  elapsed_write_io_t = dump_reads_t.get_elapsed();
+  dump_reads_t.done();
 }
 
 

@@ -546,7 +546,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   barrier();
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    FastqReader fqr(merged_reads_fname);
     string read_id, read_seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;

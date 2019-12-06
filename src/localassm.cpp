@@ -232,7 +232,7 @@ static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsT
   int64_t num_read_maps_found = 0;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    FastqReader fqr(merged_reads_fname);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Processing reads");
     size_t tot_bytes_read = 0;

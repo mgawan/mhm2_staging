@@ -38,7 +38,7 @@ double FastqReader::overall_io_t = 0;
 unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
-void merge_reads(vector<string> reads_fname_list, int qual_offset);
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
@@ -55,11 +55,12 @@ int main(int argc, char **argv) {
   upcxx::init();
   init_logger();
   IntermittentTimer merge_reads_dt(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
-    analyze_kmers_dt(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
-    dbjg_traversal_dt(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
-    alignments_dt(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
-    localassm_dt(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
-    cgraph_dt(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph");
+          analyze_kmers_dt(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
+          dbjg_traversal_dt(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
+          alignments_dt(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
+          localassm_dt(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
+          cgraph_dt(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
+          dump_ctgs_dt(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs");
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
 
@@ -82,9 +83,10 @@ int main(int argc, char **argv) {
          " is ", (tot_file_size / ONE_GB), " GB\n");
   }
   // first merge reads - the results will go in the per_rank directory
+  double elapsed_write_io_t = 0;
   {
     merge_reads_dt.start();
-    merge_reads(options->reads_fname_list, options->qual_offset);
+    merge_reads(options->reads_fname_list, options->qual_offset, elapsed_write_io_t);
     merge_reads_dt.stop();
   }
   Contigs ctgs;
@@ -125,7 +127,11 @@ int main(int argc, char **argv) {
                   options->qual_offset, options->dynamic_min_depth, ctgs, alns);
         localassm_dt.stop();
       }
-      if (options->checkpoint) ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+      if (options->checkpoint) {
+        dump_ctgs_dt.start();
+        ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+        dump_ctgs_dt.stop();
+      }        
       SLOG(KBLUE "_________________________\n", KNORM);
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
@@ -157,7 +163,11 @@ int main(int argc, char **argv) {
                          break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
-        if (options->checkpoint) ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
+        if (options->checkpoint) {
+          dump_ctgs_dt.start();
+          ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
+          dump_ctgs_dt.stop();
+        }
         SLOG(KBLUE "_________________________\n", KNORM);
         ctgs.print_stats(ASSM_CLEN_THRES);
       }
@@ -179,7 +189,8 @@ int main(int argc, char **argv) {
   SLOG("    ", alignments_dt.get_final(), "\n");
   SLOG("    ", localassm_dt.get_final(), "\n");
   SLOG("    ", cgraph_dt.get_final(), "\n");
-  SLOG("    IO time for fastq reads: ", FastqReader::overall_io_t, "\n");
+  SLOG("    IO read time: ", FastqReader::overall_io_t, "\n");
+  SLOG("    IO write time: ", dump_ctgs_dt.get_elapsed() + elapsed_write_io_t, "\n");
   SLOG(KBLUE "_________________________\n", KNORM);
   double end_mem_free = get_free_mem_gb();
   SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,

@@ -29,11 +29,11 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
-  int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
+  int64_t estimated_total_records = 0;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    FastqReader fqr(merged_reads_fname);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of kmers");
     size_t tot_bytes_read = 0;
@@ -52,7 +52,8 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
       num_kmers += seq.length() - kmer_len + 1;
     }
     total_records_processed += records_processed;
-    estimated_total_records += records_processed * fqr.my_file_size() / fqr.tell();
+    int64_t bytes_per_record = tot_bytes_read / records_processed;
+    estimated_total_records += fqr.my_file_size() / bytes_per_record;
     progbar.done();
     barrier();
   }
@@ -62,11 +63,10 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
   auto all_num_reads = reduce_one(num_reads / fraction, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_all(num_kmers / fraction, op_fast_add).wait();
   int percent = 100.0 * fraction;
-  SLOG_VERBOSE("Processed ", percent, " % of the estimated total of ", all_num_lines,
-               " lines (", all_num_reads, " reads), and found a maximum of ", all_num_kmers, " kmers\n");
-  int my_num_kmers = all_num_kmers / rank_n();
-  SLOG_VERBOSE("Number of kmers estimated as ", my_num_kmers, "\n");
-  return my_num_kmers;
+  SLOG_VERBOSE("Processed ", percent, "% of the estimated total of ", (int64_t)all_num_lines,
+               " lines (", (int64_t)all_num_reads, " reads), and found an estimated maximum of ", 
+               (int64_t)all_num_kmers, " kmers\n");
+  return num_kmers / fraction;
 }
 
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list,
@@ -87,18 +87,15 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
-  IntermittentTimer read_io_timer(__FILENAME__ + string(":") + "Read IO");
   //char special = qual_offset + 2;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    FastqReader fqr(merged_reads_fname);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), progbar_prefix);
     size_t tot_bytes_read = 0;
     while (true) {
-      read_io_timer.start();
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
-      read_io_timer.stop();
       if (!bytes_read) break;
       num_lines += 4;
       num_reads++;
@@ -149,7 +146,6 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     progbar.done();
     kmer_dht->flush_updates(pass_type);
   }
-  read_io_timer.done();
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();

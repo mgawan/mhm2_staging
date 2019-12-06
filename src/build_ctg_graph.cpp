@@ -202,7 +202,7 @@ static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
   int max_read_len = 0;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname, PER_RANK_FILE);
+    FastqReader fqr(merged_reads_fname);
     string id, seq, quals;
     ProgressBar progbar(fqr.my_file_size(), "Parsing reads for gap sequences");
     size_t tot_bytes_read = 0;

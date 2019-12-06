@@ -86,11 +86,11 @@ struct ExtCounts {
 
   void inc(char ext, int count) {
     switch (ext) {
-      case 'A': 
+      case 'A':
         count += count_A;
         count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
         break;
-      case 'C': 
+      case 'C':
         count += count_C;
         count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
         break;
@@ -98,13 +98,13 @@ struct ExtCounts {
         count += count_G;
         count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
         break;
-      case 'T': 
+      case 'T':
         count += count_T;
         count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
         break;
     }
   }
-  
+
 };
 
 // total bytes: 2+8+8=18
@@ -146,9 +146,9 @@ struct KmerCounts {
   char get_right_ext() {
     return get_ext(right_exts);
   }
-  
+
 };
-  
+
 using KmerMap = HASH_TABLE<Kmer, KmerCounts, KmerHash, KmerEqual>;
 
 
@@ -160,7 +160,7 @@ class KmerDHT {
     char left, right;
     uint16_t count;
   };
-  
+
   dist_object<KmerMap> kmers;
   AggrStore<MerArray> kmer_store_bloom;
   AggrStore<MerarrAndExt> kmer_store;
@@ -172,7 +172,7 @@ class KmerDHT {
   int64_t initial_kmer_dht_reservation;
   int64_t bloom1_cardinality;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
-  
+
   struct InsertKmer {
     void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers) {
       Kmer new_kmer(merarr_and_ext.merarr);
@@ -203,9 +203,9 @@ class KmerDHT {
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
       Kmer new_kmer(merarr);
-      if (!bloom_filter1->possibly_contains(new_kmer.get_bytes(), new_kmer.get_num_bytes())) 
+      if (!bloom_filter1->possibly_contains(new_kmer.get_bytes(), new_kmer.get_num_bytes()))
         bloom_filter1->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
-      else 
+      else
         bloom_filter2->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
     }
   };
@@ -234,7 +234,7 @@ class KmerDHT {
         kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
         kmers->insert({new_kmer, kmer_counts});
-        // this shouldn't happen 
+        // this shouldn't happen
         if (prev_bucket_count < kmers->bucket_count())
           WARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count(), "\n");
       } else {
@@ -261,9 +261,9 @@ class KmerDHT {
         auto kmer_counts = &it->second;
         DBG_INS_CTG_KMER(new_kmer, " old/new ", kmer_counts->count, " ", merarr_and_ext.count, " ",
                          merarr_and_ext.left, " ", merarr_and_ext.right, " ",
-                         "A", kmer_counts->left_exts.count_A, " C", kmer_counts->left_exts.count_C, " ", 
-                         "G", kmer_counts->left_exts.count_G, " T", kmer_counts->left_exts.count_T, " ", 
-                         "A", kmer_counts->right_exts.count_A, " C", kmer_counts->right_exts.count_C, " ", 
+                         "A", kmer_counts->left_exts.count_A, " C", kmer_counts->left_exts.count_C, " ",
+                         "G", kmer_counts->left_exts.count_G, " T", kmer_counts->left_exts.count_T, " ",
+                         "A", kmer_counts->right_exts.count_A, " C", kmer_counts->right_exts.count_C, " ",
                          "G", kmer_counts->right_exts.count_G, " T", kmer_counts->right_exts.count_T, "\n");
         if (!kmer_counts->from_ctg) {
           // existing kmer is from a read, only replace with new contig kmer if the existing kmer is not UU
@@ -297,7 +297,7 @@ class KmerDHT {
     }
   };
   dist_object<InsertCtgKmer> insert_ctg_kmer;
-  
+
 public:
 
   KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom)
@@ -320,18 +320,20 @@ public:
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes);
     else kmer_store.set_size("kmers", max_kmer_store_bytes);
     if (use_bloom) {
-      // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space is
-      // reserved then
+      // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
+      // is reserved then
       double init_mem_free = get_free_mem_gb();
       bloom_filter1->init(cardinality, BLOOM_FP);
-      bloom_filter2->init(cardinality/4, BLOOM_FP); // second bloom will have far fewer entries - assume 75% are filtered out
+      bloom_filter2->init(cardinality / 4, BLOOM_FP); // second bloom has far fewer entries - assume 75% are filtered out
       SLOG_VERBOSE("Bloom filters used ", (init_mem_free - get_free_mem_gb()), "GB memory on node 0\n");
     } else {
       double init_mem_free = get_free_mem_gb();
       barrier();
-      // in this case we have to roughly estimate the hash table size - we do the allocation here
+      // in this case we have to roughly estimate the hash table size because the space is reserved now
+      // err on the side of excess because the whole point of doing this is speed and we don't want a
+      // hash table resize
       cardinality /= 3;
-      initial_kmer_dht_reservation = cardinality;    
+      initial_kmer_dht_reservation = cardinality;
       kmers->reserve(cardinality);
       double kmers_space_reserved = cardinality * (sizeof(Kmer) + sizeof(KmerCounts));
       SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
@@ -340,12 +342,12 @@ public:
     }
     start_t = CLOCK_NOW();
   }
-  
+
   void clear() {
     kmers->clear();
     KmerMap().swap(*kmers);
   }
-  
+
   ~KmerDHT() {
     kmer_store_bloom.clear();
     kmer_store.clear();
@@ -360,18 +362,18 @@ public:
   float max_load_factor() {
     return reduce_one(kmers->max_load_factor(), op_fast_max, 0).wait();
   }
-  
+
   float load_factor() {
     int64_t cardinality = initial_kmer_dht_reservation * rank_n();
     int64_t num_kmers = get_num_kmers();
     SLOG_VERBOSE("Originally reserved ", cardinality, " and now have ", num_kmers, " elements\n");
     return reduce_one(kmers->load_factor(), op_fast_add, 0).wait() / upcxx::rank_n();
   }
-  
+
   int64_t get_local_num_kmers(void) {
     return kmers->size();
   }
-  
+
   size_t get_kmer_target_rank(Kmer &kmer) {
     return std::hash<Kmer>{}(kmer) % rank_n();
   }
@@ -391,7 +393,7 @@ public:
                  else return it->second.visited;
                }, kmer.get_array(), kmers).wait();
   }
-  
+
   int32_t get_kmer_count(Kmer &kmer) {
     return rpc(get_kmer_target_rank(kmer),
                [](MerArray merarr, dist_object<KmerMap> &kmers) -> uint16_t {
@@ -401,7 +403,7 @@ public:
                  else return it->second.count;
                }, kmer.get_array(), kmers).wait();
   }
-  
+
   void add_kmer(Kmer kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
     // get the lexicographically smallest
     Kmer kmer_rc = kmer.revcomp();
@@ -451,7 +453,7 @@ public:
     double init_mem_free = get_free_mem_gb();
     barrier();
     // two bloom false positive rates applied
-    initial_kmer_dht_reservation = (int64_t) (cardinality2 * (1+BLOOM_FP) * (1+BLOOM_FP) + 1000); 
+    initial_kmer_dht_reservation = (int64_t) (cardinality2 * (1+BLOOM_FP) * (1+BLOOM_FP) + 1000);
     kmers->reserve( initial_kmer_dht_reservation );
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer) + sizeof(KmerCounts));
     SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
@@ -521,7 +523,7 @@ public:
       kmer_counts->right = kmer_counts->get_right_ext();
     }
  }
-  
+
   // one line per kmer, format:
   // KMERCHARS LR N
   // where L is left extension and R is right extension, one char, either X, F or A, C, G, T
@@ -560,8 +562,8 @@ public:
   int32_t get_time_offset_us() {
     std::chrono::duration<double> t_elapsed = CLOCK_NOW() - start_t;
     return std::chrono::duration_cast<std::chrono::microseconds>(t_elapsed).count();
-  }      
-    
+  }
+
 };
 
 #endif

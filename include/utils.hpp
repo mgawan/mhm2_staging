@@ -192,7 +192,7 @@ public:
   }
 
   void done() {
-    SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
+    SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n", KNORM);
     DBG("--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
   }
 
@@ -517,10 +517,13 @@ static string get_basename(const string &fname) {
   return fname;
 }
 
-static string get_merged_reads_fname(const string &reads_fname) {
+static string get_merged_reads_fname(const string &reads_fname, bool per_rank_file=false) {
   // always relative to the current working directory
-  string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq.gz";
-  get_rank_path(out_fname, upcxx::rank_me());
+  string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq";
+  if (per_rank_file) {
+    get_rank_path(out_fname, upcxx::rank_me());
+    out_fname += ".gz";
+  }
   return out_fname;
 }
 
