@@ -24,25 +24,48 @@ extern ofstream _dbgstream;
 
 enum class TraverseDirn { LEFT, RIGHT };
 
-enum class WalkStatus { RUNNING, DEADEND, FORK, CONFLICT, REPEAT };
+enum class WalkStatus { DEADEND = 'X', FORK = 'F', CONFLICT = 'O', REPEAT = 'R'};
 
 struct WalkInfo {
-  WalkStatus status;
   bool drop;
   int32_t len;
   int64_t sum_depths;
 };
 
-static void abort_walk(dist_object<WalkInfo> &walk_info, bool walk_drop, int32_t walk_len, int64_t sum_depths, intrank_t start_rank,
-                       WalkStatus walk_status) {
-  rpc_ff(start_rank,
-         [](dist_object<WalkInfo> &walk_info, bool walk_drop, int32_t walk_len, int64_t sum_depths, WalkStatus walk_status) {
-           if (walk_info->status != WalkStatus::RUNNING) DIE("walk status is already done");
-           walk_info->status = walk_status;
-           walk_info->drop = walk_drop;
-           walk_info->len = walk_len;
-           walk_info->sum_depths = sum_depths;
-         }, walk_info, walk_drop, walk_len, sum_depths, walk_status);
+struct WalkTermStats {
+  int64_t num_deadends, num_forks, num_conflicts, num_repeats;
+  
+  void update(WalkStatus walk_status) {
+    switch (walk_status) {
+      case WalkStatus::DEADEND: num_deadends++; break;
+      case WalkStatus::FORK: num_forks++; break;
+      case WalkStatus::CONFLICT: num_conflicts++; break;
+      case WalkStatus::REPEAT: num_repeats++; break;
+    }
+  }  
+  
+  void print() {
+    auto all_num_deadends = reduce_one(num_deadends, op_fast_add, 0).wait();
+    auto all_num_forks = reduce_one(num_forks, op_fast_add, 0).wait();
+    auto all_num_conflicts = reduce_one(num_conflicts, op_fast_add, 0).wait();
+    auto all_num_repeats = reduce_one(num_repeats, op_fast_add, 0).wait();
+    auto tot_ends = all_num_forks + all_num_deadends + all_num_conflicts + all_num_repeats;
+    SLOG_VERBOSE("Walk statistics:\n");
+    SLOG_VERBOSE("  deadends:  ", perc_str(all_num_deadends, tot_ends), "\n");
+    SLOG_VERBOSE("  forks:     ", perc_str(all_num_forks, tot_ends), "\n");
+    SLOG_VERBOSE("  conflicts: ", perc_str(all_num_conflicts, tot_ends), "\n");
+    SLOG_VERBOSE("  repeats:   ", perc_str(all_num_repeats, tot_ends), "\n");
+  }
+};
+
+static void abort_walk(intrank_t target_rank, global_ptr<char> uutig, WalkStatus walk_status, WalkInfo walk_info) {
+  // we use a rpc here to ensure synchronization
+  rpc_ff(target_rank,
+         [](global_ptr<char> uutig, WalkStatus walk_status, WalkInfo walk_info){
+           char *local_uutig = uutig.local();
+           local_uutig[0] = (char)walk_status;
+           memcpy(local_uutig + 1, (char*)&walk_info, sizeof(walk_info));
+         }, uutig, walk_status, walk_info);
 }
 
 static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr, char ext, TraverseDirn dirn, 
@@ -61,17 +84,19 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
   // this kmer doesn't exist, abort
   if (!kmer_counts) {
     DBG_TRAVERSE("TERM: could not find kmer ", kmer, " with extension ", ext, " or revcomp kmer ", kmer_rc, "\n");
-    abort_walk(walk_info, false, walk_len, sum_depths, start_rank, WalkStatus::DEADEND);
+    abort_walk(start_rank, uutig, WalkStatus::DEADEND, {false, walk_len, sum_depths});
     return;
   }
   char left = kmer_counts->left;
   char right = kmer_counts->right;
   if (left == 'X' || right == 'X') {
-    abort_walk(walk_info, false, walk_len, sum_depths, start_rank, WalkStatus::DEADEND);
+    DBG_TRAVERSE("TERM: deadend for ", kmer, " left is ", left, " and right is ", right, "\n");
+    abort_walk(start_rank, uutig, WalkStatus::DEADEND, {false, walk_len, sum_depths}); 
     return;
   }    
   if (left == 'F' || right == 'F') {
-    abort_walk(walk_info, false, walk_len, sum_depths, start_rank, WalkStatus::FORK);
+    DBG_TRAVERSE("TERM: fork for ", kmer, " left is ", left, " and right is ", right, "\n");
+    abort_walk(start_rank, uutig, WalkStatus::FORK, {false, walk_len, sum_depths});
     return;
   }    
   if (rc) {
@@ -84,7 +109,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
   if (prev_ext && ((dirn == TraverseDirn::LEFT && prev_ext != right) || (dirn == TraverseDirn::RIGHT && prev_ext != left))) {
     DBG_TRAVERSE("TERM: conflicting kmers ", kmer, ", ext ", left, " ", right, " prev ", prev_ext, "\n");
     //WARN("TERM: conflicting kmers ", kmer, ", ext ", left, " ", right, " prev ", prev_ext);
-    abort_walk(walk_info, false, walk_len, sum_depths, start_rank, WalkStatus::CONFLICT);
+    abort_walk(start_rank, uutig, WalkStatus::CONFLICT, {false, walk_len, sum_depths});
     return;
   }
   
@@ -95,14 +120,14 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
     if (kmer_counts->start_walk_us < start_walk_us || (kmer_counts->start_walk_us == start_walk_us && kmer_counts->visited > start_rank)) {
       DBG_TRAVERSE("TERM: kmer ", kmer, " already visited ", kmer_counts->visited, " start walk ", kmer_counts->start_walk_us,
                    " new start walk ", start_walk_us, " start rank ", start_rank, "\n");
-      abort_walk(walk_info, true, walk_len, sum_depths, start_rank, WalkStatus::CONFLICT);
+      abort_walk(start_rank, uutig, WalkStatus::CONFLICT, {true, walk_len, sum_depths});
       return;
     }
   }
   // already visited by start rank, repeat, abort (but allowed if traversing right after adding start kmer previously)
   if (kmer_counts->visited == start_rank && !revisit_allowed) {
     DBG_TRAVERSE("TERM: kmer ", kmer, " already visited ", kmer_counts->visited, " start rank ", start_rank, "\n");
-    abort_walk(walk_info, false, walk_len, sum_depths, start_rank, WalkStatus::REPEAT);
+    abort_walk(start_rank, uutig, WalkStatus::REPEAT, {false, walk_len, sum_depths});
     return;
   }
   // mark as visited
@@ -134,17 +159,16 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
                       kmer_dht->get_kmer_target_rank(next_kmer));
   // valid new kmer can be constructed
   DBG_TRAVERSE("next kmer ", next_kmer, "\n");
-  rput(ext, uutig + walk_len - 1).then(
-    [=, &kmer_dht, &walk_info]() {
+  rput(ext, uutig + 1 + sizeof(WalkInfo) + walk_len - 1).then(
+    [=, &kmer_dht]() {
       // only do the rpc to the next kmer vertex once the rput has completed
-      rpc_ff(target_rank, traverse_step, kmer_dht, next_kmer.get_array(), next_ext, dirn, walk_info, walk_len,
+      rpc_ff(target_rank, traverse_step, kmer_dht, next_kmer.get_array(), next_ext, dirn, walk_len,
              sum_depths, start_rank, uutig, false, prev_ext, start_walk_us);
     });
 }
 
 static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                          string &uutig_str, WalkInfo &walk_info, int32_t start_walk_us) {
-  walk_info.status = WalkStatus::RUNNING;
+                          string &uutig_str, WalkInfo &walk_info, int32_t start_walk_us, WalkTermStats &walk_term_stats) {
   walk_info.drop = false;
   walk_info.len = 0;
   walk_info.sum_depths = 0;
@@ -157,18 +181,26 @@ static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr
   traverse_step(kmer_dht, kmer.get_array(), kmer_str.front(), TraverseDirn::LEFT, walk_len, sum_depths, rank_me(), uutig_gptr,
                 false, prev_ext, start_walk_us);
   while (local_uutig[0] == 0) progress();
-  walk_info = (WalkInfo)(local_uutig + 1);
+  assert(local_uutig[0] == 'X' || local_uutig[0] == 'F' || local_uutig[0] == 'O' || local_uutig[0] == 'R');
+  WalkStatus walk_status = (WalkStatus)local_uutig[0];
+  memcpy((char*)&walk_info, local_uutig + 1, sizeof(WalkInfo));
   if (walk_info.drop) return false;
+  walk_term_stats.update(walk_status);
   char *uutig = local_uutig + 1 + sizeof(WalkInfo);
   uutig[walk_info.len] = 0;
+#ifdef DEBUG
+  for (int i = 0; i < walk_info.len; i++) {
+    if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
+      DIE("left: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, " kmer ", kmer, "\n");
+  }
+#endif
   // reverse it because we were walking backwards
   for (int i = walk_info.len - 1; i >= 0; i--) uutig_str += uutig[i];
   return true;
 }
 
-static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                           string &uutig_str, WalkInfo &walk_info, int32_t start_walk_us) {
-  walk_info.status = WalkStatus::RUNNING;
+static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, string &uutig_str, 
+                           WalkInfo &walk_info, int32_t start_walk_us, WalkTermStats &walk_term_stats) {
   walk_info.drop = false;
   walk_info.len = 0;
   char *local_uutig = uutig_gptr.local();
@@ -180,10 +212,19 @@ static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_pt
   traverse_step(kmer_dht, kmer.get_array(), kmer_str.back(), TraverseDirn::RIGHT, walk_len, sum_depths, rank_me(), uutig_gptr,
                 true, prev_ext, start_walk_us);
   while (local_uutig[0] == 0) progress(); 
-  walk_info = (WalkInfo)(local_uutig + 1);
+  assert(local_uutig[0] == 'X' || local_uutig[0] == 'F' || local_uutig[0] == 'O' || local_uutig[0] == 'R');
+  WalkStatus walk_status = (WalkStatus)local_uutig[0];
+  memcpy((char*)&walk_info, local_uutig + 1, sizeof(WalkInfo));
   if (walk_info.drop) return false;
+  walk_term_stats.update(walk_status);
   char *uutig = local_uutig + 1 + sizeof(WalkInfo);
   uutig[walk_info.len] = 0;
+#ifdef DEBUG
+  for (int i = 0; i < walk_info.len; i++) {
+    if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
+      DIE("right: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, "\n");
+  }
+#endif
   uutig_str += uutig;
   return true;
 }
@@ -193,7 +234,8 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   // allocate space for biggest possible uutig in global storage
   const int MAX_UUTIG_LEN = 10000000;
   global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_LEN);
-  int64_t num_drops = 0, num_walks = 0, num_deadends = 0, num_forks = 0, num_conflicts = 0, num_repeats = 0;
+  WalkTermStats walk_term_stats = {0};
+  int64_t num_drops = 0, num_walks = 0;
   Contigs uutigs;
   barrier();
   {
@@ -209,27 +251,19 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
         continue;
       int32_t start_walk_us = kmer_dht->get_time_offset_us();
       // walk left first
-      WalkInfo walk_info({WalkStatus::RUNNING, false, 0, 0});
+      WalkInfo walk_info({false, 0, 0});
       string uutig_str = "";
-      if (!traverse_left(kmer_dht, kmer, uutig_gptr, uutig_str, walk_info, start_walk_us)) {
+      if (!traverse_left(kmer_dht, kmer, uutig_gptr, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
         num_drops++;
         continue;
       }
-      if (walk_info.status == WalkStatus::DEADEND) num_deadends++;
-      if (walk_info.status == WalkStatus::FORK) num_forks++;
-      if (walk_info.status == WalkStatus::CONFLICT) num_conflicts++;
-      if (walk_info.status == WalkStatus::REPEAT) num_repeats++;
       auto sum_depths = walk_info.sum_depths;
       auto kmer_str = kmer.to_string();
       uutig_str += kmer_str.substr(1, kmer_len - 2);
-      if (!traverse_right(kmer_dht, kmer, uutig_gptr, uutig_str, walk_info, start_walk_us)) {
+      if (!traverse_right(kmer_dht, kmer, uutig_gptr, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
         num_drops++;
         continue;
       }
-      if (walk_info.status == WalkStatus::DEADEND) num_deadends++;
-      if (walk_info.status == WalkStatus::FORK) num_forks++;
-      if (walk_info.status == WalkStatus::CONFLICT) num_conflicts++;
-      if (walk_info.status == WalkStatus::REPEAT) num_repeats++;
       sum_depths += walk_info.sum_depths;
       Contig contig = {0, uutig_str, (double)sum_depths / (uutig_str.length() - kmer_len + 2)};
       uutigs.add_contig(contig);
@@ -240,16 +274,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   }
   delete_array(uutig_gptr);
   barrier();
-  auto all_num_deadends = reduce_one(num_deadends, op_fast_add, 0).wait();
-  auto all_num_forks = reduce_one(num_forks, op_fast_add, 0).wait();
-  auto all_num_conflicts = reduce_one(num_conflicts, op_fast_add, 0).wait();
-  auto all_num_repeats = reduce_one(num_repeats, op_fast_add, 0).wait();
-  auto tot_ends = all_num_forks + all_num_deadends + all_num_conflicts + all_num_repeats;
-  SLOG_VERBOSE("Walk statistics:\n");
-  SLOG_VERBOSE("  deadends:  ", perc_str(all_num_deadends, tot_ends), "\n");
-  SLOG_VERBOSE("  forks:     ", perc_str(all_num_forks, tot_ends), "\n");
-  SLOG_VERBOSE("  conflicts: ", perc_str(all_num_conflicts, tot_ends), "\n");
-  SLOG_VERBOSE("  repeats:   ", perc_str(all_num_repeats, tot_ends), "\n");
+  walk_term_stats.print();
 
   // put all the uutigs found by this rank into my_uutigs
   int64_t num_uutigs = 0;
