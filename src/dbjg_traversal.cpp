@@ -167,69 +167,42 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
     });
 }
 
-static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, string &uutig_str, WalkInfo &walk_info, 
-                          int32_t start_walk_us, WalkTermStats &walk_term_stats) {
-  walk_info.drop = false;
-  walk_info.len = 0;
-  walk_info.sum_depths = 0;
-  global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
+static bool traverse_start(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, int32_t start_walk_us, 
+                           bool revisit_allowed, TraverseDirn dirn, global_ptr<char> uutig_gptr, char next_ext) {
   char *local_uutig = uutig_gptr.local();
   local_uutig[0] = 0;
   int walk_len = 0;
   int64_t sum_depths = 0;
   char prev_ext = 0;
-  string kmer_str = kmer.to_string();
-  traverse_step(kmer_dht, kmer.get_array(), kmer_str.front(), TraverseDirn::LEFT, walk_len, sum_depths, rank_me(), uutig_gptr,
-                false, prev_ext, start_walk_us);
+  traverse_step(kmer_dht, kmer.get_array(), next_ext, dirn, walk_len, sum_depths, rank_me(), uutig_gptr,
+                revisit_allowed, prev_ext, start_walk_us);
+}
+
+static bool traverse_complete(string &uutig_str, WalkTermStats &walk_term_stats, global_ptr<char> uutig_gptr, 
+                              TraverseDirn dirn, int64_t &sum_depths) {
+  char *local_uutig = uutig_gptr.local();
   while (local_uutig[0] == 0) progress();
   assert(local_uutig[0] == 'X' || local_uutig[0] == 'F' || local_uutig[0] == 'O' || local_uutig[0] == 'R');
   WalkStatus walk_status = (WalkStatus)local_uutig[0];
+  WalkInfo walk_info({false, 0, 0});
   memcpy((char*)&walk_info, local_uutig + 1, sizeof(WalkInfo));
   if (!walk_info.drop) {
     walk_term_stats.update(walk_status);
     char *uutig = local_uutig + 1 + sizeof(WalkInfo);
     uutig[walk_info.len] = 0;
+    sum_depths += walk_info.sum_depths;
 #ifdef DEBUG
     for (int i = 0; i < walk_info.len; i++) {
       if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
-        DIE("left: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, " kmer ", kmer, "\n");
+        DIE("left: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, "\n");
     }
 #endif
-    // reverse it because we were walking backwards
-    for (int i = walk_info.len - 1; i >= 0; i--) uutig_str += uutig[i];
-  }
-  delete_array(uutig_gptr);
-  return (!walk_info.drop);
-}
-
-static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, string &uutig_str, WalkInfo &walk_info, 
-                           int32_t start_walk_us, WalkTermStats &walk_term_stats) {
-  walk_info.drop = false;
-  walk_info.len = 0;
-  global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
-  char *local_uutig = uutig_gptr.local();
-  local_uutig[0] = 0;
-  int walk_len = 0;
-  int64_t sum_depths = 0;
-  string kmer_str = kmer.to_string();
-  char prev_ext = 0;
-  traverse_step(kmer_dht, kmer.get_array(), kmer_str.back(), TraverseDirn::RIGHT, walk_len, sum_depths, rank_me(), uutig_gptr,
-                true, prev_ext, start_walk_us);
-  while (local_uutig[0] == 0) progress(); 
-  assert(local_uutig[0] == 'X' || local_uutig[0] == 'F' || local_uutig[0] == 'O' || local_uutig[0] == 'R');
-  WalkStatus walk_status = (WalkStatus)local_uutig[0];
-  memcpy((char*)&walk_info, local_uutig + 1, sizeof(WalkInfo));
-  if (!walk_info.drop) {
-    walk_term_stats.update(walk_status);
-    char *uutig = local_uutig + 1 + sizeof(WalkInfo);
-    uutig[walk_info.len] = 0;
-#ifdef DEBUG
-    for (int i = 0; i < walk_info.len; i++) {
-      if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
-        DIE("right: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, "\n");
+    if (dirn == TraverseDirn::LEFT) {
+      // reverse it because we were walking backwards
+      for (int i = walk_info.len - 1; i >= 0; i--) uutig_str += uutig[i];
+    } else {
+      uutig_str += uutig;
     }
-#endif
-    uutig_str += uutig;
   }
   delete_array(uutig_gptr);
   return (!walk_info.drop);
@@ -254,21 +227,25 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       if (kmer_counts->left == 'X' || kmer_counts->left == 'F' || kmer_counts->right == 'X' || kmer_counts->right == 'F') 
         continue;
       int32_t start_walk_us = kmer_dht->get_time_offset_us();
-      // walk left first
-      WalkInfo walk_info({false, 0, 0});
-      string uutig_str = "";
-      if (!traverse_left(kmer_dht, kmer, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
-        num_drops++;
-        continue;
-      }
-      auto sum_depths = walk_info.sum_depths;
       auto kmer_str = kmer.to_string();
-      uutig_str += kmer_str.substr(1, kmer_len - 2);
-      if (!traverse_right(kmer_dht, kmer, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
+      // walk left first
+      global_ptr<char> left_uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
+      traverse_start(kmer_dht, kmer, start_walk_us, false, TraverseDirn::LEFT, left_uutig_gptr, kmer_str.front());
+      global_ptr<char> right_uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
+      traverse_start(kmer_dht, kmer, start_walk_us, true, TraverseDirn::RIGHT, right_uutig_gptr, kmer_str.back());
+
+      string left_uutig_str = "";
+      int64_t sum_depths = 0;
+      if (!traverse_complete(left_uutig_str, walk_term_stats, left_uutig_gptr, TraverseDirn::LEFT, sum_depths)) {
         num_drops++;
         continue;
       }
-      sum_depths += walk_info.sum_depths;
+      string right_uutig_str = kmer_str.substr(1, kmer_len - 2);
+      if (!traverse_complete(right_uutig_str, walk_term_stats, right_uutig_gptr, TraverseDirn::RIGHT, sum_depths)) {
+        num_drops++;
+        continue;
+      }
+      auto uutig_str = left_uutig_str + right_uutig_str;
       Contig contig = {0, uutig_str, (double)sum_depths / (uutig_str.length() - kmer_len + 2)};
       uutigs.add_contig(contig);
       num_walks++;
