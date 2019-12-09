@@ -167,11 +167,12 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
     });
 }
 
-static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, 
-                          string &uutig_str, WalkInfo &walk_info, int32_t start_walk_us, WalkTermStats &walk_term_stats) {
+static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, string &uutig_str, WalkInfo &walk_info, 
+                          int32_t start_walk_us, WalkTermStats &walk_term_stats) {
   walk_info.drop = false;
   walk_info.len = 0;
   walk_info.sum_depths = 0;
+  global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
   char *local_uutig = uutig_gptr.local();
   local_uutig[0] = 0;
   int walk_len = 0;
@@ -184,25 +185,28 @@ static bool traverse_left(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr
   assert(local_uutig[0] == 'X' || local_uutig[0] == 'F' || local_uutig[0] == 'O' || local_uutig[0] == 'R');
   WalkStatus walk_status = (WalkStatus)local_uutig[0];
   memcpy((char*)&walk_info, local_uutig + 1, sizeof(WalkInfo));
-  if (walk_info.drop) return false;
-  walk_term_stats.update(walk_status);
-  char *uutig = local_uutig + 1 + sizeof(WalkInfo);
-  uutig[walk_info.len] = 0;
+  if (!walk_info.drop) {
+    walk_term_stats.update(walk_status);
+    char *uutig = local_uutig + 1 + sizeof(WalkInfo);
+    uutig[walk_info.len] = 0;
 #ifdef DEBUG
-  for (int i = 0; i < walk_info.len; i++) {
-    if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
-      DIE("left: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, " kmer ", kmer, "\n");
-  }
+    for (int i = 0; i < walk_info.len; i++) {
+      if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
+        DIE("left: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, " kmer ", kmer, "\n");
+    }
 #endif
-  // reverse it because we were walking backwards
-  for (int i = walk_info.len - 1; i >= 0; i--) uutig_str += uutig[i];
-  return true;
+    // reverse it because we were walking backwards
+    for (int i = walk_info.len - 1; i >= 0; i--) uutig_str += uutig[i];
+  }
+  delete_array(uutig_gptr);
+  return (!walk_info.drop);
 }
 
-static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_ptr<char> &uutig_gptr, string &uutig_str, 
-                           WalkInfo &walk_info, int32_t start_walk_us, WalkTermStats &walk_term_stats) {
+static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, string &uutig_str, WalkInfo &walk_info, 
+                           int32_t start_walk_us, WalkTermStats &walk_term_stats) {
   walk_info.drop = false;
   walk_info.len = 0;
+  global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
   char *local_uutig = uutig_gptr.local();
   local_uutig[0] = 0;
   int walk_len = 0;
@@ -215,25 +219,25 @@ static bool traverse_right(dist_object<KmerDHT> &kmer_dht, Kmer &kmer, global_pt
   assert(local_uutig[0] == 'X' || local_uutig[0] == 'F' || local_uutig[0] == 'O' || local_uutig[0] == 'R');
   WalkStatus walk_status = (WalkStatus)local_uutig[0];
   memcpy((char*)&walk_info, local_uutig + 1, sizeof(WalkInfo));
-  if (walk_info.drop) return false;
-  walk_term_stats.update(walk_status);
-  char *uutig = local_uutig + 1 + sizeof(WalkInfo);
-  uutig[walk_info.len] = 0;
+  if (!walk_info.drop) {
+    walk_term_stats.update(walk_status);
+    char *uutig = local_uutig + 1 + sizeof(WalkInfo);
+    uutig[walk_info.len] = 0;
 #ifdef DEBUG
-  for (int i = 0; i < walk_info.len; i++) {
-    if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
-      DIE("right: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, "\n");
-  }
+    for (int i = 0; i < walk_info.len; i++) {
+      if (uutig[i] != 'A' && uutig[i] != 'C' && uutig[i] != 'G' && uutig[i] != 'T' && uutig[i] != 'N')
+        DIE("right: bad uutig character '", uutig[i], "' (", (int)uutig[i], ") ", uutig, "\n");
+    }
 #endif
-  uutig_str += uutig;
-  return true;
+    uutig_str += uutig;
+  }
+  delete_array(uutig_gptr);
+  return (!walk_info.drop);
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
   Timer timer(__FILEFUNC__);
   // allocate space for biggest possible uutig in global storage
-  const int MAX_UUTIG_LEN = 10000000;
-  global_ptr<char> uutig_gptr = new_array<char>(MAX_UUTIG_LEN);
   WalkTermStats walk_term_stats = {0};
   int64_t num_drops = 0, num_walks = 0;
   Contigs uutigs;
@@ -253,14 +257,14 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       // walk left first
       WalkInfo walk_info({false, 0, 0});
       string uutig_str = "";
-      if (!traverse_left(kmer_dht, kmer, uutig_gptr, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
+      if (!traverse_left(kmer_dht, kmer, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
         num_drops++;
         continue;
       }
       auto sum_depths = walk_info.sum_depths;
       auto kmer_str = kmer.to_string();
       uutig_str += kmer_str.substr(1, kmer_len - 2);
-      if (!traverse_right(kmer_dht, kmer, uutig_gptr, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
+      if (!traverse_right(kmer_dht, kmer, uutig_str, walk_info, start_walk_us, walk_term_stats)) {
         num_drops++;
         continue;
       }
@@ -272,7 +276,6 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
     progbar.done();
     // FIXME: now steal kmers from others???
   }
-  delete_array(uutig_gptr);
   barrier();
   walk_term_stats.print();
 
