@@ -374,7 +374,7 @@ public:
     return kmers->size();
   }
 
-  size_t get_kmer_target_rank(Kmer &kmer) {
+  upcxx::intrank_t get_kmer_target_rank(Kmer &kmer) {
     return std::hash<Kmer>{}(kmer) % rank_n();
   }
 
