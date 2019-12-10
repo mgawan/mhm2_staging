@@ -115,9 +115,10 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
   
   DBG_TRAVERSE("kmer ", kmer, " with ext ", ext, " left ", left, " right ", right, "\n");
   // if visited by another rank first
-  if (kmer_counts->visited >= 0 && kmer_counts->visited != start_rank) {
+  if (kmer_counts->visited >= 0 && (kmer_counts->visited != start_rank || kmer_counts->start_walk_us != start_walk_us)) {
     // resolve in favor of earliest starting time
-    if (kmer_counts->start_walk_us < start_walk_us || (kmer_counts->start_walk_us == start_walk_us && kmer_counts->visited > start_rank)) {
+    if (kmer_counts->start_walk_us < start_walk_us || 
+        (kmer_counts->start_walk_us == start_walk_us && kmer_counts->visited > start_rank)) {
       DBG_TRAVERSE("TERM: kmer ", kmer, " already visited ", kmer_counts->visited, " start walk ", kmer_counts->start_walk_us,
                    " new start walk ", start_walk_us, " start rank ", start_rank, "\n");
       abort_walk(start_rank, uutig, WalkStatus::CONFLICT, {true, walk_len, sum_depths});
@@ -125,7 +126,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
     }
   }
   // already visited by start rank, repeat, abort (but allowed if traversing right after adding start kmer previously)
-  if (kmer_counts->visited == start_rank && !revisit_allowed) {
+  if (kmer_counts->visited == start_rank && kmer_counts->start_walk_us == start_walk_us && !revisit_allowed) {
     DBG_TRAVERSE("TERM: kmer ", kmer, " already visited ", kmer_counts->visited, " start rank ", start_rank, "\n");
     abort_walk(start_rank, uutig, WalkStatus::REPEAT, {false, walk_len, sum_depths});
     return;
@@ -159,6 +160,7 @@ static void traverse_step(dist_object<KmerDHT> &kmer_dht, const MerArray &merarr
                       kmer_dht->get_kmer_target_rank(next_kmer));
   // valid new kmer can be constructed
   DBG_TRAVERSE("next kmer ", next_kmer, "\n");
+  if (walk_len >= MAX_UUTIG_BUF_LEN - 2 - sizeof(WalkInfo)) DIE("walk is greater than buf size ", MAX_UUTIG_BUF_LEN);
   rput(ext, uutig + 1 + sizeof(WalkInfo) + walk_len - 1).then(
     [=, &kmer_dht]() {
       // only do the rpc to the next kmer vertex once the rput has completed
@@ -217,8 +219,12 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   barrier();
   {
     ProgressBar progbar(kmer_dht->get_local_num_kmers(), "Traversing deBruijn graph");
+    deque<global_ptr<char>> uutig_gptrs;
+    deque<string> kmer_strs;
+    int64_t num_kmers = 0;
     for (auto it = kmer_dht->local_kmers_begin(); it != kmer_dht->local_kmers_end(); it++) {
       progbar.update();
+      progress();
       auto kmer = it->first;
       auto kmer_counts = &it->second;
       // don't start any new walk if this kmer has already been visited
@@ -229,27 +235,57 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       int32_t start_walk_us = kmer_dht->get_time_offset_us();
       auto kmer_str = kmer.to_string();
       // walk left first
+      kmer_strs.push_back(kmer_str);
       global_ptr<char> left_uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
+      uutig_gptrs.push_back(left_uutig_gptr);
       traverse_start(kmer_dht, kmer, start_walk_us, false, TraverseDirn::LEFT, left_uutig_gptr, kmer_str.front());
       global_ptr<char> right_uutig_gptr = new_array<char>(MAX_UUTIG_BUF_LEN);
+      uutig_gptrs.push_back(right_uutig_gptr);
       traverse_start(kmer_dht, kmer, start_walk_us, true, TraverseDirn::RIGHT, right_uutig_gptr, kmer_str.back());
-
-      string left_uutig_str = "";
+      num_kmers++;
+      // limit the number of walks in flight
+      while (uutig_gptrs.size() > MAX_DBJG_WALKS_IN_FLIGHT) {
+        auto kmer_str = kmer_strs.front();
+        kmer_strs.pop_front();
+        auto uutig_gptr_left = uutig_gptrs.front();
+        uutig_gptrs.pop_front();
+        auto uutig_gptr_right = uutig_gptrs.front();
+        uutig_gptrs.pop_front();
+        string uutig_str = "";
+        int64_t sum_depths = 0;
+        if (!traverse_complete(uutig_str, walk_term_stats, uutig_gptr_left, TraverseDirn::LEFT, sum_depths)) {
+          num_drops++;
+          continue;
+        }
+        uutig_str += kmer_str.substr(1, kmer_len - 2);
+        if (!traverse_complete(uutig_str, walk_term_stats, uutig_gptr_right, TraverseDirn::RIGHT, sum_depths)) {
+          num_drops++;
+          continue;
+        }
+        Contig contig = {0, uutig_str, (double)sum_depths / (uutig_str.length() - kmer_len + 2)};
+        uutigs.add_contig(contig);
+        num_walks++;
+      }
+    }
+    for (int i = 0; i < uutig_gptrs.size(); i += 2) {
+      auto &kmer_str = kmer_strs[i / 2];
+      string uutig_str = "";
       int64_t sum_depths = 0;
-      if (!traverse_complete(left_uutig_str, walk_term_stats, left_uutig_gptr, TraverseDirn::LEFT, sum_depths)) {
+      if (!traverse_complete(uutig_str, walk_term_stats, uutig_gptrs[i], TraverseDirn::LEFT, sum_depths)) {
         num_drops++;
         continue;
       }
-      string right_uutig_str = kmer_str.substr(1, kmer_len - 2);
-      if (!traverse_complete(right_uutig_str, walk_term_stats, right_uutig_gptr, TraverseDirn::RIGHT, sum_depths)) {
+      uutig_str += kmer_str.substr(1, kmer_len - 2);
+      if (!traverse_complete(uutig_str, walk_term_stats, uutig_gptrs[i + 1], TraverseDirn::RIGHT, sum_depths)) {
         num_drops++;
         continue;
       }
-      auto uutig_str = left_uutig_str + right_uutig_str;
       Contig contig = {0, uutig_str, (double)sum_depths / (uutig_str.length() - kmer_len + 2)};
       uutigs.add_contig(contig);
       num_walks++;
     }
+    uutig_gptrs.clear();
+    kmer_strs.clear();
     progbar.done();
     // FIXME: now steal kmers from others???
   }

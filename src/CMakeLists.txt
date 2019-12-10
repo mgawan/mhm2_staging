@@ -74,6 +74,7 @@ add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.3)
 add_definitions(-DLASSM_RATING_THRES=0)
 add_definitions(-DLASSM_MAX_COUNT_MERS_READS=3000)
 add_definitions(-DMAX_UUTIG_BUF_LEN=10000000)
+add_definitions(-DMAX_DBJG_WALKS_IN_FLIGHT=100)
 
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
