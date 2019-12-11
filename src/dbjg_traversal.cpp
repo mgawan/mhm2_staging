@@ -85,25 +85,25 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
                }
                // check for conflicts
                if (prev_ext && ((dirn == TraverseDirn::LEFT && prev_ext != right) || 
-                       (dirn == TraverseDirn::RIGHT && prev_ext != left))) 
+                                (dirn == TraverseDirn::RIGHT && prev_ext != left))) 
                  return {.walk_status = WalkStatus::CONFLICT};
-                 // if visited by another rank first
-                 if (kmer_counts->visited >= 0 && 
-                         (kmer_counts->visited != start_rank || kmer_counts->start_walk_us != start_walk_us)) {
-                   // resolve in favor of earliest starting time
-                   if (kmer_counts->start_walk_us < start_walk_us || 
-                           (kmer_counts->start_walk_us == start_walk_us && kmer_counts->visited > start_rank)) 
-                     return {.walk_status = WalkStatus::CONFLICT, .drop_walk = true};
-                 }
-                 // a repeat, abort (but allowed if traversing right after adding start kmer previously)
-                 if (kmer_counts->visited == start_rank && kmer_counts->start_walk_us == start_walk_us && !revisit_allowed) 
-                   return {.walk_status = WalkStatus::REPEAT};
-                   // mark as visited
-                   kmer_counts->visited = start_rank;
-                   // set the walk time
-                   kmer_counts->start_walk_us = start_walk_us;
-                   return {.walk_status = WalkStatus::RUNNING, .drop_walk = false, .count = kmer_counts->count, 
-                           .left = left, .right = right};
+               // if visited by another rank first
+               if (kmer_counts->visited >= 0 && 
+                   (kmer_counts->visited != start_rank || kmer_counts->start_walk_us != start_walk_us)) {
+                 // resolve in favor of earliest starting time
+                 if (kmer_counts->start_walk_us < start_walk_us || 
+                     (kmer_counts->start_walk_us == start_walk_us && kmer_counts->visited > start_rank)) 
+                   return {.walk_status = WalkStatus::CONFLICT, .drop_walk = true};
+               }
+               // a repeat, abort (but allowed if traversing right after adding start kmer previously)
+               if (kmer_counts->visited == start_rank && kmer_counts->start_walk_us == start_walk_us && !revisit_allowed) 
+                 return {.walk_status = WalkStatus::REPEAT};
+               // mark as visited
+               kmer_counts->visited = start_rank;
+               // set the walk time
+               kmer_counts->start_walk_us = start_walk_us;
+               return {.walk_status = WalkStatus::RUNNING, .drop_walk = false, .count = kmer_counts->count, 
+                   .left = left, .right = right};
              }, kmer_dht, kmer.get_array(), dirn, rank_me(), prev_ext, start_walk_us, revisit_allowed, is_rc);
 }
 
