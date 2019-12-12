@@ -52,7 +52,7 @@
 #define KGREENBK "\x1B[44m"
 #define KLGREENBK "\x1B[102m"
 
-static const std::array<std::string, 15> COLORS = {KNORM, KBLACK, KRED, KGREEN, KYELLOW, KCYAN, KWHITE, KGRAY,
+static const std::array<std::string, 15> COLORS = {KNORM, KBLACK, KRED, KGREEN, KYELLOW, KBLUE, KMAGENTA, KCYAN, KWHITE, KGRAY,
                                                    KLRED, KLGREEN, KLYELLOW, KLBLUE, KLMAGENTA, KLCYAN, KLWHITE};
                                                   
 #else
