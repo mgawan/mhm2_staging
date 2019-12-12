@@ -65,7 +65,7 @@ extern bool _verbose;
 inline void init_logger() {
   if (!upcxx::rank_me()) {
     // FIXME: if the file already exists, move it to a timestamped version as backup
-    _logstream.open("mhm.log");
+    _logstream.open("mhmxx.log");
     _logstream << "\n\n=======================================\n\n";
   }
 }
