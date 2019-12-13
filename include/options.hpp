@@ -32,7 +32,7 @@ public:
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store = 50 * ONE_MB;
+  int max_kmer_store_mb = 50;
   int max_ctg_cache = 1000000;
   bool use_bloom = true;
   double dynamic_min_depth = 0.9;
@@ -65,8 +65,8 @@ public:
                    to_string(dynamic_min_depth) + ")");
     app.add_option("--min-depth-thres", dmin_thres,
                    "Absolute mininimum depth threshold for DeBruijn graph traversal (default " + to_string(dmin_thres) + ")");
-    app.add_option("--max-kmer-store", max_kmer_store,
-                   "Maximum size for kmer store (default " + to_string(max_kmer_store) + ")");
+    app.add_option("--max-kmer-store", max_kmer_store_mb,
+                   "Maximum size for kmer store in MB (default " + to_string(max_kmer_store_mb) + "MB)");
     app.add_option("--max-ctg-cache", max_ctg_cache,
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
     app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
@@ -111,7 +111,7 @@ public:
       for (auto scaff_kmer_len : scaff_kmer_lens) SLOG(scaff_kmer_len, ",");
       SLOG("\n");
       SLOG("  quality offset:        ", qual_offset, "\n");
-      SLOG("  max kmer store:        ", max_kmer_store, "\n");
+      SLOG("  max kmer store:        ", max_kmer_store_mb, "MB\n");
       SLOG("  max ctg cache:         ", max_ctg_cache, "\n");
       SLOG("  dynamic min depth:     ", dynamic_min_depth, "\n");
       SLOG("  min depth threshold:   ", dmin_thres, "\n");

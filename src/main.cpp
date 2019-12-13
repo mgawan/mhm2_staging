@@ -75,6 +75,8 @@ int main(int argc, char **argv) {
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
+  auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+  
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
@@ -102,7 +104,7 @@ int main(int argc, char **argv) {
       // duration of kmer_dht
       analyze_kmers_dt.start();
       auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
-      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, options->max_kmer_store, options->use_bloom);
+      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, max_kmer_store, options->use_bloom);
       barrier();
       analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
                     options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
@@ -119,7 +121,7 @@ int main(int argc, char **argv) {
       if (kmer_len < options->kmer_lens.back()) {
         Alns alns;
         alignments_dt.start();
-        find_alignments(kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
+        find_alignments(kmer_len, options->reads_fname_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
         alignments_dt.stop();
         barrier();
         localassm_dt.start();
@@ -152,7 +154,7 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
       alignments_dt.start();
-      find_alignments(scaff_kmer_len, options->reads_fname_list, options->max_kmer_store, options->max_ctg_cache, ctgs, alns);
+      find_alignments(scaff_kmer_len, options->reads_fname_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
