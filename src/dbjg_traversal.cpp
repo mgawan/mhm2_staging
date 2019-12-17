@@ -24,17 +24,16 @@ extern ofstream _dbgstream;
 
 enum class TraverseDirn { LEFT, RIGHT };
 
-enum class WalkStatus { RUNNING = '-', DEADEND = 'X', FORK = 'F', CONFLICT = 'O', REPEAT = 'R'};
+enum class WalkStatus { RUNNING = '-', DEADEND = 'X', FORK = 'F', CONFLICT = 'O', REPEAT = 'R', DROP = 'D'};
 
 struct StepInfo {
   WalkStatus walk_status;
-  bool drop_walk;
   ext_count_t count;
   char left, right;
 };
 
 struct WalkTermStats {
-  int64_t num_deadends, num_forks, num_conflicts, num_repeats;
+  int64_t num_deadends, num_forks, num_conflicts, num_repeats, num_drops;
   
   void update(WalkStatus walk_status) {
     switch (walk_status) {
@@ -42,6 +41,7 @@ struct WalkTermStats {
       case WalkStatus::FORK: num_forks++; break;
       case WalkStatus::CONFLICT: num_conflicts++; break;
       case WalkStatus::REPEAT: num_repeats++; break;
+      case WalkStatus::DROP: num_drops++; break;
     }
   }  
   
@@ -50,12 +50,14 @@ struct WalkTermStats {
     auto all_num_forks = reduce_one(num_forks, op_fast_add, 0).wait();
     auto all_num_conflicts = reduce_one(num_conflicts, op_fast_add, 0).wait();
     auto all_num_repeats = reduce_one(num_repeats, op_fast_add, 0).wait();
-    auto tot_ends = all_num_forks + all_num_deadends + all_num_conflicts + all_num_repeats;
+    auto all_num_drops = reduce_one(num_drops, op_fast_add, 0).wait();
+    auto tot_ends = all_num_forks + all_num_deadends + all_num_conflicts + all_num_repeats + all_num_drops;
     SLOG_VERBOSE("Walk statistics:\n");
     SLOG_VERBOSE("  deadends:  ", perc_str(all_num_deadends, tot_ends), "\n");
     SLOG_VERBOSE("  forks:     ", perc_str(all_num_forks, tot_ends), "\n");
     SLOG_VERBOSE("  conflicts: ", perc_str(all_num_conflicts, tot_ends), "\n");
     SLOG_VERBOSE("  repeats:   ", perc_str(all_num_repeats, tot_ends), "\n");
+    SLOG_VERBOSE("  drops:     ", perc_str(all_num_drops, tot_ends), "\n");
   }
 };
 
@@ -93,7 +95,7 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
                  // resolve in favor of earliest starting time
                  if (kmer_counts->start_walk_us < start_walk_us || 
                      (kmer_counts->start_walk_us == start_walk_us && kmer_counts->visited > start_rank)) 
-                   return {.walk_status = WalkStatus::CONFLICT, .drop_walk = true};
+                   return {.walk_status = WalkStatus::DROP};
                }
                // a repeat, abort (but allowed if traversing right after adding start kmer previously)
                if (kmer_counts->visited == start_rank && kmer_counts->start_walk_us == start_walk_us && !revisit_allowed) 
@@ -102,8 +104,7 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
                kmer_counts->visited = start_rank;
                // set the walk time
                kmer_counts->start_walk_us = start_walk_us;
-               return {.walk_status = WalkStatus::RUNNING, .drop_walk = false, .count = kmer_counts->count, 
-                   .left = left, .right = right};
+               return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
              }, kmer_dht, kmer.get_array(), dirn, rank_me(), prev_ext, start_walk_us, revisit_allowed, is_rc);
 }
 
@@ -118,9 +119,9 @@ static bool traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer kmer, int32_t sta
     //progress();
     auto step_info = get_next_step(kmer_dht, kmer, dirn, prev_ext, start_walk_us, revisit_allowed).wait();
     revisit_allowed = false;
-    if (step_info.drop_walk) return false;
     if (step_info.walk_status != WalkStatus::RUNNING) {
       walk_term_stats.update(step_info.walk_status);
+      if (step_info.walk_status == WalkStatus::DROP) return false;
       // reverse it because we were walking backwards
       if (dirn == TraverseDirn::LEFT) reverse(uutig.begin(), uutig.end());
       return true;
@@ -149,7 +150,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   Timer timer(__FILEFUNC__);
   // allocate space for biggest possible uutig in global storage
   WalkTermStats walk_term_stats = {0};
-  int64_t num_drops = 0, num_walks = 0;
+  int64_t num_walks = 0;
   Contigs uutigs;
   barrier();
   {
@@ -167,14 +168,8 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       int32_t start_walk_us = kmer_dht->get_time_offset_us();
       string uutig;
       int64_t sum_depths = 0;
-      if (!traverse_dirn(kmer_dht, kmer, start_walk_us, TraverseDirn::LEFT, uutig, sum_depths, walk_term_stats)) {
-        num_drops++;
-        continue;
-      }
-      if (!traverse_dirn(kmer_dht, kmer, start_walk_us, TraverseDirn::RIGHT, uutig, sum_depths, walk_term_stats)) {
-        num_drops++;
-        continue;
-      }
+      if (!traverse_dirn(kmer_dht, kmer, start_walk_us, TraverseDirn::LEFT, uutig, sum_depths, walk_term_stats)) continue;
+      if (!traverse_dirn(kmer_dht, kmer, start_walk_us, TraverseDirn::RIGHT, uutig, sum_depths, walk_term_stats)) continue;
       Contig contig = {0, uutig, (double)sum_depths / (uutig.length() - kmer_len + 2)};
       uutigs.add_contig(contig);
       num_walks++;
@@ -186,7 +181,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   walk_term_stats.print();
 
   // put all the uutigs found by this rank into my_uutigs
-  int64_t num_uutigs = 0;
+  int64_t num_uutigs = 0, num_drops = 0;
   my_uutigs.clear();
   {
     ProgressBar progbar(uutigs.size(), "Dropping duplicate walks");
