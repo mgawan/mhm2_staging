@@ -107,6 +107,8 @@ struct ExtCounts {
 
 };
 
+struct FragElem;
+
 // total bytes: 2+8+8=18
 struct KmerCounts {
   // how many times this kmer has occurred: don't need to count beyond 65536
@@ -118,8 +120,7 @@ struct KmerCounts {
   char right;
   uint16_t count;
   bool from_ctg;
-  int32_t visited;
-  int32_t start_walk_us;
+  global_ptr<FragElem> uutig_frag;
 
   char get_ext(ExtCounts &ext_counts) {
     auto sorted_counts = ext_counts.get_sorted();
@@ -180,7 +181,7 @@ class KmerDHT {
       const auto it = kmers->find(new_kmer);
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X',
-                                   .count = 1, .from_ctg = false, .visited = -1, .start_walk_us = 0 };
+                                   .count = 1, .from_ctg = false, .uutig_frag = nullptr };
         kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
         kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
@@ -229,7 +230,7 @@ class KmerDHT {
       const auto it = kmers->find(new_kmer);
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = 1,
-                                   .from_ctg = false, .visited = -1, .start_walk_us = 0 };
+                                   .from_ctg = false, .uutig_frag = nullptr};
         kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
         kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
@@ -289,7 +290,7 @@ class KmerDHT {
       if (insert) {
         uint16_t count = merarr_and_ext.count;
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = count,
-                                   .from_ctg = true, .visited = -1, .start_walk_us = 0 };
+                                   .from_ctg = true, .uutig_frag = nullptr};
         kmer_counts.left_exts.inc(merarr_and_ext.left, count);
         kmer_counts.right_exts.inc(merarr_and_ext.right, count);
         (*kmers)[new_kmer] = kmer_counts;
@@ -382,16 +383,6 @@ public:
     const auto it = kmers->find(kmer);
     if (it == kmers->end()) return nullptr;
     return &it->second;
-  }
-
-  int32_t get_visited(Kmer &kmer) {
-    return rpc(get_kmer_target_rank(kmer),
-               [](MerArray merarr, dist_object<KmerMap> &kmers) -> int32_t {
-                 Kmer kmer(merarr);
-                 const auto it = kmers->find(kmer);
-                 if (it == kmers->end()) return -2;
-                 else return it->second.visited;
-               }, kmer.get_array(), kmers).wait();
   }
 
   int32_t get_kmer_count(Kmer &kmer) {

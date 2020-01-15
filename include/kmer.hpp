@@ -81,7 +81,7 @@ public:
     assert(Kmer::k > 0);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
   }
-    
+
   Kmer(const Kmer& o) {
     assert(Kmer::k > 0);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
@@ -100,8 +100,9 @@ public:
   static std::vector<Kmer> get_kmers(int kmer_len, std::string seq) {
     // only need rank 0 to check
     if (Kmer::k == 0) SDIE("Kmer::k not set");
-    if (kmer_len != Kmer::k) SDIE("Kmer::k value ", Kmer::k, " is different from kmer length ", kmer_len, " passed to get kmers");
-    for (auto & c : seq) c = toupper(c); 
+    if (kmer_len != Kmer::k)
+      SDIE("Kmer::k value ", Kmer::k, " is different from kmer length ", kmer_len, " passed to get kmers");
+    for (auto & c : seq) c = toupper(c);
     if (seq.size() < Kmer::k) return std::vector<Kmer>();
     int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
     int numLongs = (Kmer::k + 31) / 32;
@@ -158,13 +159,13 @@ public:
     }
     return kmers;
   }
-  
+
   Kmer& operator=(const Kmer& o) {
-    if (this != &o) 
+    if (this != &o)
       for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
     return *this;
   }
-  
+
   bool operator<(const Kmer& o) const {
     bool r = false;
     for (size_t i = 0; i < N_LONGS; ++i) {
@@ -173,13 +174,13 @@ public:
     }
     return false;
   }
-    
+
   bool operator==(const Kmer& o) const {
-    for (size_t i = 0; i < N_LONGS; i++) 
+    for (size_t i = 0; i < N_LONGS; i++)
       if (longs[i] != o.longs[i]) return false;
     return true;
   }
-  
+
   bool operator!=(const Kmer& o) const {
     return !(*this == o);
   }
@@ -196,7 +197,7 @@ public:
       s++;
     }
   }
-    
+
   uint64_t hash() const {
     return MurmurHash3_x64_64(reinterpret_cast<const void*>(longs.data()), N_LONGS * sizeof(uint64_t));
   }
@@ -225,7 +226,7 @@ public:
     }
     return km;
   }
-  
+
   Kmer forward_base(const char b) const {
     Kmer km(*this);
     km.longs[0] = km.longs[0] << 2;
@@ -238,7 +239,7 @@ public:
     km.longs[nlongs - 1] |= (x + ((x ^ (b & 2)) >> 1)) << (2 * (31 - ((k - 1) % 32)));
     return km;
   }
-  
+
   Kmer backward_base(const char b) const {
     Kmer km(*this);
     size_t nlongs = (Kmer::k + 31) / 32;
@@ -252,7 +253,7 @@ public:
     km.longs[0] |= (x + ((x ^ (b & 2)) >> 1)) << 62;
     return km;
   }
-  
+
   void to_string(char *s) const {
     size_t i, j, l;
     for (i = 0; i < Kmer::k; i++) {
@@ -280,11 +281,11 @@ public:
   const MerArray &get_array() const {
     return longs;
   }
-  
+
   const uint8_t *get_bytes() const {
     return reinterpret_cast<const uint8_t*>(longs.data());
   }
-  
+
   int get_num_bytes() const {
     return N_LONGS * sizeof(uint64_t);
   }
@@ -308,7 +309,7 @@ struct KmerEqual {
 // specialization of std::Hash
 
 namespace std {
-  
+
   template<>
   struct hash<Kmer> {
     typedef std::size_t result_type;
@@ -316,7 +317,7 @@ namespace std {
       return km.hash();
     }
   };
-  
+
   template<>
   struct hash<MerArray> {
     typedef std::size_t result_type;
