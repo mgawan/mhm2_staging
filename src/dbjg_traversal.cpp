@@ -14,8 +14,8 @@
 #include "kmer_dht.hpp"
 #include "contigs.hpp"
 
-//#define DBG_TRAVERSE DBG
-#define DBG_TRAVERSE(...)
+#define DBG_TRAVERSE DBG
+//#define DBG_TRAVERSE(...)
 
 using namespace std;
 using namespace upcxx;
@@ -101,6 +101,9 @@ static StepInfo get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, char le
   if (kmer_rc < kmer) {
     kmer = kmer_rc;
     is_rc = true;
+    
+//    return {.walk_status = WalkStatus::DEADEND};
+    
   }
   return rpc(kmer_dht->get_kmer_target_rank(kmer), 
              [](dist_object<KmerDHT> &kmer_dht, MerArray merarr, char left_ext, bool is_rc, global_ptr<FragElem> frag_elem) 
@@ -110,11 +113,6 @@ static StepInfo get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, char le
                // this kmer doesn't exist, abort
                if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND};
                if (kmer_counts->uutig_frag == frag_elem) return {.walk_status = WalkStatus::REPEAT};
-               // already visited
-               if (kmer_counts->uutig_frag) {
-                 return {.walk_status = WalkStatus::VISITED, .count = 0, .left = 0, .right = 0, 
-                         .frag_elem = kmer_counts->uutig_frag};
-               }
                char left = kmer_counts->left;
                char right = kmer_counts->right;
                if (is_rc) {
@@ -124,6 +122,11 @@ static StepInfo get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, char le
                }
                // check for conflict
                if (left_ext != left) return {.walk_status = WalkStatus::CONFLICT};
+               // already visited
+               if (kmer_counts->uutig_frag) {
+                 return {.walk_status = WalkStatus::VISITED, .count = 0, .left = 0, .right = 0, 
+                         .frag_elem = kmer_counts->uutig_frag};
+               }
                // mark as visited
                kmer_counts->uutig_frag = frag_elem;
                return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
