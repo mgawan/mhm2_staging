@@ -385,13 +385,15 @@ public:
     return &it->second;
   }
 
-  int32_t get_kmer_count(Kmer &kmer) {
+  global_ptr<FragElem> get_kmer_uutig_frag(Kmer kmer) {
+    Kmer kmer_rc = kmer.revcomp();
+    if (kmer_rc < kmer) kmer = kmer_rc;
     return rpc(get_kmer_target_rank(kmer),
-               [](MerArray merarr, dist_object<KmerMap> &kmers) -> uint16_t {
+               [](MerArray merarr, dist_object<KmerMap> &kmers) -> global_ptr<FragElem> {
                  Kmer kmer(merarr);
                  const auto it = kmers->find(kmer);
-                 if (it == kmers->end()) return 0;
-                 else return it->second.count;
+                 if (it == kmers->end()) DIE("kmer not found ", kmer);
+                 return it->second.uutig_frag;
                }, kmer.get_array(), kmers).wait();
   }
 
@@ -542,11 +544,11 @@ public:
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
 
-  KmerMap::const_iterator local_kmers_begin() {
+  KmerMap::iterator local_kmers_begin() {
     return kmers->begin();
   }
 
-  KmerMap::const_iterator local_kmers_end() {
+  KmerMap::iterator local_kmers_end() {
     return kmers->end();
   }
 

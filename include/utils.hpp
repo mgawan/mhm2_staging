@@ -314,7 +314,7 @@ inline char comp_nucleotide(char ch) {
       case 'T': return 'A';
       case 'N': return 'N';
       case '0': return '0';
-      default: DIE("Illegal char in revcomp of '", ch, "'\n");
+      default: DIE("Illegal char in comp nucleotide of '", ch, "'\n");
   }
   return 0;
 }
