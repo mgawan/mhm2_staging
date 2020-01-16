@@ -120,6 +120,8 @@ static StepInfo get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, char le
                  if (right != 'X' && right != 'F') right = comp_nucleotide(right);
                  swap(left, right);
                }
+               if (left == 'X') return {.walk_status = WalkStatus::DEADEND};
+               if (left == 'F') return {.walk_status = WalkStatus::FORK};
                // check for conflict
                if (left_ext != left) return {.walk_status = WalkStatus::CONFLICT};
                // already visited
@@ -210,7 +212,7 @@ void connect_fragments(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector
                        Contigs &my_uutigs) {
   Timer timer(__FILEFUNC__);
   // connect the fragments and put into my_uutigs
-  int64_t num_left_links = 0, num_right_links = 0, num_repeats = 0, num_drops = 0, num_rc_overlaps = 0, num_no_overlaps = 0;
+  int64_t num_left_links = 0, num_right_links = 0, num_repeats = 0, num_drops = 0, num_rc_overlaps = 0;
   my_uutigs.clear();
   {
     ProgressBar progbar(frag_elems.size(), "Connecting fragments");
@@ -237,13 +239,10 @@ void connect_fragments(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector
         // confirm that there is a kmer_len - 1 overlap
         if (!is_overlap(next_frag_seq, uutig, kmer_len - 1)) {
           string next_frag_seq_rc = revcomp(next_frag_seq);
-          if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) {
-            WARN("Left fragments RC don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_left ", 
-                 lfrag_elem->left_gptr, "\n", uutig, "\n", next_frag_seq, "\n", next_frag_seq_rc);
-            num_no_overlaps++;
-          } else {
-            num_rc_overlaps++;
-          }
+          if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) 
+            DIE("Left fragments RC don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_left ", 
+                lfrag_elem->left_gptr, "\n", uutig, "\n", next_frag_seq, "\n", next_frag_seq_rc);
+          num_rc_overlaps++;
         }
       }
       if (lfrag_elem->right_gptr) {
@@ -254,13 +253,10 @@ void connect_fragments(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector
         if (!is_overlap(uutig, next_frag_seq, kmer_len - 1)) {
           string next_frag_seq_rc = revcomp(next_frag_seq);
           //if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) 
-          if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) {
-            WARN("right fragments RC don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_right ", 
+          if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) 
+            DIE("right fragments RC don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_right ", 
                 lfrag_elem->right_gptr, "\n", uutig, "\n", next_frag_seq, "\n", next_frag_seq_rc);
-            num_no_overlaps++;
-          } else {
-            num_rc_overlaps++;
-          }
+          num_rc_overlaps++;
         }
       }
       bool my_walk = true;
@@ -310,10 +306,8 @@ void connect_fragments(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector
   SLOG_VERBOSE("Found ", all_num_uutigs, " uutig fragments with ", perc_str(all_num_left_links, all_num_uutigs), 
                " left links and ", perc_str(all_num_right_links, all_num_uutigs), " right links\n");
   auto all_num_rc_overlaps = reduce_one(num_rc_overlaps, op_fast_add, 0).wait();
-  auto all_num_no_overlaps = reduce_one(num_no_overlaps, op_fast_add, 0).wait();
   auto all_num_links = all_num_right_links + all_num_left_links;
   SLOG_VERBOSE("Number of link overlaps that require revcomp: ", perc_str(all_num_rc_overlaps, all_num_links), "\n");
-  SLOG_VERBOSE("Number of failed link overlaps: ", perc_str(all_num_no_overlaps, all_num_links), "\n");
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
