@@ -199,8 +199,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   barrier();
   walk_term_stats.print();
   // connect the fragments and put into my_uutigs
-  int64_t num_left_links = 0, num_right_links = 0, num_repeats = 0, num_drops = 0;
-  int64_t num_overlaps = 0, num_rc_overlaps = 0;
+  int64_t num_left_links = 0, num_right_links = 0, num_repeats = 0, num_drops = 0, num_rc_overlaps = 0;
   my_uutigs.clear();
   {
     ProgressBar progbar(frag_elems.size(), "Connecting fragments");
@@ -219,29 +218,25 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
         // confirm that there is a kmer_len - 1 overlap
         if (!is_overlap(next_frag_seq, uutig, kmer_len - 1)) {
           string next_frag_seq_rc = revcomp(next_frag_seq);
-          WARN("Left fragments don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_left ", 
-               lfrag_elem->left_gptr, "\n", uutig, "\n", next_frag_seq, "\n", next_frag_seq_rc);
           if (!is_overlap(uutig, next_frag_seq_rc, kmer_len)) 
             DIE("Left fragments RC don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_left ", 
                 lfrag_elem->left_gptr, "\n", uutig, "\n", next_frag_seq, "\n", next_frag_seq_rc);
-          else 
-            num_rc_overlaps++;
-        } else {
-          num_overlaps++;
+          num_rc_overlaps++;
         }
       }
-      /*
       if (lfrag_elem->right_gptr) {
+        if (lfrag_elem->right_gptr == frag_elem) DIE("self ptr ", frag_elem, " at frag ", num_frags, "\n", uutig);
         num_right_links++;
         FragElem next_frag_elem = rget(lfrag_elem->right_gptr).wait();
         string next_frag_seq(next_frag_elem.frag_seq);
-        // confirm that there is a kmer_len - 1 overlap
-        if (uutig.compare(uutig.length() - kmer_len, kmer_len - 1, next_frag_seq, 0, kmer_len - 1) != 0) {
-          DIE("Right fragments don't overlap: ", uutig.substr(uutig.length() - kmer_len, kmer_len - 1), " != ", 
-              next_frag_seq.substr(0, kmer_len - 1), "\n", uutig, "\n", next_frag_seq);
+        if (!is_overlap(uutig, next_frag_seq, kmer_len - 1)) {
+          string next_frag_seq_rc = revcomp(next_frag_seq);
+          if (!is_overlap(uutig, next_frag_seq_rc, kmer_len)) 
+            DIE("right fragments RC don't overlap ", next_frag_seq.length(), " gptr ", frag_elem, " gptr_right ", 
+                lfrag_elem->right_gptr, "\n", uutig, "\n", next_frag_seq, "\n", next_frag_seq_rc);
+          num_rc_overlaps++;
         }
       }
-      */
       bool my_walk = true;
       /*
       if (lfrag_elem->left_gptr || lfrag_elem->right_gptr) {
@@ -288,10 +283,9 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   auto all_num_right_links = reduce_one(num_right_links, op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", all_num_uutigs, " uutig fragments with ", perc_str(all_num_left_links, all_num_uutigs), 
                " left links and ", perc_str(all_num_right_links, all_num_uutigs), " right links\n");
-  auto all_num_overlaps = reduce_one(num_overlaps, op_fast_add, 0).wait();
   auto all_num_rc_overlaps = reduce_one(num_rc_overlaps, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Number overlaps ", perc_str(all_num_overlaps, all_num_left_links + all_num_right_links), "\n");
-  SLOG_VERBOSE("Number RC overlaps ", perc_str(all_num_rc_overlaps, all_num_left_links + all_num_right_links), "\n");
+  auto all_num_links = all_num_right_links + all_num_left_links;
+  SLOG_VERBOSE("Number of link overlaps that require revcomp: ", perc_str(all_num_rc_overlaps, all_num_links), "\n");
   // now get unique ids for the uutigs
   atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
   global_ptr<size_t> counter = nullptr;
