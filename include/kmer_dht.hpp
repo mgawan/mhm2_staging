@@ -397,6 +397,18 @@ public:
                }, kmer.get_array(), kmers).wait();
   }
 
+  bool kmer_exists(Kmer kmer) {
+    Kmer kmer_rc = kmer.revcomp();
+    if (kmer_rc < kmer) kmer = kmer_rc;
+    return rpc(get_kmer_target_rank(kmer),
+               [](MerArray merarr, dist_object<KmerMap> &kmers) -> bool {
+                 Kmer kmer(merarr);
+                 const auto it = kmers->find(kmer);
+                 if (it == kmers->end()) return false;
+                 return true;
+               }, kmer.get_array(), kmers).wait();
+  }
+
   void add_kmer(Kmer kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
     // get the lexicographically smallest
     Kmer kmer_rc = kmer.revcomp();
