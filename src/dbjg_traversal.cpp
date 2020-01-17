@@ -105,9 +105,6 @@ static StepInfo get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, char le
   if (kmer_rc < kmer) {
     kmer = kmer_rc;
     is_rc = true;
-    
-//    return {.walk_status = WalkStatus::DEADEND};
-    
   }
   return rpc(kmer_dht->get_kmer_target_rank(kmer), 
              [](dist_object<KmerDHT> &kmer_dht, MerArray merarr, char left_ext, bool is_rc, global_ptr<FragElem> frag_elem) 
@@ -234,31 +231,25 @@ bool walk_frags(WalkDirn dirn, int kmer_len, global_ptr<FragElem> start_frag_ele
     } 
     FragElem next_frag_elem = rget(next_gptr).wait();
     string next_frag_seq(next_frag_elem.frag_seq);
-    bool overlaps = false;
     if (dirn == WalkDirn::RIGHT) {
       if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) {
-        overlaps = true;
         uutig += next_frag_seq.substr(kmer_len - 1);
+      } else {
+        num_overlaps_rc++;      
+        string next_frag_seq_rc = revcomp(next_frag_seq);
+        if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) 
+          DIE("right fragments RC don't overlap ", next_frag_seq_rc.length(), "\n", uutig, "\n", next_frag_seq_rc);
+        uutig += next_frag_seq_rc.substr(kmer_len - 1);
+        // FIXME: now flip direction
+        return false;
       }
     } else {
       if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) {
-        overlaps = true;
         uutig.insert(0, next_frag_seq.substr(0, next_frag_seq.length() - (kmer_len - 1)));
+      } else {
+        DIE("Invalid overlap in left dirn");
       }
     }
-    if (!overlaps) {
-      num_overlaps_rc++;      
-      return false;
-      
-      string next_frag_seq_rc = revcomp(next_frag_seq);
-      if (!is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) 
-        DIE(DIRN_STR(dirn), " fragments RC don't overlap ", next_frag_seq_rc.length(), "\n", uutig, "\n", next_frag_seq_rc);
-//      uutig += next_frag_seq_rc.substr(kmer_len - 1);
-      
-      // FIXME: now flip direction
-
-    }
-
     walk_steps++;
     next_gptr = (dirn == WalkDirn::RIGHT ? next_frag_elem.right_gptr : next_frag_elem.left_gptr);
   }
@@ -271,43 +262,40 @@ void connect_fragments(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector
   // connect the fragments and put into my_uutigs
   int64_t num_drops = 0, num_steps = 0, max_steps = 0, num_overlaps_rc = 0;
   my_uutigs.clear();
-  {
-    ProgressBar progbar(frag_elems.size(), "Connecting fragments");
-    int64_t num_frags = 0;
-    for (auto it = frag_elems.begin(); it != frag_elems.end(); ++it) {
-      progbar.update();
-      auto frag_elem = *it;
-      auto lfrag_elem = frag_elem.local();
-      if (lfrag_elem->visited) continue;
-      string uutig(lfrag_elem->frag_seq);
-      int64_t sum_depths = lfrag_elem->sum_depths;
+  ProgressBar progbar(frag_elems.size(), "Connecting fragments");
+  int64_t num_frags = 0;
+  for (auto it = frag_elems.begin(); it != frag_elems.end(); ++it) {
+    progbar.update();
+    auto frag_elem = *it;
+    auto lfrag_elem = frag_elem.local();
+    if (lfrag_elem->visited) continue;
+    string uutig(lfrag_elem->frag_seq);
+    int64_t sum_depths = lfrag_elem->sum_depths;
 #ifdef DEBUG      
-      // check for errors in kmers
-      auto kmers = Kmer::get_kmers(kmer_len, uutig);
-      for (auto kmer : kmers) {
-        auto kmer_frag_elem = kmer_dht->get_kmer_uutig_frag(kmer);
-        assert(kmer_frag_elem == frag_elem);
-      }
-#endif
-      int64_t walk_steps;
-      vector<FragElem*> lfrag_elems_visited;
-      if (walk_frags(WalkDirn::RIGHT, kmer_len, frag_elem, uutig, walk_steps, lfrag_elems_visited, num_overlaps_rc) &&
-          walk_frags(WalkDirn::LEFT, kmer_len, frag_elem, uutig, walk_steps, lfrag_elems_visited, num_overlaps_rc)) {
-        num_steps += walk_steps;
-        max_steps = max(walk_steps, max_steps);
-        Contig contig = {0, uutig, (double)sum_depths / (uutig.length() - kmer_len + 2)};
-        my_uutigs.add_contig(contig);
-        // the walk is successful, so set the visited for all the local elems
-        for (auto &elem : lfrag_elems_visited) {
-          elem->visited = true;
-        }
-      } else {
-        num_drops++;
-      }
-      num_frags++;
+    // check for errors in kmers
+    auto kmers = Kmer::get_kmers(kmer_len, uutig);
+    for (auto kmer : kmers) {
+      assert(kmer_dht->get_kmer_uutig_frag(kmer) == frag_elem);
     }
-    progbar.done();
+#endif
+    int64_t walk_steps;
+    vector<FragElem*> lfrag_elems_visited;
+    if (walk_frags(WalkDirn::RIGHT, kmer_len, frag_elem, uutig, walk_steps, lfrag_elems_visited, num_overlaps_rc) &&
+            walk_frags(WalkDirn::LEFT, kmer_len, frag_elem, uutig, walk_steps, lfrag_elems_visited, num_overlaps_rc)) {
+      num_steps += walk_steps;
+      max_steps = max(walk_steps, max_steps);
+      Contig contig = {0, uutig, (double)sum_depths / (uutig.length() - kmer_len + 2)};
+      my_uutigs.add_contig(contig);
+      // the walk is successful, so set the visited for all the local elems
+      for (auto &elem : lfrag_elems_visited) {
+        elem->visited = true;
+      }
+    } else {
+      num_drops++;
+    }
+    num_frags++;
   }
+  progbar.done();
   barrier();
   auto all_num_frags = reduce_one(frag_elems.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", all_num_frags, " uutig fragments\n");
