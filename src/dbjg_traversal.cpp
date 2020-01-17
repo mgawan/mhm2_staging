@@ -316,7 +316,7 @@ void connect_fragments(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector
   auto all_max_steps = reduce_one(max_steps, op_fast_max, 0).wait();
   auto all_num_overlaps_rc = reduce_one(num_overlaps_rc, op_fast_add, 0).wait();
   auto all_num_uutigs = reduce_one(my_uutigs.size(), op_fast_add, 0).wait();
-  SLOG_VERBOSE("Did ", all_num_uutigs, " walks:\n");
+  SLOG_VERBOSE("Completed ", all_num_uutigs, " fragment walks:\n");
   SLOG_VERBOSE("  drops:     ", perc_str(all_num_drops, all_num_frags), "\n");
   SLOG_VERBOSE("  steps:     ", all_num_steps, "\n");
   SLOG_VERBOSE("  average walk length: ", (double)all_num_steps / all_num_uutigs, "\n");
