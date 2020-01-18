@@ -41,6 +41,7 @@ struct StepInfo {
   WalkStatus walk_status;
   ext_count_t count;
   char left, right;
+  global_ptr<FragElem> visited_frag_elem_gptr;
 };
 
 struct WalkTermStats {
@@ -102,7 +103,8 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
                  return {.walk_status = WalkStatus::CONFLICT};
                // if visited by another rank first
                if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr) 
-                 return {.walk_status = WalkStatus::VISITED};
+                 return {.walk_status = WalkStatus::VISITED, .count = 0, .left = 0, .right = 0, 
+                         .visited_frag_elem_gptr = kmer_counts->uutig_frag};
                // a repeat, abort (but allowed if traversing right after adding start kmer previously)
                if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) 
                  return {.walk_status = WalkStatus::REPEAT};
@@ -112,8 +114,8 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
              }, kmer_dht, kmer.get_array(), dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
 }
 
-static void traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer kmer, global_ptr<FragElem> frag_elem_gptr, 
-                          TraverseDirn dirn, string &uutig, int64_t &sum_depths, WalkTermStats &walk_term_stats) {
+static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer kmer, global_ptr<FragElem> frag_elem_gptr, 
+                                          TraverseDirn dirn, string &uutig, int64_t &sum_depths, WalkTermStats &walk_term_stats) {
   auto kmer_str = kmer.to_string();
   char prev_ext = 0;
   char next_ext = (dirn == TraverseDirn::LEFT ? kmer_str.front() : kmer_str.back());
@@ -127,7 +129,7 @@ static void traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer kmer, global_ptr<
       walk_term_stats.update(step_info.walk_status);
       // reverse it because we were walking backwards
       if (dirn == TraverseDirn::LEFT) reverse(uutig.begin(), uutig.end());
-      break;
+      return step_info.visited_frag_elem_gptr;  
     }
     sum_depths += step_info.count;
     // add the last nucleotide to the uutig
@@ -154,30 +156,30 @@ void construct_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<g
   WalkTermStats walk_term_stats = {0};
   int64_t num_walks = 0;
   barrier();
-  {
-    ProgressBar progbar(kmer_dht->get_local_num_kmers(), "Traversing deBruijn graph");
-    for (auto it = kmer_dht->local_kmers_begin(); it != kmer_dht->local_kmers_end(); it++) {
-      progress();
-      progbar.update();
-      auto kmer = it->first;
-      auto kmer_counts = &it->second;
-      // don't start any new walk if this kmer has already been visited
-      if (kmer_counts->uutig_frag) continue;
-      // don't start walks on kmers without extensions on both sides
-      if (kmer_counts->left == 'X' || kmer_counts->left == 'F' || kmer_counts->right == 'X' || kmer_counts->right == 'F') 
-        continue;
-      string uutig;
-      int64_t sum_depths = 0;
-      global_ptr<FragElem> frag_elem_gptr = new_<FragElem>();
-      traverse_dirn(kmer_dht, kmer, frag_elem_gptr, TraverseDirn::LEFT, uutig, sum_depths, walk_term_stats);
-      traverse_dirn(kmer_dht, kmer, frag_elem_gptr, TraverseDirn::RIGHT, uutig, sum_depths, walk_term_stats);
-      strcpy(frag_elem_gptr.local()->frag_seq, uutig.c_str());
-      frag_elem_gptr.local()->sum_depths = sum_depths;      
-      frag_elems.push_back(frag_elem_gptr);
-      num_walks++;
-    }
-    progbar.done();
+  ProgressBar progbar(kmer_dht->get_local_num_kmers(), "Constructing fragments with DeBruijn graph traversal");
+  for (auto it = kmer_dht->local_kmers_begin(); it != kmer_dht->local_kmers_end(); it++) {
+    progress();
+    progbar.update();
+    auto kmer = it->first;
+    auto kmer_counts = &it->second;
+    // don't start any new walk if this kmer has already been visited
+    if (kmer_counts->uutig_frag) continue;
+    // don't start walks on kmers without extensions on both sides
+    if (kmer_counts->left == 'X' || kmer_counts->left == 'F' || kmer_counts->right == 'X' || kmer_counts->right == 'F') 
+      continue;
+    string uutig;
+    int64_t sum_depths = 0;
+    global_ptr<FragElem> frag_elem_gptr = new_<FragElem>();
+    auto left_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, TraverseDirn::LEFT, uutig, sum_depths, walk_term_stats);
+    auto right_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, TraverseDirn::RIGHT, uutig, sum_depths, walk_term_stats);
+    strcpy(frag_elem_gptr.local()->frag_seq, uutig.c_str());
+    frag_elem_gptr.local()->sum_depths = sum_depths;      
+    frag_elem_gptr.local()->left_gptr = left_gptr;
+    frag_elem_gptr.local()->right_gptr = right_gptr;
+    frag_elems.push_back(frag_elem_gptr);
+    num_walks++;
   }
+  progbar.done();
   barrier();
   walk_term_stats.print();
 }
@@ -186,32 +188,37 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   vector<global_ptr<FragElem>> frag_elems;
   construct_frags(kmer_len, kmer_dht, frag_elems);
   // put all the uutigs found by this rank into my_uutigs
-  int64_t num_uutigs = 0;
+  int64_t num_uutigs = 0, num_left_links = 0, num_right_links = 0;
   my_uutigs.clear();
-  {
-    ProgressBar progbar(frag_elems.size(), "Dropping duplicate walks");
-    for (auto frag_elem_gptr : frag_elems) {
-      progbar.update();
-      string uutig(frag_elem_gptr.local()->frag_seq);
-      if (uutig.length() < kmer_len) continue;
-      // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
-      Kmer start_kmer(uutig.substr(0, kmer_len).c_str());
-      auto start_kmer_rc = start_kmer.revcomp();
-      if (start_kmer_rc < start_kmer) start_kmer = start_kmer_rc;
-      num_uutigs++;
-      Contig contig = {0, uutig, (double)frag_elem_gptr.local()->sum_depths / (uutig.length() - kmer_len + 2)};
-      my_uutigs.add_contig(contig);
+  ProgressBar progbar(frag_elems.size(), "Linking fragments");
+  for (auto frag_elem_gptr : frag_elems) {
+    progbar.update();
+    if (frag_elem_gptr.local()->left_gptr) num_left_links++;
+    if (frag_elem_gptr.local()->right_gptr) num_right_links++;
+    string uutig(frag_elem_gptr.local()->frag_seq);
+    if (uutig.length() < kmer_len) continue;
+    // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
+    Kmer start_kmer(uutig.substr(0, kmer_len).c_str());
+    auto start_kmer_rc = start_kmer.revcomp();
+    if (start_kmer_rc < start_kmer) start_kmer = start_kmer_rc;
+    num_uutigs++;
+    Contig contig = {0, uutig, (double)frag_elem_gptr.local()->sum_depths / (uutig.length() - kmer_len + 2)};
+    my_uutigs.add_contig(contig);
 #ifdef DEBUG
-      // check that all kmers in sequence actually exist
-      auto kmers = Kmer::get_kmers(kmer_len, uutig);
-      for (auto kmer : kmers) {
-        if (!kmer_dht->kmer_exists(kmer)) DIE("kmer not found in dht");
-      }
-#endif
+    // check that all kmers in sequence actually exist
+    auto kmers = Kmer::get_kmers(kmer_len, uutig);
+    for (auto kmer : kmers) {
+      if (!kmer_dht->kmer_exists(kmer)) DIE("kmer not found in dht");
     }
-    progbar.done();
+#endif
   }
+  progbar.done();
   barrier();
+  auto all_num_left_links = reduce_one(num_left_links, op_fast_add, 0).wait();
+  auto all_num_right_links = reduce_one(num_right_links, op_fast_add, 0).wait();
+  auto all_num_uutigs = reduce_one(num_uutigs, op_fast_add, 0).wait();
+  SLOG_VERBOSE("Found ", all_num_uutigs, " uutigs with ", all_num_left_links, " left links and ", all_num_right_links,
+               " right links\n");
   // now get unique ids for the uutigs
   atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
   global_ptr<size_t> counter = nullptr;
@@ -229,30 +236,3 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   }
   SLOG_VERBOSE("Constructed ", reduce_one(my_uutigs.size(), op_fast_add, 0).wait(), " UU-tigs\n");
 }
-
-
-/*
-void compute_kmer_ctg_depths(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
-  Timer timer(__FILEFUNC__);
-  ProgressBar progbar(ctgs.size(), "Computing contig kmer depths");
-  for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
-    auto ctg = it;
-    progbar.update();
-    if (ctg->seq.length() >= kmer_len + 2) {
-      int num_kmers = ctg->seq.length() - kmer_len;
-      ctg->kmer_depths.reserve(num_kmers);
-      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
-      for (auto kmer : kmers) {
-        auto kmer_rc = kmer.revcomp();
-        if (kmer_rc < kmer) kmer = kmer_rc;
-        uint16_t count = kmer_dht->get_kmer_count(kmer);
-        assert(count != 0);
-        ctg->kmer_depths.push_back(count);
-        progress();
-      }
-    }
-  }
-  progbar.done();
-  barrier();
-}
-*/
