@@ -201,6 +201,13 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       num_uutigs++;
       Contig contig = {0, uutig, (double)frag_elem_gptr.local()->sum_depths / (uutig.length() - kmer_len + 2)};
       my_uutigs.add_contig(contig);
+#ifdef DEBUG
+      // check that all kmers in sequence actually exist
+      auto kmers = Kmer::get_kmers(kmer_len, uutig);
+      for (auto kmer : kmers) {
+        if (!kmer_dht->kmer_exists(kmer)) DIE("kmer not found in dht");
+      }
+#endif
     }
     progbar.done();
   }
