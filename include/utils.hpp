@@ -95,7 +95,9 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
   if (stream.rdbuf() != std::cout.rdbuf() && stream.rdbuf() != std::cerr.rdbuf()) {
     // strip out colors for log file
     string outstr = os.str();
+#ifdef USE_COLORS
     for (auto c : COLORS) find_and_replace(outstr, c, "");
+#endif
     stream << outstr;
   } else {
     stream << os.str();
