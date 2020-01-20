@@ -28,13 +28,12 @@ enum class WalkStatus { RUNNING = '-', DEADEND = 'X', FORK = 'F', CONFLICT = 'O'
 
 struct FragElem {
   global_ptr<FragElem> left_gptr, right_gptr;
-  char frag_seq[MAX_FRAG_LEN + 1]; // extra for null char
+  global_ptr<char> frag_seq;
+  int frag_len;
   int64_t sum_depths;
   bool visited;
   
-  FragElem() : left_gptr(nullptr), right_gptr(nullptr), sum_depths(0), visited(false) {
-    frag_seq[0] = 0;
-  }
+  FragElem() : left_gptr(nullptr), right_gptr(nullptr), frag_seq(nullptr), frag_len(0), sum_depths(0), visited(false) {}
 };
 
 struct StepInfo {
@@ -172,7 +171,10 @@ void construct_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<g
     global_ptr<FragElem> frag_elem_gptr = new_<FragElem>();
     auto left_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, TraverseDirn::LEFT, uutig, sum_depths, walk_term_stats);
     auto right_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, TraverseDirn::RIGHT, uutig, sum_depths, walk_term_stats);
-    strcpy(frag_elem_gptr.local()->frag_seq, uutig.c_str());
+    frag_elem_gptr.local()->frag_seq = new_array<char>(uutig.length() + 1);
+    strcpy(frag_elem_gptr.local()->frag_seq.local(), uutig.c_str());
+    frag_elem_gptr.local()->frag_seq.local()[uutig.length()] = 0;
+    frag_elem_gptr.local()->frag_len = uutig.length();
     frag_elem_gptr.local()->sum_depths = sum_depths;      
     frag_elem_gptr.local()->left_gptr = left_gptr;
     frag_elem_gptr.local()->right_gptr = right_gptr;
@@ -193,10 +195,10 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   ProgressBar progbar(frag_elems.size(), "Linking fragments");
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
+    if (frag_elem_gptr.local()->frag_len < kmer_len) continue;
     if (frag_elem_gptr.local()->left_gptr) num_left_links++;
     if (frag_elem_gptr.local()->right_gptr) num_right_links++;
-    string uutig(frag_elem_gptr.local()->frag_seq);
-    if (uutig.length() < kmer_len) continue;
+    string uutig(frag_elem_gptr.local()->frag_seq.local());
     // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
     Kmer start_kmer(uutig.substr(0, kmer_len).c_str());
     auto start_kmer_rc = start_kmer.revcomp();
