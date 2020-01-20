@@ -226,8 +226,9 @@ int64_t print_link_stats(int64_t num_links, int64_t num_overlaps, int64_t num_ov
   auto all_num_links = reduce_one(num_links, op_fast_add, 0).wait();
   auto all_num_overlaps = reduce_one(num_overlaps, op_fast_add, 0).wait();
   auto all_num_overlaps_rc = reduce_one(num_overlaps_rc, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Found ", perc_str(all_num_overlaps + all_num_overlaps_rc, all_num_links), " ", dirn_str,
-               " overlaps of which ", perc_str(all_num_overlaps_rc, all_num_links), " are revcomped\n");
+  SLOG_VERBOSE("Found ", all_num_links, " ", dirn_str, " links with ",
+               perc_str(all_num_overlaps, all_num_links), " overlaps and ", 
+               perc_str(all_num_overlaps_rc, all_num_links), " revcomped overlaps\n");
   return all_num_links;
 }
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
@@ -242,9 +243,9 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
     FragElem *frag_elem = frag_elem_gptr.local();
-    if (frag_elem->frag_len < kmer_len) continue;
     if (frag_elem->left_gptr) num_left_links++;
     if (frag_elem->right_gptr) num_right_links++;
+    if (frag_elem->frag_len < kmer_len) continue;
     string uutig(frag_elem->frag_seq.local());
     if (frag_elem->left_gptr && frag_elem->left_gptr == frag_elem->right_gptr) {
       num_equal_links++;
