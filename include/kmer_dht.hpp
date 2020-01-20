@@ -186,8 +186,9 @@ class KmerDHT {
         kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
         kmers->insert({new_kmer, kmer_counts});
+        // since sizes are an estimate this could happen, but it will impact performance
         if (prev_bucket_count < kmers->bucket_count())
-          SWARN("*** Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count(), "***\n");
+          SWARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
         DBG_INSERT_KMER("inserted kmer ", new_kmer.to_string(), " with count ", kmer_counts.count, "\n");
       } else {
         auto kmer = &it->second;
@@ -237,7 +238,7 @@ class KmerDHT {
         kmers->insert({new_kmer, kmer_counts});
         // this shouldn't happen
         if (prev_bucket_count < kmers->bucket_count())
-          WARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count(), "\n");
+          WARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;

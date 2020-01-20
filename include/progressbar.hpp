@@ -46,12 +46,12 @@ public:
       if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
         ten_perc = total / 10;
         if (ten_perc == 0) ten_perc = 1;
-        SLOG_VERBOSE(KLGREEN, "* ", prefix_str, "... ");
+        SLOG_VERBOSE(KLGREEN, "* ", prefix_str, "... ", KNORM);
         prev_time = start_time;
       }
     }
 
-  ProgressBar(const string &fname, std::istream *infile, string prefix = "", int pwidth = 20, int width = 50, 
+  ProgressBar(const string &fname, std::istream *infile, string prefix = "", int pwidth = 20, int width = 50,
               char complete = '=', char incomplete = ' ')
     : infile{infile}
     , total_ticks{0}
@@ -69,7 +69,8 @@ public:
         if (ten_perc == 0) ten_perc = 1;
         ticks = 0;
         prev_ticks = ticks;
-        SLOG_VERBOSE(KLGREEN, "* ", (prefix_str + " "), (fname.substr(fname.find_last_of("/\\") + 1), " ", get_size_str(sz)));
+        SLOG_VERBOSE(KLGREEN, "* ", (prefix_str + " "), (fname.substr(fname.find_last_of("/\\") + 1), " ",
+                     get_size_str(sz)), KNORM);
         prev_time = start_time;
       }
   }
@@ -77,7 +78,7 @@ public:
   ~ProgressBar() {
     //done();
   }
-  
+
   void display(bool is_last = false) {
     if (_show_progress) {
       if (upcxx::rank_me() != RANK_FOR_PROGRESS) return;
@@ -92,8 +93,8 @@ public:
       if (prev_time == start_time) std::cout << std::endl;
       double free_mem = get_free_mem_gb();
       std::cout << std::setprecision(2) << std::fixed;
-      std::cout << "  " << int(progress * 100.0) << "% " << (float(time_elapsed) / 1000.0) << "s " 
-                << (float(time_delta) / 1000.0) << "s " << free_mem << "GB" << std::flush << std::endl;
+      std::cout << KLGREEN << "  " << int(progress * 100.0) << "% " << (float(time_elapsed) / 1000.0) << "s "
+                << (float(time_delta) / 1000.0) << "s " << free_mem << "GB" << std::flush << KNORM << std::endl;
       prev_time = now;
     }
   }
@@ -106,11 +107,11 @@ public:
     double tot_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_add, 0).wait() / 1000;
     double av_time = tot_time / upcxx::rank_n();
     if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
-      SLOG_VERBOSE(std::setprecision(2), std::fixed, "  Average ", av_time, " max ", max_time,
+      SLOG_VERBOSE(std::setprecision(2), std::fixed, KLGREEN, "  Average ", av_time, " max ", max_time,
                    " (balance ", (max_time == 0.0 ? 1.0 : (av_time / max_time)), ")", KNORM, "\n");
     }
   }
-  
+
   bool update(int64_t new_ticks = -1) {
     if (_show_progress) {
       if (total_ticks == 0) return false;

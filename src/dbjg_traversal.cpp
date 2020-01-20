@@ -232,10 +232,11 @@ int64_t print_link_stats(int64_t num_links, int64_t num_overlaps, int64_t num_ov
   return all_num_links;
 }
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
+  Timer timer(__FILEFUNC__);
   vector<global_ptr<FragElem>> frag_elems;
   construct_frags(kmer_len, kmer_dht, frag_elems);
   // put all the uutigs found by this rank into my_uutigs
-  int64_t num_uutigs = 0, num_equal_links = 0, num_non_recip = 0, 
+  int64_t num_uutigs = 0, num_equal_links = 0, num_non_recip = 0, num_short = 0,
           num_left_links = 0, num_left_overlaps = 0, num_left_overlaps_rc = 0, 
           num_right_links = 0, num_right_overlaps = 0, num_right_overlaps_rc = 0;
   my_uutigs.clear();
@@ -243,9 +244,12 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
     FragElem *frag_elem = frag_elem_gptr.local();
+    if (frag_elem->frag_len < kmer_len) {
+      num_short++;
+      continue;
+    }
     if (frag_elem->left_gptr) num_left_links++;
     if (frag_elem->right_gptr) num_right_links++;
-    if (frag_elem->frag_len < kmer_len) continue;
     string uutig(frag_elem->frag_seq.local());
     if (frag_elem->left_gptr && frag_elem->left_gptr == frag_elem->right_gptr) {
       num_equal_links++;
@@ -271,7 +275,8 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   progbar.done();
   barrier();
   auto all_num_uutigs = reduce_one(num_uutigs, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Found ", all_num_uutigs, " uutigs\n");
+  auto all_num_short = reduce_one(num_short, op_fast_add, 0).wait();
+  SLOG_VERBOSE("Found ", all_num_uutigs, " uutigs of which ", perc_str(all_num_short, all_num_uutigs), " are short\n");
   auto all_num_left = print_link_stats(num_left_links, num_left_overlaps, num_left_overlaps_rc, "left");
   auto all_num_right = print_link_stats(num_right_links, num_right_overlaps, num_right_overlaps_rc, "right");
   auto all_num_equal_links = reduce_one(num_equal_links, op_fast_add, 0).wait();
