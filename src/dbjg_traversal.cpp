@@ -14,8 +14,8 @@
 #include "kmer_dht.hpp"
 #include "contigs.hpp"
 
-//#define DBG_TRAVERSE DBG
-#define DBG_TRAVERSE(...)
+#define DBG_TRAVERSE DBG
+//#define DBG_TRAVERSE(...)
 
 using namespace std;
 using namespace upcxx;
@@ -155,7 +155,7 @@ void construct_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<g
   WalkTermStats walk_term_stats = {0};
   int64_t num_walks = 0;
   barrier();
-  ProgressBar progbar(kmer_dht->get_local_num_kmers(), "Constructing fragments with DeBruijn graph traversal");
+  ProgressBar progbar(kmer_dht->get_local_num_kmers(), "DeBruijn graph traversal to construct uutig fragments");
   for (auto it = kmer_dht->local_kmers_begin(); it != kmer_dht->local_kmers_end(); it++) {
     progress();
     progbar.update();
@@ -185,27 +185,77 @@ void construct_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<g
   barrier();
   walk_term_stats.print();
 }
-  
+
+bool is_overlap(const string &left_seq, const string &right_seq, int overlap_len) {
+  return (left_seq.compare(left_seq.length() - overlap_len, overlap_len, right_seq, 0, overlap_len) == 0);
+}
+
+bool check_nb_gptr(TraverseDirn dirn, global_ptr<FragElem> nb_gptr, string &uutig, int kmer_len, 
+                   int64_t &num_overlaps, int64_t &num_overlaps_rc, int64_t num_non_recip) {
+  if (nb_gptr) {
+    FragElem nb_frag_elem = rget(nb_gptr).wait();
+    char *buf = new char[nb_frag_elem.frag_len + 1];
+    rget(nb_frag_elem.frag_seq, buf, nb_frag_elem.frag_len + 1);
+    string nb_frag_seq(buf);
+    delete[] buf;
+    string *s1 = (dirn == TraverseDirn::LEFT ? &nb_frag_seq : &uutig);
+    string *s2 = (dirn == TraverseDirn::LEFT ? &uutig : &nb_frag_seq);
+    if (is_overlap(*s1, *s2, kmer_len - 1)) {
+      num_overlaps++;
+      if ((dirn == TraverseDirn::LEFT ? nb_frag_elem.right_gptr : nb_frag_elem.left_gptr) == nb_gptr) return true;
+      num_non_recip++;
+      return false;
+    }
+    auto nb_frag_seq_rc = revcomp(nb_frag_seq);
+    s1 = (dirn == TraverseDirn::LEFT ? &nb_frag_seq_rc : &uutig);
+    s2 = (dirn == TraverseDirn::LEFT ? &uutig : &nb_frag_seq_rc);
+    if (is_overlap(*s1, *s2, kmer_len - 1)) {
+      num_overlaps_rc++;
+      if ((dirn == TraverseDirn::LEFT ? nb_frag_elem.left_gptr : nb_frag_elem.right_gptr) == nb_gptr) return true;
+      num_non_recip++;
+      return true;
+    }
+    DBG_TRAVERSE("No ", (dirn == TraverseDirn::LEFT ? "left" : "right"), " overlap:\n", uutig, 
+                 "\n", nb_frag_seq, "\n", nb_frag_seq_rc, "\n");
+    return false;
+  }
+  return false;
+}
+
+int64_t print_link_stats(int64_t num_links, int64_t num_overlaps, int64_t num_overlaps_rc, const string &dirn_str) {
+  auto all_num_links = reduce_one(num_links, op_fast_add, 0).wait();
+  auto all_num_overlaps = reduce_one(num_overlaps, op_fast_add, 0).wait();
+  auto all_num_overlaps_rc = reduce_one(num_overlaps_rc, op_fast_add, 0).wait();
+  SLOG_VERBOSE("Found ", perc_str(all_num_overlaps + all_num_overlaps_rc, all_num_links), " ", dirn_str,
+               " overlaps of which ", perc_str(all_num_overlaps_rc, all_num_links), " are revcomped\n");
+  return all_num_links;
+}
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
   vector<global_ptr<FragElem>> frag_elems;
   construct_frags(kmer_len, kmer_dht, frag_elems);
   // put all the uutigs found by this rank into my_uutigs
-  int64_t num_uutigs = 0, num_left_links = 0, num_right_links = 0;
+  int64_t num_uutigs = 0, num_equal_links = 0, num_non_recip = 0, 
+          num_left_links = 0, num_left_overlaps = 0, num_left_overlaps_rc = 0, 
+          num_right_links = 0, num_right_overlaps = 0, num_right_overlaps_rc = 0;
   my_uutigs.clear();
-  ProgressBar progbar(frag_elems.size(), "Linking fragments");
+  ProgressBar progbar(frag_elems.size(), "Cleaning fragment links");
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
-    if (frag_elem_gptr.local()->frag_len < kmer_len) continue;
-    if (frag_elem_gptr.local()->left_gptr) num_left_links++;
-    if (frag_elem_gptr.local()->right_gptr) num_right_links++;
-    string uutig(frag_elem_gptr.local()->frag_seq.local());
-    // now check to make sure we're the owner of this one - this is after all ranks have finished traversals
-    Kmer start_kmer(uutig.substr(0, kmer_len).c_str());
-    auto start_kmer_rc = start_kmer.revcomp();
-    if (start_kmer_rc < start_kmer) start_kmer = start_kmer_rc;
-    num_uutigs++;
-    Contig contig = {0, uutig, (double)frag_elem_gptr.local()->sum_depths / (uutig.length() - kmer_len + 2)};
-    my_uutigs.add_contig(contig);
+    FragElem *frag_elem = frag_elem_gptr.local();
+    if (frag_elem->frag_len < kmer_len) continue;
+    if (frag_elem->left_gptr) num_left_links++;
+    if (frag_elem->right_gptr) num_right_links++;
+    string uutig(frag_elem->frag_seq.local());
+    if (frag_elem->left_gptr && frag_elem->left_gptr == frag_elem->right_gptr) {
+      num_equal_links++;
+      continue;      
+    }
+    if (!check_nb_gptr(TraverseDirn::LEFT, frag_elem->left_gptr, uutig, kmer_len, num_left_overlaps, 
+                       num_left_overlaps_rc, num_non_recip))
+      frag_elem->left_gptr = nullptr;
+    if (!check_nb_gptr(TraverseDirn::RIGHT, frag_elem->right_gptr, uutig, kmer_len, num_right_overlaps, 
+                       num_right_overlaps_rc, num_non_recip))
+      frag_elem->right_gptr = nullptr;
 #ifdef DEBUG
     // check that all kmers in sequence actually exist
     auto kmers = Kmer::get_kmers(kmer_len, uutig);
@@ -213,14 +263,20 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
       if (!kmer_dht->kmer_exists(kmer)) DIE("kmer not found in dht");
     }
 #endif
+    num_uutigs++;
+    Contig contig = {0, uutig, (double)frag_elem->sum_depths / (uutig.length() - kmer_len + 2)};
+    my_uutigs.add_contig(contig);
   }
   progbar.done();
   barrier();
-  auto all_num_left_links = reduce_one(num_left_links, op_fast_add, 0).wait();
-  auto all_num_right_links = reduce_one(num_right_links, op_fast_add, 0).wait();
   auto all_num_uutigs = reduce_one(num_uutigs, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Found ", all_num_uutigs, " uutigs with ", all_num_left_links, " left links and ", all_num_right_links,
-               " right links\n");
+  SLOG_VERBOSE("Found ", all_num_uutigs, " uutigs\n");
+  auto all_num_left = print_link_stats(num_left_links, num_left_overlaps, num_left_overlaps_rc, "left");
+  auto all_num_right = print_link_stats(num_right_links, num_right_overlaps, num_right_overlaps_rc, "right");
+  auto all_num_equal_links = reduce_one(num_equal_links, op_fast_add, 0).wait();
+  auto all_num_non_recip = reduce_one(num_non_recip, op_fast_add, 0).wait();
+  SLOG_VERBOSE("There are ", perc_str(all_num_equal_links, all_num_left + all_num_right), " equal left and right links\n");
+  SLOG_VERBOSE("There are ", perc_str(all_num_non_recip, all_num_left + all_num_right), " non-reciprocating links\n");
   // now get unique ids for the uutigs
   atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
   global_ptr<size_t> counter = nullptr;
