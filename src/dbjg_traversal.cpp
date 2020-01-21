@@ -75,6 +75,15 @@ struct WalkTermStats {
   }
 };
 
+static string gptr_str(global_ptr<FragElem> gptr) {
+  ostringstream oss;
+  oss << setw(11);
+  oss << gptr.raw_ptr_;
+  string s = oss.str();
+  s.erase(0, s.length() - 6);
+  return to_string(gptr.where()) + ":" + s;
+}
+
 static bool check_kmers(const string &seq, dist_object<KmerDHT> &kmer_dht, int kmer_len) {
   auto kmers = Kmer::get_kmers(kmer_len, seq);
   for (auto kmer : kmers) {
@@ -307,18 +316,23 @@ static bool walk_frags_dirn(Dirn dirn, unsigned kmer_len, global_ptr<FragElem> f
 #ifdef DEBUG
   // for checking that we haven't got a bug - frags should never be revisited in a walk
   HASH_TABLE<global_ptr<FragElem>, bool> visited;
+  string padding(4, ' ');
 #endif
-  if (next_gptr) 
-    DBG_TRAVERSE("Walking ", DIRN_STR(dirn), " from ", frag_elem_gptr, " (length ", uutig.length(), ") to ", next_gptr, "\n");
+  if (next_gptr) {
+    if (dirn == Dirn::LEFT) 
+      DBG_TRAVERSE(gptr_str(next_gptr), (start_frag_elem->left_is_rc ? " RC " : ""), " <== ", gptr_str(frag_elem_gptr), "\n");
+    else 
+      DBG_TRAVERSE(gptr_str(frag_elem_gptr), " ==> ", gptr_str(next_gptr), (start_frag_elem->right_is_rc ? " RC " : ""), "\n");
+  }
+  bool flipped = false;
   while (next_gptr) {
-    DBG_TRAVERSE("  next_gptr ", next_gptr, "\n");
     if (next_gptr.where() > rank_me()) {
-      DBG_TRAVERSE("    -> DROP: owner ", next_gptr.where(), " > ", rank_me(), "\n");
+      DBG_TRAVERSE(padding, "DROP: owner ", next_gptr.where(), " > ", rank_me(), "\n");
       return false;
     }
 #ifdef DEBUG
     if (visited.find(next_gptr) != visited.end()) {
-      DBG_TRAVERSE("    DIE: repeat - ", next_gptr, "\n");
+      DBG_TRAVERSE(padding, "DIE: repeat - ", next_gptr, "\n");
       DIE("repeat: ", next_gptr);
     }
     visited[next_gptr] = true;
@@ -326,65 +340,70 @@ static bool walk_frags_dirn(Dirn dirn, unsigned kmer_len, global_ptr<FragElem> f
 #endif 
     if (next_gptr.where() == rank_me()) {
       if (next_gptr.local()->visited) {
-        DBG_TRAVERSE("    DIE: gptr", next_gptr, " is already visited\n");
+        DBG_TRAVERSE(padding, "DIE: gptr", next_gptr, " is already visited\n");
         DIE("gptr ", next_gptr, " should not be already visited");
       }
       my_frag_elems_visited.push_back(next_gptr.local());
     } 
     FragElem next_frag_elem = rget(next_gptr).wait();
-    DBG_TRAVERSE("    left gptr ", next_frag_elem.left_gptr, " right gptr ", next_frag_elem.right_gptr, "\n");
-    string next_frag_seq = get_frag_seq(next_frag_elem);
+    string left_arrow = " <-- ";
+    string right_arrow = " --> ";
     if (dirn == Dirn::LEFT) {
-      if (next_frag_elem.left_gptr == prev_gptr) DBG_TRAVERSE("  Need to flip direction\n");
+      if (prev_frag_elem.left_is_rc) right_arrow = " ==> ";
+      else left_arrow = " <== ";
+    } else {
+      if (prev_frag_elem.right_is_rc) left_arrow = " <== ";
+      else right_arrow = " ==> ";
+    }
+    DBG_TRAVERSE(padding, 
+                 gptr_str(next_frag_elem.left_gptr), (next_frag_elem.left_is_rc ? " RC " : ""), 
+                 left_arrow, gptr_str(next_gptr), right_arrow, gptr_str(next_frag_elem.right_gptr), 
+                 (next_frag_elem.right_is_rc ? " RC " : ""), "\n");
+    string next_frag_seq = get_frag_seq(next_frag_elem);
+    padding += string(4, ' ');
+    if (dirn == Dirn::LEFT) {
       int ext = next_frag_seq.length() - kmer_len + 1;
       if (!prev_frag_elem.left_is_rc) {
-        uutig.insert(0, next_frag_seq.substr(0, next_frag_seq.length() - kmer_len + 1));
-        DBG_TRAVERSE("    extending to the left by ", ext,
-                     "\n  ", string(ext, ' '), uutig_prev,
-                     "\n  ", next_frag_seq, 
-                     "\n  ", uutig, "\n");
+        if (next_frag_elem.left_gptr == prev_gptr) DIE("Need to flip direction BUT not RC\n");
+        if (!flipped) uutig.insert(0, next_frag_seq.substr(0, next_frag_seq.length() - kmer_len + 1));
       } else {
+        if (next_frag_elem.left_gptr != prev_gptr) DIE("Don't need to flip direction BUT RC\n");
         string next_frag_seq_rc = revcomp(next_frag_seq);
-        uutig.insert(0, next_frag_seq_rc.substr(0, next_frag_seq.length() - (kmer_len - 1)));
-        DBG_TRAVERSE("    extending to the left RC by ", (next_frag_seq_rc.length() - kmer_len + 1), 
-                     "\n  ", string(ext, ' '), uutig_prev,
-                     "\n  ", next_frag_seq_rc, 
-                     "\n  ", uutig, "\n");
+        if (!flipped) {
+          uutig.insert(0, next_frag_seq_rc.substr(0, next_frag_seq.length() - (kmer_len - 1)));
 #ifdef DEBUG        
-        if (!is_overlap(next_frag_seq_rc, uutig_prev, kmer_len - 1)) 
-          DBG_TRAVERSE("  INCORRECT left overlap RC\n", next_frag_seq, "\n");
+          if (!is_overlap(next_frag_seq_rc, uutig_prev, kmer_len - 1)) {
+            WARN("incorrect overlap");
+            DBG_TRAVERSE(padding, "INCORRECT left overlap RC\n", next_frag_seq, "\n  ", string(ext, ' '), uutig_prev,
+                         "\n  ", next_frag_seq_rc, "\n  ", uutig, "\n");
+          }
 #endif
-        return true;
-        
-        // now flip dirn since it was revcomped
+        }
+        flipped = true;
         dirn = Dirn::RIGHT;
-        DBG_TRAVERSE("    flipping from LEFT to RIGHT\n");
+        DBG_TRAVERSE(padding, "flip dirn from left to right\n");
       }
     } else {
-      if (next_frag_elem.right_gptr == prev_gptr) DBG_TRAVERSE("  Need to flip direction\n");
       int ext = next_frag_seq.length() - kmer_len + 1;
       if (!prev_frag_elem.right_is_rc) {
-        uutig += next_frag_seq.substr(kmer_len - 1);
-        DBG_TRAVERSE("    extending to the right by ", ext,
-                     "\n  ", uutig_prev, 
-                     "\n  ", string(uutig_prev.length() - kmer_len + 1, ' '), next_frag_seq, 
-                     "\n  ", uutig, "\n");
+        if (next_frag_elem.right_gptr == prev_gptr) DIE("Need to flip direction BUT not RC\n");
+        if (!flipped) uutig += next_frag_seq.substr(kmer_len - 1);
       } else {
+        if (next_frag_elem.right_gptr != prev_gptr) DIE("Don't need to flip direction BUT RC\n");
         string next_frag_seq_rc = revcomp(next_frag_seq);
-        uutig += next_frag_seq_rc.substr(kmer_len - 1);
-        DBG_TRAVERSE("    extending to the right RC by ", (next_frag_seq.length() - kmer_len + 1), 
-                     "\n  ", uutig_prev, 
-                     "\n  ", string(uutig_prev.length() - kmer_len + 1, ' '), next_frag_seq_rc, 
-                     "\n  ", uutig, "\n");
+        if (!flipped) {
+          uutig += next_frag_seq_rc.substr(kmer_len - 1);
 #ifdef DEBUG        
-        if (!is_overlap(uutig_prev, next_frag_seq_rc, kmer_len - 1)) 
-          DBG_TRAVERSE("  INCORRECT right overlap RC\n", next_frag_seq, "\n");
+          if (!is_overlap(uutig_prev, next_frag_seq_rc, kmer_len - 1)) {
+            WARN("incorrect overlap");
+            DBG_TRAVERSE(padding, "INCORRECT right overlap RC\n", next_frag_seq, "\n  ", uutig_prev, 
+                         "\n  ", string(uutig_prev.length() - kmer_len + 1, ' '), next_frag_seq_rc, "\n  ", uutig, "\n");
+          }
 #endif
-        
-        return true;
-        
+        }
+        flipped = true;
         dirn = Dirn::LEFT;
-        DBG_TRAVERSE("    flipping from RIGHT to LEFT\n");
+        DBG_TRAVERSE(padding, "flip dirn from right to left\n");
       }
     }
     walk_steps++;
@@ -413,7 +432,6 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vec
     if (walk_frags_dirn(Dirn::LEFT, kmer_len, frag_elem_gptr, uutig, walk_steps, my_frag_elems_visited) &&
         walk_frags_dirn(Dirn::RIGHT, kmer_len, frag_elem_gptr, uutig, walk_steps, my_frag_elems_visited)) {
       num_steps += walk_steps;
-      if (walk_steps > max_steps) DBG_TRAVERSE("MAX path length ", walk_steps, "\n");
       max_steps = max(walk_steps, max_steps);
       Contig contig = {0, uutig, (double)sum_depths / (uutig.length() - kmer_len + 2)};
       my_uutigs.add_contig(contig);
