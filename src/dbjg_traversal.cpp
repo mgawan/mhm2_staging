@@ -308,7 +308,7 @@ static global_ptr<FragElem> get_other_side_gptr(const FragElem &frag_elem, globa
 }
 
 static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, global_ptr<FragElem> next_gptr, 
-                                string &uutig, int64_t &walk_steps) {
+                                string &uutig, int64_t &walk_steps, vector<FragElem*> my_frag_elems_visited) {
   if (!next_gptr) return true;
   walk_steps = 1;
   global_ptr<FragElem> prev_gptr = frag_elem_gptr;
@@ -333,6 +333,10 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
     visited[next_gptr] = true;
 #endif
     FragElem next_frag_elem = rget(next_gptr).wait();
+    if (next_gptr.where() == rank_me()) {
+      if (next_frag_elem.visited) DIE("gptr ", next_gptr, " should not be already visited");
+      my_frag_elems_visited.push_back(next_gptr.local());
+    } 
     string next_frag_seq = get_frag_seq(next_frag_elem);
     string next_frag_seq_rc = revcomp(next_frag_seq);
     if (dirn == Dirn::NONE) {
@@ -358,141 +362,18 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
       else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
       DBG_TRAVERSE(uutig, "\n");
     }
-    //DBG_TRAVERSE(padding, next_frag_seq, "\n");
-    //DBG_TRAVERSE(padding, next_frag_seq_rc, "\n");
     auto other_side_gptr = get_other_side_gptr(next_frag_elem, prev_gptr);
     prev_frag_elem = next_frag_elem;
     prev_gptr = next_gptr;
     next_gptr = other_side_gptr;
+#ifdef DEBUG
     padding += string(4, ' ');
+#endif
     walk_steps++;
   }
   DBG_TRAVERSE(padding, "DEADEND\n");
   return true;
 }
-
-static bool walk_frags_dirn(Dirn dirn, unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, string &uutig,
-                            int64_t &walk_steps, vector<FragElem*> my_frag_elems_visited) {
-  auto start_frag_elem = frag_elem_gptr.local();
-  my_frag_elems_visited.push_back(start_frag_elem);
-  if (dirn == Dirn::LEFT) uutig = string(frag_elem_gptr.local()->frag_seq.local());
-  walk_steps = 1;
-  global_ptr<FragElem> prev_gptr = frag_elem_gptr;
-  FragElem prev_frag_elem = *start_frag_elem;
-  global_ptr<FragElem> next_gptr = (dirn == Dirn::RIGHT ? start_frag_elem->right_gptr : start_frag_elem->left_gptr);
-#ifdef DEBUG
-  // for checking that we haven't got a bug - frags should never be revisited in a walk
-  HASH_TABLE<global_ptr<FragElem>, bool> visited;
-  string padding(4, ' ');
-#endif
-  if (next_gptr) {
-    if (dirn == Dirn::LEFT) 
-      DBG_TRAVERSE(gptr_str(next_gptr), (start_frag_elem->left_is_rc ? " RC " : ""), " <== ", gptr_str(frag_elem_gptr), "\n");
-    else 
-      DBG_TRAVERSE(gptr_str(frag_elem_gptr), " ==> ", gptr_str(next_gptr), (start_frag_elem->right_is_rc ? " RC " : ""), "\n");
-  }
-  Dirn append_side = dirn;
-  while (next_gptr) {
-    if (next_gptr.where() > rank_me()) {
-      DBG_TRAVERSE(padding, "DROP: owner ", next_gptr.where(), " > ", rank_me(), "\n");
-      return false;
-    }
-#ifdef DEBUG
-    if (visited.find(next_gptr) != visited.end()) {
-      DBG_TRAVERSE(padding, "DIE: repeat - ", next_gptr, "\n");
-      DIE("repeat: ", next_gptr);
-    }
-    visited[next_gptr] = true;
-    string uutig_prev = uutig;
-#endif 
-    if (next_gptr.where() == rank_me()) {
-      if (next_gptr.local()->visited) DIE("gptr ", next_gptr, " should not be already visited");
-      my_frag_elems_visited.push_back(next_gptr.local());
-    } 
-    FragElem next_frag_elem = rget(next_gptr).wait();
-#ifdef DEBUG
-    string left_arrow = " <-- ";
-    string right_arrow = " --> ";
-    if (dirn == Dirn::LEFT) {
-      if (prev_frag_elem.left_is_rc) right_arrow = " ==> ";
-      else left_arrow = " <== ";
-    } else {
-      if (prev_frag_elem.right_is_rc) left_arrow = " <== ";
-      else right_arrow = " ==> ";
-    }
-#endif
-    string next_frag_seq = get_frag_seq(next_frag_elem);
-    padding += string(4, ' ');
-    if (dirn == Dirn::LEFT) {
-      if (!prev_frag_elem.left_is_rc) {
-//        if (next_frag_elem.left_gptr == prev_gptr) DIE("Need to flip direction BUT not RC\n");
-#ifdef DEBUG        
-        DBG_TRAVERSE("\n  ", string(next_frag_seq.length() - kmer_len + 1, ' '), uutig_prev, "\n  ", next_frag_seq, "\n");
-        if (!is_overlap(next_frag_seq, uutig_prev, kmer_len - 1)) {
-          WARN("incorrect overlap");
-          DBG_TRAVERSE(padding, "INCORRECT left overlap\n");
-          return true;
-        }
-#endif
-      } else {
-//        if (next_frag_elem.left_gptr != prev_gptr) DIE("Don't need to flip direction BUT RC\n");
-        string next_frag_seq_rc = revcomp(next_frag_seq);
-#ifdef DEBUG        
-        DBG_TRAVERSE("\n  ", string(next_frag_seq.length() - kmer_len + 1, ' '), uutig_prev, "\n  ", next_frag_seq_rc, 
-                     "\n  ", next_frag_seq, "\n");
-        if (!is_overlap(next_frag_seq_rc, uutig_prev, kmer_len - 1)) {
-          WARN("incorrect overlap");
-          DBG_TRAVERSE(padding, "INCORRECT left overlap RC\n");
-          return true;
-        }
-#endif
-        next_frag_seq = next_frag_seq_rc;
-        dirn = Dirn::RIGHT;
-        DBG_TRAVERSE(padding, "flip dirn from left to right\n");
-      }
-    } else {
-      if (!prev_frag_elem.right_is_rc) {
-//        if (next_frag_elem.right_gptr == prev_gptr) DIE("Need to flip direction BUT not RC\n");
-#ifdef DEBUG        
-        DBG_TRAVERSE("\n  ", uutig_prev, "\n  ", string(uutig_prev.length() - kmer_len + 1, ' '), next_frag_seq, "\n");
-        if (!is_overlap(uutig_prev, next_frag_seq, kmer_len - 1)) {
-          WARN("incorrect overlap");
-          DBG_TRAVERSE(padding, "INCORRECT right overlap RC\n");
-          return true;
-        }
-#endif
-      } else {
-//        if (next_frag_elem.right_gptr != prev_gptr) DIE("Don't need to flip direction BUT RC\n");
-        string next_frag_seq_rc = revcomp(next_frag_seq);
-#ifdef DEBUG        
-        DBG_TRAVERSE("\n  ", uutig_prev, "\n  ", string(uutig_prev.length() - kmer_len + 1, ' '), next_frag_seq_rc, 
-                     "\n  ", next_frag_seq, "\n");
-        if (!is_overlap(uutig_prev, next_frag_seq_rc, kmer_len - 1)) {
-          WARN("incorrect overlap");
-          DBG_TRAVERSE(padding, "INCORRECT right overlap RC\n");
-          return true;
-        }
-#endif
-        next_frag_seq = next_frag_seq_rc;  
-        dirn = Dirn::LEFT;
-        DBG_TRAVERSE(padding, "flip dirn from right to left\n");
-      }
-    }
-    DBG_TRAVERSE(padding, 
-                 gptr_str(next_frag_elem.left_gptr), (next_frag_elem.left_is_rc ? " RC " : ""), 
-                 left_arrow, gptr_str(next_gptr), right_arrow, gptr_str(next_frag_elem.right_gptr), 
-                 (next_frag_elem.right_is_rc ? " RC " : ""), "\n");
-    if (append_side == Dirn::LEFT) uutig.insert(0, next_frag_seq.substr(0, next_frag_seq.length() - kmer_len + 1));
-    else uutig += next_frag_seq.substr(kmer_len - 1);
-    walk_steps++;
-    prev_gptr = next_gptr;
-    prev_frag_elem = next_frag_elem;
-    next_gptr = (dirn == Dirn::RIGHT ? next_frag_elem.right_gptr : next_frag_elem.left_gptr);
-  }
-
-  return true;
-}
-
 
 static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems, 
                           Contigs &my_uutigs) {
@@ -503,12 +384,13 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vec
     progbar.update();
     FragElem *frag_elem = frag_elem_gptr.local();
     if (frag_elem->frag_len < kmer_len) continue;
+    if (frag_elem->visited) continue;
     int64_t walk_steps;
     vector<FragElem*> my_frag_elems_visited;
     string uutig(frag_elem_gptr.local()->frag_seq.local());
     int64_t sum_depths = 0;
-    if (new_walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->left_gptr, uutig, walk_steps) && 
-        new_walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, walk_steps)) {
+    if (new_walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->left_gptr, uutig, walk_steps, my_frag_elems_visited) && 
+        new_walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, walk_steps, my_frag_elems_visited)) {
     //if (walk_frags_dirn(Dirn::LEFT, kmer_len, frag_elem_gptr, uutig, walk_steps, my_frag_elems_visited) &&
     //    walk_frags_dirn(Dirn::RIGHT, kmer_len, frag_elem_gptr, uutig, walk_steps, my_frag_elems_visited)) {
       num_steps += walk_steps;
