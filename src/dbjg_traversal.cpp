@@ -307,10 +307,9 @@ static global_ptr<FragElem> get_other_side_gptr(const FragElem &frag_elem, globa
   return frag_elem.left_gptr;
 }
 
-static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, global_ptr<FragElem> next_gptr, 
-                                string &uutig, int64_t &walk_steps, vector<FragElem*> my_frag_elems_visited) {
+static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, global_ptr<FragElem> next_gptr, 
+                            string &uutig, int64_t &depths, int64_t &walk_steps, vector<FragElem*> &my_frag_elems_visited) {
   if (!next_gptr) return true;
-  walk_steps = 1;
   global_ptr<FragElem> prev_gptr = frag_elem_gptr;
   FragElem prev_frag_elem = *frag_elem_gptr.local();
 #ifdef DEBUG
@@ -362,6 +361,7 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
       else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
       DBG_TRAVERSE(uutig, "\n");
     }
+    depths += (next_frag_elem.sum_depths * (1.0 - (kmer_len - 1) / next_frag_elem.frag_len));
     auto other_side_gptr = get_other_side_gptr(next_frag_elem, prev_gptr);
     prev_frag_elem = next_frag_elem;
     prev_gptr = next_gptr;
@@ -378,24 +378,25 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
 static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems, 
                           Contigs &my_uutigs) {
   Timer timer(__FILEFUNC__);
-  int64_t num_steps = 0, max_steps = 0, num_drops = 0;
+  int64_t num_steps = 0, max_steps = 0, num_drops = 0, num_prev_visited = 0;
   ProgressBar progbar(frag_elems.size(), "Connecting fragments");
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
     FragElem *frag_elem = frag_elem_gptr.local();
     if (frag_elem->frag_len < kmer_len) continue;
-    if (frag_elem->visited) continue;
-    int64_t walk_steps;
+    if (frag_elem->visited) {
+      num_prev_visited++;
+      continue;
+    }
     vector<FragElem*> my_frag_elems_visited;
-    string uutig(frag_elem_gptr.local()->frag_seq.local());
-    int64_t sum_depths = 0;
-    if (new_walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->left_gptr, uutig, walk_steps, my_frag_elems_visited) && 
-        new_walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, walk_steps, my_frag_elems_visited)) {
-    //if (walk_frags_dirn(Dirn::LEFT, kmer_len, frag_elem_gptr, uutig, walk_steps, my_frag_elems_visited) &&
-    //    walk_frags_dirn(Dirn::RIGHT, kmer_len, frag_elem_gptr, uutig, walk_steps, my_frag_elems_visited)) {
+    string uutig(frag_elem->frag_seq.local());
+    int64_t depths = frag_elem->sum_depths;
+    int64_t walk_steps = 1;
+    if (walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->left_gptr, uutig, depths, walk_steps, my_frag_elems_visited) && 
+        walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, depths, walk_steps, my_frag_elems_visited)) {
       num_steps += walk_steps;
       max_steps = max(walk_steps, max_steps);
-      Contig contig = {0, uutig, (double)sum_depths / (uutig.length() - kmer_len + 2)};
+      Contig contig = {0, uutig, (double)depths / (uutig.length() - kmer_len + 2)};
       my_uutigs.add_contig(contig);
       // the walk is successful, so set the visited for all the local elems
       for (auto &elem : my_frag_elems_visited) elem->visited = true;
@@ -410,6 +411,9 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vec
   auto all_num_uutigs = reduce_one(my_uutigs.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Constructed ", all_num_uutigs, " uutigs with ", (double)all_num_steps / all_num_uutigs, 
                " avg path length (max ", all_max_steps, "), dropped ", perc_str(all_num_drops, all_num_uutigs), " paths\n");
+  auto all_num_prev_visited = reduce_one(num_prev_visited, op_fast_add, 0).wait();
+  SLOG_VERBOSE("Skipped ", perc_str(all_num_prev_visited, reduce_one(frag_elems.size(), op_fast_add, 0).wait()), 
+               " already visited fragments\n");
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
