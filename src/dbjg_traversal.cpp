@@ -22,8 +22,8 @@ using namespace upcxx;
 
 extern ofstream _dbgstream;
 
-enum class Dirn { LEFT, RIGHT };
-#define DIRN_STR(d) ((d) == Dirn::LEFT ? "left" : "right")
+enum class Dirn { LEFT, RIGHT, NONE };
+#define DIRN_STR(d) ((d) == Dirn::LEFT ? "left" : (d) == Dirn::RIGHT ? "right" : "none")
 
 enum class WalkStatus { RUNNING = '-', DEADEND = 'X', FORK = 'F', CONFLICT = 'O', REPEAT = 'R', VISITED = 'V'};
 
@@ -320,6 +320,7 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
   string padding;
   DBG_TRAVERSE(uutig, "\n");
 #endif
+  Dirn dirn = Dirn::NONE;
   while (next_gptr) {
     DBG_TRAVERSE(padding, gptr_str(get_other_side_gptr(prev_frag_elem, next_gptr)), " <-- ", gptr_str(prev_gptr), " ==> ", 
                  gptr_str(next_gptr), "\n");
@@ -333,8 +334,32 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
 #endif
     FragElem next_frag_elem = rget(next_gptr).wait();
     string next_frag_seq = get_frag_seq(next_frag_elem);
-    DBG_TRAVERSE(padding, next_frag_seq, "\n");
-    DBG_TRAVERSE(padding, revcomp(next_frag_seq), "\n");
+    string next_frag_seq_rc = revcomp(next_frag_seq);
+    if (dirn == Dirn::NONE) {
+      if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) dirn = Dirn::RIGHT;
+      else if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) dirn = Dirn::LEFT;
+      if (dirn == Dirn::NONE) {
+        if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) dirn = Dirn::RIGHT;
+        else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) dirn = Dirn::LEFT;
+        else DIE("No overlap");
+      }
+      DBG_TRAVERSE(padding, "Direction is set to ", DIRN_STR(dirn), "\n");
+    }
+    if (dirn == Dirn::LEFT) {
+      int slen = next_frag_seq.length() - kmer_len + 1;
+      DBG_TRAVERSE(string(slen, ' '), uutig, "\n");
+      if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) uutig.insert(0, next_frag_seq.substr(0, slen));
+      else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) uutig.insert(0, next_frag_seq_rc.substr(0, slen));
+      else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
+      DBG_TRAVERSE(uutig, "\n");
+    } else {
+      if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) uutig += next_frag_seq.substr(kmer_len - 1);
+      else if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) uutig += next_frag_seq_rc.substr(kmer_len - 1);
+      else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
+      DBG_TRAVERSE(uutig, "\n");
+    }
+    //DBG_TRAVERSE(padding, next_frag_seq, "\n");
+    //DBG_TRAVERSE(padding, next_frag_seq_rc, "\n");
     auto other_side_gptr = get_other_side_gptr(next_frag_elem, prev_gptr);
     prev_frag_elem = next_frag_elem;
     prev_gptr = next_gptr;
@@ -342,6 +367,7 @@ static bool new_walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_ele
     padding += string(4, ' ');
     walk_steps++;
   }
+  DBG_TRAVERSE(padding, "DEADEND\n");
   return true;
 }
 
