@@ -45,7 +45,7 @@ using cid_t = int64_t;
 
 
 template<typename T>
-void serialize_vector(ostringstream &os, vector<T> &vec) 
+void serialize_vector(ostringstream &os, vector<T> &vec)
 {
   size_t sz = vec.size();
   os.write((char*)&sz, sizeof(sz));
@@ -54,7 +54,7 @@ void serialize_vector(ostringstream &os, vector<T> &vec)
 
 
 template<typename T>
-void serialize_vector_of_vectors(ostringstream &os, vector<vector<T> > &vec_vec) 
+void serialize_vector_of_vectors(ostringstream &os, vector<vector<T> > &vec_vec)
 {
   size_t sz = vec_vec.size();
   os.write((char*)&sz, sizeof(sz));
@@ -63,7 +63,7 @@ void serialize_vector_of_vectors(ostringstream &os, vector<vector<T> > &vec_vec)
 
 
 template<typename T>
-void deserialize_vector(istringstream &is, vector<T> &vec) 
+void deserialize_vector(istringstream &is, vector<T> &vec)
 {
   size_t sz;
   is.read((char*)&sz, sizeof(sz));
@@ -77,7 +77,7 @@ void deserialize_vector(istringstream &is, vector<T> &vec)
 
 
 template<typename T>
-void deserialize_vector_of_vectors(istringstream &is, vector<vector<T> > &vec_vec) 
+void deserialize_vector_of_vectors(istringstream &is, vector<vector<T> > &vec_vec)
 {
   size_t sz;
   is.read((char*)&sz, sizeof(sz));
@@ -90,7 +90,7 @@ void deserialize_vector_of_vectors(istringstream &is, vector<vector<T> > &vec_ve
 }
 
 
-inline void serialize_string(ostringstream &os, const string &s) 
+inline void serialize_string(ostringstream &os, const string &s)
 {
   size_t l = s.length();
   os.write((char*)&l, sizeof(l));
@@ -98,7 +98,7 @@ inline void serialize_string(ostringstream &os, const string &s)
 }
 
 
-inline void deserialize_string(istringstream &is, string &s) 
+inline void deserialize_string(istringstream &is, string &s)
 {
   size_t l;
   is.read((char*)&l, sizeof(l));
@@ -112,7 +112,7 @@ inline void deserialize_string(istringstream &is, string &s)
 enum class Dirn {FORWARD, BACKWARD};
 enum class Orient {NORMAL, REVCOMP};
 
-inline string dirn_str(Dirn dirn) 
+inline string dirn_str(Dirn dirn)
 {
   return (dirn == Dirn::FORWARD ? "forward" : "backward");
 }
@@ -141,7 +141,7 @@ struct GapRead {
   cid_t cid;
 
   GapRead() {}
-  
+
   //GapRead(const string &read_name, int gap_start, int rstart, int rstop, int orient, cid_t cid) {
   GapRead(const string &read_name, int gap_start, int orient, cid_t cid) {
     if (read_name.size() >= MAX_RNAME_LEN)
@@ -191,7 +191,7 @@ namespace std {
 
 enum class EdgeType {SPLINT, SPAN};
 
-inline string edge_type_str(EdgeType edge_type) 
+inline string edge_type_str(EdgeType edge_type)
 {
   switch (edge_type) {
     case EdgeType::SPLINT: return "splint";
@@ -204,7 +204,7 @@ inline string edge_type_str(EdgeType edge_type)
 struct Edge {
   // the cids of the vertices connected by this edge. Note that the largest number cid is always first
   CidPair cids;
-  // the ends correspond to the cids above. 
+  // the ends correspond to the cids above.
   int end1, end2;
   int gap;
   int support;
@@ -272,7 +272,7 @@ struct Vertex {
   // FIXME: when using spans make sure these are valid
   vector<vector<cid_t> > end5_merged;
   vector<vector<cid_t> > end3_merged;
-  // book-keeping fields for resolving walk conflicts between ranks - 
+  // book-keeping fields for resolving walk conflicts between ranks -
   // choose the walk with the longest scaffold, and if there is a tie, choose the highest rank
   int walk_score;
   int walk_rank;
@@ -330,7 +330,7 @@ private:
     double depth;
     int clen;
   };
-    
+
   AggrStore<VertexDepthInfo> vertex_depth_store;
 
   struct EdgeGapReadInfo {
@@ -341,7 +341,7 @@ private:
   };
 
   AggrStore<EdgeGapReadInfo> edge_gap_read_store;
-  
+
   edge_map_t::iterator edge_iter;
   vertex_map_t::iterator vertex_iter;
 
@@ -381,7 +381,7 @@ private:
     }
   };
   dist_object<AddEdgeGapReadFunc> add_edge_gap_read_func;
-  
+
 public:
   int max_read_len;
 
@@ -401,20 +401,20 @@ public:
       it = edges->erase(it);
     }
   }
-  
+
   ~CtgGraph() {
     clear();
   }
-  
+
   int64_t get_num_vertices(bool all = false) {
     if (!all) return upcxx::reduce_one(vertices->size(), upcxx::op_fast_add, 0).wait();
     else return upcxx::reduce_all(vertices->size(), upcxx::op_fast_add).wait();
   }
-  
+
   int64_t get_local_num_vertices(void) {
     return vertices->size();
   }
-  
+
   int64_t get_num_edges(bool all = false) {
     if (!all) return upcxx::reduce_one(edges->size(), upcxx::op_fast_add, 0).wait();
     else return upcxx::reduce_all(edges->size(), upcxx::op_fast_add).wait();
@@ -432,7 +432,7 @@ public:
       if (it == vertices->end()) return nullptr;
       return make_shared<Vertex>(it->second);
     }
-    return upcxx::rpc(target_rank, 
+    return upcxx::rpc(target_rank,
                       [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid) {
                         const auto it = vertices->find(cid);
                         if (it == vertices->end()) return string("");
@@ -460,7 +460,7 @@ public:
     if (it == vertices->end()) return nullptr;
     return make_shared<Vertex>(it->second);
   }
-  
+
   void set_vertex_visited(cid_t cid) {
     upcxx::rpc(get_vertex_target_rank(cid),
                [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid) {
@@ -493,7 +493,7 @@ public:
                  }
                }, vertices, cid, walk_score, walk_i, upcxx::rank_me()).wait();
   }
-  
+
   Vertex *get_first_local_vertex() {
     vertex_iter = vertices->begin();
     if (vertex_iter == vertices->end()) return nullptr;
@@ -501,7 +501,7 @@ public:
     vertex_iter++;
     return v;
   }
-  
+
   Vertex *get_next_local_vertex() {
     if (vertex_iter == vertices->end()) return nullptr;
     auto v = &vertex_iter->second;
@@ -580,7 +580,7 @@ public:
     edge_iter++;
     return edge;
   }
-  
+
   Edge *get_next_local_edge() {
     if (edge_iter == edges->end()) return nullptr;
     auto edge = &edge_iter->second;
@@ -625,7 +625,7 @@ public:
                      if (new_edge.gap > 0) {
                        // add reads to positive gap for splints
                        //if (new_edge.gap_reads.size() == 0) DIE("trying to get a read from an empty array\n");
-                       for (auto gap_read : new_edge.gap_reads) 
+                       for (auto gap_read : new_edge.gap_reads)
                          edge->gap_reads.push_back(gap_read);
                      }
                    }
@@ -660,7 +660,7 @@ public:
       }
     }
   }
-  
+
   int64_t purge_excess_edges() {
     int64_t excess = 0;
     for (auto it = edges->begin(); it != edges->end(); ) {
@@ -699,7 +699,7 @@ public:
                  DIE("Could not find the nb to remove");
                }, vertices, cid, end, nb).wait();
   }
-               
+
   int64_t purge_short_aln_edges() {
     int64_t num_short = 0;
     for (auto it = edges->begin(); it != edges->end(); ) {
@@ -715,7 +715,7 @@ public:
     }
     return num_short;
   }
-  
+
   void add_pos_gap_read(const string &read_name) {
     upcxx::rpc(get_read_target_rank(read_name),
                [](upcxx::dist_object<reads_map_t> &read_seqs, string read_name) {
@@ -732,7 +732,7 @@ public:
                         return true;
                       }, read_seqs, read_name, seq).wait();
   }
-  
+
   string get_read_seq(const string &read_name) {
     return upcxx::rpc(get_read_target_rank(read_name),
                       [](upcxx::dist_object<reads_map_t> &read_seqs, string read_name) -> string {
@@ -741,12 +741,12 @@ public:
                         return it->second;
                       }, read_seqs, read_name).wait();
   }
-  
+
   size_t get_num_read_seqs(bool all = false) {
     if (!all) return upcxx::reduce_one(read_seqs->size(), upcxx::op_fast_add, 0).wait();
     else return upcxx::reduce_all(read_seqs->size(), upcxx::op_fast_add).wait();
   }
-  
+
   int get_other_end(shared_ptr<Vertex> v1, shared_ptr<Vertex> v2, shared_ptr<Edge> edge = nullptr) {
     if (!edge) edge = get_edge_cached(v1->cid, v2->cid);
     // the cids in the edge are organized as (largest, smallest), so the edges are determined that way too
@@ -758,7 +758,7 @@ public:
     // the cids in the edge are organized as (largest, smallest), so the edges are determined that way too
     return v1->cid >= v2->cid ? edge->end2 : edge->end1;
   }
-  
+
   void clear_caches() {
     vertex_cache.clear();
     edge_cache.clear();
@@ -793,8 +793,8 @@ public:
 
   void print_stats(string graph_fname="") {
     Timer timer(__FILEFUNC__);
-    auto get_avg_min_max = [](vector<int64_t> &vals) {
-      assert(vals.size());
+    auto get_avg_min_max = [](vector<int64_t> &vals) -> string {
+      if (!vals.size()) return "";
       int64_t total = std::accumulate(vals.begin(), vals.end(), 0);
       int64_t max_val = *std::max_element(vals.begin(), vals.end());
       int64_t min_val = *std::min_element(vals.begin(), vals.end());

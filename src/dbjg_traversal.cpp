@@ -308,14 +308,15 @@ static global_ptr<FragElem> get_other_side_gptr(const FragElem &frag_elem, globa
 }
 
 static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, global_ptr<FragElem> next_gptr, 
-                            string &uutig, int64_t &depths, int64_t &walk_steps, vector<FragElem*> &my_frag_elems_visited) {
+                            string &uutig, int64_t &depths, int64_t &walk_steps, int64_t &num_repeats, 
+                            vector<FragElem*> &my_frag_elems_visited) {
   if (!next_gptr) return true;
   global_ptr<FragElem> prev_gptr = frag_elem_gptr;
   FragElem prev_frag_elem = *frag_elem_gptr.local();
-#ifdef DEBUG
   // for checking that we haven't got a bug - frags should never be revisited in a walk
   HASH_TABLE<global_ptr<FragElem>, bool> visited;
   visited[frag_elem_gptr] = true;
+#ifdef DEBUG
   string padding;
   DBG_TRAVERSE(uutig, "\n");
 #endif
@@ -327,10 +328,12 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
       DBG_TRAVERSE(padding, "DROP: owner ", next_gptr.where(), " > ", rank_me(), "\n");
       return false;
     }
-#ifdef DEBUG
-    if (visited.find(next_gptr) != visited.end()) DIE("repeat: ", next_gptr);
+    if (visited.find(next_gptr) != visited.end()) {
+      DBG_TRAVERSE(padding, "REPEAT: ", gptr_str(next_gptr), "\n");
+      num_repeats++;
+      return true;
+    }
     visited[next_gptr] = true;
-#endif
     FragElem next_frag_elem = rget(next_gptr).wait();
     if (next_gptr.where() == rank_me()) {
       if (next_frag_elem.visited) DIE("gptr ", next_gptr, " should not be already visited");
@@ -354,13 +357,12 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
       if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) uutig.insert(0, next_frag_seq.substr(0, slen));
       else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) uutig.insert(0, next_frag_seq_rc.substr(0, slen));
       else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
-      DBG_TRAVERSE(uutig, "\n");
     } else {
       if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) uutig += next_frag_seq.substr(kmer_len - 1);
       else if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) uutig += next_frag_seq_rc.substr(kmer_len - 1);
       else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
-      DBG_TRAVERSE(uutig, "\n");
     }
+    DBG_TRAVERSE(uutig, "\n");
     depths += (next_frag_elem.sum_depths * (1.0 - (kmer_len - 1) / next_frag_elem.frag_len));
     auto other_side_gptr = get_other_side_gptr(next_frag_elem, prev_gptr);
     prev_frag_elem = next_frag_elem;
@@ -378,7 +380,7 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
 static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems, 
                           Contigs &my_uutigs) {
   Timer timer(__FILEFUNC__);
-  int64_t num_steps = 0, max_steps = 0, num_drops = 0, num_prev_visited = 0;
+  int64_t num_steps = 0, max_steps = 0, num_drops = 0, num_prev_visited = 0, num_repeats = 0;
   ProgressBar progbar(frag_elems.size(), "Connecting fragments");
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
@@ -392,8 +394,12 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vec
     string uutig(frag_elem->frag_seq.local());
     int64_t depths = frag_elem->sum_depths;
     int64_t walk_steps = 1;
-    if (walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->left_gptr, uutig, depths, walk_steps, my_frag_elems_visited) && 
-        walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, depths, walk_steps, my_frag_elems_visited)) {
+    bool walk_ok = walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->left_gptr, uutig, depths, walk_steps, num_repeats,
+                                   my_frag_elems_visited);
+    if (walk_ok)
+      walk_ok = walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, depths, walk_steps, num_repeats, 
+                        my_frag_elems_visited);
+    if (walk_ok) {
       num_steps += walk_steps;
       max_steps = max(walk_steps, max_steps);
       Contig contig = {0, uutig, (double)depths / (uutig.length() - kmer_len + 2)};
@@ -408,12 +414,14 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vec
   auto all_num_steps = reduce_one(num_steps, op_fast_add, 0).wait();
   auto all_max_steps = reduce_one(max_steps, op_fast_max, 0).wait();
   auto all_num_drops = reduce_one(num_drops, op_fast_add, 0).wait();
+  auto all_num_repeats = reduce_one(num_repeats, op_fast_add, 0).wait();
   auto all_num_uutigs = reduce_one(my_uutigs.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Constructed ", all_num_uutigs, " uutigs with ", (double)all_num_steps / all_num_uutigs, 
                " avg path length (max ", all_max_steps, "), dropped ", perc_str(all_num_drops, all_num_uutigs), " paths\n");
   auto all_num_prev_visited = reduce_one(num_prev_visited, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Skipped ", perc_str(all_num_prev_visited, reduce_one(frag_elems.size(), op_fast_add, 0).wait()), 
-               " already visited fragments\n");
+  auto all_num_frags = reduce_one(frag_elems.size(), op_fast_add, 0).wait();
+  SLOG_VERBOSE("Skipped ", perc_str(all_num_prev_visited, all_num_frags), " already visited fragments, and found ", 
+               perc_str(all_num_repeats, all_num_frags), " repeats\n");
 }
 
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
