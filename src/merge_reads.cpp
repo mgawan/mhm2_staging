@@ -419,6 +419,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   }
   elapsed_write_io_t = dump_reads_t.get_elapsed();
   dump_reads_t.done();
+  barrier();
 }
 
 
