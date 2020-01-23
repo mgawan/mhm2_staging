@@ -191,13 +191,14 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, v
     global_ptr<FragElem> frag_elem_gptr = new_<FragElem>();
     auto left_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, Dirn::LEFT, uutig, sum_depths, walk_term_stats);
     auto right_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, Dirn::RIGHT, uutig, sum_depths, walk_term_stats);
-    frag_elem_gptr.local()->frag_seq = new_array<char>(uutig.length() + 1);
-    strcpy(frag_elem_gptr.local()->frag_seq.local(), uutig.c_str());
-    frag_elem_gptr.local()->frag_seq.local()[uutig.length()] = 0;
-    frag_elem_gptr.local()->frag_len = uutig.length();
-    frag_elem_gptr.local()->sum_depths = sum_depths;      
-    frag_elem_gptr.local()->left_gptr = left_gptr;
-    frag_elem_gptr.local()->right_gptr = right_gptr;
+    FragElem *frag_elem = frag_elem_gptr.local();
+    frag_elem->frag_seq = new_array<char>(uutig.length() + 1);
+    strcpy(frag_elem->frag_seq.local(), uutig.c_str());
+    frag_elem->frag_seq.local()[uutig.length()] = 0;
+    frag_elem->frag_len = uutig.length();
+    frag_elem->sum_depths = sum_depths;      
+    frag_elem->left_gptr = left_gptr;
+    frag_elem->right_gptr = right_gptr;
     frag_elems.push_back(frag_elem_gptr);
     num_walks++;
   }
@@ -222,8 +223,9 @@ static bool is_overlap(const string &left_seq, const string &right_seq, int over
 
 static string get_frag_seq(FragElem &frag_elem) {
   char *buf = new char[frag_elem.frag_len + 1];
-  rget(frag_elem.frag_seq, buf, frag_elem.frag_len + 1);
+  rget(frag_elem.frag_seq, buf, frag_elem.frag_len + 1).wait();
   string frag_seq(buf);
+  assert(frag_seq.length() == frag_elem.frag_len);
   delete[] buf;
   return frag_seq;
 }
