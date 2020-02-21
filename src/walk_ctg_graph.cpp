@@ -185,6 +185,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
             DBG_WALK("perfect neg overlap ", gap_excess, "\n");
             ctg.seq += tail(seq, seq.size() - gap_excess);
           } else {
+#ifdef USE_ALNS_FOR_GAP_CORRECTION
             int max_overlap = max(gap_excess + 20, max_kmer_len + 2);
             if (max_overlap > ctg.seq.size()) max_overlap = ctg.seq.size();
             if (max_overlap > seq.size()) max_overlap = seq.size();
@@ -218,25 +219,26 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
               ctg.seq += tail(seq, seq.size() - (ssw_aln.ref_end + 1));
             }
           }
-/*          
-          // now check min hamming distance between overlaps 
-          auto min_dist = min_hamming_dist(ctg.seq, seq, max_kmer_len - 1, gap_excess);
-          if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
-            break_scaffold = true;
-            DBG_WALK("break neg ", edge_type_str(edge->edge_type),  " gap ", gap_excess, " hdist ", min_dist.first, 
-                     " overlap ", min_dist.second, "\n",  tail(ctg.seq, max(gap_excess, max_kmer_len)), "\n", 
-                     head(seq, max(gap_excess, max_kmer_len)), "\n");
-          } else {
-            gap_excess = min_dist.second;
-            if (gap_excess != -edge->gap) {
-              if (edge->edge_type == EdgeType::SPLINT) gap_stats.corrected_splints++;
-              else gap_stats.corrected_spans++;
-              DBG_WALK("corrected neg ", edge_type_str(edge->edge_type),  " gap from ", edge->gap, " to ", -gap_excess, "\n",  
-                       tail(ctg.seq, gap_excess), "\n", head(seq, gap_excess), "\n");
+#else
+            // now check min hamming distance between overlaps 
+            auto min_dist = min_hamming_dist(ctg.seq, seq, max_kmer_len - 1, gap_excess);
+            if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
+              break_scaffold = true;
+              DBG_WALK("break neg ", edge_type_str(edge->edge_type),  " gap ", gap_excess, " hdist ", min_dist.first, 
+                       " overlap ", min_dist.second, "\n",  tail(ctg.seq, max(gap_excess, max_kmer_len)), "\n", 
+                       head(seq, max(gap_excess, max_kmer_len)), "\n");
+            } else {
+              gap_excess = min_dist.second;
+              if (gap_excess != -edge->gap) {
+                if (edge->edge_type == EdgeType::SPLINT) gap_stats.corrected_splints++;
+                else gap_stats.corrected_spans++;
+                DBG_WALK("corrected neg ", edge_type_str(edge->edge_type),  " gap from ", edge->gap, " to ", -gap_excess, "\n",  
+                         tail(ctg.seq, gap_excess), "\n", head(seq, gap_excess), "\n");
+              }
+              ctg.seq += tail(seq, seq.size() - gap_excess);
             }
-            ctg.seq += tail(seq, seq.size() - gap_excess);
           }
-*/
+#endif
         } else {
           // gap is exactly 0
           ctg.seq += seq;

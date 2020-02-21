@@ -53,8 +53,9 @@ add_definitions(-DMAX_SEARCH_LEVEL=5)
 add_definitions(-DMAX_QUEUE_SIZE=100)
 add_definitions(-DASSM_CLEN_THRES=500)
 add_definitions(-DALN_SEED_SPACE=8)
+add_definitions(-DUSE_ALNS_FOR_GAP_CORRECTION)
 # This should be a parameter - it is a good way of tuning errors vs ctgy - the higher it is, the higher the errors and ctgy
-add_definitions(-DMISMATCH_THRES=2)
+add_definitions(-DMISMATCH_THRES=1)
 # another good candidate for errors v ctgy tradeoff. THis applies to SSW alignments in gap closing
 add_definitions(-DSSW_MISMATCH_TOLERANCE=3)
 # FIXME: these should not be defined here!!
@@ -63,7 +64,7 @@ add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
 add_definitions(-DWALK_SUPPORT_THRES=3)
 add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
-add_definitions(-DALN_WIGGLE=5)
+add_definitions(-DALN_WIGGLE=1)
 add_definitions(-DMAX_NUM_GET_CTGS=100000)
 # FIXME: this should be determined from the reads themselves
 add_definitions(-DTMP_READ_LEN=150)
@@ -77,6 +78,7 @@ add_definitions(-DLASSM_MIN_VIABLE_DEPTH=0.2)
 add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.3)
 add_definitions(-DLASSM_RATING_THRES=0)
 add_definitions(-DLASSM_MAX_COUNT_MERS_READS=3000)
+
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)
