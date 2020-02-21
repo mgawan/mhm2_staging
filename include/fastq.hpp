@@ -31,6 +31,7 @@ class FastqReader {
   string fname;
   int max_read_len;
   char buf[BUF_SIZE + 1];
+  int64_t lines_read;
 
   IntermittentTimer io_t;
 
@@ -115,14 +116,21 @@ class FastqReader {
         if (!get_fq_name(header)) continue;
         // need this to be the second of the pair
         if (header[header.length() - 1] == '2') {
-          // now read another three lines and be done
+          // now read another three lines, but check that the third line is a + separator
+          bool record_found = true;
           for (int j = 0; j < 3; j++) {
             if (!fgets(buf, BUF_SIZE, f)) DIE("Missing record info at pos ", ftell(f));
+            if (j == 1 && strncmp(buf, "+", strlen(buf) - 1) != 0) {
+              //DIE("muddled fastq, header ", header, " buf '", buf, "' len ", strlen(buf));
+              // this is not a correct boundary for a fastq record - move on
+              record_found = false;
+              break;
+            }
           }
-          break;
+          if (record_found) break;
         }
       }
-      if (i > 13) DIE("Could not find a valid line in the fastq file ", fname, ", last line: ", buf);
+      if (i > 20) DIE("Could not find a valid line in the fastq file ", fname, ", last line: ", buf);
     }
     io_t.stop();
     return ftell(f);
@@ -202,6 +210,7 @@ public:
     }
     io_t.start();
     size_t bytes_read = 0;
+    id = "";
     for (int i = 0; i < 4; i++) {
       char *bytes = (f ? fgets(buf, BUF_SIZE, f) : gzgets(gzf, buf, BUF_SIZE));
       if (!bytes) DIE("Read record terminated on file ", fname, " before full record at position ", (f ? ftell(f) : gztell(gzf)));
@@ -222,7 +231,8 @@ public:
     // FIXME: this should be hexify
     replace_spaces(id);
     if (seq.length() != quals.length())
-      DIE("Invalid FASTQ in ", fname, ": sequence length ", seq.length(), " != ", quals.length(), " quals length\n");
+      DIE("Invalid FASTQ in ", fname, ": sequence length ", seq.length(), " != ", quals.length(), " quals length\n",
+          "id:   ", id, "\nseq:  ", seq, "\nquals: ", quals);
     if (seq.length() > max_read_len) max_read_len = seq.length();
     io_t.stop();
     return bytes_read;
