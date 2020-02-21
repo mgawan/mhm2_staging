@@ -44,27 +44,30 @@ add_definitions(-DMAX_RPCS_IN_FLIGHT=8192)
 add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
 add_definitions(-DUSE_COLORS)
 add_definitions(-DUSE_BYTELL)
+add_definitions(-DUSE_PROGBAR)
 add_definitions(-DMIN_CTG_PRINT_LEN=500)
 add_definitions(-DDEPTH_DIFF_THRES=0.1)
-add_definitions(-DUSE_PROGBAR)
-add_definitions(-DALN_EXTRA=0)
 add_definitions(-DMAX_DEPTH_DIFF=15)
 add_definitions(-DMIN_DEPTH_DIFF=5)
 add_definitions(-DMAX_SEARCH_LEVEL=5)
 add_definitions(-DMAX_QUEUE_SIZE=100)
-add_definitions(-DALN_SLOP=0)
 add_definitions(-DASSM_CLEN_THRES=500)
+add_definitions(-DALN_SEED_SPACE=8)
+# This should be a parameter - it is a good way of tuning errors vs ctgy - the higher it is, the higher the errors and ctgy
+add_definitions(-DMISMATCH_THRES=2)
+# another good candidate for errors v ctgy tradeoff. THis applies to SSW alignments in gap closing
+add_definitions(-DSSW_MISMATCH_TOLERANCE=3)
 # FIXME: these should not be defined here!!
-add_definitions(-DBREAK_SCAFF_NS=20)
+add_definitions(-DBREAK_SCAFF_NS=10)
 add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
 add_definitions(-DWALK_SUPPORT_THRES=3)
 add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
 add_definitions(-DALN_WIGGLE=5)
 add_definitions(-DMAX_NUM_GET_CTGS=100000)
-# FIXME: this should be a parameter
+# FIXME: this should be determined from the reads themselves
 add_definitions(-DTMP_READ_LEN=150)
-# FIXME: this should be a parameter
+# FIXME: these should be parameters
 add_definitions(-DLASSM_MAX_KMER_LEN=121)
 add_definitions(-DLASSM_MIN_KMER_LEN=21)
 add_definitions(-DLASSM_SHIFT_SIZE=8)

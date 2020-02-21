@@ -51,10 +51,10 @@ static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read
     }
     int unaligned_left = min(aln.rstart, aln.cstart);
     int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - aln.cstop);
-    if (unaligned_left > ALN_SLOP || unaligned_right > ALN_SLOP) {
+    if (unaligned_left > ALN_WIGGLE || unaligned_right > ALN_WIGGLE) {
       (*unaligned)++;
-      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
-          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");
+//      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
+//          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");
     } else {
       alns_for_read.push_back(aln);
     }
@@ -74,20 +74,20 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
     return { .start = aln->rstart - aln->cstart, .stop = aln->rstop + (aln->clen - aln->cstop) };
   };
 
-  AlnCoords ctg1 = get_aln_coords(aln1);
-  AlnCoords ctg2 = get_aln_coords(aln2);
-  
-  if (aln1->cid == aln2->cid) {
-    stats.circular++;
-    return false;
-  }
   auto is_contained = [](const AlnCoords &ctg1, const AlnCoords &ctg2) -> bool {
     if (ctg1.start >= ctg2.start && ctg1.stop <= ctg2.stop) return true;
     else return false;
   };
   
+  AlnCoords ctg1 = get_aln_coords(aln1);
+  AlnCoords ctg2 = get_aln_coords(aln2);
+  
   if (is_contained(ctg1, ctg2) || is_contained(ctg2, ctg1)) {
     stats.containments++;
+    return false;
+  }
+  if (aln1->cid == aln2->cid) {
+    stats.circular++;
     return false;
   }
   int end1, end2;

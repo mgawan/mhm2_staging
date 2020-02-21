@@ -35,8 +35,8 @@ using std::max;
 //#define DBG_BUILD DBG
 #define DBG_BUILD(...)
 
-//#define DBG_WALK DBG
-#define DBG_WALK(...)
+#define DBG_WALK DBG
+//#define DBG_WALK(...)
 
 #define DBG_SPANS DBG
 //#define DBG_SPANS(...)
@@ -528,6 +528,21 @@ public:
                  const auto it = vertices->find(cid);
                  if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto v = &it->second;
+#ifdef DEBUG
+                 // sanity checks
+                 for (auto &prev_v : v->end5) {
+                   if (prev_v == nb) {
+                     WARN("end5 already includes nb ", nb);
+                     return;
+                   }
+                 }
+                 for (auto &prev_v : v->end3) {
+                   if (prev_v == nb) {
+                     WARN("end3 already includes nb ", nb);
+                     return;
+                   }
+                 }
+#endif
                  if (end == 5) v->end5.push_back(nb);
                  else v->end3.push_back(nb);
                }, vertices, cid, nb, end).wait();

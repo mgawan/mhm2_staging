@@ -2,9 +2,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <queue>
-#include "zstr.hpp"
 #include <upcxx/upcxx.hpp>
 
+#include "zstr.hpp"
+#include "ssw.hpp"
 #include "utils.hpp"
 #include "progressbar.hpp"
 #include "colors.h"
@@ -68,7 +69,8 @@ struct WalkStats {
 
   
 struct GapStats {
-  int64_t mismatched_splints, mismatched_spans, gaps, positive, unclosed, corrected_splints, corrected_spans;
+  int64_t mismatched_splints, mismatched_spans, gaps, positive, unclosed, corrected_splints, corrected_spans,
+          num_break_scaffs, num_excess_breaks, num_tolerance_breaks, num_Ns_breaks;
   
   void print() {
     int64_t tot_mismatched_splints = reduce_one(mismatched_splints, op_fast_add, 0).wait();
@@ -78,24 +80,35 @@ struct GapStats {
     int64_t tot_unclosed = reduce_one(unclosed, op_fast_add, 0).wait();
     int64_t tot_corrected_splints = reduce_one(corrected_splints, op_fast_add, 0).wait();
     int64_t tot_corrected_spans = reduce_one(corrected_spans, op_fast_add, 0).wait();
+    int64_t tot_break_scaffs = reduce_one(num_break_scaffs, op_fast_add, 0).wait();
+    int64_t tot_excess_breaks = reduce_one(num_excess_breaks, op_fast_add, 0).wait();
+    int64_t tot_tolerance_breaks = reduce_one(num_tolerance_breaks, op_fast_add, 0).wait();
+    int64_t tot_Ns_breaks = reduce_one(num_Ns_breaks, op_fast_add, 0).wait();
 
     cout << setprecision(2) << fixed;
     SLOG_VERBOSE("Gaps statistics:\n");
     SLOG_VERBOSE("  total:                    ", tot_gaps, "\n");
     SLOG_VERBOSE("  positive:                 ", perc_str(tot_positive, tot_gaps), "\n");
+    SLOG_VERBOSE("    unclosed:               ", perc_str(tot_unclosed, tot_positive), "\n");
     SLOG_VERBOSE("  mismatched splints:       ", perc_str(tot_mismatched_splints, tot_gaps), "\n");
     SLOG_VERBOSE("  mismatched spans:         ", perc_str(tot_mismatched_spans, tot_gaps), "\n");
-    SLOG_VERBOSE("  unclosed:                 ", perc_str(tot_unclosed, tot_gaps), "\n");
-    SLOG_VERBOSE("  corrected splints:        ", perc_str(tot_corrected_splints, tot_gaps), "\n");
-    SLOG_VERBOSE("  corrected spans:          ", perc_str(tot_corrected_spans, tot_gaps), "\n");
+//    SLOG_VERBOSE("  corrected splints:        ", perc_str(tot_corrected_splints, tot_gaps), "\n");
+//    SLOG_VERBOSE("  corrected spans:          ", perc_str(tot_corrected_spans, tot_gaps), "\n");
+    SLOG_VERBOSE("  scaffold breaks:          ", perc_str(tot_break_scaffs, tot_gaps), "\n");
+    SLOG_VERBOSE("    excess:                 ", perc_str(tot_excess_breaks, tot_break_scaffs), "\n");
+    SLOG_VERBOSE("    tolerance:              ", perc_str(tot_tolerance_breaks, tot_break_scaffs), "\n");
+    SLOG_VERBOSE("    too many Ns:            ", perc_str(tot_Ns_breaks, tot_break_scaffs), "\n");
   }
 };
 
 
 static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs &ctgs) {
   Timer timer(__FILEFUNC__);
-
-  int num_break_scaffs = 0;
+  const int SSW_MISMATCH_COST = 3;
+  // match, mismatch, gap opening, gap extending, ambiguious
+  StripedSmithWaterman::Aligner ssw_aligner(1, SSW_MISMATCH_COST, 5, 2, 2);
+  StripedSmithWaterman::Filter ssw_filter;
+  ssw_filter.report_cigar = false;
   GapStats gap_stats = {0};
   for (auto &walk : walks) {
     shared_ptr<Vertex> prev_v(nullptr);
@@ -103,6 +116,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
     ctg.depth = walk.depth;
     for (int i = 0; i < walk.vertices.size(); i++) {
       bool break_scaffold = false;
+      bool break_for_Ns = false;
       auto v = _graph->get_vertex(walk.vertices[i].first);
       auto orient = walk.vertices[i].second;
       auto seq = _graph->get_vertex_seq(v->seq_gptr, v->clen);
@@ -149,8 +163,11 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
                 gap_seq = gap_edge_seq.substr(len, edge->gap);
               }
               // now break if too many Ns
-              if (break_scaff_Ns > 0 && !break_scaffold && gap_seq.find(string(break_scaff_Ns, 'N')) != string::npos)
+              if (break_scaff_Ns > 0 && !break_scaffold && gap_seq.find(string(break_scaff_Ns, 'N')) != string::npos) {
                 break_scaffold = true;
+                break_for_Ns = true;
+                gap_stats.num_Ns_breaks++;
+              }
             }
           } else {  // gap sequence does not exist
             gap_stats.unclosed++;
@@ -163,10 +180,52 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
         } else if (edge->gap < 0) {
           int gap_excess = -edge->gap;
           if (gap_excess > ctg.seq.size() || gap_excess > seq.size()) gap_excess = min(ctg.seq.size(), seq.size()) - 5;
+          // FIXME: this should be a full SSW alignment check to deal with indels
+          if (ctg.seq.compare(ctg.seq.length() - gap_excess, gap_excess, seq, 0, gap_excess) == 0) {
+            DBG_WALK("perfect neg overlap ", gap_excess, "\n");
+            ctg.seq += tail(seq, seq.size() - gap_excess);
+          } else {
+            int max_overlap = max(gap_excess + 20, max_kmer_len + 2);
+            if (max_overlap > ctg.seq.size()) max_overlap = ctg.seq.size();
+            if (max_overlap > seq.size()) max_overlap = seq.size();
+            StripedSmithWaterman::Alignment ssw_aln;
+            // make sure upcxx progress is done before starting alignment
+            discharge();
+            ssw_aligner.Align(tail(ctg.seq, max_overlap).c_str(), head(seq, max_overlap).c_str(), max_overlap, 
+                              ssw_filter, &ssw_aln, max((int)(max_overlap / 2), 15));
+            int left_excess = max_overlap - (ssw_aln.query_end + 1);
+            int right_excess = ssw_aln.ref_begin;
+            int aln_len = ssw_aln.query_end - ssw_aln.query_begin;
+            DBG_WALK("SSW aln for gap ", gap_excess, " left clen ", ctg.seq.length(), " right clen ", seq.length(), 
+                     " left begin ", ssw_aln.query_begin, " left end ", ssw_aln.query_end + 1, 
+                     " right begin ", ssw_aln.ref_begin, " right end ", ssw_aln.ref_end + 1, 
+                     " left excess ", left_excess, " right excess ", right_excess, " score ", ssw_aln.sw_score, 
+                     " score next best ", ssw_aln.sw_score_next_best, " aln len ", aln_len, "\n", 
+                     tail(ctg.seq, max_overlap), "\n", head(seq, max_overlap), "\n");
+            if (left_excess > ALN_WIGGLE || right_excess > ALN_WIGGLE) {
+              break_scaffold = true;
+              gap_stats.num_excess_breaks++;
+              DBG_WALK("break neg gap\n");
+            } else if (ssw_aln.sw_score < aln_len - SSW_MISMATCH_TOLERANCE * SSW_MISMATCH_COST) {
+              break_scaffold = true;
+              gap_stats.num_tolerance_breaks++;
+              DBG_WALK("break poor aln: score ", ssw_aln.sw_score, " < ", 
+                       aln_len - SSW_MISMATCH_TOLERANCE * SSW_MISMATCH_COST, "\n");
+            } else {
+              DBG_WALK("close neg gap trunc left at ", ctg.seq.length() - max_overlap + ssw_aln.query_end + 1, 
+                       " and from right at ", ssw_aln.ref_end + 1, "\n");
+              ctg.seq.erase(ctg.seq.length() - max_overlap + ssw_aln.query_end + 1);
+              ctg.seq += tail(seq, seq.size() - (ssw_aln.ref_end + 1));
+            }
+          }
+/*          
           // now check min hamming distance between overlaps 
           auto min_dist = min_hamming_dist(ctg.seq, seq, max_kmer_len - 1, gap_excess);
           if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
             break_scaffold = true;
+            DBG_WALK("break neg ", edge_type_str(edge->edge_type),  " gap ", gap_excess, " hdist ", min_dist.first, 
+                     " overlap ", min_dist.second, "\n",  tail(ctg.seq, max(gap_excess, max_kmer_len)), "\n", 
+                     head(seq, max(gap_excess, max_kmer_len)), "\n");
           } else {
             gap_excess = min_dist.second;
             if (gap_excess != -edge->gap) {
@@ -177,17 +236,19 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
             }
             ctg.seq += tail(seq, seq.size() - gap_excess);
           }
+*/
         } else {
           // gap is exactly 0
           ctg.seq += seq;
         }
         if (break_scaffold) {
-          num_break_scaffs++;
+          gap_stats.num_break_scaffs++;
           DBG_WALK("break scaffold from ", prev_v->cid, " to ", v->cid, " gap ", edge->gap, 
                    " type ", edge_type_str(edge->edge_type), " prev_v clen ", prev_v->clen, " curr_v clen ", v->clen, "\n");
-          if (edge->edge_type == EdgeType::SPLINT) gap_stats.mismatched_splints++;
-          else gap_stats.mismatched_spans++;
-          gap_stats.gaps++;
+          if (!break_for_Ns) {
+            if (edge->edge_type == EdgeType::SPLINT) gap_stats.mismatched_splints++;
+            else gap_stats.mismatched_spans++;
+          }
           // save current scaffold
           ctgs.add_contig(ctg);
           // start new scaffold
@@ -201,7 +262,6 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
     if (ctg.seq != "") ctgs.add_contig(ctg);
   }
   barrier();
-  SLOG_VERBOSE("Number of scaffold breaks ", reduce_one(num_break_scaffs, op_fast_add, 0).wait(), "\n");
   gap_stats.print();
   // now get unique ids for all the contigs
   size_t num_ctgs = ctgs.size();
@@ -534,8 +594,8 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
         if ((next_nb_end == 5 && next_nb->end5_merged.size() > 1) || (next_nb_end == 3 && next_nb->end3_merged.size() > 1)) {
           DBG_WALK("    search bwd: ");
           next_nbs_timer.start();
-          auto back_nbs = search_for_next_nbs(max_kmer_len, kmer_len, quality_level, next_nb, next_nb_end, walk_depth, walk_stats,
-                                              curr_v->cid);
+          auto back_nbs = search_for_next_nbs(max_kmer_len, kmer_len, quality_level, next_nb, next_nb_end, walk_depth, 
+                                              walk_stats, curr_v->cid);
           next_nbs_timer.stop();
           if (!back_nbs.empty()) join_resolved = true;
         } else {
@@ -591,9 +651,9 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
     if (v->visited) continue;
     // don't start walks on short contigs
     if (v->clen < min_ctg_len) continue;
-    /*
     // don't start walks on a high depth contig, which is a contig that has at least 2x depth higher than its nb average
     // and doesn't have any nbs of higher depth
+
     if (v->depth > 10) {
       auto all_nb_cids = v->end5;
       all_nb_cids.insert(all_nb_cids.end(), v->end3.begin(), v->end3.end());
@@ -611,7 +671,7 @@ static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
         if (v->depth > 2.0 * sum_nb_depths / all_nb_cids.size()) continue;
       }
     }
-    */
+
     sorted_ctgs.push_back({v->cid, v->clen});
   }
   sort(sorted_ctgs.begin(), sorted_ctgs.end(),
@@ -644,8 +704,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
   // need to repeat the sets of walks because there may be a conflicts between walks across ranks, which results
   // in one of the walks being dropped. So this loop will repeat until no more scaffolds can be built.
   {
-    IntermittentTimer next_nbs_timer(__FILENAME__ + string(":") + "next_nbs"),
-      walks_timer(__FILENAME__ + string(":") + "walks");
+    IntermittentTimer next_nbs_timer(__FILENAME__ + string(":") + "next_nbs");
+    IntermittentTimer walks_timer(__FILENAME__ + string(":") + "walks");
     while (true) {
       walks_timer.start();
       ProgressBar progbar(sorted_ctgs.size(), "Walking graph round " + to_string(num_rounds));

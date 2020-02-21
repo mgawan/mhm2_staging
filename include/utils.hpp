@@ -444,7 +444,6 @@ inline int hamming_dist(const string &s1, const string &s2, bool require_equal_l
 }
 
 inline bool is_overlap_mismatch(int dist, int overlap) {
-  const int MISMATCH_THRES = 5;
   if (dist > MISMATCH_THRES || dist > overlap / 10) return true;
   return false;
 }

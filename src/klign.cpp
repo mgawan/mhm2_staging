@@ -560,13 +560,14 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
+      // this happens when a placeholder read with just a single N character is added after merging reads
       if (kmer_ctg_dht.kmer_len > read_seq.length()) continue;
       auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq);
       tot_num_kmers += kmers.size();
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
       bool filled = false;
-      for (int i = 0; i < kmers.size(); i += 8) {
+      for (int i = 0; i < kmers.size(); i += ALN_SEED_SPACE) {
         Kmer kmer = kmers[i];
         Kmer kmer_rc = kmer.revcomp();
         bool is_rc = false;
@@ -579,7 +580,8 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
         it->second.push_back({read_record, i, is_rc});
         if (kmer_read_map.size() >= MAX_NUM_GET_CTGS) filled = true;
       }
-      if (filled) num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
+      if (filled) 
+        num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
       num_reads++;
     }
     if (read_records.size())
@@ -590,9 +592,8 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   SLOG_VERBOSE("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds\n");
   auto tot_num_alns = kmer_ctg_dht.get_num_alns();
-  SLOG_VERBOSE("Found ", tot_num_alns, " alignments");
-  if (!ALN_EXTRA) SLOG_VERBOSE(" of which ", perc_str(kmer_ctg_dht.get_num_perfect_alns(), tot_num_alns), " are perfect\n");
-  else SLOG_VERBOSE("\n");
+  SLOG_VERBOSE("Found ", tot_num_alns, " alignments of which ", perc_str(kmer_ctg_dht.get_num_perfect_alns(), tot_num_alns), 
+               " are perfect\n");
   auto num_excess_alns_reads = kmer_ctg_dht.get_num_excess_alns_reads();
   if (num_excess_alns_reads)
     SLOG_VERBOSE("Dropped ", num_excess_alns_reads, " reads because of alignments in excess of ", MAX_ALNS_PER_READ, "\n");

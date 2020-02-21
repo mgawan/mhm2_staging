@@ -263,7 +263,8 @@ static void parse_reads(int kmer_len, const vector<string> &reads_fname_list) {
             }
           }
           if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
-            DBG_SPANS("overlap mismatch: hdist ", min_dist.first, " best overlap ", min_dist.second, " original gap ", edge->gap, "\n");
+            DBG_SPANS("overlap mismatch: hdist ", min_dist.first, " best overlap ", min_dist.second, 
+                      " original gap ", edge->gap, "\n");
             if (tail_seq.size() + head_seq.size() < 2 * kmer_len + edge->gap) {
               // the gap is not closed - fill with Ns
               int num_ns = 2 * kmer_len + edge->gap - tail_seq.size() - head_seq.size();
