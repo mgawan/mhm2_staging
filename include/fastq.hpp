@@ -238,6 +238,10 @@ public:
     return bytes_read;
   }
 
+  int get_max_read_len() {
+    return max_read_len;
+  }
+
 };
 
 

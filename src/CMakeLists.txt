@@ -66,8 +66,6 @@ add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
 add_definitions(-DALN_WIGGLE=1)
 add_definitions(-DMAX_NUM_GET_CTGS=100000)
-# FIXME: this should be determined from the reads themselves
-add_definitions(-DTMP_READ_LEN=150)
 # FIXME: these should be parameters
 add_definitions(-DLASSM_MAX_KMER_LEN=121)
 add_definitions(-DLASSM_MIN_KMER_LEN=21)

@@ -38,7 +38,7 @@ double FastqReader::overall_io_t = 0;
 unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
-void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
+int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
 void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
@@ -47,8 +47,9 @@ void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list,
                      int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
                int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns);
-void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
-                        int break_scaffolds, QualityLevel quality_level, Contigs &ctgs, Alns &alns);
+void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, 
+                        vector<string> &reads_fname_list, int break_scaffolds, QualityLevel quality_level, 
+                        Contigs &ctgs, Alns &alns);
 
 
 int main(int argc, char **argv) {
@@ -86,11 +87,9 @@ int main(int argc, char **argv) {
   }
   // first merge reads - the results will go in the per_rank directory
   double elapsed_write_io_t = 0;
-  {
-    merge_reads_dt.start();
-    merge_reads(options->reads_fname_list, options->qual_offset, elapsed_write_io_t);
-    merge_reads_dt.stop();
-  }
+  merge_reads_dt.start();
+  int read_len = merge_reads(options->reads_fname_list, options->qual_offset, elapsed_write_io_t);
+  merge_reads_dt.stop();
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   int max_kmer_len = 0;
@@ -161,8 +160,8 @@ int main(int argc, char **argv) {
       alignments_dt.stop();
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
       cgraph_dt.start();
-      traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, options->reads_fname_list,
-                         break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
+      traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
+                         options->reads_fname_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) {

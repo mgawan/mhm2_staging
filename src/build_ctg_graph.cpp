@@ -14,7 +14,7 @@
 using namespace std;
 using namespace upcxx;
 
-void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph);
+void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int read_len, Alns &alns, CtgGraph *graph);
 void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 
 
@@ -155,14 +155,16 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
     auto gap_seq = _graph->get_read_seq(gap_read.read_name);
     if (gap_seq == "") DIE("Could not find read seq for read ", gap_read.read_name, "\n");
     if (tail) {
-      if ((edge->end1 == 5 && gap_read.orient == '+') || (edge->end1 == 3 && gap_read.orient == '-')) gap_seq = revcomp(gap_seq);
+      if ((edge->end1 == 5 && gap_read.orient == '+') || (edge->end1 == 3 && gap_read.orient == '-')) 
+        gap_seq = revcomp(gap_seq);
       if (gap_read.gap_start > kmer_len) {
         gap_seq.erase(0, gap_read.gap_start - kmer_len);
         gap_read.gap_start = kmer_len;
       }
       //DBG_SPANS(buf, gap_seq, "\n");
     } else {
-      if ((edge->end2 == 3 && gap_read.orient == '+') || (edge->end2 == 5 && gap_read.orient == '-')) gap_seq = revcomp(gap_seq);
+      if ((edge->end2 == 3 && gap_read.orient == '+') || (edge->end2 == 5 && gap_read.orient == '-')) 
+        gap_seq = revcomp(gap_seq);
       if (gap_read.gap_start + kmer_len < gap_seq.size()) gap_seq.erase(gap_read.gap_start + kmer_len);
       // pad the front of the gap sequence with Ns to make them all the same length
       string offset_padding(1 + _graph->max_read_len - kmer_len - gap_read.gap_start, 'N');
@@ -467,7 +469,7 @@ static void merge_nbs()
                all_max_orphan_len, ", max depth ", all_max_orphan_depth, "\n");
 }
 
-
+/*
 void mark_short_aln_edges(int max_kmer_len) {
   Timer timer(__FILEFUNC__);
   // make sure we don't use an out-of-date edge
@@ -497,14 +499,15 @@ void mark_short_aln_edges(int max_kmer_len) {
   int64_t num_short = _graph->purge_short_aln_edges();
   SLOG_VERBOSE("Purged ", perc_str(reduce_one(num_short, op_fast_add, 0).wait(), num_edges), " short aln edges\n");
 }
+*/
 
-void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
+void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, int read_len,
                      vector<string> &reads_fname_list, Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   get_splints_from_alns(alns, graph);
-  get_spans_from_alns(insert_avg, insert_stddev, max_kmer_len, kmer_len, alns, graph);
+  get_spans_from_alns(insert_avg, insert_stddev, kmer_len, read_len, alns, graph);
   int64_t mismatched = 0, conflicts = 0, empty_spans = 0;
   _graph->purge_error_edges(&mismatched, &conflicts, &empty_spans);
   auto num_edges = _graph->get_num_edges();

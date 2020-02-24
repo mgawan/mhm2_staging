@@ -264,8 +264,7 @@ static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
 enum class ProcessPairResult { FAIL_SMALL, FAIL_SELF_LINK, FAIL_EDIST, FAIL_MIN_GAP, SUCCESS };
  
 ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln &aln2, const string &type_status1,
-                               const string &type_status2, const string &read_status1, const string &read_status2,
-                               int max_kmer_len) {
+                               const string &type_status2, const string &read_status1, const string &read_status2) {
   auto get_dist = [=](int &d, Aln &aln) -> bool {
     aln.rstart++;
     aln.cstart++;
@@ -284,7 +283,6 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
   if (d1 >= end_distance || d2 >= end_distance) return ProcessPairResult::FAIL_EDIST;
   
   int end_separation = insert_avg - (d1 + d2);
-  //if (end_separation < -max_kmer_len * 2) return ProcessPairResult::FAIL_MIN_GAP;
   CidPair cids = { .cid1 = aln1.cid, .cid2 = aln2.cid };
   int end1 = aln1.orient == '+' ? 3 : 5;
   int end2 = aln2.orient == '+' ? 3 : 5;
@@ -306,7 +304,7 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
 
 
 // so the way meraculous spanner seems to work is that it only makes a pair out of the alignments with the shortest rstart. 
-void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, Alns &alns, CtgGraph *graph) {
+void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int read_len, Alns &alns, CtgGraph *graph) {
   _graph = graph;
   Timer timer(__FILEFUNC__);
   IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns spans");
@@ -336,7 +334,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
           } else {
             num_pairs++;
             auto res = process_pair(insert_avg, insert_stddev, prev_best_aln, best_aln, prev_type_status, type_status,
-                                    prev_read_status, read_status, max_kmer_len);
+                                    prev_read_status, read_status);
             result_counts[(int)res]++;
           }
             // there will be no previous one next time 
@@ -378,7 +376,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int max_kmer_len, in
       int clen1 = _graph->get_vertex(edge->cids.cid1)->clen;
       int clen2 = _graph->get_vertex(edge->cids.cid2)->clen;
       if (clen1 >= clen2) swap(clen1, clen2);
-      edge->gap = estimate_gap_size(mean_offset, kmer_len, TMP_READ_LEN, clen1, clen2, insert_avg, insert_stddev);
+      edge->gap = estimate_gap_size(mean_offset, kmer_len, read_len, clen1, clen2, insert_avg, insert_stddev);
       
       if (edge->gap > 0) num_pos_spans++;
       // debug print in form comparable to mhm

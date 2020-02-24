@@ -41,7 +41,7 @@ static const double Q2Perror[] = {
   2.512e-08,	1.995e-08,	1.585e-08,	1.259e-08,	1e-08
 };
 
-static uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
+static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) {
   // estimate reads in this rank's section of all the files
   Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
@@ -49,6 +49,7 @@ static uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
   int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
   string id, seq, quals;
+  int max_read_len = 0;
   for (auto const &reads_fname : reads_fname_list) {
     FastqReader fqr(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of reads");
@@ -70,9 +71,11 @@ static uint64_t estimate_num_reads(vector<string> &reads_fname_list) {
     estimated_total_records += fqr.my_file_size() / bytes_per_record;
     progbar.done();
     barrier();
+    max_read_len = max(fqr.get_max_read_len(), max_read_len);
   }
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
-  return estimated_total_records;
+  SLOG_VERBOSE("Found maximum read length of ", max_read_len, "\n");
+  return {estimated_total_records, max_read_len};
 }
 
 // returns the number of mismatches if it is <= max or a number greater than max (but no the actual count)
@@ -179,14 +182,16 @@ static void dump_merged_reads(const string &reads_fname, ostringstream &out_buf)
 }
 
 
-void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t) {
+int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t) {
   Timer timer(__FILEFUNC__);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
   int64_t num_reads = 0;
+  int read_len = 0;
+  uint64_t my_num_reads_estimate = 0;
   // for unique read id need to estimate number of reads in our sections of all files
-  auto my_num_reads_estimate = estimate_num_reads(reads_fname_list);
+  tie(my_num_reads_estimate, read_len) = estimate_num_reads(reads_fname_list);
   auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
   auto tot_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_add).wait();
   SLOG_VERBOSE("Estimated total number of reads as ", tot_num_reads, ", and max for any rank ", max_num_reads, "\n");
