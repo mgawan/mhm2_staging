@@ -253,7 +253,6 @@ int main(int argc, char **argv) {
   _dbgstream.close();
 #endif
   barrier();
-  WARN("process finished");
   upcxx::finalize();
   return 0;
 }
