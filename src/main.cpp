@@ -165,12 +165,12 @@ int main(int argc, char **argv) {
                   options->qual_offset, options->dynamic_min_depth, ctgs, alns);
         localassm_dt.stop();
       }
-/*
+#ifdef USE_KMER_DEPTHS
       barrier();
       compute_kmer_depths_dt.start();
       compute_depths_of_kmers_in_ctgs(kmer_len, kmer_dht, ctgs);
       compute_kmer_depths_dt.stop();
- */
+ #endif
       barrier();
       
       if (options->checkpoint) {
