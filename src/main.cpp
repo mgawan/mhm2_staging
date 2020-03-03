@@ -240,19 +240,20 @@ int main(int argc, char **argv) {
   SLOG("    IO read time: ", FastqReader::overall_io_t, "\n");
   SLOG("    IO write time: ", dump_ctgs_dt.get_elapsed() + elapsed_write_io_t, "\n");
   SLOG(KBLUE "_________________________\n", KNORM);
-  double end_mem_free = get_free_mem_gb();
-  SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
-       " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");
-  chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
-  SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
-       " for MHM version ", MHM_VERSION, "\n"); 
-  barrier();
-
+  if (!rank_me()) {
+    double end_mem_free = get_free_mem_gb();
+    SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
+         " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");
+    chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
+    SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
+         " for MHM version ", MHM_VERSION, "\n");
+  }
 #ifdef DEBUG
   _dbgstream.flush();
   _dbgstream.close();
 #endif
   barrier();
+  WARN("process finished");
   upcxx::finalize();
   return 0;
 }

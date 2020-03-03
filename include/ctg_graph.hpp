@@ -809,10 +809,9 @@ public:
   void print_stats(string graph_fname="") {
     Timer timer(__FILEFUNC__);
     auto get_avg_min_max = [](vector<int64_t> &vals) -> string {
-      if (!vals.size()) return "";
-      int64_t total = std::accumulate(vals.begin(), vals.end(), 0);
-      int64_t max_val = *std::max_element(vals.begin(), vals.end());
-      int64_t min_val = *std::min_element(vals.begin(), vals.end());
+      int64_t total = (!vals.size() ? 0 : std::accumulate(vals.begin(), vals.end(), 0));
+      int64_t max_val = (!vals.size() ? 0 : *std::max_element(vals.begin(), vals.end()));
+      int64_t min_val = (!vals.size() ? 0 : *std::min_element(vals.begin(), vals.end()));
       int64_t all_min_val =  upcxx::reduce_one(min_val, upcxx::op_fast_min, 0).wait();
       int64_t all_max_val =  upcxx::reduce_one(max_val, upcxx::op_fast_max, 0).wait();
       double all_total = upcxx::reduce_one(total, upcxx::op_fast_add, 0).wait();
