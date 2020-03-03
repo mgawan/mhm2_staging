@@ -230,9 +230,8 @@ class Timer {
   std::chrono::time_point<std::chrono::high_resolution_clock> t;
   string name;
   double init_free_mem;
-  bool always_show;
 public:
-  Timer(const string &name, bool always_show=false) : always_show(always_show) {
+  Timer(const string &name) {
     t = CLOCK_NOW();
     this->name = name;
     if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
@@ -246,13 +245,8 @@ public:
     upcxx::barrier();
     t_elapsed = CLOCK_NOW() - t;
     auto curr_free_mem = get_free_mem_gb();
-    if (always_show) {
-      SLOG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-           (init_free_mem - curr_free_mem), " GB, free ", curr_free_mem, " GB) --\n", KNORM);
-    } else {
-      SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-                   (init_free_mem - curr_free_mem), " GB, free ", curr_free_mem, " GB) --\n", KNORM);
-    }
+    SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
+                 (init_free_mem - curr_free_mem), " GB, free ", curr_free_mem, " GB) --\n", KNORM);
   }
 };
 

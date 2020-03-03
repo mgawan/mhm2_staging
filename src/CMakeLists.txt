@@ -3,7 +3,7 @@ project(MHM)
 
 message("Building ${CMAKE_BUILD_TYPE} version")
 
-find_package(UPCXX REQUIRED)
+#find_package(UPCXX REQUIRED)
 find_package(ZLIB 1.2.3 REQUIRED)
 include_directories(BEFORE ${ZLIB_INCLUDE_DIRECTORIES})
 get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
@@ -35,6 +35,7 @@ add_definitions(-DMAX_KMER_LEN=160)
 # cutoff 20: 1% chance
 # cutoff 30: 0.1% chance
 add_definitions(-DQUAL_CUTOFF=20)
+add_definitions(-DFILTER_BAD_QUAL_IN_READ)
 add_definitions(-DMAX_KMER_MAPPINGS=10)
 add_definitions(-DBLOOM_FP=0.05)
 add_definitions(-DMAX_FILE_PATH=255)

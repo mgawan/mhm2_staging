@@ -40,8 +40,8 @@ unsigned int Kmer::k = 0;
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
-void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, 
+                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
 void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
                      int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
@@ -52,6 +52,42 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         Contigs &ctgs, Alns &alns);
 
 
+/*
+static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
+  Timer timer(__func__);
+  int64_t num_zero_count = 0;
+  int64_t tot_num_kmers = 0;
+  ProgressBar progbar(ctgs.size(), "Computing depths of kmers in contigs");
+  for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
+    auto ctg = it;
+    progbar.update();
+    //if (ctg->seq.length() >= kmer_len + 2) {
+      int num_kmers = ctg->seq.length() - kmer_len;
+      ctg->kmer_depths.reserve(num_kmers);
+      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
+      tot_num_kmers += kmers.size();
+      for (auto kmer : kmers) {
+        auto kmer_rc = kmer.revcomp();
+        if (kmer_rc < kmer) kmer = kmer_rc;
+        uint16_t count = kmer_dht->get_kmer_count(kmer);
+        if (count == 0) {
+          num_zero_count++;
+          count = ctg->depth;
+        }
+        ctg->kmer_depths.push_back(count);
+        progress();
+      }
+    //}
+  }
+  progbar.done();
+  barrier();
+  auto all_num_zero_count = reduce_one(num_zero_count, op_fast_add, 0).wait();
+  auto all_tot_num_kmers = reduce_one(tot_num_kmers, op_fast_add, 0).wait();
+  SLOG_VERBOSE("Found ", all_tot_num_kmers, " kmers with ", perc_str(all_num_zero_count, all_tot_num_kmers), 
+               " of zero count\n");
+}
+*/
+
 int main(int argc, char **argv) {
   upcxx::init();
   init_logger();
@@ -61,7 +97,8 @@ int main(int argc, char **argv) {
           alignments_dt(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
           localassm_dt(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
           cgraph_dt(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
-          dump_ctgs_dt(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs");
+          dump_ctgs_dt(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
+          compute_kmer_depths_dt(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths");
   auto start_t = chrono::high_resolution_clock::now();
   double start_mem_free = get_free_mem_gb();
 
@@ -92,7 +129,9 @@ int main(int argc, char **argv) {
   merge_reads_dt.stop();
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
+  if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
   int max_kmer_len = 0;
+  int prev_kmer_len = options->prev_kmer_len;
   if (options->kmer_lens.size()) {
     max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
@@ -105,15 +144,13 @@ int main(int argc, char **argv) {
       auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
       dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, max_kmer_store, options->use_bloom);
       barrier();
-      analyze_kmers(kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+      analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
                     options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
       analyze_kmers_dt.stop();
       barrier();
       dbjg_traversal_dt.start();
       traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
       dbjg_traversal_dt.stop();
-      barrier();
-      //if (kmer_len < max_kmer_len) compute_kmer_ctg_depths(kmer_len, kmer_dht, ctgs);
 #ifdef DEBUG
       ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
@@ -128,9 +165,18 @@ int main(int argc, char **argv) {
                   options->qual_offset, options->dynamic_min_depth, ctgs, alns);
         localassm_dt.stop();
       }
+/*
+      barrier();
+      compute_kmer_depths_dt.start();
+      compute_depths_of_kmers_in_ctgs(kmer_len, kmer_dht, ctgs);
+      compute_kmer_depths_dt.stop();
+ */
+      barrier();
+      
       if (options->checkpoint) {
         dump_ctgs_dt.start();
         ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+        //ctgs.dump_kmer_depths("kmer_depths-" + to_string(kmer_len));
         dump_ctgs_dt.stop();
       }        
       SLOG(KBLUE "_________________________\n", KNORM);
@@ -139,6 +185,7 @@ int main(int argc, char **argv) {
       SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
            get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
       barrier();
+      prev_kmer_len = kmer_len;
     }
   }
   if (options->scaff_kmer_lens.size()) {

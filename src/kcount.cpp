@@ -78,8 +78,9 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
   // and Q = -10 log10(P)
   // eg qual_cutoff for k=21 is 16, for k=99 is 22.
-  int qual_cutoff = -10 * log10(0.5 / kmer_len); // QUAL_CUTOFF;
+  int qual_cutoff = -10 * log10(0.5 / kmer_len); 
   SLOG_VERBOSE("Using quality cutoff ", qual_cutoff, "\n");
+  //int qual_cutoff = QUAL_CUTOFF;
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
@@ -89,7 +90,6 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
-  //char special = qual_offset + 2;
   for (auto const &reads_fname : reads_fname_list) {
     string merged_reads_fname = get_merged_reads_fname(reads_fname);
     FastqReader fqr(merged_reads_fname);
@@ -106,25 +106,21 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
       if (seq.length() < kmer_len) continue;
       // split into kmers
       auto kmers = Kmer::get_kmers(kmer_len, seq);
-      /*
+#ifdef FILTER_BAD_QUAL_IN_READ
       // disable kmer counting of kmers after a bad quality score (of 2) in the read
       // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
+      char special = qual_offset + 2;
       size_t found_bad_qual_pos = quals.find_first_of(special);
-      if (found_bad_qual_pos == string::npos) found_bad_qual_pos = seq.length();   // remember the last valid position is length()-1
+      // remember the last valid position is length()-1
+      if (found_bad_qual_pos == string::npos) found_bad_qual_pos = seq.length(); 
       int found_bad_qual_kmer_pos = found_bad_qual_pos - kmer_len + 1;
       assert((int)kmers.size() >= found_bad_qual_kmer_pos);
       // skip kmers that contain an N
       size_t found_N_pos = seq.find_first_of('N');
       if (found_N_pos == string::npos) found_N_pos = seq.length();
-      */
+#endif
       for (int i = 1; i < kmers.size() - 1; i++) {
-        char left_base = seq[i - 1];
-        if (quals[i - 1] < qual_offset + qual_cutoff) left_base = '0';
-        char right_base = seq[i + kmer_len];
-        if (quals[i + kmer_len] < qual_offset + qual_cutoff) right_base = '0';
-        kmer_dht->add_kmer(kmers[i], left_base, right_base, 1, pass_type);
-        num_kmers++;
-        /*
+#ifdef FILTER_BAD_QUAL_IN_READ
         // skip kmers that contain an N
         if (i + kmer_len > found_N_pos) {
           i = found_N_pos; // skip
@@ -138,10 +134,16 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
         char right_base = '0';
         if (i + kmer_len < seq.length() && quals[i + kmer_len] >= qual_offset + QUAL_CUTOFF) right_base = seq[i + kmer_len];
         int count = (i < found_bad_qual_kmer_pos) ? 1 : 0;
+#else
+        char left_base = seq[i - 1];
+        if (quals[i - 1] < qual_offset + qual_cutoff) left_base = '0';
+        char right_base = seq[i + kmer_len];
+        if (quals[i + kmer_len] < qual_offset + qual_cutoff) right_base = '0';
+        int count = 1;
+#endif
         kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
         DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
         num_kmers++;
-        */
       }
       progress();
     }
@@ -185,11 +187,14 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   barrier();
 }
 
-static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, bool use_bloom) {
+static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, 
+                          bool use_bloom) {
   Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
-  ProgressBar progbar(ctgs.size(), "Adding extra contig kmers");
+  double tot_depth_diff = 0;
+  double max_depth_diff = 0;
+  ProgressBar progbar(ctgs.size(), "Adding extra contig kmers from kmer length " + to_string(prev_kmer_len));
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
@@ -199,6 +204,11 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
         uint16_t depth = ctg->depth;
+        /*
+        uint16_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
+        tot_depth_diff += (double)(kmer_depth - ctg->depth) / ctg->depth;
+        max_depth_diff = max(max_depth_diff, abs(kmer_depth - ctg->depth));
+         */
         kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], depth, CTG_KMERS_PASS);
         num_kmers++;
       }
@@ -212,10 +222,13 @@ static void add_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT>
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
   SLOG_VERBOSE("Found ", perc_str(kmer_dht->get_num_kmers() - num_prev_kmers, all_num_kmers), " additional unique kmers\n");
+  //auto all_tot_depth_diff = reduce_one(tot_depth_diff, op_fast_add, 0).wait();
+//  SLOG_VERBOSE(KLRED, "Average depth diff ", all_tot_depth_diff / all_num_kmers, " max depth diff ", 
+//               reduce_one(max_depth_diff, op_fast_max, 0).wait(), KNORM, "\n");
 }
 
-void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list, bool use_bloom,
-                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, 
+                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__FILEFUNC__);
   
   _dynamic_min_depth = dynamic_min_depth;
@@ -236,7 +249,10 @@ void analyze_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fna
   int64_t new_count = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("After purge of kmers < 2, there are ", new_count, " unique kmers\n");
   barrier();
-  if (ctgs.size()) add_ctg_kmers(kmer_len, ctgs, kmer_dht, use_bloom);
+  if (ctgs.size()) {
+    add_ctg_kmers(kmer_len, prev_kmer_len, ctgs, kmer_dht, use_bloom);
+    kmer_dht->purge_kmers(1);
+  }
   barrier();
   kmer_dht->compute_kmer_exts();
 #ifdef DEBUG

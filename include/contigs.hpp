@@ -1,4 +1,4 @@
-#ifndef _CONTIGS_HPP
+ #ifndef _CONTIGS_HPP
 #define _CONTIGS_HPP
 
 #include <iostream>
@@ -35,9 +35,10 @@ struct Contig {
   int64_t id;
   string seq;
   double depth;
-  //vector<uint16_t> kmer_depths;
 
   /*
+  vector<uint16_t> kmer_depths;
+
   uint16_t get_kmer_depth(int start_pos, int kmer_len, int prev_kmer_len) {
     int len_diff = kmer_len - prev_kmer_len;
     int d = 0;
@@ -52,9 +53,9 @@ struct Contig {
 };
 
 class Contigs {
-  
+
   vector<Contig> contigs;
-  
+
 public:
 
   Contigs() {}
@@ -67,7 +68,7 @@ public:
   void set_capacity(int64_t sz) {
     contigs.reserve(sz);
   }
-  
+
   void add_contig(Contig contig) {
     contigs.push_back(contig);
   }
@@ -75,7 +76,7 @@ public:
   size_t size() {
     return contigs.size();
   }
-  
+
   auto begin() {
     return contigs.begin();
   }
@@ -123,7 +124,7 @@ public:
     return fname;
   }
   */
-  
+
   void print_stats(int min_ctg_len) {
     int64_t tot_len = 0, max_len = 0;
     double tot_depth = 0;
@@ -174,14 +175,14 @@ public:
     }
     // barrier to ensure the other ranks dist_objects don't go out of scope before rank 0 is done
     barrier();
-    */    
+    */
     int64_t all_num_ctgs = reduce_one(num_ctgs, op_fast_add, 0).wait();
     int64_t all_tot_len = reduce_one(tot_len, op_fast_add, 0).wait();
     int64_t all_max_len = reduce_one(max_len, op_fast_max, 0).wait();
     double all_tot_depth = reduce_one(tot_depth, op_fast_add, 0).wait();
     int64_t all_num_ns = reduce_one(num_ns, op_fast_add, 0).wait();
     //int64_t all_n50s = reduce_one(n50, op_fast_add, 0).wait();
-    
+
     SLOG("Assembly statistics (contig lengths >= ", min_ctg_len, ")\n");
     SLOG("    Number of contigs:       ", all_num_ctgs, "\n");
     SLOG("    Total assembled length:  ", all_tot_len, "\n");
@@ -192,7 +193,7 @@ public:
     SLOG("    Max. contig length:      ", all_max_len, "\n");
     SLOG("    Contig lengths:\n");
     for (auto &length_sum : length_sums) {
-      SLOG("        > ", std::left, std::setw(19), to_string(length_sum.first) + "kbp:", 
+      SLOG("        > ", std::left, std::setw(19), to_string(length_sum.first) + "kbp:",
            perc_str(reduce_one(length_sum.second, op_fast_add, 0).wait(), all_tot_len), "\n");
     }
   }
@@ -246,7 +247,11 @@ public:
       SLOG_VERBOSE("Successfully wrote ", fsize, " bytes to ", new_fname, "\n");
     }
   }
-  
+
+  void dump_kmer_depths(const string &fname) {
+
+  }
+
   void load_contigs(const string &ctgs_fname) {
     auto get_file_offset_for_rank = [](ifstream &f, int rank, string &ctg_prefix) -> size_t {
       f.seekg (0, f.end);
@@ -305,7 +310,10 @@ public:
     SLOG_VERBOSE("Found ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs\n");
     SLOG_VERBOSE("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
   }
-  
+
+  void load_kmer_depths(const string &ctgs_fname) {
+  }
+
 };
- 
+
 #endif

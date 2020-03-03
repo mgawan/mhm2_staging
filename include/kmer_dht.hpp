@@ -105,6 +105,27 @@ struct ExtCounts {
     }
   }
 
+  void set_best(char ext, int count) {
+    switch (ext) {
+      case 'A':
+        if (count_A) count = min(count, (int)count_A);
+        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'C':
+        if (count_C) count = min(count, (int)count_C);
+        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'G':
+        if (count_G) count = min(count, (int)count_G);
+        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'T':
+        if (count_T) count = min(count, (int)count_T);
+        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+    }
+  }
+
 };
 
 struct FragElem;
@@ -275,17 +296,40 @@ class KmerDHT {
             // non-UU, replace
             insert = true;
             // but keep the count from the read kmer
-            if (kmer_counts->count > 2) merarr_and_ext.count = kmer_counts->count;
+            //if (kmer_counts->count > _dmin_thres) merarr_and_ext.count = kmer_counts->count;
             // or could sum the depths
             DBG_INS_CTG_KMER("replace non-UU read kmer\n");
           }
         } else {
+          // existing kmer from previous round's contigs
           // update kmer counts
           auto kmer = &it->second;
-          int new_count = kmer->count + merarr_and_ext.count;
-          kmer->count = (new_count < numeric_limits<uint16_t>::max()) ? new_count : numeric_limits<uint16_t>::max();
-          kmer->left_exts.inc(merarr_and_ext.left, merarr_and_ext.count);
-          kmer->right_exts.inc(merarr_and_ext.right, merarr_and_ext.count);
+          if (!kmer->count) {
+            // previously must have been a conflict and set to zero, so don't do anything
+            DBG_INS_CTG_KMER("skip conflicted kmer, depth 0\n");
+          } else {
+            // will always insert, although it may get purged later for a conflict
+            insert = true;
+            char left_ext = kmer_counts->get_left_ext();
+            char right_ext = kmer_counts->get_right_ext();
+            if (left_ext != merarr_and_ext.left || right_ext != merarr_and_ext.right) {
+              // if the two contig kmers disagree on extensions, set up to purge by setting the count to 0
+              merarr_and_ext.count = 0;
+              DBG_INS_CTG_KMER("set to purge conflict: prev ", left_ext, ", ", right_ext,
+                               " new ", merarr_and_ext.left, ", ", merarr_and_ext.right, "\n");
+            } else {
+              // multiple occurrences of the same kmer derived from different contigs or parts of contigs
+              // The only way this kmer could have been already found in the contigs only is if it came from a localassm
+              // extension. In which case, all such kmers should not be counted again for each contig, because each
+              // contig can use the same reads independently, and the depth will be oversampled.
+              merarr_and_ext.count = min(merarr_and_ext.count, kmer->count);
+              //int new_count = min(kmer->count, merarr_and_ext.count);
+              //kmer->left_exts.set_best(merarr_and_ext.left, merarr_and_ext.count);
+              //kmer->right_exts.set_best(merarr_and_ext.right, merarr_and_ext.count);
+              DBG_INS_CTG_KMER("increase count of existing ctg kmer from ", kmer->count, " to ", merarr_and_ext.count, "\n");
+              //merarr_and_ext.count = min((int)merarr_and_ext.count + kmer->count, (int)numeric_limits<uint16_t>::max());
+            }
+          }
         }
       }
       if (insert) {
@@ -384,6 +428,16 @@ public:
     const auto it = kmers->find(kmer);
     if (it == kmers->end()) return nullptr;
     return &it->second;
+  }
+
+  int32_t get_kmer_count(Kmer &kmer) {
+    return rpc(get_kmer_target_rank(kmer),
+               [](MerArray merarr, dist_object<KmerMap> &kmers) -> uint16_t {
+                 Kmer kmer(merarr);
+                 const auto it = kmers->find(kmer);
+                 if (it == kmers->end()) return 0;
+                 else return it->second.count;
+               }, kmer.get_array(), kmers).wait();
   }
 
   global_ptr<FragElem> get_kmer_uutig_frag(Kmer kmer) {
@@ -504,6 +558,7 @@ public:
                  threshold, "\n");
   }
 
+  /*
   void purge_fx_kmers() {
     Timer timer(__FILEFUNC__);
     auto num_prior_kmers = get_num_kmers();
@@ -520,6 +575,7 @@ public:
     auto all_num_purged = reduce_one(num_purged, op_fast_add, 0).wait();
     SLOG_VERBOSE("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers with F or X extensions\n");
   }
+  */
 
   void compute_kmer_exts() {
     Timer timer(__FILEFUNC__);

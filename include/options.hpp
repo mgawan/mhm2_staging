@@ -29,6 +29,7 @@ public:
   vector<string> reads_fname_list;
   vector<unsigned> kmer_lens = {};
   int max_kmer_len = 0;
+  int prev_kmer_len = 0;
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
@@ -40,6 +41,7 @@ public:
   bool checkpoint = true;
   bool show_progress = false;
   string ctgs_fname;
+  string kmer_depths_fname;
   int insert_avg = 0;
   int insert_stddev = 0;
 
@@ -56,10 +58,12 @@ public:
     app.add_option("-i, --insert", ins_size_params, "Average insert length:standard deviation in insert size")
       ->required();
     app.add_option("-k, --kmer-lens", kmer_lens_str, "kmer lengths (comma separated)");
-    app.add_option("--max-kmer-len", max_kmer_len, "Maximum kmer length (only need specify if -k is not specified)");
+    app.add_option("--max-kmer-len", max_kmer_len, "Maximum kmer length (only need to specify if -k is not specified)");
+    app.add_option("--prev-kmer-len", prev_kmer_len, "Previous kmer length (only need to specify if restarting contigging)");
     app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens_str, "kmer lengths for scaffolding (comma separated)");
     app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
     app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
+    app.add_option("-d, --kmer-depths", kmer_depths_fname, "File with kmer depths for restart");
     app.add_option("--dynamic-min-depth", dynamic_min_depth,
                    "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome (default " +
                    to_string(dynamic_min_depth) + ")");
@@ -107,6 +111,7 @@ public:
       for (auto kmer_len : kmer_lens) SLOG(kmer_len, ",");
       SLOG("\n");
       if (max_kmer_len) SLOG("  max kmer length:       ", max_kmer_len, "\n");
+      if (prev_kmer_len) SLOG("  prev kmer length:      ", prev_kmer_len, "\n");
       SLOG("  scaffold kmer lengths: ");
       for (auto scaff_kmer_len : scaff_kmer_lens) SLOG(scaff_kmer_len, ",");
       SLOG("\n");
@@ -116,6 +121,7 @@ public:
       SLOG("  dynamic min depth:     ", dynamic_min_depth, "\n");
       SLOG("  min depth threshold:   ", dmin_thres, "\n");
       if (!ctgs_fname.empty()) SLOG("  contig file name:      ", ctgs_fname, "\n");
+      if (!kmer_depths_fname.empty()) SLOG("  kmer depths file name: ", kmer_depths_fname, "\n");
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");
