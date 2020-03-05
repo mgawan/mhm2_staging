@@ -330,7 +330,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
         auto read_id_len = best_aln.read_id.length();
         if (best_aln.read_id.compare(0, read_id_len - 2, prev_best_aln.read_id, 0, read_id_len - 2) == 0) {
           if (best_aln.cid == prev_best_aln.cid) {
-            reject_uninf++;
+            result_counts[(int)ProcessPairResult::FAIL_SELF_LINK]++;
           } else {
             num_pairs++;
             auto res = process_pair(insert_avg, insert_stddev, prev_best_aln, best_aln, prev_type_status, type_status,
@@ -355,11 +355,13 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
   t_get_alns.done_barrier();
   
   auto tot_num_pairs = reduce_one(num_pairs, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs and rejected:\n");
+  SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs\n");
+  SLOG_VERBOSE("Rejected pairs:\n");
   SLOG_VERBOSE("  small:     ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SMALL], op_fast_add, 0).wait(), "\n");
   SLOG_VERBOSE("  self link: ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SELF_LINK], op_fast_add, 0).wait(), "\n");
   SLOG_VERBOSE("  edist:     ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_EDIST], op_fast_add, 0).wait(), "\n");
   SLOG_VERBOSE("  min gap:   ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_MIN_GAP], op_fast_add, 0).wait(), "\n");
+  SLOG_VERBOSE("  uninf.:    ", reduce_one(reject_uninf, op_fast_add, 0).wait(), "\n");
 #ifdef DUMP_LINKS
   string links_fname = "links-" + to_string(kmer_len) + ".spans.gz";
   get_rank_path(links_fname, rank_me());
@@ -370,14 +372,13 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
   for (auto edge = _graph->get_first_local_edge(); edge != nullptr; edge = _graph->get_next_local_edge()) {
     if (edge->edge_type == EdgeType::SPAN) {
       num_spans_only++;
-      
       int mean_gap_estimate = edge->gap / edge->support;
       int mean_offset = insert_avg - mean_gap_estimate;
       int clen1 = _graph->get_vertex(edge->cids.cid1)->clen;
       int clen2 = _graph->get_vertex(edge->cids.cid2)->clen;
       if (clen1 >= clen2) swap(clen1, clen2);
       edge->gap = estimate_gap_size(mean_offset, kmer_len, read_len, clen1, clen2, insert_avg, insert_stddev);
-      
+//      edge->gap = mean_gap_estimate;
       if (edge->gap > 0) num_pos_spans++;
       // debug print in form comparable to mhm
       string ctg1 = "Contig" + to_string(edge->cids.cid1) + "." + to_string(edge->end1);
