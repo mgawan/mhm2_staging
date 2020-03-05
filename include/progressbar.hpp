@@ -8,7 +8,6 @@
 #include <fstream>
 #include <upcxx/upcxx.hpp>
 
-#include "zstr.hpp"
 #include "utils.hpp"
 #include "colors.h"
 

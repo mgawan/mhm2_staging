@@ -397,29 +397,6 @@ inline bool get_rank_path(string &fname, int rank) {
   return true;
 }
 
-inline std::vector<string> find_per_rank_files(string &fname_list, const string &ext) {
-  std::vector<string> full_fnames;
-  auto fnames = split(fname_list, ',');
-  for (auto fname : fnames) {
-    // first check for gzip file
-    fname += ext;
-    get_rank_path(fname, upcxx::rank_me());
-    string gz_fname = fname + ".gz";
-    struct stat stbuf;
-    if (stat(gz_fname.c_str(), &stbuf) == 0) {
-      // gzip file exists
-      SLOG_VERBOSE("Found compressed file '", gz_fname, "'\n");
-      fname = gz_fname;
-    } else {
-      // no gz file - look for plain file
-      if (stat(fname.c_str(), &stbuf) != 0)
-        SDIE("File '", fname, "' cannot be accessed (either .gz or not): ", strerror(errno), "\n");
-    }
-    full_fnames.push_back(fname);
-  }
-  return full_fnames;
-}
-
 inline string get_current_time() {
   auto t = std::time(nullptr);
   std::ostringstream os;
@@ -512,14 +489,9 @@ static string get_basename(const string &fname) {
   return fname;
 }
 
-static string get_merged_reads_fname(const string &reads_fname, bool per_rank_file=false) {
+static string get_merged_reads_fname(const string &reads_fname) {
   // always relative to the current working directory
-  string out_fname = remove_file_ext(get_basename(reads_fname)) + "-merged.fastq";
-  if (per_rank_file) {
-    get_rank_path(out_fname, upcxx::rank_me());
-    out_fname += ".gz";
-  }
-  return out_fname;
+  return remove_file_ext(get_basename(reads_fname)) + "-merged.fastq";
 }
 
 static int64_t get_file_size(string fname) {

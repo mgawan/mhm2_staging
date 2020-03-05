@@ -5,7 +5,6 @@
 
 #include "utils.hpp"
 #include "progressbar.hpp"
-#include "zstr.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
 #include "fastq.hpp"

@@ -4,7 +4,6 @@
 #include <queue>
 #include <upcxx/upcxx.hpp>
 
-#include "zstr.hpp"
 #include "ssw.hpp"
 #include "utils.hpp"
 #include "progressbar.hpp"

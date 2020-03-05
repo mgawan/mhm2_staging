@@ -52,7 +52,7 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         Contigs &ctgs, Alns &alns);
 
 
-/*
+#ifdef USE_KMER_DEPTH
 static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
   Timer timer(__func__);
   int64_t num_zero_count = 0;
@@ -86,7 +86,7 @@ static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &
   SLOG_VERBOSE("Found ", all_tot_num_kmers, " kmers with ", perc_str(all_num_zero_count, all_tot_num_kmers), 
                " of zero count\n");
 }
-*/
+#endif
 
 int main(int argc, char **argv) {
   upcxx::init();
@@ -127,9 +127,13 @@ int main(int argc, char **argv) {
   merge_reads_dt.start();
   int read_len = merge_reads(options->reads_fname_list, options->qual_offset, elapsed_write_io_t);
   merge_reads_dt.stop();
+  vector<FastqReader> fqr_list;
+  for (auto const &reads_fname : options->reads_fname_list) {
+    fqr_list.push_back(get_merged_reads_fname(reads_fname));
+  }  
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
-  if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
+//  if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
   if (options->kmer_lens.size()) {
@@ -176,7 +180,9 @@ int main(int argc, char **argv) {
       if (options->checkpoint) {
         dump_ctgs_dt.start();
         ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
-        //ctgs.dump_kmer_depths("kmer_depths-" + to_string(kmer_len));
+#ifdef USE_KMER_DEPTHS
+        ctgs.dump_kmer_depths("kmer_depths-" + to_string(kmer_len));
+#endif
         dump_ctgs_dt.stop();
       }        
       SLOG(KBLUE "_________________________\n", KNORM);

@@ -41,7 +41,9 @@ public:
   bool checkpoint = true;
   bool show_progress = false;
   string ctgs_fname;
+#ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
+#endif
   int insert_avg = 0;
   int insert_stddev = 0;
 
@@ -63,7 +65,9 @@ public:
     app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens_str, "kmer lengths for scaffolding (comma separated)");
     app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
     app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
+#ifdef USE_KMER_DEPTHS
     app.add_option("-d, --kmer-depths", kmer_depths_fname, "File with kmer depths for restart");
+#endif
     app.add_option("--dynamic-min-depth", dynamic_min_depth,
                    "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome (default " +
                    to_string(dynamic_min_depth) + ")");
@@ -121,7 +125,9 @@ public:
       SLOG("  dynamic min depth:     ", dynamic_min_depth, "\n");
       SLOG("  min depth threshold:   ", dmin_thres, "\n");
       if (!ctgs_fname.empty()) SLOG("  contig file name:      ", ctgs_fname, "\n");
+#ifdef USE_KMER_DEPTHS
       if (!kmer_depths_fname.empty()) SLOG("  kmer depths file name: ", kmer_depths_fname, "\n");
+#endif
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");

@@ -36,7 +36,7 @@ struct Contig {
   string seq;
   double depth;
 
-  /*
+#ifdef USE_KMER_DEPTHS
   vector<uint16_t> kmer_depths;
 
   uint16_t get_kmer_depth(int start_pos, int kmer_len, int prev_kmer_len) {
@@ -49,7 +49,7 @@ struct Contig {
     d /= len_diff;
     return d;
   }
-  */
+#endif
 };
 
 class Contigs {
@@ -248,10 +248,6 @@ public:
     }
   }
 
-  void dump_kmer_depths(const string &fname) {
-
-  }
-
   void load_contigs(const string &ctgs_fname) {
     auto get_file_offset_for_rank = [](ifstream &f, int rank, string &ctg_prefix) -> size_t {
       f.seekg (0, f.end);
@@ -311,9 +307,14 @@ public:
     SLOG_VERBOSE("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
   }
 
-  void load_kmer_depths(const string &ctgs_fname) {
+#ifdef USE_KMER_DEPTHS
+  void dump_kmer_depths(const string &fname) {
+
   }
 
+  void load_kmer_depths(const string &ctgs_fname) {
+  }
+#endif
 };
 
 #endif
