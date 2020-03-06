@@ -105,25 +105,22 @@ struct ExtCounts {
     }
   }
 
-  void set_best(char ext, int count) {
-    switch (ext) {
-      case 'A':
-        if (count_A) count = min(count, (int)count_A);
-        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'C':
-        if (count_C) count = min(count, (int)count_C);
-        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'G':
-        if (count_G) count = min(count, (int)count_G);
-        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'T':
-        if (count_T) count = min(count, (int)count_T);
-        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-    }
+  char get_ext(uint16_t count) {
+    auto sorted_counts = get_sorted();
+    int top_count = sorted_counts[0].second;
+    int runner_up_count = sorted_counts[1].second;
+    // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
+    int dmin_dyn = max((int)((1.0 - _dynamic_min_depth) * count), _dmin_thres);
+    if (top_count < dmin_dyn) return 'X';
+    if (runner_up_count >= dmin_dyn) return 'F';
+    return sorted_counts[0].first;
+    /*
+    // FIXME: this is not very helpful. With qual_cutoff = 20) it increases ctgy & coverage a little bit, but at a cost
+    // of increased msa. We really need to try both low q (qual cutoff 10) and hi q, as we do with localassm.
+    double dmin_dyn = max(2.0, LASSM_MIN_EXPECTED_DEPTH * count);
+    if ((top_count < dmin_dyn && runner_up_count > 0) || (top_count >= dmin_dyn && runner_up_count >= dmin_dyn)) return 'F';
+    return sorted_counts[0].first;
+    */
   }
 
 };
@@ -143,30 +140,12 @@ struct KmerCounts {
   bool from_ctg;
   global_ptr<FragElem> uutig_frag;
 
-  char get_ext(ExtCounts &ext_counts) {
-    auto sorted_counts = ext_counts.get_sorted();
-    int top_count = sorted_counts[0].second;
-    int runner_up_count = sorted_counts[1].second;
-    // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
-    int dmin_dyn = max((int)((1.0 - _dynamic_min_depth) * count), _dmin_thres);
-    if (top_count < dmin_dyn) return 'X';
-    if (runner_up_count >= dmin_dyn) return 'F';
-    return sorted_counts[0].first;
-    /*
-    // FIXME: this is not very helpful. With qual_cutoff = 20) it increases ctgy & coverage a little bit, but at a cost
-    // of increased msa. We really need to try both low q (qual cutoff 10) and hi q, as we do with localassm.
-    double dmin_dyn = max(2.0, LASSM_MIN_EXPECTED_DEPTH * count);
-    if ((top_count < dmin_dyn && runner_up_count > 0) || (top_count >= dmin_dyn && runner_up_count >= dmin_dyn)) return 'F';
-    return sorted_counts[0].first;
-    */
-  }
-
   char get_left_ext() {
-    return get_ext(left_exts);
+    return left_exts.get_ext(count);
   }
 
   char get_right_ext() {
-    return get_ext(right_exts);
+    return right_exts.get_ext(count);
   }
 
 };

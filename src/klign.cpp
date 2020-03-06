@@ -535,7 +535,7 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
 }
 
 
-static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_list) {
+static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_list) {
   Timer timer(__FILEFUNC__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
@@ -544,18 +544,17 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   IntermittentTimer get_reads_timer(__FILENAME__ + string(":") + "Get reads");
   IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
   barrier();
-  for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname);
+  for (auto fqr : fqr_list) {
+    fqr->reset();
     string read_id, read_seq, quals;
-    ProgressBar progbar(fqr.my_file_size(), "Aligning reads to contigs");
+    ProgressBar progbar(fqr->my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
     vector<ReadRecord*> read_records;
     HASH_TABLE<Kmer, vector<KmerToRead>> kmer_read_map;
     while (true) {
       progress();
       get_reads_timer.start();
-      size_t bytes_read = fqr.get_next_fq_record(read_id, read_seq, quals);
+      size_t bytes_read = fqr->get_next_fq_record(read_id, read_seq, quals);
       get_reads_timer.stop();
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
@@ -617,7 +616,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<string> &reads_fname_
   get_ctgs_timer.done_barrier();
 }
 
-void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int max_store_size, int max_ctg_cache,
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache,
                      Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped = 0;
@@ -627,7 +626,7 @@ void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, int ma
 #ifdef DEBUG
   //kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, reads_fname_list);
+  do_alignments(kmer_ctg_dht, fqr_list);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");

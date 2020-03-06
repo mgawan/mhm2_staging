@@ -4,7 +4,7 @@ add_definitions(-DMAX_KMER_LEN=160)
 # cutoff 20: 1% chance
 # cutoff 30: 0.1% chance
 add_definitions(-DQUAL_CUTOFF=20)
-add_definitions(-DFILTER_BAD_QUAL_IN_READ)
+#add_definitions(-DFILTER_BAD_QUAL_IN_READ)
 add_definitions(-DMAX_KMER_MAPPINGS=10)
 add_definitions(-DBLOOM_FP=0.05)
 add_definitions(-DMAX_FILE_PATH=255)

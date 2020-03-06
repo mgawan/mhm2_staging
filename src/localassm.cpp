@@ -169,7 +169,7 @@ struct MerFreqs {
     }
   };
   
-  void set_ext(double dynamic_min_depth, int seq_depth) {
+  void set_ext(int seq_depth) {
     // set extension similarly to how it is done with localassm in mhm
     MerBase mer_bases[4] = {{.base = 'A', .nvotes_hi_q = hi_q_exts.count_A, .nvotes = low_q_exts.count_A},
                             {.base = 'C', .nvotes_hi_q = hi_q_exts.count_C, .nvotes = low_q_exts.count_C},
@@ -225,19 +225,19 @@ struct MerFreqs {
 
 using MerMap = HASH_TABLE<string, MerFreqs>;
 
-static void process_reads(int kmer_len, vector<string> &reads_fname_list, ReadsToCtgsDHT &reads_to_ctgs, CtgsWithReadsDHT &ctgs_dht) {
+static void process_reads(int kmer_len, vector<FastqReader*> &fqr_list, ReadsToCtgsDHT &reads_to_ctgs, 
+                          CtgsWithReadsDHT &ctgs_dht) {
   Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_read_maps_found = 0;
-  for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname);
+  for (auto fqr : fqr_list) {
+    fqr->reset();
     string id, seq, quals;
-    ProgressBar progbar(fqr.my_file_size(), "Processing reads");
+    ProgressBar progbar(fqr->my_file_size(), "Processing reads");
     size_t tot_bytes_read = 0;
     while (true) {
       progress();
-      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      size_t bytes_read = fqr->get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
@@ -385,8 +385,8 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 }
 
 
-static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
-                       double dynamic_min_depth, int64_t &excess_reads) {
+static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset, 
+                       int64_t &excess_reads) {
   int num_reads = 0;
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
@@ -418,7 +418,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
   }
   // now set extension choices
   for (auto &elem : mers_ht) {
-    elem.second.set_ext(dynamic_min_depth, seq_depth);
+    elem.second.set_ext(seq_depth);
   }    
 }
 
@@ -456,7 +456,7 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, i
 
 
 static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads, int max_mer_len, int kmer_len,
-                              int qual_offset, double dynamic_min_depth, int walk_len_limit, array<int64_t, 3> &term_counts,
+                              int qual_offset, int walk_len_limit, array<int64_t, 3> &term_counts,
                               int64_t &num_walks, int64_t &max_walk_len, int64_t &sum_ext, IntermittentTimer &count_mers_timer,
                               IntermittentTimer &walk_mers_timer, int64_t &excess_reads) {
   int min_mer_len = LASSM_MIN_KMER_LEN;
@@ -476,7 +476,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
   for (int mer_len = kmer_len; mer_len >= min_mer_len && mer_len <= max_mer_len; mer_len += shift) {
     count_mers_timer.start();
     MerMap mers_ht;
-    count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, dynamic_min_depth, excess_reads);
+    count_mers(reads, mers_ht, seq_depth, mer_len, qual_offset, excess_reads);
     count_mers_timer.stop();
     string mer = seq.substr(seq.length() - mer_len);
     string walk = "";
@@ -509,7 +509,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
 
 
 static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_avg, int insert_stddev, int max_kmer_len,
-                        int kmer_len, int qual_offset, double dynamic_min_depth) {
+                        int kmer_len, int qual_offset) {
   Timer timer(__FILEFUNC__);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
@@ -530,7 +530,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       DBG("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
       // have to do right first because the contig needs to be revcomped for the left
       string right_walk = iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset,
-                                          dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
+                                          walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
                                           count_mers_timer, walk_mers_timer, excess_reads);
       if (!right_walk.empty()) ctg->seq += right_walk;
     }
@@ -541,7 +541,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       string seq_rc = revcomp(ctg->seq);
       DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
       string left_walk = iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset,
-                                         dynamic_min_depth, walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
+                                         walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
                                          count_mers_timer, walk_mers_timer, excess_reads);
       if (!left_walk.empty()) {
         left_walk = revcomp(left_walk);
@@ -578,8 +578,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 }
 
 
-void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
-               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns) {
+void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
+               int qual_offset, Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
   add_ctgs(ctgs_dht, ctgs);
@@ -587,11 +587,11 @@ void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list,
   // extract read id to ctg id mappings from alignments
   process_alns(alns, reads_to_ctgs, insert_avg, insert_stddev);
   // extract read seqs and add to ctgs
-  process_reads(max_kmer_len, reads_fname_list, reads_to_ctgs, ctgs_dht);
+  process_reads(max_kmer_len, fqr_list, reads_to_ctgs, ctgs_dht);
   // clear out the local contigs
   ctgs.clear();
   ctgs.set_capacity(ctgs_dht.get_local_num_ctgs());
   // extend contigs using locally mapped reads
-  extend_ctgs(ctgs_dht, ctgs, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, dynamic_min_depth);
+  extend_ctgs(ctgs_dht, ctgs, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset);
 }
 

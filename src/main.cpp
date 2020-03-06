@@ -39,16 +39,16 @@ unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list);
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, 
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list);
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, 
                    bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
-void find_alignments(unsigned kmer_len, vector<string> &reads_fname_list, 
-                     int max_store_size, int max_ctg_cache, Contigs &ctgs, Alns &alns);
-void localassm(int max_kmer_len, int kmer_len, vector<string> &reads_fname_list, int insert_avg, int insert_stddev,
-               int qual_offset, double dynamic_min_depth, Contigs &ctgs, Alns &alns);
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, Contigs &ctgs, 
+                     Alns &alns);
+void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
+               int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, 
-                        vector<string> &reads_fname_list, int break_scaffolds, QualityLevel quality_level, 
+                        vector<FastqReader*> &fqr_list, int break_scaffolds, QualityLevel quality_level, 
                         Contigs &ctgs, Alns &alns);
 
 
@@ -92,6 +92,7 @@ int main(int argc, char **argv) {
   upcxx::init();
   init_logger();
   IntermittentTimer merge_reads_dt(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
+          load_cache_dt(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
           analyze_kmers_dt(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
           dbjg_traversal_dt(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
           alignments_dt(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
@@ -115,6 +116,26 @@ int main(int argc, char **argv) {
   _show_progress = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   
+  if (!rank_me()) {
+    string seq =   "CGCTTCNACGTCACGTCGGGCGCGATGCCGTCNAGACGGAT";
+    string quals = "2>@BBDBDD>B&B()9><2<@2:C<><559@BD#1952?>B";
+    for (int i = 0; i < seq.length(); i++) cout << seq[i] << quals[i] << " ";
+    cout << endl;
+    auto packed_read = pack_read(seq, quals, options->qual_offset);
+    string seq2, quals2;
+    tie(seq2, quals2) = unpack_read(packed_read, seq.length(), options->qual_offset);
+    for (int i = 0; i < seq.length(); i++) cout << seq2[i] << quals2[i] << " ";
+    cout << endl;
+    packed_read = pack_read(seq2, quals2, options->qual_offset);
+    tie(seq2, quals2) = unpack_read(packed_read, seq2.length(), options->qual_offset);
+    for (int i = 0; i < seq2.length(); i++) cout << seq2[i] << quals2[i] << " ";
+    cout << endl;
+  }
+  
+  upcxx::finalize();
+  return 0;
+ 
+  
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
@@ -127,13 +148,24 @@ int main(int argc, char **argv) {
   merge_reads_dt.start();
   int read_len = merge_reads(options->reads_fname_list, options->qual_offset, elapsed_write_io_t);
   merge_reads_dt.stop();
-  vector<FastqReader> fqr_list;
+  vector<FastqReader*> fqr_list;
   for (auto const &reads_fname : options->reads_fname_list) {
-    fqr_list.push_back(get_merged_reads_fname(reads_fname));
-  }  
+    fqr_list.push_back(new FastqReader(get_merged_reads_fname(reads_fname)));
+  }
+  if (options->cache_reads) {
+    load_cache_dt.start();
+    auto free_mem = get_free_mem_gb();
+    for (auto fqr : fqr_list) {
+      fqr->load_cache(options->qual_offset);
+    }
+    load_cache_dt.stop();
+    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
+  }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
-//  if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
+#ifdef USE_KMER_DEPTHS
+  if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
+#endif
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
   if (options->kmer_lens.size()) {
@@ -145,10 +177,10 @@ int main(int argc, char **argv) {
       Kmer::k = kmer_len;
       // duration of kmer_dht
       analyze_kmers_dt.start();
-      auto my_num_kmers = estimate_num_kmers(kmer_len, options->reads_fname_list);
+      auto my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
       dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, max_kmer_store, options->use_bloom);
       barrier();
-      analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, options->reads_fname_list, options->use_bloom,
+      analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->use_bloom,
                     options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
       analyze_kmers_dt.stop();
       barrier();
@@ -161,12 +193,12 @@ int main(int argc, char **argv) {
       if (kmer_len < options->kmer_lens.back()) {
         Alns alns;
         alignments_dt.start();
-        find_alignments(kmer_len, options->reads_fname_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+        find_alignments(kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
         alignments_dt.stop();
         barrier();
         localassm_dt.start();
-        localassm(LASSM_MAX_KMER_LEN, kmer_len, options->reads_fname_list, options->insert_avg, options->insert_stddev,
-                  options->qual_offset, options->dynamic_min_depth, ctgs, alns);
+        localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, options->insert_avg, options->insert_stddev, options->qual_offset, 
+                  ctgs, alns);
         localassm_dt.stop();
       }
 #ifdef USE_KMER_DEPTHS
@@ -206,7 +238,7 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
       alignments_dt.start();
-      find_alignments(scaff_kmer_len, options->reads_fname_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+      find_alignments(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
@@ -214,7 +246,7 @@ int main(int argc, char **argv) {
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
       cgraph_dt.start();
       traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
-                         options->reads_fname_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
+                         fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) {
@@ -238,6 +270,7 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________\n", KNORM);
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");
+  if (options->cache_reads) SLOG("    ", load_cache_dt.get_final(), "\n");
   SLOG("    ", analyze_kmers_dt.get_final(), "\n");
   SLOG("    ", dbjg_traversal_dt.get_final(), "\n");
   SLOG("    ", alignments_dt.get_final(), "\n");
@@ -258,6 +291,10 @@ int main(int argc, char **argv) {
   _dbgstream.flush();
   _dbgstream.close();
 #endif
+  for (auto fqr : fqr_list) {
+    delete fqr;
+  }  
+  
   barrier();
   upcxx::finalize();
   return 0;

@@ -26,22 +26,21 @@ using namespace upcxx;
 extern ofstream _dbgstream;
 extern ofstream _logstream;
 
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list) {
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list) {
   Timer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
   int64_t total_records_processed = 0;
   int64_t estimated_total_records = 0;
-  for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname);
+  for (auto fqr : fqr_list) {
+    fqr->reset();
     string id, seq, quals;
-    ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of kmers");
+    ProgressBar progbar(fqr->my_file_size(), "Scanning reads file to estimate number of kmers");
     size_t tot_bytes_read = 0;
     int64_t records_processed = 0; 
     while (true) {
-      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      size_t bytes_read = fqr->get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
       num_lines += 4;
       num_reads++;
@@ -55,7 +54,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
     }
     total_records_processed += records_processed;
     int64_t bytes_per_record = tot_bytes_read / records_processed;
-    estimated_total_records += fqr.my_file_size() / bytes_per_record;
+    estimated_total_records += fqr->my_file_size() / bytes_per_record;
     progbar.done();
     barrier();
   }
@@ -71,16 +70,16 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<string> &reads_fname_list)
   return num_kmers / fraction;
 }
 
-static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &reads_fname_list,
-                        dist_object<KmerDHT> &kmer_dht, PASS_TYPE pass_type) {
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, dist_object<KmerDHT> &kmer_dht, 
+                        PASS_TYPE pass_type) {
   Timer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
   // and Q = -10 log10(P)
   // eg qual_cutoff for k=21 is 16, for k=99 is 22.
-  int qual_cutoff = -10 * log10(0.5 / kmer_len); 
-  SLOG_VERBOSE("Using quality cutoff ", qual_cutoff, "\n");
-  //int qual_cutoff = QUAL_CUTOFF;
+  //int qual_cutoff = -10 * log10(0.5 / kmer_len); 
+  //SLOG_VERBOSE("Using quality cutoff ", qual_cutoff, "\n");
+  int qual_cutoff = QUAL_CUTOFF;
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
@@ -90,14 +89,13 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
   };
-  for (auto const &reads_fname : reads_fname_list) {
-    string merged_reads_fname = get_merged_reads_fname(reads_fname);
-    FastqReader fqr(merged_reads_fname);
+  for (auto fqr : fqr_list) {
+    fqr->reset();
     string id, seq, quals;
-    ProgressBar progbar(fqr.my_file_size(), progbar_prefix);
+    ProgressBar progbar(fqr->my_file_size(), progbar_prefix);
     size_t tot_bytes_read = 0;
     while (true) {
-      size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
+      size_t bytes_read = fqr->get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
       num_lines += 4;
       num_reads++;
@@ -115,12 +113,11 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
       if (found_bad_qual_pos == string::npos) found_bad_qual_pos = seq.length(); 
       int found_bad_qual_kmer_pos = found_bad_qual_pos - kmer_len + 1;
       assert((int)kmers.size() >= found_bad_qual_kmer_pos);
+#endif
       // skip kmers that contain an N
       size_t found_N_pos = seq.find_first_of('N');
       if (found_N_pos == string::npos) found_N_pos = seq.length();
-#endif
       for (int i = 1; i < kmers.size() - 1; i++) {
-#ifdef FILTER_BAD_QUAL_IN_READ
         // skip kmers that contain an N
         if (i + kmer_len > found_N_pos) {
           i = found_N_pos; // skip
@@ -129,6 +126,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<string> &read
           if (found_N_pos == string::npos) found_N_pos = seq.length();
           continue;
         }
+#ifdef FILTER_BAD_QUAL_IN_READ
         char left_base = '0';
         if (i > 0 && quals[i - 1] >= qual_offset + QUAL_CUTOFF) left_base = seq[i - 1];
         char right_base = '0';
@@ -232,7 +230,7 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
 #endif
 }
 
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<string> &reads_fname_list, 
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
                    bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
   Timer timer(__FILEFUNC__);
   
@@ -240,12 +238,12 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
   _dmin_thres = dmin_thres;
     
   if (use_bloom) {
-    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_SET_PASS);
+    count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, BLOOM_SET_PASS);
     if (ctgs.size()) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
     kmer_dht->reserve_space_and_clear_bloom1();
-    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, BLOOM_COUNT_PASS);
+    count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, BLOOM_COUNT_PASS);
   } else {
-    count_kmers(kmer_len, qual_offset, reads_fname_list, kmer_dht, NO_BLOOM_PASS);
+    count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, NO_BLOOM_PASS);
   }
   barrier();
   SLOG_VERBOSE("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");

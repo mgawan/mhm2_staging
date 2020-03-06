@@ -9,10 +9,12 @@
 #include <fstream>
 #include <limits>
 #include <regex>
+#include <zlib.h>
 #include <upcxx/upcxx.hpp>
 
 #include "bytell_hash_map.hpp"
 #include "colors.h"
+
 
 using std::string;
 using std::stringstream;
@@ -520,5 +522,67 @@ inline void switch_orient(int &start, int &stop, int &len) {
   start = len - stop;
   stop = len - tmp;
 }
+
+#define N_BASE_VAL 12
+
+inline unsigned char pack_base(char base, int qual) {
+  if (base == 'N') return N_BASE_VAL;
+  unsigned char packed_base;
+  switch (base) {
+    case 'A': packed_base = 0; break;
+    case 'C': packed_base = 1; break;
+    case 'G': packed_base = 2; break;
+    case 'T': packed_base = 3; break;
+  }
+  if (qual >= LASSM_MIN_QUAL && qual < QUAL_CUTOFF) packed_base |= 4;
+  if (qual >= QUAL_CUTOFF) packed_base |= 8;
+  return packed_base;
+}
+
+inline std::pair<char, char> unpack_base(unsigned char packed_base) {
+  if (packed_base == N_BASE_VAL) return {'N', 'L'};
+  char qual = LASSM_MIN_QUAL - 1;
+  if (packed_base >= 8) {
+    qual = QUAL_CUTOFF + 1;
+    packed_base ^= 8;
+  } else if (packed_base >= 4) {
+    qual = LASSM_MIN_QUAL + 1;
+    packed_base ^= 4;
+  }
+  char base;
+  switch (packed_base) {
+    case 0: return {'A', qual};
+    case 1: return {'C', qual};
+    case 2: return {'G', qual};
+    case 3: return {'T', qual};
+    default: DIE("couldn't unpack base");
+  }
+}
+
+inline unsigned char *pack_read(const string &seq, const string &quals, int qual_offset) {
+  unsigned char *packed_read = new unsigned char [seq.length() / 2 + 1];
+  for (int i = 0; i < seq.length(); i++) {
+    if (i % 2 == 0) packed_read[i / 2] = pack_base(seq[i], quals[i] - qual_offset);
+    else packed_read[i / 2] |= pack_base(seq[i], quals[i] - qual_offset) << 4;
+  }
+  return packed_read;
+}
+
+inline std::pair<string, string> unpack_read(unsigned char *packed_read, int read_len, int qual_offset) {
+  string seq = "", quals = "";
+  for (int i = 0; i < read_len; i += 2) {
+    auto base = unpack_base(packed_read[i / 2] & 15);
+    seq += base.first;
+    quals += (base.second + qual_offset);
+    if (i == read_len - 1) break;
+    base = unpack_base(packed_read[i / 2] >> 4);
+    seq += base.first;
+    quals += (base.second + qual_offset);
+  }
+  assert(seq.length() == read_len);
+  assert(quals.length() == read_len);
+  return {seq, quals};
+}
+
 
 #endif

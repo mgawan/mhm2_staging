@@ -36,6 +36,7 @@ public:
   int max_kmer_store_mb = 50;
   int max_ctg_cache = 1000000;
   bool use_bloom = true;
+  bool cache_reads = false;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
@@ -78,6 +79,7 @@ public:
     app.add_option("--max-ctg-cache", max_ctg_cache,
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
     app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
+    app.add_flag("--cache-reads", cache_reads, "Cache reads in memory");
     app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round");
     app.add_flag("--progress", show_progress, "Show progress");
     app.add_flag("-v, --verbose", verbose, "Verbose output");
@@ -130,6 +132,7 @@ public:
 #endif
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
+      SLOG("  cache reads:           ", YES_NO(cache_reads), "\n");
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");
       SLOG("  verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
