@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  
+/*  
   if (!rank_me()) {
     string seq =   "CGCTTCNACGTCACGTCGGGCGCGATGCCGTCNAGACGGAT";
     string quals = "2>@BBDBDD>B&B()9><2<@2:C<><559@BD#1952?>B";
@@ -131,11 +131,9 @@ int main(int argc, char **argv) {
     for (int i = 0; i < seq2.length(); i++) cout << seq2[i] << quals2[i] << " ";
     cout << endl;
   }
-  
   upcxx::finalize();
   return 0;
- 
-  
+*/
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {

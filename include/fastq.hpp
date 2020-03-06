@@ -178,6 +178,11 @@ public:
 
   ~FastqReader() {
     if (f) fclose(f);
+    if (cached) {
+      for (auto &cached_read : cached_reads) {
+        delete[] cached_read.packed_read;
+      }
+    }
     io_t.done();
     FastqReader::overall_io_t += io_t.get_elapsed();
   }
