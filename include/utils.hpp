@@ -178,24 +178,25 @@ static double get_free_mem(void) {
 }
 
 static string get_size_str(int64_t sz) {
-  if (sz < 1024) return to_string(sz) + "B";
+  int64_t abs_sz = abs(sz);
+  if (abs_sz < 1024) return to_string(abs_sz) + "B";
   double frac = 0;
   string units = "";
-  if (sz >= ONE_GB * 1024l) {
-    frac = (double)sz / (ONE_GB * 1024l);
+  if (abs_sz >= ONE_GB * 1024l) {
+    frac = (double)abs_sz / (ONE_GB * 1024l);
     units = "TB";
-  } else if (sz >= ONE_GB) {
-    frac = (double)sz / ONE_GB;
+  } else if (abs_sz >= ONE_GB) {
+    frac = (double)abs_sz / ONE_GB;
     units = "GB";
-  } else if (sz >= ONE_MB) {
-    frac = (double)sz / ONE_MB;
+  } else if (abs_sz >= ONE_MB) {
+    frac = (double)abs_sz / ONE_MB;
     units = "MB";
-  } else if (sz >= 1024) {
-    frac = (double)sz / 1024;
+  } else if (abs_sz >= 1024) {
+    frac = (double)abs_sz / 1024;
     units = "KB";
   }
   ostringstream os;
-  os << std::fixed << std::setprecision(2) << frac << units;
+  os << std::fixed << std::setprecision(2) << (sz < 0 ? '-' : '+') << frac << units;
   return os.str();
 }
 
@@ -259,7 +260,7 @@ public:
   Timer(const string &name) {
     t = CLOCK_NOW();
     this->name = name;
-    if (!upcxx::rank_me()) init_free_mem = get_free_mem();
+    init_free_mem = get_free_mem();
     //if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
     //else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
   }
