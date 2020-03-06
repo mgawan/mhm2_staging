@@ -32,6 +32,7 @@ using namespace upcxx;
 ofstream _logstream;
 bool _verbose = false;
 bool _show_progress = false;
+int _cores_per_node = 0;
 double FastqReader::overall_io_t = 0;
 
 
@@ -101,7 +102,7 @@ int main(int argc, char **argv) {
           dump_ctgs_dt(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
           compute_kmer_depths_dt(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths");
   auto start_t = chrono::high_resolution_clock::now();
-  double start_mem_free = get_free_mem_gb();
+  double start_mem_free = get_free_mem();
 
 #ifdef DEBUG
   //time_t curr_t = std::time(nullptr);
@@ -114,26 +115,9 @@ int main(int argc, char **argv) {
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
+  _cores_per_node = options->cores_per_node;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-/*  
-  if (!rank_me()) {
-    string seq =   "CGCTTCNACGTCACGTCGGGCGCGATGCCGTCNAGACGGAT";
-    string quals = "2>@BBDBDD>B&B()9><2<@2:C<><559@BD#1952?>B";
-    for (int i = 0; i < seq.length(); i++) cout << seq[i] << quals[i] << " ";
-    cout << endl;
-    auto packed_read = pack_read(seq, quals, options->qual_offset);
-    string seq2, quals2;
-    tie(seq2, quals2) = unpack_read(packed_read, seq.length(), options->qual_offset);
-    for (int i = 0; i < seq.length(); i++) cout << seq2[i] << quals2[i] << " ";
-    cout << endl;
-    packed_read = pack_read(seq2, quals2, options->qual_offset);
-    tie(seq2, quals2) = unpack_read(packed_read, seq2.length(), options->qual_offset);
-    for (int i = 0; i < seq2.length(); i++) cout << seq2[i] << quals2[i] << " ";
-    cout << endl;
-  }
-  upcxx::finalize();
-  return 0;
-*/
+
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
@@ -152,12 +136,13 @@ int main(int argc, char **argv) {
   }
   if (options->cache_reads) {
     load_cache_dt.start();
-    auto free_mem = get_free_mem_gb();
+    auto free_mem = get_free_mem();
     for (auto fqr : fqr_list) {
       fqr->load_cache(options->qual_offset);
     }
     load_cache_dt.stop();
-    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
+    auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0).wait();
+    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(all_mem_used), " memory\n", KNORM);
   }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
@@ -170,7 +155,7 @@ int main(int argc, char **argv) {
     max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
-      auto free_mem = get_free_mem_gb();
+      auto free_mem = get_free_mem();
       SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
       Kmer::k = kmer_len;
       // duration of kmer_dht
@@ -218,8 +203,9 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________\n", KNORM);
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
+      auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
       SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
+           get_current_time(), ", used ", get_size_str(all_mem_used / options->cores_per_node), " memory\n", KNORM);
       barrier();
       prev_kmer_len = kmer_len;
     }
@@ -231,7 +217,7 @@ int main(int argc, char **argv) {
     }
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
-      auto free_mem = get_free_mem_gb();
+      auto free_mem = get_free_mem();
       Kmer::k = scaff_kmer_len;
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
@@ -256,8 +242,9 @@ int main(int argc, char **argv) {
         ctgs.print_stats(ASSM_CLEN_THRES);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
+      auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
       SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", (free_mem - get_free_mem_gb()), " GB memory\n", KNORM);
+           get_current_time(), ", used ", get_size_str(all_mem_used / options->cores_per_node), " GB memory\n", KNORM);
       barrier();
     }
   }
@@ -277,10 +264,12 @@ int main(int argc, char **argv) {
   SLOG("    IO read time: ", FastqReader::overall_io_t, "\n");
   SLOG("    IO write time: ", dump_ctgs_dt.get_elapsed() + elapsed_write_io_t, "\n");
   SLOG(KBLUE "_________________________\n", KNORM);
+  double end_mem_free = get_free_mem();
+  auto all_end_mem_free = reduce_one(end_mem_free, op_fast_add, 0).wait();
+  auto all_used_mem = reduce_one(start_mem_free - end_mem_free, op_fast_add, 0).wait();
   if (!rank_me()) {
-    double end_mem_free = get_free_mem_gb();
-    SLOG("Final free memory on node 0: ", setprecision(3), fixed, end_mem_free,
-         " GB (unreclaimed ", (start_mem_free - end_mem_free), " GB)\n");
+    SLOG("Final free memory: ", setprecision(3), fixed, get_size_str(all_end_mem_free / options->cores_per_node), " (unreclaimed ",
+         get_size_str(all_used_mem / options->cores_per_node), ")\n");
     chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
     SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
          " for MHM version ", MHM_VERSION, "\n");

@@ -61,6 +61,7 @@ enum class QualityLevel {
   ALL
 };
 
+extern int _cores_per_node;
 extern ofstream _logstream;
 extern bool _verbose;
 
@@ -156,7 +157,7 @@ extern ofstream _dbgstream;
 #define DBG(...)
 #endif
 
-static double get_free_mem_gb(void) {
+static double get_free_mem(void) {
   string buf;
   ifstream f("/proc/meminfo");
   double mem_free = 0;
@@ -169,11 +170,33 @@ static double get_free_mem_gb(void) {
       double mem;
       fields << buf;
       fields >> name >> mem >> units;
-      if (units[0] == 'k') mem /= ONE_MB;
+      if (units[0] == 'k') mem *= 1024;
       mem_free += mem;
     }
   }
   return mem_free;
+}
+
+static string get_size_str(int64_t sz) {
+  if (sz < 1024) return to_string(sz) + "B";
+  double frac = 0;
+  string units = "";
+  if (sz >= ONE_GB * 1024l) {
+    frac = (double)sz / (ONE_GB * 1024l);
+    units = "TB";
+  } else if (sz >= ONE_GB) {
+    frac = (double)sz / ONE_GB;
+    units = "GB";
+  } else if (sz >= ONE_MB) {
+    frac = (double)sz / ONE_MB;
+    units = "MB";
+  } else if (sz >= 1024) {
+    frac = (double)sz / 1024;
+    units = "KB";
+  }
+  ostringstream os;
+  os << std::fixed << std::setprecision(2) << frac << units;
+  return os.str();
 }
 
 class IntermittentTimer {
@@ -236,7 +259,7 @@ public:
   Timer(const string &name) {
     t = CLOCK_NOW();
     this->name = name;
-    if (!upcxx::rank_me()) init_free_mem = get_free_mem_gb();
+    if (!upcxx::rank_me()) init_free_mem = get_free_mem();
     //if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
     //else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
   }
@@ -246,9 +269,12 @@ public:
     DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --\n", KNORM);
     upcxx::barrier();
     t_elapsed = CLOCK_NOW() - t;
-    auto curr_free_mem = get_free_mem_gb();
-    SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s (used ",
-                 (init_free_mem - curr_free_mem), " GB, free ", curr_free_mem, " GB) --\n", KNORM);
+    auto curr_free_mem = get_free_mem();
+    auto all_curr_free_mem = upcxx::reduce_one(curr_free_mem, upcxx::op_fast_add, 0).wait();
+    auto all_used_mem = upcxx::reduce_one(init_free_mem - curr_free_mem, upcxx::op_fast_add, 0).wait();
+    SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ",
+                 "(used ",  get_size_str(all_used_mem / _cores_per_node),
+                 ", free ", get_size_str(all_curr_free_mem / _cores_per_node), ") --\n", KNORM);
   }
 };
 
@@ -455,28 +481,6 @@ static void write_num_file(string fname, int64_t maxReadLength) {
   if (!out) { std::string error("Could not write to " + fname); throw error; }
   out << std::to_string(maxReadLength);
   out.close();
-}
-
-static string get_size_str(int64_t sz) {
-  if (sz < 1024) return to_string(sz) + "B";
-  double frac = 0;
-  string units = "";
-  if (sz >= ONE_GB * 1024l) {
-    frac = (double)sz / (ONE_GB * 1024l);
-    units = "TB";
-  } else if (sz >= ONE_GB) {
-    frac = (double)sz / ONE_GB;
-    units = "GB";
-  } else if (sz >= ONE_MB) {
-    frac = (double)sz / ONE_MB;
-    units = "MB";
-  } else if (sz >= 1024) {
-    frac = (double)sz / 1024;
-    units = "KB";
-  }
-  ostringstream os;
-  os << std::fixed << std::setprecision(2) << frac << units;
-  return os.str();
 }
 
 static string remove_file_ext(const string &fname) {

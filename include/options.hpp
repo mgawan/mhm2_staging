@@ -42,6 +42,7 @@ public:
   bool checkpoint = true;
   bool show_progress = false;
   string ctgs_fname;
+  int cores_per_node = upcxx::rank_n();
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
 #endif
@@ -78,6 +79,8 @@ public:
                    "Maximum size for kmer store in MB (default " + to_string(max_kmer_store_mb) + "MB)");
     app.add_option("--max-ctg-cache", max_ctg_cache,
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
+    app.add_option("--cores-per-node", cores_per_node,
+                   "Number of cores per node - needed for accurate memory estimate (default " + to_string(cores_per_node) + "\n");
     app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
     app.add_flag("--cache-reads", cache_reads, "Cache reads in memory");
     app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round");
@@ -101,6 +104,7 @@ public:
 
     set_logger_verbose(verbose);
 
+    auto all_start_mem_free = upcxx::reduce_one(get_free_mem(), upcxx::op_fast_add, 0).wait();
     if (upcxx::rank_me() == 0) {
       SLOG(KLBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
       // print out all compiler definitions
@@ -131,15 +135,15 @@ public:
       if (!kmer_depths_fname.empty()) SLOG("  kmer depths file name: ", kmer_depths_fname, "\n");
 #endif
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
+      SLOG("  cores per node:        ", cores_per_node, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  cache reads:           ", YES_NO(cache_reads), "\n");
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");
       SLOG("  verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
 
-      double start_mem_free = get_free_mem_gb();
-      SLOG("Initial free memory on node 0: ", std::setprecision(3), std::fixed, start_mem_free, " GB\n");
-      SLOG("Running on ", upcxx::rank_n(), " ranks\n");
+      SLOG("Initial free memory: ", std::setprecision(3), std::fixed, get_size_str(all_start_mem_free / cores_per_node), "\n");
+      SLOG("Running with ", upcxx::rank_n(), " processes\n");
 #ifdef DEBUG
       SWARN("Running low-performance debug mode");
 #endif
