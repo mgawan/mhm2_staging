@@ -177,14 +177,15 @@ public:
   }
 
   ~FastqReader() {
-    if (f) fclose(f);
     if (cached) {
       for (auto &cached_read : cached_reads) {
         delete[] cached_read.packed_read;
       }
+    } else {
+      if (f) fclose(f);
+      io_t.done();
+      FastqReader::overall_io_t += io_t.get_elapsed();
     }
-    io_t.done();
-    FastqReader::overall_io_t += io_t.get_elapsed();
   }
 
   size_t my_file_size() {
@@ -235,8 +236,11 @@ public:
   }
 
   void reset() {
-    cache_index = 0;
-    if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
+    if (cached) {
+      cache_index = 0;
+    } else {
+      if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
+    }
   }
 
   void load_cache(int qual_offset_param) {
@@ -273,6 +277,9 @@ public:
     reset();
     cached = true;
     io_t.stop();
+    fclose(f);
+    io_t.done();
+    FastqReader::overall_io_t += io_t.get_elapsed();
   }
 
 };
