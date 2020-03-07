@@ -22,7 +22,7 @@ add_definitions(-DMIN_DEPTH_DIFF=5)
 add_definitions(-DMAX_SEARCH_LEVEL=5)
 add_definitions(-DMAX_QUEUE_SIZE=100)
 add_definitions(-DASSM_CLEN_THRES=500)
-add_definitions(-DALN_SEED_SPACE=4)
+add_definitions(-DALN_SEED_SPACE=8)
 add_definitions(-DUSE_ALNS_FOR_GAP_CORRECTION)
 # This should be a parameter - it is a good way of tuning errors vs ctgy - the higher it is, the higher the errors and ctgy
 add_definitions(-DMISMATCH_THRES=1)
