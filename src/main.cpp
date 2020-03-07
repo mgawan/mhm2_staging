@@ -142,7 +142,8 @@ int main(int argc, char **argv) {
     }
     load_cache_dt.stop();
     auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0).wait();
-    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(all_mem_used), " memory\n", KNORM);
+    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(all_mem_used / options->cores_per_node), 
+         " memory\n", KNORM);
   }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
