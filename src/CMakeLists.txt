@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
 project(MHM)
 
 message("Building ${CMAKE_BUILD_TYPE} version")
@@ -10,9 +10,10 @@ get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
 link_directories(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
 message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+# For some reason these don't work on NERSC's Cori or Linux. So We just explicitly include the -std=c++17 in the CXX flags below
+#set(CMAKE_CXX_STANDARD 17)
+#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_CXX_COMPILER upcxx)
 
@@ -56,7 +57,6 @@ add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp 
     walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp)
 
-#target_link_libraries(mhmxx SSW_LIBRARY)
 target_link_libraries(mhmxx SSW_LIBRARY ${ZLIB_LIBRARIES})
 
 #install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
