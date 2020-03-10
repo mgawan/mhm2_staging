@@ -2,6 +2,7 @@
 #define _FASTQ_H
 
 #include <iostream>
+//#include <charconv>
 #include <unistd.h>
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
@@ -19,14 +20,61 @@ using upcxx::rank_n;
 
 #define PER_RANK_FILE true
 
+static const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
+
+struct CachedRead {
+  // read_id is not packed as it is already reduced to an index number
+  // the pair number is indicated in the read id - negative means pair 1, positive means pair 2
+  int64_t read_id;
+  // each cached read packs the nucleotide into 3 bits (ACGTN), and the quality score into 5 bits
+  unsigned char *packed_read;
+  // the read is not going to be larger than 65536 in length, but possibly larger than 256
+  uint16_t read_len;
+  // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
+  // 8+150+2=160 vs 13+300=313
+
+  CachedRead(const string &id_str, const string &seq, const string &quals, int qual_offset) {
+    read_id = strtol(id_str.c_str() + 2, nullptr, 10);
+    // this uses from_chars because it's the fastest option out there
+    //std::from_chars(id_str.data() + 2, id_str.data() + id_str.size() - 2, read_id);
+    // negative if first of the pair
+    if (id_str[id_str.length() - 1] == '1') read_id *= -1;
+    // packed is same length as sequence. Set first 3 bits to represent A,C,G,T,N
+    // set next five bits to represent quality (from 0 to 32). This doesn't cover the full quality range (only up to 32)
+    // but it's all we need since once quality is greater than the qual_thres (20), we treat the base as high quality
+    packed_read = new unsigned char [seq.length()];
+    for (int i = 0; i < seq.length(); i++) {
+      switch (seq[i]) {
+        case 'A': packed_read[i] = 0; break;
+        case 'C': packed_read[i] = 1; break;
+        case 'G': packed_read[i] = 2; break;
+        case 'T': packed_read[i] = 3; break;
+        case 'N': packed_read[i] = 4; break;
+      }
+      packed_read[i] |= ((unsigned char)std::min(quals[i] - qual_offset, 31) << 3);
+    }
+    read_len = (uint16_t)seq.length();
+  }
+
+  ~CachedRead() {
+    delete[] packed_read;
+  }
+
+  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset) {
+    char pair_id = (read_id < 0 ? '1' : '2');
+    read_id_str = "@r" + to_string(labs(read_id)) + '/' + pair_id;
+    seq.resize(read_len);
+    quals.resize(read_len);
+    for (int i = 0; i < read_len; i++) {
+      seq[i] = nucleotide_map[packed_read[i] & 7];
+      quals[i] = qual_offset + (packed_read[i] >> 3);
+    }
+    assert(seq.length() == read_len);
+    assert(quals.length() == read_len);
+  }
+};
 
 class FastqReader {
-  struct CachedRead {
-    string read_id;
-    unsigned char *packed_read;
-    uint16_t read_len;
-  };
-
   FILE *f;
   off_t file_size;
   int64_t start_read;
@@ -36,7 +84,7 @@ class FastqReader {
   char buf[BUF_SIZE + 1];
   int64_t lines_read;
   int qual_offset;
-  vector<CachedRead> cached_reads;
+  vector<std::unique_ptr<CachedRead>> cached_reads;
 
   int64_t cache_index;
   bool cached;
@@ -177,15 +225,9 @@ public:
   }
 
   ~FastqReader() {
-    if (cached) {
-      for (auto &cached_read : cached_reads) {
-        delete[] cached_read.packed_read;
-      }
-    } else {
-      if (f) fclose(f);
-      io_t.done();
-      FastqReader::overall_io_t += io_t.get_elapsed();
-    }
+    if (f) fclose(f);
+    io_t.done();
+    FastqReader::overall_io_t += io_t.get_elapsed();
   }
 
   size_t my_file_size() {
@@ -195,8 +237,7 @@ public:
   size_t get_next_fq_record(string &id, string &seq, string &quals) {
     if (cached) {
       if (cache_index == cached_reads.size()) return 0;
-      id = cached_reads[cache_index].read_id;
-      tie(seq, quals) = unpack_read(cached_reads[cache_index].packed_read, cached_reads[cache_index].read_len, qual_offset);
+      cached_reads[cache_index]->unpack(id, seq, quals, qual_offset);
       cache_index++;
       return id.length() + seq.length() + quals.length();
     }
@@ -267,7 +308,7 @@ public:
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
-      cached_reads.push_back({id, pack_read(seq, quals, qual_offset), (uint16_t)seq.length()});
+      cached_reads.push_back(std::make_unique<CachedRead>(id, seq, quals, qual_offset));
     }
     progbar.done();
     upcxx::barrier();
@@ -280,6 +321,24 @@ public:
     fclose(f);
     io_t.done();
     FastqReader::overall_io_t += io_t.get_elapsed();
+/*
+    reset();
+    std::ofstream outf("reads" + to_string(rank_me()) + ".fastq");
+    while (true) {
+      id = "";
+      seq = "";
+      quals = "";
+      size_t bytes_read = get_next_fq_record(id, seq, quals);
+      if (!bytes_read) break;
+      outf << id << "\n" << seq << "\n" << "+\n" << quals << "\n";
+    }
+    outf.close();
+    reset();
+
+    upcxx::barrier();
+    upcxx::finalize();
+    exit(0);
+ */
   }
 
 };

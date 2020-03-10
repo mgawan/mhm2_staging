@@ -264,7 +264,8 @@ int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapse
         int16_t overlap = len-i;
         int16_t this_max_mismatch = MAX_MISMATCHES + (EXTRA_MISMATCHES_PER_1000 * overlap / 1000);
         int16_t error_max_mismatch = this_max_mismatch * 4 / 3 + 1; // 33% higher
-        if (fast_count_mismatches(seq1.c_str() + start_i + i, rc_seq2.c_str(), overlap, error_max_mismatch) > error_max_mismatch)
+        if (fast_count_mismatches(seq1.c_str() + start_i + i, rc_seq2.c_str(), overlap, error_max_mismatch) 
+                                  > error_max_mismatch)
           continue;
         int16_t matches = 0, mismatches = 0, bothNs = 0, Ncount = 0;
         int16_t overlapChecked = 0;
@@ -308,7 +309,8 @@ int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapse
               if (q1 < 0 || q2 < 0 || q1 >= Q2PerrorSize || q2 >= Q2PerrorSize) 
                 DIE("Invalid quality score for read ", id1, " '", quals1[start_i + i + j], "' ", id2, " '", rev_quals2[j],
                     "' assuming common qual_offset of ", qual_offset,
-                    ". Check the data and make sure it follows a single consistent quality scoring model (phred+64 vs. phred+33)");
+                    ". Check the data and make sure it follows a single consistent quality scoring model ",
+                    "(phred+64 vs. phred+33)");
 
               // sum perror as the difference in q score perrors
               uint8_t diffq = (q1 > q2) ? q1-q2 : q2-q1;
@@ -329,7 +331,8 @@ int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapse
         }
         int16_t match_thres = overlap - this_max_mismatch;
         if (match_thres < MIN_OVERLAP) match_thres = MIN_OVERLAP;
-        if (matches >= match_thres && overlapChecked == overlap && mismatches <= this_max_mismatch && perror/overlap <= MAX_PERROR) {
+        if (matches >= match_thres && overlapChecked == overlap && 
+            mismatches <= this_max_mismatch && perror/overlap <= MAX_PERROR) {
           if (best_i < 0 && found_i < 0) {
             best_i = i;
             best_mm = mismatches;
@@ -377,7 +380,8 @@ int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapse
               // keep prev base, but still discount quality
               newQual = quals1[start_i+i+j] - rev_quals2[j] + qual_offset;
             }
-            quals1[start_i+i+j] = ((newQual > (2+qual_offset)) ? newQual : (2+qual_offset)); // a bit better than random chance here
+            // a bit better than random chance here
+            quals1[start_i+i+j] = ((newQual > (2+qual_offset)) ? newQual : (2+qual_offset)); 
           }
           assert(quals1[start_i+i+j] >= qual_offset);
         }

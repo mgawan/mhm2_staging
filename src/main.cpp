@@ -117,7 +117,22 @@ int main(int argc, char **argv) {
   _show_progress = options->show_progress;
   _cores_per_node = options->cores_per_node;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-
+/*
+  if (!rank_me()) {
+    string read_id = "@r0/1";
+    string seq =   "CGAATTTCGCTATGATCCGCTTCGACGTCACGGCAAGCTCGG";//TGGACTGGCGCTTGACGAACGCCTCACCCGTAAACCATAATTCGGCCACCAGAATGACGACTCCGGTATACCAGGCAGCCGAAGAAAGTTCCGGATTGCCATCGGGCG";
+    string quals = "IHIIHHHIHHIIHIGIIIHHHHHIDIFIGIIIEHIIIHHIHI";//HGGFIIGDHHCEIIFGIGHIHBIIEIAIIIHA<HIIBIIID:D>IIIIIIIEII@FIIIIBIEDID<IAIIAIFIIIIGII>=I;@II5IDEIIC;?IIDIIGI7III";
+    cout << read_id << "\n" << seq << "\n" << quals << "\n";
+    CachedRead cached_read(read_id, seq, quals, options->qual_offset);
+    read_id = "";
+    seq = "";
+    quals = "";
+    cached_read.unpack(read_id, seq, quals, options->qual_offset);
+    cout << read_id << "\n" << seq << "\n" << quals << "\n";
+  }
+  upcxx::finalize();
+  return 0;
+*/  
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
