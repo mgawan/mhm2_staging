@@ -60,8 +60,7 @@ public:
     , complete_char{complete}
     , incomplete_char{incomplete} {
       if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
-        bool is_compressed = has_ending(fname, ".gz");
-        int64_t sz = is_compressed ? get_uncompressed_file_size(fname) : get_file_size(fname);
+        int64_t sz = get_file_size(fname);
         if (sz < 0) std::cout << KRED << "Could not read the file size for: " << fname << std::flush;
         total_ticks = sz;
         ten_perc = total_ticks / 10;

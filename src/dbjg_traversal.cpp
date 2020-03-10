@@ -56,6 +56,7 @@ struct WalkTermStats {
       case WalkStatus::CONFLICT: num_conflicts++; break;
       case WalkStatus::REPEAT: num_repeats++; break;
       case WalkStatus::VISITED: num_visited++; break;
+      default: DIE("Should never get here\n"); break;
     }
   }  
   

@@ -182,16 +182,14 @@ static void dump_merged_reads(const string &reads_fname, ostringstream &out_buf)
 }
 
 
-int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t) {
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t) {
   Timer timer(__FILEFUNC__);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;
   int64_t num_reads = 0;
-  int read_len = 0;
-  uint64_t my_num_reads_estimate = 0;
   // for unique read id need to estimate number of reads in our sections of all files
-  tie(my_num_reads_estimate, read_len) = estimate_num_reads(reads_fname_list);
+  auto [my_num_reads_estimate, read_len] = estimate_num_reads(reads_fname_list);
   auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
   auto tot_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_add).wait();
   SLOG_VERBOSE("Estimated total number of reads as ", tot_num_reads, ", and max for any rank ", max_num_reads, "\n");

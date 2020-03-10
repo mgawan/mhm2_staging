@@ -466,25 +466,6 @@ inline std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, 
   return {min_dist, expected_overlap};
 }
 
-static bool has_ending (string const &full_string, string const &ending) {
-  if (full_string.length() >= ending.length())
-    return (0 == full_string.compare(full_string.length() - ending.length(), ending.length(), ending));
-  return false;
-}
-
-static int does_file_exist(string fname) {
-  struct stat s;
-  if (stat(fname.c_str(), &s) != 0) return 0;
-  return 1;
-}
-
-static void write_num_file(string fname, int64_t maxReadLength) {
-  ofstream out(fname);
-  if (!out) { std::string error("Could not write to " + fname); throw error; }
-  out << std::to_string(maxReadLength);
-  out.close();
-}
-
 static string remove_file_ext(const string &fname) {
   size_t lastdot = fname.find_last_of(".");
   if (lastdot == std::string::npos) return fname;
@@ -506,21 +487,6 @@ static int64_t get_file_size(string fname) {
   struct stat s;
   if (stat(fname.c_str(), &s) != 0) return -1;
   return s.st_size;
-}
-
-static size_t get_uncompressed_file_size(string fname) {
-  string uncompressedSizeFname = fname + ".uncompressedSize";
-  ifstream f(uncompressedSizeFname, std::ios::binary);
-  if (!f) DIE("Cannot get uncompressed size for file ", fname);
-  size_t sz = 0;
-  f.read((char*)&sz, sizeof(size_t));
-  return sz;
-}
-
-static void write_uncompressed_file_size(string fname, size_t sz) {
-  ofstream f(fname, std::ios::binary);
-  f.write((char*)&sz, sizeof(size_t));
-  f.close();
 }
 
 inline void switch_orient(int &start, int &stop, int &len) {

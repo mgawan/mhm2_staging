@@ -10,8 +10,7 @@ get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
 link_directories(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
 message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
 
-# all c++ must be at least c++14
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -28,6 +27,8 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
     # ignore annoying warning on icc
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
 endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare")
 
 include(CMakeDefinitions.txt)
 
@@ -52,12 +53,11 @@ include_directories("${CMAKE_SOURCE_DIR}/../include")
 add_subdirectory(ssw)
 
 add_executable(mhmxx
-    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp walk_ctg_graph.cpp
-    spanner.cpp splinter.cpp localassm.cpp)
+    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp 
+    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp)
 
-target_link_libraries(mhmxx SSW_LIBRARY)
-target_link_libraries(mhmxx ${ZLIB_LIBRARIES})
-
+#target_link_libraries(mhmxx SSW_LIBRARY)
+target_link_libraries(mhmxx SSW_LIBRARY ${ZLIB_LIBRARIES})
 
 #install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 

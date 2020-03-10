@@ -2,6 +2,7 @@
 #define _FASTQ_H
 
 #include <iostream>
+// Not available in gcc <= 7
 //#include <charconv>
 #include <unistd.h>
 #include <fcntl.h>
@@ -11,6 +12,7 @@
 #include "progressbar.hpp"
 
 using std::string;
+using std::string_view;
 
 using upcxx::rank_me;
 using upcxx::rank_n;
@@ -20,9 +22,8 @@ using upcxx::rank_n;
 
 #define PER_RANK_FILE true
 
-static const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
-
 struct CachedRead {
+  static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
   // read_id is not packed as it is already reduced to an index number
   // the pair number is indicated in the read id - negative means pair 1, positive means pair 2
   int64_t read_id;
@@ -33,8 +34,10 @@ struct CachedRead {
   // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
   // 8+150+2=160 vs 13+300=313
 
-  CachedRead(const string &id_str, const string &seq, const string &quals, int qual_offset) {
-    read_id = strtol(id_str.c_str() + 2, nullptr, 10);
+  CachedRead(const string &id_str, string_view seq, string_view quals, int qual_offset) {
+    read_id = strtol(id_str.c_str() + 1, nullptr, 10);
+//    auto res = std::from_chars(id_str.data() + 2, id_str.data() + id_str.size() - 2, read_id);
+//    if (res.ec != std::errc()) DIE("Failed to convert string to int64_t, ", res.ec);
     // this uses from_chars because it's the fastest option out there
     //std::from_chars(id_str.data() + 2, id_str.data() + id_str.size() - 2, read_id);
     // negative if first of the pair
@@ -319,6 +322,7 @@ public:
     cached = true;
     io_t.stop();
     fclose(f);
+    f = nullptr;
     io_t.done();
     FastqReader::overall_io_t += io_t.get_elapsed();
 /*
@@ -336,9 +340,9 @@ public:
     reset();
 
     upcxx::barrier();
-    upcxx::finalize();
-    exit(0);
- */
+//    upcxx::finalize();
+//    exit(0);
+*/
   }
 
 };

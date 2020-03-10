@@ -3,12 +3,13 @@
 
 #include <iostream>
 #include <fstream>
-#include <math.h>
 #include <algorithm>
+#include <chrono>
+#include <string>
+#include <math.h>
 #include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <chrono>
 #include <upcxx/upcxx.hpp>
 
 using namespace std;
@@ -117,6 +118,7 @@ int main(int argc, char **argv) {
   _show_progress = options->show_progress;
   _cores_per_node = options->cores_per_node;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+  
 /*
   if (!rank_me()) {
     string read_id = "@r0/1";

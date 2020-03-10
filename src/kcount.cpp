@@ -88,6 +88,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
     case BLOOM_SET_PASS: progbar_prefix = "Pass 1: Parsing reads file to setup bloom filter"; break;
     case BLOOM_COUNT_PASS: progbar_prefix = "Pass 2: Parsing reads file to count kmers"; break;
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
+    default: DIE("Should never get here");
   };
   for (auto fqr : fqr_list) {
     fqr->reset();

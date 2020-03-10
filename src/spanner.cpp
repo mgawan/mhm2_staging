@@ -243,7 +243,7 @@ static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_
 
 static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
   int end = (aln.cid == edge->cids.cid1 ? edge->end1 : edge->end2);
-  int gap_start;
+  int gap_start = 0;
   if (aln.cid == edge->cids.cid1) {
     if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-')) gap_start = aln.rstop;
     else gap_start = aln.rlen - aln.rstart;

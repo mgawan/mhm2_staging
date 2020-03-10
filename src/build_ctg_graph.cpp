@@ -129,6 +129,10 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge)
       continue;
     }
     int rstart = gap_read.gap_start - (kmer_len - 1);
+    if (seq.length() < gap_size + rstart) {
+      DIE("seq length is less than substr access with rstart ", rstart, ", gap ", gap_size, "\n",
+          gap_read.read_name, " ", seq);
+    }
     string gap_seq = seq.substr(rstart, gap_size);
     if (edge->gap_reads.size() > 1) {
       string gap_seq_rc = revcomp(gap_seq);
