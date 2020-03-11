@@ -95,6 +95,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
     string id, seq, quals;
     ProgressBar progbar(fqr->my_file_size(), progbar_prefix);
     size_t tot_bytes_read = 0;
+    vector<Kmer> kmers;
     while (true) {
       size_t bytes_read = fqr->get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
@@ -104,7 +105,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
       progbar.update(tot_bytes_read);
       if (seq.length() < kmer_len) continue;
       // split into kmers
-      auto kmers = Kmer::get_kmers(kmer_len, seq);
+      Kmer::get_kmers(kmer_len, seq, kmers);
 #ifdef FILTER_BAD_QUAL_IN_READ
       // disable kmer counting of kmers after a bad quality score (of 2) in the read
       // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
@@ -163,11 +164,12 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   Timer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
+  vector<Kmer> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
     if (ctg->seq.length() >= kmer_len) {
-      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
+      Kmer::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
@@ -196,11 +198,12 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
   double max_depth_diff = 0;
 #endif
   ProgressBar progbar(ctgs.size(), "Adding extra contig kmers from kmer length " + to_string(prev_kmer_len));
+  vector<Kmer> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
     if (ctg->seq.length() >= kmer_len + 2) {
-      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
+      Kmer::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {

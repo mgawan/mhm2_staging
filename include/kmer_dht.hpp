@@ -156,15 +156,16 @@ using KmerMap = HASH_TABLE<Kmer, KmerCounts, KmerHash, KmerEqual>;
 class KmerDHT {
 
   // total bytes for k = 51: 16+18+18=52
-  struct MerarrAndExt {
-    MerArray merarr;
+  struct KmerAndExt {
+    Kmer kmer;
     char left, right;
     uint16_t count;
+    UPCXX_SERIALIZED_FIELDS(kmer, left, right, count);
   };
 
   dist_object<KmerMap> kmers;
-  AggrStore<MerArray> kmer_store_bloom;
-  AggrStore<MerarrAndExt> kmer_store;
+  AggrStore<Kmer> kmer_store_bloom;
+  AggrStore<KmerAndExt> kmer_store;
   // The first bloom filter stores all kmers and is used to check for single occurrences to filter out
   dist_object<BloomFilter> bloom_filter1;
   // the second bloom filer stores only kmers that are above the repeat depth, and is used for correctly sizing the kmer hash table
@@ -175,94 +176,89 @@ class KmerDHT {
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
 
   struct InsertKmer {
-    void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers) {
-      Kmer new_kmer(merarr_and_ext.merarr);
+    void operator()(KmerAndExt &kmer_and_ext, dist_object<KmerMap> &kmers) {
       // find it - if it isn't found then insert it, otherwise increment the counts
-      const auto it = kmers->find(new_kmer);
+      const auto it = kmers->find(kmer_and_ext.kmer);
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X',
                                    .count = 1, .from_ctg = false, .uutig_frag = nullptr };
-        kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
-        kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
+        kmer_counts.left_exts.inc(kmer_and_ext.left, 1);
+        kmer_counts.right_exts.inc(kmer_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
-        kmers->insert({new_kmer, kmer_counts});
+        kmers->insert({kmer_and_ext.kmer, kmer_counts});
         // since sizes are an estimate this could happen, but it will impact performance
         if (prev_bucket_count < kmers->bucket_count())
           SWARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
-        DBG_INSERT_KMER("inserted kmer ", new_kmer.to_string(), " with count ", kmer_counts.count, "\n");
+        DBG_INSERT_KMER("inserted kmer ", kmer_and_ext.kmer.to_string(), " with count ", kmer_counts.count, "\n");
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;
-        kmer->left_exts.inc(merarr_and_ext.left, 1);
-        kmer->right_exts.inc(merarr_and_ext.right, 1);
+        kmer->left_exts.inc(kmer_and_ext.left, 1);
+        kmer->right_exts.inc(kmer_and_ext.right, 1);
       }
     }
   };
   dist_object<InsertKmer> insert_kmer;
 
   struct BloomSet {
-    void operator()(MerArray &merarr, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
-      Kmer new_kmer(merarr);
-      if (!bloom_filter1->possibly_contains(new_kmer.get_bytes(), new_kmer.get_num_bytes()))
-        bloom_filter1->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
+      if (!bloom_filter1->possibly_contains(kmer.get_bytes(), kmer.get_num_bytes()))
+        bloom_filter1->add(kmer.get_bytes(), kmer.get_num_bytes());
       else
-        bloom_filter2->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
+        bloom_filter2->add(kmer.get_bytes(), kmer.get_num_bytes());
     }
   };
   dist_object<BloomSet> bloom_set;
 
   struct CtgBloomSet {
-    void operator()(MerArray &merarr, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
-      Kmer new_kmer(merarr);
-      bloom_filter2->add(new_kmer.get_bytes(), new_kmer.get_num_bytes());
+      bloom_filter2->add(kmer.get_bytes(), kmer.get_num_bytes());
     }
   };
   dist_object<CtgBloomSet> ctg_bloom_set;
 
   struct BloomCount {
-    void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
-      Kmer new_kmer(merarr_and_ext.merarr);
+    void operator()(KmerAndExt &kmer_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
       // if the kmer is not found in the bloom filter, skip it
-      if (!bloom_filter->possibly_contains(new_kmer.get_bytes(), new_kmer.get_num_bytes())) return;
+      if (!bloom_filter->possibly_contains(kmer_and_ext.kmer.get_bytes(), kmer_and_ext.kmer.get_num_bytes())) return;
       // add or update the kmer count
-      const auto it = kmers->find(new_kmer);
+      const auto it = kmers->find(kmer_and_ext.kmer);
       if (it == kmers->end()) {
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = 1,
                                    .from_ctg = false, .uutig_frag = nullptr};
-        kmer_counts.left_exts.inc(merarr_and_ext.left, 1);
-        kmer_counts.right_exts.inc(merarr_and_ext.right, 1);
+        kmer_counts.left_exts.inc(kmer_and_ext.left, 1);
+        kmer_counts.right_exts.inc(kmer_and_ext.right, 1);
         auto prev_bucket_count = kmers->bucket_count();
-        kmers->insert({new_kmer, kmer_counts});
+        kmers->insert({kmer_and_ext.kmer, kmer_counts});
         // this shouldn't happen
         if (prev_bucket_count < kmers->bucket_count())
           WARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
       } else {
         auto kmer = &it->second;
         if (kmer->count < numeric_limits<uint16_t>::max()) kmer->count++;
-        kmer->left_exts.inc(merarr_and_ext.left, 1);
-        kmer->right_exts.inc(merarr_and_ext.right, 1);
+        kmer->left_exts.inc(kmer_and_ext.left, 1);
+        kmer->right_exts.inc(kmer_and_ext.right, 1);
       }
     }
   };
   dist_object<BloomCount> bloom_count;
 
   struct InsertCtgKmer {
-    void operator()(MerarrAndExt &merarr_and_ext, dist_object<KmerMap> &kmers) {
+    void operator()(KmerAndExt &kmer_and_ext, dist_object<KmerMap> &kmers) {
       // insert a new kmer derived from the previous round's contigs
-      Kmer new_kmer(merarr_and_ext.merarr);
-      const auto it = kmers->find(new_kmer);
+      const auto it = kmers->find(kmer_and_ext.kmer);
       bool insert = false;
       if (it == kmers->end()) {
         // if it isn't found then insert it
         insert = true;
-        DBG_INS_CTG_KMER("new ", merarr_and_ext.count, " ", merarr_and_ext.left, " ", merarr_and_ext.right, "\n");
+        DBG_INS_CTG_KMER("new ", kmer_and_ext.count, " ", kmer_and_ext.left, " ", kmer_and_ext.right, "\n");
       } else {
         auto kmer_counts = &it->second;
-        DBG_INS_CTG_KMER(new_kmer, " old/new ", kmer_counts->count, " ", merarr_and_ext.count, " ",
-                         merarr_and_ext.left, " ", merarr_and_ext.right, " ",
+        DBG_INS_CTG_KMER(kmer_and_ext.kmer, " old/new ", kmer_counts->count, " ", kmer_and_ext.count, " ",
+                         kmer_and_ext.left, " ", kmer_and_ext.right, " ",
                          "A", kmer_counts->left_exts.count_A, " C", kmer_counts->left_exts.count_C, " ",
                          "G", kmer_counts->left_exts.count_G, " T", kmer_counts->left_exts.count_T, " ",
                          "A", kmer_counts->right_exts.count_A, " C", kmer_counts->right_exts.count_C, " ",
@@ -275,7 +271,7 @@ class KmerDHT {
             // non-UU, replace
             insert = true;
             // but keep the count from the read kmer
-            //if (kmer_counts->count > _dmin_thres) merarr_and_ext.count = kmer_counts->count;
+            //if (kmer_counts->count > _dmin_thres) kmer_and_ext.count = kmer_counts->count;
             // or could sum the depths
             DBG_INS_CTG_KMER("replace non-UU read kmer\n");
           }
@@ -291,33 +287,33 @@ class KmerDHT {
             insert = true;
             char left_ext = kmer_counts->get_left_ext();
             char right_ext = kmer_counts->get_right_ext();
-            if (left_ext != merarr_and_ext.left || right_ext != merarr_and_ext.right) {
+            if (left_ext != kmer_and_ext.left || right_ext != kmer_and_ext.right) {
               // if the two contig kmers disagree on extensions, set up to purge by setting the count to 0
-              merarr_and_ext.count = 0;
+              kmer_and_ext.count = 0;
               DBG_INS_CTG_KMER("set to purge conflict: prev ", left_ext, ", ", right_ext,
-                               " new ", merarr_and_ext.left, ", ", merarr_and_ext.right, "\n");
+                               " new ", kmer_and_ext.left, ", ", kmer_and_ext.right, "\n");
             } else {
               // multiple occurrences of the same kmer derived from different contigs or parts of contigs
               // The only way this kmer could have been already found in the contigs only is if it came from a localassm
               // extension. In which case, all such kmers should not be counted again for each contig, because each
               // contig can use the same reads independently, and the depth will be oversampled.
-              merarr_and_ext.count = min(merarr_and_ext.count, kmer->count);
-              //int new_count = min(kmer->count, merarr_and_ext.count);
-              //kmer->left_exts.set_best(merarr_and_ext.left, merarr_and_ext.count);
-              //kmer->right_exts.set_best(merarr_and_ext.right, merarr_and_ext.count);
-              DBG_INS_CTG_KMER("increase count of existing ctg kmer from ", kmer->count, " to ", merarr_and_ext.count, "\n");
-              //merarr_and_ext.count = min((int)merarr_and_ext.count + kmer->count, (int)numeric_limits<uint16_t>::max());
+              kmer_and_ext.count = min(kmer_and_ext.count, kmer->count);
+              //int new_count = min(kmer->count, kmer_and_ext.count);
+              //kmer->left_exts.set_best(kmer_and_ext.left, kmer_and_ext.count);
+              //kmer->right_exts.set_best(kmer_and_ext.right, kmer_and_ext.count);
+              DBG_INS_CTG_KMER("increase count of existing ctg kmer from ", kmer->count, " to ", kmer_and_ext.count, "\n");
+              //kmer_and_ext.count = min((int)kmer_and_ext.count + kmer->count, (int)numeric_limits<uint16_t>::max());
             }
           }
         }
       }
       if (insert) {
-        uint16_t count = merarr_and_ext.count;
+        uint16_t count = kmer_and_ext.count;
         KmerCounts kmer_counts = { .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = count,
                                    .from_ctg = true, .uutig_frag = nullptr};
-        kmer_counts.left_exts.inc(merarr_and_ext.left, count);
-        kmer_counts.right_exts.inc(merarr_and_ext.right, count);
-        (*kmers)[new_kmer] = kmer_counts;
+        kmer_counts.left_exts.inc(kmer_and_ext.left, count);
+        kmer_counts.right_exts.inc(kmer_and_ext.right, count);
+        (*kmers)[kmer_and_ext.kmer] = kmer_counts;
       }
     }
   };
@@ -411,36 +407,33 @@ public:
 
   int32_t get_kmer_count(Kmer &kmer) {
     return rpc(get_kmer_target_rank(kmer),
-               [](MerArray merarr, dist_object<KmerMap> &kmers) -> uint16_t {
-                 Kmer kmer(merarr);
+               [](Kmer kmer, dist_object<KmerMap> &kmers) -> uint16_t {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return 0;
                  else return it->second.count;
-               }, kmer.get_array(), kmers).wait();
+               }, kmer, kmers).wait();
   }
 
   global_ptr<FragElem> get_kmer_uutig_frag(Kmer kmer) {
     Kmer kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer = kmer_rc;
     return rpc(get_kmer_target_rank(kmer),
-               [](MerArray merarr, dist_object<KmerMap> &kmers) -> global_ptr<FragElem> {
-                 Kmer kmer(merarr);
+               [](Kmer kmer, dist_object<KmerMap> &kmers) -> global_ptr<FragElem> {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) DIE("kmer not found ", kmer);
                  return it->second.uutig_frag;
-               }, kmer.get_array(), kmers).wait();
+               }, kmer, kmers).wait();
   }
 
   bool kmer_exists(Kmer kmer) {
     Kmer kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer = kmer_rc;
     return rpc(get_kmer_target_rank(kmer),
-               [](MerArray merarr, dist_object<KmerMap> &kmers) -> bool {
-                 Kmer kmer(merarr);
+               [](Kmer kmer, dist_object<KmerMap> &kmers) -> bool {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return false;
                  return true;
-               }, kmer.get_array(), kmers).wait();
+               }, kmer, kmers).wait();
   }
 
   void add_kmer(Kmer kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
@@ -453,22 +446,22 @@ public:
       right_ext = comp_nucleotide(right_ext);
     }
     auto target_rank = get_kmer_target_rank(kmer);
-    MerarrAndExt merarr_and_ext = { kmer.get_array(), left_ext, right_ext, count };
+    KmerAndExt kmer_and_ext = { kmer, left_ext, right_ext, count };
     switch (pass_type) {
       case BLOOM_SET_PASS:
-        if (count != 0) kmer_store_bloom.update(target_rank, merarr_and_ext.merarr, bloom_set, bloom_filter1, bloom_filter2);
+        if (count != 0) kmer_store_bloom.update(target_rank, kmer, bloom_set, bloom_filter1, bloom_filter2);
         break;
       case CTG_BLOOM_SET_PASS:
-        kmer_store_bloom.update(target_rank, merarr_and_ext.merarr, ctg_bloom_set, bloom_filter2);
+        kmer_store_bloom.update(target_rank, kmer, ctg_bloom_set, bloom_filter2);
         break;
       case BLOOM_COUNT_PASS:
-        kmer_store.update(target_rank, merarr_and_ext, bloom_count, kmers, bloom_filter2);
+        kmer_store.update(target_rank, kmer_and_ext, bloom_count, kmers, bloom_filter2);
         break;
       case NO_BLOOM_PASS:
-        kmer_store.update(target_rank, merarr_and_ext, insert_kmer, kmers);
+        kmer_store.update(target_rank, kmer_and_ext, insert_kmer, kmers);
         break;
       case CTG_KMERS_PASS:
-        kmer_store.update(target_rank, merarr_and_ext, insert_ctg_kmer, kmers);
+        kmer_store.update(target_rank, kmer_and_ext, insert_ctg_kmer, kmers);
         break;
     };
   }

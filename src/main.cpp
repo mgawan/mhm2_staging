@@ -34,10 +34,6 @@ ofstream _logstream;
 bool _verbose = false;
 bool _show_progress = false;
 int _cores_per_node = 0;
-double FastqReader::overall_io_t = 0;
-
-
-unsigned int Kmer::k = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
@@ -59,6 +55,7 @@ static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &
   Timer timer(__func__);
   int64_t num_zero_count = 0;
   int64_t tot_num_kmers = 0;
+  vector<Kmer> kmers;
   ProgressBar progbar(ctgs.size(), "Computing depths of kmers in contigs");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
@@ -66,7 +63,7 @@ static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &
     //if (ctg->seq.length() >= kmer_len + 2) {
       int num_kmers = ctg->seq.length() - kmer_len;
       ctg->kmer_depths.reserve(num_kmers);
-      auto kmers = Kmer::get_kmers(kmer_len, ctg->seq);
+      Kmer::get_kmers(kmer_len, ctg->seq, kmers);
       tot_num_kmers += kmers.size();
       for (auto kmer : kmers) {
         auto kmer_rc = kmer.revcomp();
@@ -279,7 +276,7 @@ int main(int argc, char **argv) {
   SLOG("    ", alignments_dt.get_final(), "\n");
   SLOG("    ", localassm_dt.get_final(), "\n");
   SLOG("    ", cgraph_dt.get_final(), "\n");
-  SLOG("    IO read time: ", FastqReader::overall_io_t, "\n");
+  SLOG("    IO read time: ", FastqReader::get_io_time(), "\n");
   SLOG("    IO write time: ", dump_ctgs_dt.get_elapsed() + elapsed_write_io_t, "\n");
   SLOG(KBLUE "_________________________\n", KNORM);
   double end_mem_free = get_free_mem();

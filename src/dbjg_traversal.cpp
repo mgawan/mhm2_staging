@@ -86,13 +86,16 @@ static string gptr_str(global_ptr<FragElem> gptr) {
   return to_string(gptr.where()) + ":" + s;
 }
 
+#ifdef DEBUG
 static bool check_kmers(const string &seq, dist_object<KmerDHT> &kmer_dht, int kmer_len) {
-  auto kmers = Kmer::get_kmers(kmer_len, seq);
+  vector<Kmer> kmers;
+  Kmer::get_kmers(kmer_len, seq, kmers);
   for (auto kmer : kmers) {
     if (!kmer_dht->kmer_exists(kmer)) return false;
   }
   return true;
 }
+#endif
 
 static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, Dirn dirn, char prev_ext, 
                                       global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
@@ -103,9 +106,8 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
     is_rc = true;
   }
   return rpc(kmer_dht->get_kmer_target_rank(kmer), 
-             [](dist_object<KmerDHT> &kmer_dht, MerArray merarr, Dirn dirn, char prev_ext, bool revisit_allowed, 
+             [](dist_object<KmerDHT> &kmer_dht, Kmer kmer, Dirn dirn, char prev_ext, bool revisit_allowed, 
                 bool is_rc, global_ptr<FragElem> frag_elem_gptr) -> StepInfo {
-               Kmer kmer(merarr);
                KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
                // this kmer doesn't exist, abort
                if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND,};
@@ -131,7 +133,7 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
                // mark as visited
                kmer_counts->uutig_frag = frag_elem_gptr;
                return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
-             }, kmer_dht, kmer.get_array(), dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
+             }, kmer_dht, kmer, dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
 }
 
 static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer kmer, global_ptr<FragElem> frag_elem_gptr, 

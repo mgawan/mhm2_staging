@@ -46,18 +46,26 @@ struct ReadAndCtgLoc {
   CtgLoc ctg_loc;
 };
 
+struct KmerCtgLocs {
+  Kmer kmer;
+  vector<CtgLoc> ctg_locs;
+  UPCXX_SERIALIZED_FIELDS(kmer, ctg_locs);
+};
+  
+
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 
 
 class KmerCtgDHT {
 
-  struct MerarrAndCtgLoc {
-    MerArray merarr;
+  struct KmerAndCtgLoc {
+    Kmer kmer;
     CtgLoc ctg_loc;
+    UPCXX_SERIALIZED_FIELDS(kmer, ctg_loc);
   };
 
-  AggrStore<MerarrAndCtgLoc> kmer_store;
+  AggrStore<KmerAndCtgLoc> kmer_store;
   using kmer_map_t = HASH_TABLE<Kmer, vector<CtgLoc> >;
   dist_object<kmer_map_t> kmer_map;
 #ifdef DUMP_ALNS
@@ -81,12 +89,11 @@ class KmerCtgDHT {
   StripedSmithWaterman::Filter ssw_filter;
   
   struct InsertKmer {
-    void operator()(MerarrAndCtgLoc &merarr_and_ctg_loc, dist_object<kmer_map_t> &kmer_map) {
-      Kmer kmer(merarr_and_ctg_loc.merarr);
-      CtgLoc ctg_loc = merarr_and_ctg_loc.ctg_loc;
-      const auto it = kmer_map->find(kmer);
+    void operator()(KmerAndCtgLoc &kmer_and_ctg_loc, dist_object<kmer_map_t> &kmer_map) {
+      CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
+      const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
       if (it == kmer_map->end()) {
-        kmer_map->insert({kmer, {ctg_loc}});
+        kmer_map->insert({kmer_and_ctg_loc.kmer, {ctg_loc}});
       } else {
         vector<CtgLoc> *ctg_locs = &it->second;
         // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
@@ -256,8 +263,8 @@ public:
       kmer = kmer_rc;
       ctg_loc.is_rc = true;
     }
-    MerarrAndCtgLoc merarr_and_ctg_loc = { kmer.get_array(), ctg_loc };
-    kmer_store.update(get_target_rank(kmer), merarr_and_ctg_loc, insert_kmer, kmer_map);
+    KmerAndCtgLoc kmer_and_ctg_loc = { kmer, ctg_loc };
+    kmer_store.update(get_target_rank(kmer), kmer_and_ctg_loc, insert_kmer, kmer_map);
   }
 
   void flush_add_kmers() {
@@ -269,28 +276,24 @@ public:
 
   future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer &kmer) {
     return rpc(get_target_rank(kmer),
-               [](MerArray merarr, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
-                 Kmer kmer(merarr);
+               [](Kmer kmer, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
                  const auto it = kmer_map->find(kmer);
                  if (it == kmer_map->end()) return {};
                  return it->second;
-               }, kmer.get_array(), kmer_map);
+               }, kmer, kmer_map);
   }
 
-  future<vector<pair<MerArray, vector<CtgLoc>>>> get_ctgs_with_kmers(int target_rank, vector<Kmer> &kmers) {
-    vector<MerArray> merarr_list;
-    for (auto kmer : kmers) merarr_list.push_back(kmer.get_array());
+  future<vector<KmerCtgLocs>> get_ctgs_with_kmers(int target_rank, vector<Kmer> &kmers) {
     return rpc(target_rank,
-               [](vector<MerArray> merarr_list, dist_object<kmer_map_t> &kmer_map) -> vector<pair<MerArray, vector<CtgLoc>>> {
-                 vector<pair<MerArray, vector<CtgLoc>>> ctg_locs;
-                 for (auto &merarr : merarr_list) {
-                   Kmer kmer(merarr);
+               [](vector<Kmer> kmers, dist_object<kmer_map_t> &kmer_map) {// -> vector<KmerCtgLocs> {
+                 vector<KmerCtgLocs> kmer_ctg_locs;
+                 for (auto &kmer : kmers) {
                    const auto it = kmer_map->find(kmer);
                    if (it == kmer_map->end()) continue;
-                   ctg_locs.push_back({merarr, it->second});
+                   kmer_ctg_locs.push_back({kmer, it->second});
                  }
-                 return ctg_locs;
-               }, merarr_list, kmer_map);
+                 return kmer_ctg_locs;
+               }, kmers, kmer_map);
   }
   // this is really only for debugging
   void dump_ctg_kmers() {
@@ -419,13 +422,14 @@ static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
   Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
+  vector<Kmer> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
     global_ptr<char> seq_gptr = allocate<char>(ctg->seq.length() + 1);
     strcpy(seq_gptr.local(), ctg->seq.c_str());
     CtgLoc ctg_loc = { .cid = ctg->id, .seq_gptr = seq_gptr, .clen = (int)ctg->seq.length() };
-    auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq);
+    Kmer::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq, kmers);
     num_kmers += kmers.size();
     for (int i = 0; i < kmers.size(); i++) {
       ctg_loc.pos_in_ctg = i;
@@ -484,18 +488,16 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
     //max_kmers = max(max_kmers, kmer_lists[i].size());
     //num_kmers += kmer_lists[i].size();
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
-      [&](vector<pair<MerArray, vector<CtgLoc>>> kmer_ctg_locs) {
+      [&](vector<KmerCtgLocs> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated vector of ctg locations
         for (auto &kmer_ctg_loc : kmer_ctg_locs) {
-          Kmer kmer(kmer_ctg_loc.first);
-          auto ctg_locs = kmer_ctg_loc.second;
           // get the reads that this kmer mapped to
-          auto kmer_read_map_it = kmer_read_map.find(kmer);
-          if (kmer_read_map_it == kmer_read_map.end()) DIE("Could not find kmer ", kmer);
+          auto kmer_read_map_it = kmer_read_map.find(kmer_ctg_loc.kmer);
+          if (kmer_read_map_it == kmer_read_map.end()) DIE("Could not find kmer ", kmer_ctg_loc.kmer);
           // this is a list of the reads
           auto &kmer_to_reads = kmer_read_map_it->second;
           // iterate through the ctg locations for this kmer returned by the dht
-          for (auto &ctg_loc : ctg_locs) {
+          for (auto &ctg_loc : kmer_ctg_loc.ctg_locs) {
             // now add the ctg loc to all the reads
             for (auto &kmer_to_read : kmer_to_reads) {
               auto read_record = kmer_to_read.read_record;
@@ -551,6 +553,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
     size_t tot_bytes_read = 0;
     vector<ReadRecord*> read_records;
     HASH_TABLE<Kmer, vector<KmerToRead>> kmer_read_map;
+    vector<Kmer> kmers;
     while (true) {
       progress();
       get_reads_timer.start();
@@ -561,7 +564,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
       progbar.update(tot_bytes_read);
       // this happens when a placeholder read with just a single N character is added after merging reads
       if (kmer_ctg_dht.kmer_len > read_seq.length()) continue;
-      auto kmers = Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq);
+      Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq, kmers);
       tot_num_kmers += kmers.size();
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);

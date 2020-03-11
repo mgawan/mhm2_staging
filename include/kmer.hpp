@@ -60,11 +60,6 @@ static const uint64_t TWIN_TABLE[256] = {
 };
 
 
-//static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
-//using MerArray = std::array<uint64_t, N_LONGS>;
-using MerArray = std::vector<uint64_t>;
-
-
 /* Short description:
  *  - Store kmer strings by using 2 bits per base instead of 8
  *  - Easily return reverse complements of kmers, e.g. TTGG -> CCAA
@@ -73,49 +68,48 @@ using MerArray = std::vector<uint64_t>;
  *  - Get last and next kmer, e.g. ACGT -> CGTT or ACGT -> AACGT
  *  */
 class Kmer {
-  MerArray longs;
-
+  inline static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
+  //std::vector<uint64_t> longs;
+  std::array<uint64_t, N_LONGS> longs;
 public:
-  inline static int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
-  static unsigned int k;
+  // serialization has to be public
+  UPCXX_SERIALIZED_FIELDS(longs);
+
+  inline static unsigned int k = 0;
 
   Kmer() {
     //assert(Kmer::k > 0);
-//    for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
-    longs.resize(0);
+    for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
+//    longs.resize(N_LONGS);
   }
 
   Kmer(const Kmer& o) {
-    longs.resize(0);
+//    longs.resize(N_LONGS);
     //assert(Kmer::k > 0);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
   }
 
   explicit Kmer(const char *s) {
-    longs.resize(0);
+//    longs.resize(N_LONGS);
     //assert(Kmer::k > 0);
     set_kmer(s);
   }
 
-  explicit Kmer(const MerArray &arr) {
-    longs.resize(0);
-    //assert(Kmer::k > 0);
-    std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
-  }
-
-  static std::vector<Kmer> get_kmers(int kmer_len, std::string seq) {
+  static void get_kmers(int kmer_len, std::string seq, std::vector<Kmer> &kmers) {
     // only need rank 0 to check
     if (Kmer::k == 0) SDIE("Kmer::k not set");
     if (kmer_len != Kmer::k)
       SDIE("Kmer::k value ", Kmer::k, " is different from kmer length ", kmer_len, " passed to get kmers");
+    kmers.clear();
+    if (seq.size() < Kmer::k) return;
     for (auto & c : seq) c = toupper(c);
-    if (seq.size() < Kmer::k) return std::vector<Kmer>();
     int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
     int numLongs = (Kmer::k + 31) / 32;
     assert(numLongs <= N_LONGS);
     int lastLong = numLongs - 1;
     assert(lastLong >= 0 && lastLong < N_LONGS);
-    std::vector<Kmer> kmers(seq.size() - Kmer::k + 1, Kmer());
+    //std::vector<Kmer> kmers.resize(seq.size() - Kmer::k + 1, Kmer());
+    kmers.resize(seq.size() - Kmer::k + 1);
     uint64_t buf[bufsize];
     uint8_t *bufPtr = (uint8_t *)buf;
     memset(buf, 0, bufsize * 8);
@@ -163,7 +157,6 @@ public:
         }
       }
     }
-    return kmers;
   }
 
   Kmer& operator=(const Kmer& o) {
@@ -281,13 +274,6 @@ public:
     return std::string(buf);
   }
 
-  // ABAB: return the raw data packed in an std::array
-  // this preserves the lexicographical order on k-mers
-  // i.e. A.to_string() < B.to_string <=> A.get_array() < B.get_array()
-  const MerArray &get_array() const {
-    return longs;
-  }
-
   const uint8_t *get_bytes() const {
     return reinterpret_cast<const uint8_t*>(longs.data());
   }
@@ -319,14 +305,6 @@ namespace std {
     typedef std::size_t result_type;
     result_type operator()(Kmer const& km) const {
       return km.hash();
-    }
-  };
-
-  template<>
-  struct hash<MerArray> {
-    typedef std::size_t result_type;
-    result_type operator()(const MerArray & km) const {
-      return MurmurHash3_x64_64((const void *)km.data(), sizeof(MerArray));
     }
   };
 }

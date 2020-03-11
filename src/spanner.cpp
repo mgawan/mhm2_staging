@@ -256,7 +256,7 @@ static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
   } else {
     DIE("cid doesn't match in pos edge\n");
   }
-  edge->gap_reads.push_back(GapRead(aln.read_id, gap_start, aln.orient, aln.cid));
+  edge->gap_reads.emplace_back(aln.read_id, gap_start, aln.orient, aln.cid);
   _graph->add_pos_gap_read(aln.read_id);
 }
 

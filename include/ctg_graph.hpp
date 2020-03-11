@@ -497,9 +497,7 @@ public:
                      if (edge->end1 != new_edge.end1 || edge->end2 != new_edge.end2) edge->conflict_error = true;
                      if (new_edge.gap > 0) {
                        // add reads to positive gap for splints
-                       //if (new_edge.gap_reads.size() == 0) DIE("trying to get a read from an empty array\n");
-                       for (auto gap_read : new_edge.gap_reads)
-                         edge->gap_reads.push_back(gap_read);
+                       edge->gap_reads.insert(edge->gap_reads.end(), new_edge.gap_reads.begin(), new_edge.gap_reads.end());
                      }
                    }
                  }

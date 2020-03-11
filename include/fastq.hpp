@@ -93,6 +93,7 @@ class FastqReader {
   bool cached;
 
   IntermittentTimer io_t;
+  inline static double overall_io_t = 0;
 
   void rtrim(string &s) {
     auto pos = s.length() - 1;
@@ -197,8 +198,6 @@ class FastqReader {
 
 public:
 
-  static double overall_io_t;
-
   FastqReader(const string &fname)
     : fname(fname)
     , f(nullptr)
@@ -277,6 +276,10 @@ public:
 
   int get_max_read_len() {
     return max_read_len;
+  }
+
+  double static get_io_time() {
+    return overall_io_t;
   }
 
   void reset() {
