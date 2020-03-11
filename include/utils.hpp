@@ -17,6 +17,7 @@
 
 
 using std::string;
+using std::string_view;
 using std::stringstream;
 using std::ostringstream;
 using std::ostream;
@@ -52,6 +53,11 @@ inline void find_and_replace(std::string& subject, const std::string& search, co
     subject.replace(pos, search.length(), replace);
     pos += replace.length();
   }
+}
+
+inline std::string_view substr_view(const std::string &s, size_t from, size_t len=string::npos) {
+  if (from>=s.size()) return {};
+  return std::string_view(s.data() + from, std::min(s.size() - from,len));
 }
 
 // this shouldn't really be defined here, but I didn't want yet another header file
@@ -434,7 +440,7 @@ inline string get_current_time() {
   return os.str();
 }
 
-inline int hamming_dist(const string &s1, const string &s2, bool require_equal_len=true) {
+inline int hamming_dist(string_view s1, string_view s2, bool require_equal_len=true) {
   if (require_equal_len && s2.size() != s1.size())//abs((int)(s2.size() - s1.size())) > 1)
     DIE("Hamming distance substring lengths don't match, ", s1.size(), ", ", s2.size(), "\n");
   int d = 0;

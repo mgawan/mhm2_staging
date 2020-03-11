@@ -258,7 +258,7 @@ public:
       f.seekg(offset);
       string line;
       while (getline(f, line)) {
-        if (line.substr(0, ctg_prefix.size()) == ctg_prefix) {
+        if (substr_view(line, 0, ctg_prefix.size()) == ctg_prefix) {
           getline(f, line);
           break;
         }
@@ -290,13 +290,10 @@ public:
       bytes_read += cname.length() + seq.length();
       progbar.update(bytes_read);
       // extract the id
-      size_t firstspace = cname.find_first_of(" ");
-      if (firstspace == std::string::npos) DIE("Ctgs file ", ctgs_fname, " is incorrect format on line: '", cname, "'");
-      int64_t id = stol(cname.substr(7, firstspace));
+      char *endptr;
+      int64_t id = strtol(cname.c_str() + 7, &endptr, 10);
       // depth is the last field in the cname
-      size_t lastspace = cname.find_last_of(" ");
-      if (lastspace == std::string::npos) DIE("Depth is missing from ctgs file ", ctgs_fname, " on line: '", cname, "'");
-      double depth = stod(cname.substr(lastspace));
+      double depth = strtod(endptr, NULL);
       Contig contig = { .id = id, .seq = seq, .depth = depth };
       add_contig(contig);
       if (ctgs_file.tellg() >= stop_offset) break;

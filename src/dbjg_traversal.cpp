@@ -142,7 +142,7 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer k
   char prev_ext = 0;
   char next_ext = (dirn == Dirn::LEFT ? kmer_str.front() : kmer_str.back());
   bool revisit_allowed = (dirn == Dirn::LEFT ? false : true);
-  if (dirn == Dirn::RIGHT) uutig += kmer_str.substr(1, kmer_str.length() - 2);
+  if (dirn == Dirn::RIGHT) uutig += substr_view(kmer_str, 1, kmer_str.length() - 2);
   while (true) {
     //progress();
     auto step_info = get_next_step(kmer_dht, kmer, dirn, prev_ext, frag_elem_gptr, revisit_allowed).wait();
@@ -359,12 +359,12 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
     if (dirn == Dirn::LEFT) {
       int slen = next_frag_seq.length() - kmer_len + 1;
       DBG_TRAVERSE(string(slen, ' '), uutig, "\n");
-      if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) uutig.insert(0, next_frag_seq.substr(0, slen));
-      else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) uutig.insert(0, next_frag_seq_rc.substr(0, slen));
+      if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) uutig.insert(0, substr_view(next_frag_seq, 0, slen));
+      else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) uutig.insert(0, substr_view(next_frag_seq_rc, 0, slen));
       else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
     } else {
-      if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) uutig += next_frag_seq.substr(kmer_len - 1);
-      else if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) uutig += next_frag_seq_rc.substr(kmer_len - 1);
+      if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) uutig += substr_view(next_frag_seq, kmer_len - 1);
+      else if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) uutig += substr_view(next_frag_seq_rc, kmer_len - 1);
       else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
     }
     DBG_TRAVERSE(uutig, "\n");

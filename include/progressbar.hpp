@@ -67,8 +67,8 @@ public:
         if (ten_perc == 0) ten_perc = 1;
         ticks = 0;
         prev_ticks = ticks;
-        SLOG_VERBOSE(KLGREEN, "* ", (prefix_str + " "), (fname.substr(fname.find_last_of("/\\") + 1), " ",
-                     get_size_str(sz)), KNORM);
+        SLOG_VERBOSE(KLGREEN, "* ", (prefix_str + " "), substr_view(fname, fname.find_last_of("/\\") + 1), " ",
+                     get_size_str(sz), KNORM);
         prev_time = start_time;
       }
   }

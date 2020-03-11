@@ -130,7 +130,7 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge)
     }
     int rstart = gap_read.gap_start - (kmer_len - 1);
     if (seq.length() < gap_size + rstart) {
-      DIE("seq length is less than substr access with rstart ", rstart, ", gap ", gap_size, "\n",
+      DIE("seq length is less than sub string access with rstart ", rstart, ", gap ", gap_size, "\n",
           gap_read.read_name, " ", seq);
     }
     string gap_seq = seq.substr(rstart, gap_size);
@@ -184,13 +184,15 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
       if (edge->end1 == 5) ctg_seq = revcomp(ctg_seq);
       int tail_len = vertex->clen - kmer_len;
       if (tail_len < 0) tail_len = 0;
-      ctg_seq = ctg_seq.substr(tail_len);
+      //ctg_seq = ctg_seq.substr(tail_len);
+      ctg_seq.erase(0, tail_len);
       DBG_SPANS("TAIL contig", vertex->cid, ".", edge->end1, "\t", ctg_seq, "\n");
     } else {
       auto vertex = _graph->get_vertex(edge->cids.cid2);
       ctg_seq = _graph->get_vertex_seq(vertex->seq_gptr, vertex->clen);
       if (edge->end2 == 3) ctg_seq = revcomp(ctg_seq);
-      ctg_seq = ctg_seq.substr(0, kmer_len);
+      //ctg_seq = ctg_seq.substr(0, kmer_len);
+      ctg_seq.erase(kmer_len);
       DBG_SPANS("HEAD contig", vertex->cid, ".", edge->end2, "\t", ctg_seq, "\n");
     }
     return ctg_seq;
@@ -260,7 +262,7 @@ static void parse_reads(int kmer_len, const vector<FastqReader*> &fqr_list) {
           min_dist.first = min_len;
           min_dist.second = -1;
           for (int i = 0; i < max_len - min_len; i++) {
-            int dist = hamming_dist(tail_seq.substr(0, min_len), head_seq.substr(0, min_len));
+            int dist = hamming_dist(substr_view(tail_seq, 0, min_len), substr_view(head_seq, 0, min_len));
             if (dist < min_dist.first) {
               min_dist.first = dist;
               min_dist.second = i;

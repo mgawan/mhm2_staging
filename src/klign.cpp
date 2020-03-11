@@ -635,4 +635,3 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
   barrier();
 }
-
