@@ -8,16 +8,16 @@
 #include "hash_funcs.h"
 
 
-inline std::array<uint64_t, 2> bloom_hash(const uint8_t *data, std::size_t len) {
+inline std::array<uint64_t, 2> bloom_hash(const std::pair<const uint8_t*, std::size_t> &data) {
   std::array<uint64_t, 2> hashValue;
-  MurmurHash3_x64_128(data, len, 0, hashValue.data());
+  MurmurHash3_x64_128(data.first, data.second, 0, hashValue.data());
   return hashValue;
 }
 
 inline uint64_t nth_hash(uint8_t n, uint64_t hashA, uint64_t hashB, uint64_t filterSize) {
   return (hashA + n * hashB) % filterSize;
 }
-  
+
 
 struct BloomFilter {
 
@@ -25,7 +25,7 @@ struct BloomFilter {
   std::vector<bool> m_bits;
 
 public:
-  
+
   void init(uint64_t entries, double error) {
     double num = log(error);
     double denom = 0.480453013918201; // ln(2)^2
@@ -45,16 +45,16 @@ public:
   void clear() {
     std::vector<bool>().swap(m_bits);
   }
-  
-  void add(const uint8_t *data, std::size_t len) {
-    auto hash_values = bloom_hash(data, len);
-    for (int n = 0; n < num_hashes; n++) 
+
+  void add(const std::pair<const uint8_t*, std::size_t> &data) {
+    auto hash_values = bloom_hash(data);
+    for (int n = 0; n < num_hashes; n++)
       m_bits[nth_hash(n, hash_values[0], hash_values[1], m_bits.size())] = true;
   }
 
-  bool possibly_contains(const uint8_t *data, std::size_t len) const {
-    auto hash_values = bloom_hash(data, len);
-    for (int n = 0; n < num_hashes; n++) 
+  bool possibly_contains(const std::pair<const uint8_t*, std::size_t> &data) const {
+    auto hash_values = bloom_hash(data);
+    for (int n = 0; n < num_hashes; n++)
       if (!m_bits[nth_hash(n, hash_values[0], hash_values[1], m_bits.size())]) return false;
     return true;
   }

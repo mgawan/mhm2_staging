@@ -204,10 +204,8 @@ class KmerDHT {
     void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
-      if (!bloom_filter1->possibly_contains(kmer.get_bytes(), kmer.get_num_bytes()))
-        bloom_filter1->add(kmer.get_bytes(), kmer.get_num_bytes());
-      else
-        bloom_filter2->add(kmer.get_bytes(), kmer.get_num_bytes());
+      if (!bloom_filter1->possibly_contains(kmer.get_bytes())) bloom_filter1->add(kmer.get_bytes());
+      else bloom_filter2->add(kmer.get_bytes());
     }
   };
   dist_object<BloomSet> bloom_set;
@@ -215,7 +213,7 @@ class KmerDHT {
   struct CtgBloomSet {
     void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
-      bloom_filter2->add(kmer.get_bytes(), kmer.get_num_bytes());
+      bloom_filter2->add(kmer.get_bytes());
     }
   };
   dist_object<CtgBloomSet> ctg_bloom_set;
@@ -223,7 +221,7 @@ class KmerDHT {
   struct BloomCount {
     void operator()(KmerAndExt &kmer_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
       // if the kmer is not found in the bloom filter, skip it
-      if (!bloom_filter->possibly_contains(kmer_and_ext.kmer.get_bytes(), kmer_and_ext.kmer.get_num_bytes())) return;
+      if (!bloom_filter->possibly_contains(kmer_and_ext.kmer.get_bytes())) return;
       // add or update the kmer count
       const auto it = kmers->find(kmer_and_ext.kmer);
       if (it == kmers->end()) {
