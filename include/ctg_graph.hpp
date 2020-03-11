@@ -44,71 +44,6 @@ using std::max;
 using cid_t = int64_t;
 
 
-template<typename T>
-void serialize_vector(ostringstream &os, vector<T> &vec)
-{
-  size_t sz = vec.size();
-  os.write((char*)&sz, sizeof(sz));
-  for (auto elem : vec) os.write((char*)&elem, sizeof(elem));
-}
-
-
-template<typename T>
-void serialize_vector_of_vectors(ostringstream &os, vector<vector<T> > &vec_vec)
-{
-  size_t sz = vec_vec.size();
-  os.write((char*)&sz, sizeof(sz));
-  for (auto vec : vec_vec) serialize_vector(os, vec);
-}
-
-
-template<typename T>
-void deserialize_vector(istringstream &is, vector<T> &vec)
-{
-  size_t sz;
-  is.read((char*)&sz, sizeof(sz));
-  vec.clear();
-  for (auto i = 0; i < sz; i++) {
-    T elem;
-    is.read((char*)&elem, sizeof(elem));
-    vec.push_back(elem);
-  }
-}
-
-
-template<typename T>
-void deserialize_vector_of_vectors(istringstream &is, vector<vector<T> > &vec_vec)
-{
-  size_t sz;
-  is.read((char*)&sz, sizeof(sz));
-  vec_vec.clear();
-  for (auto i = 0; i < sz; i++) {
-    vector<T> vec;
-    deserialize_vector(is, vec);
-    vec_vec.push_back(vec);
-  }
-}
-
-
-inline void serialize_string(ostringstream &os, const string &s)
-{
-  size_t l = s.length();
-  os.write((char*)&l, sizeof(l));
-  if (l) os.write(s.c_str(), l);
-}
-
-
-inline void deserialize_string(istringstream &is, string &s)
-{
-  size_t l;
-  is.read((char*)&l, sizeof(l));
-  if (l) {
-    s.resize(l);
-    is.read(&s[0], l);
-  }
-}
-
-
 enum class Dirn {FORWARD, BACKWARD};
 enum class Orient {NORMAL, REVCOMP};
 
@@ -214,42 +149,8 @@ struct Edge {
   // contains information of reads that map to a positive gap - used for filling the gap
   vector<GapRead> gap_reads;
 
-  string serialize() {
-    ostringstream os(stringstream::binary);
-    os.write((char*)&cids, sizeof(cids));
-    os.write((char*)&end1, sizeof(end1));
-    os.write((char*)&end2, sizeof(end2));
-    os.write((char*)&gap, sizeof(gap));
-    os.write((char*)&support, sizeof(support));
-    os.write((char*)&aln_len, sizeof(aln_len));
-    os.write((char*)&aln_score, sizeof(aln_score));
-    os.write((char*)&edge_type, sizeof(edge_type));
-    serialize_string(os, seq);
-    os.write((char*)&mismatch_error, sizeof(mismatch_error));
-    os.write((char*)&conflict_error, sizeof(conflict_error));
-    os.write((char*)&excess_error, sizeof(excess_error));
-    os.write((char*)&short_aln, sizeof(short_aln));
-    serialize_vector(os, gap_reads);
-    return os.str();
-  }
-
-  void deserialize(const string &s) {
-    istringstream is(s, stringstream::binary);
-    is.read((char*)&cids, sizeof(cids));
-    is.read((char*)&end1, sizeof(end1));
-    is.read((char*)&end2, sizeof(end2));
-    is.read((char*)&gap, sizeof(gap));
-    is.read((char*)&support, sizeof(support));
-    is.read((char*)&aln_len, sizeof(aln_len));
-    is.read((char*)&aln_score, sizeof(aln_score));
-    is.read((char*)&edge_type, sizeof(edge_type));
-    deserialize_string(is, seq);
-    is.read((char*)&mismatch_error, sizeof(mismatch_error));
-    is.read((char*)&conflict_error, sizeof(conflict_error));
-    is.read((char*)&excess_error, sizeof(excess_error));
-    is.read((char*)&short_aln, sizeof(short_aln));
-    deserialize_vector(is, gap_reads);
-  }
+  UPCXX_SERIALIZED_FIELDS(cids, end1, end2, gap, support, aln_len, aln_score, edge_type, seq, mismatch_error, conflict_error,
+                          excess_error, short_aln, gap_reads);
 };
 
 
@@ -273,38 +174,8 @@ struct Vertex {
   int walk_rank;
   int walk_i;
 
-  string serialize() {
-    ostringstream os(stringstream::binary);
-    os.write((char*)&cid, sizeof(cid));
-    os.write((char*)&clen, sizeof(clen));
-    os.write((char*)&depth, sizeof(depth));
-    os.write((char*)&visited, sizeof(visited));
-    os.write((char*)&seq_gptr, sizeof(seq_gptr));
-    serialize_vector(os, end5);
-    serialize_vector(os, end3);
-    serialize_vector_of_vectors(os, end5_merged);
-    serialize_vector_of_vectors(os, end3_merged);
-    os.write((char*)&walk_score, sizeof(walk_score));
-    os.write((char*)&walk_rank, sizeof(walk_rank));
-    os.write((char*)&walk_i, sizeof(walk_i));
-    return os.str();
-  }
-
-  void deserialize(const string &s) {
-    istringstream is(s, stringstream::binary);
-    is.read((char*)&cid, sizeof(cid));
-    is.read((char*)&clen, sizeof(clen));
-    is.read((char*)&depth, sizeof(depth));
-    is.read((char*)&visited, sizeof(visited));
-    is.read((char*)&seq_gptr, sizeof(seq_gptr));
-    deserialize_vector(is, end5);
-    deserialize_vector(is, end3);
-    deserialize_vector_of_vectors(is, end5_merged);
-    deserialize_vector_of_vectors(is, end3_merged);
-    is.read((char*)&walk_score, sizeof(walk_score));
-    is.read((char*)&walk_rank, sizeof(walk_rank));
-    is.read((char*)&walk_i, sizeof(walk_i));
-  }
+  UPCXX_SERIALIZED_FIELDS(cid, clen, depth, visited, seq_gptr, end5, end3, end5_merged, end3_merged, walk_score, walk_rank,
+                          walk_i);
 };
 
 
@@ -430,14 +301,12 @@ public:
     return upcxx::rpc(target_rank,
                       [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid) {
                         const auto it = vertices->find(cid);
-                        if (it == vertices->end()) return string("");
-                        return it->second.serialize();
+                        if (it == vertices->end()) return Vertex({.cid = -1});
+                        return it->second;
                       }, vertices, cid).then(
-                        [](string s) -> shared_ptr<Vertex> {
-                          if (s == "") return nullptr;
-                          auto v = make_shared<Vertex>();
-                          v->deserialize(s);
-                          return v;
+                        [](Vertex v) -> shared_ptr<Vertex> {
+                          if (v.cid == -1) return nullptr;
+                          return make_shared<Vertex>(v);
                         }).wait();
   }
 
@@ -509,12 +378,10 @@ public:
     v.seq_gptr = upcxx::allocate<char>(v.clen + 1);
     strcpy(v.seq_gptr.local(), seq.c_str());
     upcxx::rpc(get_vertex_target_rank(v.cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, string s) {
-                 Vertex v;
-                 v.deserialize(s);
+               [](upcxx::dist_object<vertex_map_t> &vertices, Vertex v) {
                  v.visited = false;
                  vertices->insert({v.cid, v});
-               }, vertices, v.serialize()).wait();
+               }, vertices, v).wait();
   }
 
   void add_vertex_nb(cid_t cid, cid_t nb, char end) {
@@ -570,16 +437,14 @@ public:
       return make_shared<Edge>(it->second);
     }
     return upcxx::rpc(target_rank,
-                      [](upcxx::dist_object<edge_map_t> &edges, CidPair cids) -> string {
+                      [](upcxx::dist_object<edge_map_t> &edges, CidPair cids) -> Edge {
                         const auto it = edges->find(cids);
-                        if (it == edges->end()) return string("");
-                        return it->second.serialize();
+                        if (it == edges->end()) return Edge({.cids = {-1, -1}});
+                        return it->second;
                       }, edges, cids).then(
-                        [](string s) -> shared_ptr<Edge> {
-                          if (s == "") return nullptr;
-                          auto edge = make_shared<Edge>();
-                          edge->deserialize(s);
-                          return edge;
+                        [](Edge edge) -> shared_ptr<Edge> {
+                          if (edge.cids.cid1 == -1 && edge.cids.cid2 == -1) return nullptr;
+                          return make_shared<Edge>(edge);
                         }).wait();
   }
 
@@ -600,9 +465,7 @@ public:
 
   void add_or_update_edge(Edge &edge) {
     upcxx::rpc(get_edge_target_rank(edge.cids),
-               [](upcxx::dist_object<edge_map_t> &edges, string s) {
-                 Edge new_edge;
-                 new_edge.deserialize(s);
+               [](upcxx::dist_object<edge_map_t> &edges, Edge new_edge) {
                  const auto it = edges->find(new_edge.cids);
                  if (it == edges->end()) {
                    // not found, always insert
@@ -640,7 +503,7 @@ public:
                      }
                    }
                  }
-               }, edges, edge.serialize()).wait();
+               }, edges, edge).wait();
   }
 
   void add_edge_gap_read(CidPair cids, GapRead gap_read, int aln_len, int aln_score) {
