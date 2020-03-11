@@ -64,10 +64,8 @@ inline Orient flip_orient(Orient orient)
 }
 
 
-static const size_t MAX_RNAME_LEN = 80;
-
 struct GapRead {
-  char read_name[MAX_RNAME_LEN];
+  string read_name;
   // used for resolving positive splints
   int gap_start;
   // used for resolving positive spans
@@ -75,17 +73,17 @@ struct GapRead {
   char orient;
   cid_t cid;
 
+  UPCXX_SERIALIZED_FIELDS(read_name, gap_start, orient, cid);
+
   GapRead() {}
 
   //GapRead(const string &read_name, int gap_start, int rstart, int rstop, int orient, cid_t cid) {
-  GapRead(const string &read_name, int gap_start, int orient, cid_t cid) : gap_start(gap_start), orient(orient), cid(cid) {
-    if (read_name.size() >= MAX_RNAME_LEN)
-      DIE("Read name exceeds buffer size: ", read_name.size(), " > ", MAX_RNAME_LEN, "\n");
-    strcpy(this->read_name, read_name.c_str());
+  GapRead(const string &read_name, int gap_start, int orient, cid_t cid)
+    : read_name(read_name), gap_start(gap_start), orient(orient), cid(cid) {
   }
 
   bool operator==(const GapRead &other) const {
-    return strcmp(read_name, other.read_name) == 0;
+    return (read_name == other.read_name);
   }
 };
 
@@ -204,6 +202,8 @@ private:
     GapRead gap_read;
     int aln_len;
     int aln_score;
+
+    UPCXX_SERIALIZED_FIELDS(cids, gap_read, aln_len, aln_score);
   };
 
   AggrStore<EdgeGapReadInfo> edge_gap_read_store;
