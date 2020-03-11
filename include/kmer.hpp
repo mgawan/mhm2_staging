@@ -60,8 +60,9 @@ static const uint64_t TWIN_TABLE[256] = {
 };
 
 
-static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
-using MerArray = std::array<uint64_t, N_LONGS>;
+//static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
+//using MerArray = std::array<uint64_t, N_LONGS>;
+using MerArray = std::vector<uint64_t>;
 
 
 /* Short description:
@@ -72,28 +73,33 @@ using MerArray = std::array<uint64_t, N_LONGS>;
  *  - Get last and next kmer, e.g. ACGT -> CGTT or ACGT -> AACGT
  *  */
 class Kmer {
-
   MerArray longs;
 
 public:
+  inline static int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
+  static unsigned int k;
 
   Kmer() {
-    assert(Kmer::k > 0);
-    for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
+    //assert(Kmer::k > 0);
+//    for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
+    longs.resize(0);
   }
 
   Kmer(const Kmer& o) {
-    assert(Kmer::k > 0);
+    longs.resize(0);
+    //assert(Kmer::k > 0);
     for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
   }
 
   explicit Kmer(const char *s) {
-    assert(Kmer::k > 0);
+    longs.resize(0);
+    //assert(Kmer::k > 0);
     set_kmer(s);
   }
 
   explicit Kmer(const MerArray &arr) {
-    assert(Kmer::k > 0);
+    longs.resize(0);
+    //assert(Kmer::k > 0);
     std::memcpy(longs.data(), arr.data(), sizeof(uint64_t) * (N_LONGS));
   }
 
@@ -289,8 +295,6 @@ public:
   int get_num_bytes() const {
     return N_LONGS * sizeof(uint64_t);
   }
-
-  static unsigned int k;
 };
 
 
