@@ -172,7 +172,7 @@ int main(int argc, char **argv) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
       SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
-      Kmer::k = kmer_len;
+      Kmer::set_k(kmer_len);
       // duration of kmer_dht
       analyze_kmers_dt.start();
       auto my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
@@ -233,7 +233,7 @@ int main(int argc, char **argv) {
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
-      Kmer::k = scaff_kmer_len;
+      Kmer::set_k(scaff_kmer_len);
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
       Alns alns;
       alignments_dt.start();

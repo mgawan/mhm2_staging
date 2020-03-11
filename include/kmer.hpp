@@ -67,48 +67,66 @@ class Kmer {
     0xD0, 0x90, 0x50, 0x10, 0xC0, 0x80, 0x40, 0x00
   };
 
+  inline static unsigned int k = 0;
+  inline static unsigned int n_longs = 0;
+
+//#define USE_VECTOR
+
+
+#ifdef USE_VECTOR
+  inline static int N_LONGS;
+  std::vector<uint64_t> longs;
+#else
   inline static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
-  //std::vector<uint64_t> longs;
   std::array<uint64_t, N_LONGS> longs;
-  //uint64_t longs[N_LONGS];
+#endif
 public:
   // serialization has to be public
   UPCXX_SERIALIZED_FIELDS(longs);
 
-  inline static unsigned int k = 0;
-
   Kmer() {
     assert(Kmer::k > 0);
+#ifdef USE_VECTOR
+    longs.resize(N_LONGS, 0);
+#else
     longs.fill(0);
-//    for (size_t i = 0; i < N_LONGS; i++) longs[i] = 0;
-//    longs.resize(N_LONGS);
+#endif
   }
 
   Kmer(const Kmer& o) {
     assert(Kmer::k > 0);
+#ifdef USE_VECTOR
+    longs.resize(N_LONGS);
+#else
     longs = o.longs;
-//    for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
-//    longs.resize(N_LONGS);
+#endif
   }
 
   explicit Kmer(const char *s) {
     assert(Kmer::k > 0);
+#ifdef USE_VECTOR
+    longs.resize(N_LONGS);
+#endif
     set_kmer(s);
-//    longs.resize(N_LONGS);
+  }
+
+  static void set_k(unsigned int k) {
+    Kmer::k = k;
+    Kmer::n_longs = (k + 31) / 32;
+#ifdef USE_VECTOR
+    Kmer::N_LONGS = Kmer::n_longs;
+#endif
   }
 
   static void get_kmers(int kmer_len, std::string seq, std::vector<Kmer> &kmers) {
     // only need rank 0 to check
-    if (Kmer::k == 0) SDIE("Kmer::k not set");
-    if (kmer_len != Kmer::k)
-      SDIE("Kmer::k value ", Kmer::k, " is different from kmer length ", kmer_len, " passed to get kmers");
+    assert(Kmer::k > 0);
+    assert(kmer_len == Kmer::k);
     kmers.clear();
     if (seq.size() < Kmer::k) return;
     for (auto & c : seq) c = toupper(c);
     int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
-    int numLongs = (Kmer::k + 31) / 32;
-    assert(numLongs <= N_LONGS);
-    int lastLong = numLongs - 1;
+    int lastLong = n_longs - 1;
     assert(lastLong >= 0 && lastLong < N_LONGS);
     //std::vector<Kmer> kmers.resize(seq.size() - Kmer::k + 1, Kmer());
     kmers.resize(seq.size() - Kmer::k + 1);
@@ -148,13 +166,13 @@ public:
       // enumerate the kmers in the phase
       for (int i = shift; i < kmers.size(); i += 4) {
         int byteOffset = i / 4;
-        assert(byteOffset + numLongs * 8 <= bufsize * 8);
-        for (int l = 0; l < numLongs; l++) {
+        assert(byteOffset + n_longs * 8 <= bufsize * 8);
+        for (int l = 0; l < n_longs; l++) {
           kmers[i].longs[l] = BE2H(*((uint64_t *)(bufPtr + byteOffset + l * 8)));
         }
         // set remaining bits to 0
         kmers[i].longs[lastLong] &= endmask;
-        for (int l = numLongs; l < N_LONGS; l++) {
+        for (int l = n_longs; l < N_LONGS; l++) {
           kmers[i].longs[l] = 0;
         }
       }
@@ -163,7 +181,6 @@ public:
 
   Kmer& operator=(const Kmer& o) {
     if (this != &o) longs = o.longs;
-//      for (size_t i = 0; i < N_LONGS; i++) longs[i] = o.longs[i];
     return *this;
   }
 
@@ -178,9 +195,6 @@ public:
 
   bool operator==(const Kmer& o) const {
     return longs == o.longs;
-//    for (size_t i = 0; i < N_LONGS; i++)
-//      if (longs[i] != o.longs[i]) return false;
-//    return true;
   }
 
   bool operator!=(const Kmer& o) const {
@@ -189,7 +203,11 @@ public:
 
   void set_kmer(const char *s) {
     size_t i, j, l;
-    memset(longs.data(), 0, sizeof(longs));
+#ifdef USE_VECTOR
+    std::fill(longs.begin(), longs.end(), 0);
+#else
+    longs.fill(0);
+#endif
     for (i = 0; i < Kmer::k; ++i) {
       j = i % 32;
       l = i / 32;
@@ -278,19 +296,9 @@ public:
   }
 
   std::pair<const uint8_t*, int> get_bytes() const {
-    size_t n_longs = (Kmer::k + 31) / 32;
     return {reinterpret_cast<const uint8_t*>(longs.data()), n_longs * sizeof(uint64_t)};
   }
 
-  /*
-  const uint8_t *get_bytes() const {
-    return reinterpret_cast<const uint8_t*>(longs.data());
-  }
-
-  int get_num_bytes() const {
-    return N_LONGS * sizeof(uint64_t);
-  }
-  */
 };
 
 

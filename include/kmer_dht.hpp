@@ -213,7 +213,7 @@ class KmerDHT {
   struct CtgBloomSet {
     void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
-      bloom_filter2->add(kmer.get_bytes());
+      bloom_filter2->add(kmer.get_bytes());//, kmer.get_num_bytes());
     }
   };
   dist_object<CtgBloomSet> ctg_bloom_set;
