@@ -200,6 +200,26 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
   return get_consensus_seq(seqs, max_len);
 }
 
+static bool is_overlap_mismatch(int dist, int overlap) {
+  return (dist > CGRAPH_SPAN_OVERLAP_MISMATCH_THRES || dist > overlap / 10);
+}
+
+static std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, int max_overlap, int expected_overlap=-1) {
+  int min_dist = max_overlap;
+  if (expected_overlap != -1) {
+    int min_dist = hamming_dist(tail(s1, expected_overlap), head(s2, expected_overlap));
+    if (!is_overlap_mismatch(min_dist, expected_overlap)) return {min_dist, expected_overlap};
+  }
+  for (int d = std::min(max_overlap, (int)std::min(s1.size(), s2.size())); d >= 10; d--) {
+    int dist = hamming_dist(tail(s1, d), head(s2, d));
+    if (dist < min_dist) {
+      min_dist = dist;
+      expected_overlap = d;
+      if (dist == 0) break;
+    }
+  }
+  return {min_dist, expected_overlap};
+}
 
 static void parse_reads(int kmer_len, const vector<FastqReader*> &fqr_list) {
   Timer timer(__FILEFUNC__);
@@ -254,22 +274,22 @@ static void parse_reads(int kmer_len, const vector<FastqReader*> &fqr_list) {
         int offset = kmer_len + edge->gap - head_seq.size() + kmer_len;
         if (offset < 1) offset = 1;
         DBG_SPANS("head consensus         ", string(offset, ' '), head_seq, "\n");
-        // now merge tail_seq and head_seq using the best (lowest hamming dist) overlap
+        // now try to merge tail_seq and head_seq using the best (lowest hamming dist) overlap
         int min_len = min(tail_seq.size(), head_seq.size());
         int max_len = max(tail_seq.size(), head_seq.size());
-        auto min_dist = min_hamming_dist(tail_seq, head_seq, min_len);
-        if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
-          min_dist.first = min_len;
-          min_dist.second = -1;
+        auto [min_dist, expected_overlap] = min_hamming_dist(tail_seq, head_seq, min_len);
+        if (is_overlap_mismatch(min_dist, expected_overlap)) {
+          min_dist = min_len;
+          expected_overlap = -1;
           for (int i = 0; i < max_len - min_len; i++) {
             int dist = hamming_dist(substr_view(tail_seq, 0, min_len), substr_view(head_seq, 0, min_len));
-            if (dist < min_dist.first) {
-              min_dist.first = dist;
-              min_dist.second = i;
+            if (dist < min_dist) {
+              min_dist = dist;
+              expected_overlap = i;
             }
           }
-          if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
-            DBG_SPANS("overlap mismatch: hdist ", min_dist.first, " best overlap ", min_dist.second, 
+          if (is_overlap_mismatch(min_dist, expected_overlap)) {
+            DBG_SPANS("overlap mismatch: hdist ", min_dist, " best overlap ", expected_overlap,
                       " original gap ", edge->gap, "\n");
             if (tail_seq.size() + head_seq.size() < 2 * kmer_len + edge->gap) {
               // the gap is not closed - fill with Ns
@@ -285,12 +305,12 @@ static void parse_reads(int kmer_len, const vector<FastqReader*> &fqr_list) {
           }
         }
         num_pos_spans_closed++;
-        int gap_size = tail_seq.size() + head_seq.size() - min_dist.second - 2 * kmer_len;
-        DBG_SPANS("overlap is ", min_dist.second, " original gap is ", edge->gap, " corrected gap is ", gap_size, "\n");
+        int gap_size = tail_seq.size() + head_seq.size() - expected_overlap - 2 * kmer_len;
+        DBG_SPANS("overlap is ", expected_overlap, " original gap is ", edge->gap, " corrected gap is ", gap_size, "\n");
         edge->gap = gap_size;
         DBG_SPANS(tail_seq, "\n");
-        DBG_SPANS(string(tail_seq.size() - min_dist.second, ' '), head_seq, "\n");
-        tail_seq.erase(tail_seq.size() - min_dist.second);
+        DBG_SPANS(string(tail_seq.size() - expected_overlap, ' '), head_seq, "\n");
+        tail_seq.erase(tail_seq.size() - expected_overlap);
         edge->seq = tail_seq + head_seq;
         edge->seq = edge->seq.substr(1, edge->seq.size() - 2);
         DBG_SPANS(edge->seq, "\n");

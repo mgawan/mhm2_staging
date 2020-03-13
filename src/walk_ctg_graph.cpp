@@ -101,11 +101,15 @@ struct GapStats {
 };
 
 
+static bool is_overlap_mismatch(int dist, int overlap) {
+  return (dist > CGRAPH_GAP_CLOSING_OVERLAP_MISMATCH_THRES || dist > overlap / 10);
+}
+
 static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs &ctgs) {
   Timer timer(__FILEFUNC__);
-  const int SSW_MISMATCH_COST = 3;
   // match, mismatch, gap opening, gap extending, ambiguious
-  StripedSmithWaterman::Aligner ssw_aligner(1, SSW_MISMATCH_COST, 5, 2, 2);
+  StripedSmithWaterman::Aligner ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, 
+                                            SSW_AMBIGUITY_COST);
   StripedSmithWaterman::Filter ssw_filter;
   ssw_filter.report_cigar = false;
   GapStats gap_stats = {0};
@@ -184,7 +188,6 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
             DBG_WALK("perfect neg overlap ", gap_excess, "\n");
             ctg.seq += tail(seq, seq.size() - gap_excess);
           } else {
-#ifdef USE_ALNS_FOR_GAP_CORRECTION
             int max_overlap = max(gap_excess + 20, max_kmer_len + 2);
             if (max_overlap > ctg.seq.size()) max_overlap = ctg.seq.size();
             if (max_overlap > seq.size()) max_overlap = seq.size();
@@ -206,11 +209,11 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
               break_scaffold = true;
               gap_stats.num_excess_breaks++;
               DBG_WALK("break neg gap\n");
-            } else if (ssw_aln.sw_score < aln_len - SSW_MISMATCH_TOLERANCE * SSW_MISMATCH_COST) {
+            } else if (ssw_aln.sw_score < aln_len - SSW_MISMATCH_COST * CGRAPH_MAX_MISMATCHES_THRES) {
               break_scaffold = true;
               gap_stats.num_tolerance_breaks++;
               DBG_WALK("break poor aln: score ", ssw_aln.sw_score, " < ", 
-                       aln_len - SSW_MISMATCH_TOLERANCE * SSW_MISMATCH_COST, "\n");
+                       aln_len - SSW_MISMATCH_COST * CGRAPH_MAX_MISMATCHES_THRES, "\n");
             } else {
               DBG_WALK("close neg gap trunc left at ", ctg.seq.length() - max_overlap + ssw_aln.query_end + 1, 
                        " and from right at ", ssw_aln.ref_end + 1, "\n");
@@ -218,26 +221,6 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
               ctg.seq += tail(seq, seq.size() - (ssw_aln.ref_end + 1));
             }
           }
-#else
-            // now check min hamming distance between overlaps 
-            auto min_dist = min_hamming_dist(ctg.seq, seq, max_kmer_len - 1, gap_excess);
-            if (is_overlap_mismatch(min_dist.first, min_dist.second)) {
-              break_scaffold = true;
-              DBG_WALK("break neg ", edge_type_str(edge->edge_type),  " gap ", gap_excess, " hdist ", min_dist.first, 
-                       " overlap ", min_dist.second, "\n",  tail(ctg.seq, max(gap_excess, max_kmer_len)), "\n", 
-                       head(seq, max(gap_excess, max_kmer_len)), "\n");
-            } else {
-              gap_excess = min_dist.second;
-              if (gap_excess != -edge->gap) {
-                if (edge->edge_type == EdgeType::SPLINT) gap_stats.corrected_splints++;
-                else gap_stats.corrected_spans++;
-                DBG_WALK("corrected neg ", edge_type_str(edge->edge_type),  " gap from ", edge->gap, " to ", -gap_excess, "\n",  
-                         tail(ctg.seq, gap_excess), "\n", head(seq, gap_excess), "\n");
-              }
-              ctg.seq += tail(seq, seq.size() - gap_excess);
-            }
-          }
-#endif
         } else {
           // gap is exactly 0
           ctg.seq += seq;
