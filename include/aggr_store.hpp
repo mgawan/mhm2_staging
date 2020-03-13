@@ -50,10 +50,10 @@ class AggrStore {
   }
 
   // operation on 1 element (i.e. no store)
-  template<typename FuncDistObj, typename ...Args>  
+  template<typename FuncDistObj, typename ...Args>
   void update_remote1(intrank_t target_rank, T &elem, FuncDistObj &func, Args &...args) {
     wait_max_rpcs();
-    auto fut = rpc(target_rank, 
+    auto fut = rpc(target_rank,
                    [](FuncDistObj &func, T elem, Args &...args) {
                      (*func)(elem, args...);
                    }, func, elem, args...);
@@ -62,10 +62,10 @@ class AggrStore {
   }
 
   // operate on a vector of elements in the store
-  template<typename FuncDistObj, typename ...Args>  
+  template<typename FuncDistObj, typename ...Args>
   void update_remote(intrank_t target_rank, FuncDistObj &func, Args &...args) {
     wait_max_rpcs();
-    auto fut = rpc(target_rank, 
+    auto fut = rpc(target_rank,
                    [](FuncDistObj &func, view<T> rank_store, Args &...args) {
                      for (auto elem : rank_store) (*func)(elem, args...);
                    }, func, make_view(store[target_rank].begin(), store[target_rank].end()), args...);
@@ -73,36 +73,39 @@ class AggrStore {
     rpc_futures.push_back(fut);
     store[target_rank].clear();
   }
-  
+
 public:
-  
+
   AggrStore()
     : store({})
     , rpc_futures()
     , max_store_size(0)
-    , max_rpcs_in_flight(MAX_RPCS_IN_FLIGHT) {}
-  
+    , max_rpcs_in_flight(AGGR_STORE_MAX_RPCS_IN_FLIGHT) {}
+
   virtual ~AggrStore() {
     clear();
   }
 
   void set_size(const string &desc, int64_t max_store_bytes) {
     int64_t tmp_max_rpcs_in_flight = 500L * rank_n() / 100L + 1;
-    max_rpcs_in_flight = tmp_max_rpcs_in_flight > max_rpcs_in_flight ? max_rpcs_in_flight : tmp_max_rpcs_in_flight; // hard maximum limit
-    max_store_size = max_store_bytes / (sizeof(T) * (rank_n() + max_rpcs_in_flight)); 
+    // hard maximum limit
+    max_rpcs_in_flight = tmp_max_rpcs_in_flight > max_rpcs_in_flight ? max_rpcs_in_flight : tmp_max_rpcs_in_flight;
+    max_store_size = max_store_bytes / (sizeof(T) * (rank_n() + max_rpcs_in_flight));
     if (max_store_size <= 1) {
       // no reason for delay and storage of 1 entry (i.e. small max mem at large scale), still uses max_rpcs_in_flight
       max_store_size = 0;
       store.clear();
     } else {
       store.resize(rank_n(), {});
-    } 
+    }
 
     // reduce max in flight if necessary
     int64_t tmp_inflight_bytes = max_store_bytes - (max_store_size * rank_n() * sizeof(T)); // calc remaining memory for rpcs
-    int64_t max_inflight_bytes = tmp_inflight_bytes > MIN_INFLIGHT_BYTES ? tmp_inflight_bytes : MIN_INFLIGHT_BYTES; // hard minimum limit
+    // hard minimum limit
+    int64_t max_inflight_bytes = tmp_inflight_bytes > AGGR_STORE_MIN_INFLIGHT_BYTES ?
+                                 tmp_inflight_bytes : AGGR_STORE_MIN_INFLIGHT_BYTES;
     int64_t per_rpc_bytes = (max_store_size > 0 ? max_store_size : 1) * sizeof(T);
-    if (max_rpcs_in_flight * per_rpc_bytes > max_inflight_bytes) 
+    if (max_rpcs_in_flight * per_rpc_bytes > max_inflight_bytes)
       max_rpcs_in_flight = max_inflight_bytes / per_rpc_bytes + 1;
     size_t max_target_buf = max_store_size * sizeof(T);
     SLOG_VERBOSE(desc, ": using an aggregating store for each rank of max ", get_size_str(max_store_bytes / rank_n()),
@@ -125,7 +128,7 @@ public:
     RpcFutures().swap(rpc_futures);
   }
 
-  template<typename FuncDistObj, typename ...Args>  
+  template<typename FuncDistObj, typename ...Args>
   void update(intrank_t target_rank, T &elem, FuncDistObj &func, Args &...args) {
     assert(max_store_size > 0);
     if (max_store_size <= 0) {
@@ -137,7 +140,7 @@ public:
     update_remote(target_rank, func, args...);
   }
 
-  template<typename FuncDistObj, typename ...Args>  
+  template<typename FuncDistObj, typename ...Args>
   void flush_updates(FuncDistObj &func, Args &...args) {
     for (int target_rank = 0; target_rank < rank_n(); target_rank++) {
       if (max_store_size > 0 && store[target_rank].size()) update_remote(target_rank, func, args...);

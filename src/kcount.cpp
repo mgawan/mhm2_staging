@@ -79,10 +79,12 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
   // eg qual_cutoff for k=21 is 16, for k=99 is 22.
   //int qual_cutoff = -10 * log10(0.5 / kmer_len); 
   //SLOG_VERBOSE("Using quality cutoff ", qual_cutoff, "\n");
-  int qual_cutoff = QUAL_CUTOFF;
+  int qual_cutoff = KCOUNT_QUAL_CUTOFF;
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t num_kmers = 0;
+  int64_t num_bad_quals = 0;
+  int64_t num_Ns = 0;
   string progbar_prefix = "";
   switch (pass_type) {
     case BLOOM_SET_PASS: progbar_prefix = "Pass 1: Parsing reads file to setup bloom filter"; break;
@@ -106,19 +108,20 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
       if (seq.length() < kmer_len) continue;
       // split into kmers
       Kmer::get_kmers(kmer_len, seq, kmers);
-#ifdef FILTER_BAD_QUAL_IN_READ
-      // disable kmer counting of kmers after a bad quality score (of 2) in the read
-      // ... but allow extension counting (if an extention q score still passes the QUAL_CUTOFF)
-      char special = qual_offset + 2;
-      size_t found_bad_qual_pos = quals.find_first_of(special);
-      // remember the last valid position is length()-1
-      if (found_bad_qual_pos == string::npos) found_bad_qual_pos = seq.length(); 
-      int found_bad_qual_kmer_pos = found_bad_qual_pos - kmer_len + 1;
-      assert((int)kmers.size() >= found_bad_qual_kmer_pos);
+#ifdef KCOUNT_FILTER_BAD_QUAL_IN_READ
+      size_t found_bad_qual_pos = seq.length();
+      if (pass_type != BLOOM_SET_PASS) {
+        // disable kmer counting of kmers after a bad quality score (of 2) in the read
+        // ... but allow extension counting (if an extension q score still passes the QUAL_CUTOFF)
+        found_bad_qual_pos = quals.find_first_of(qual_offset + 2);
+        if (found_bad_qual_pos == string::npos) found_bad_qual_pos = seq.length(); 
+        else num_bad_quals++;
+      }
 #endif
       // skip kmers that contain an N
       size_t found_N_pos = seq.find_first_of('N');
       if (found_N_pos == string::npos) found_N_pos = seq.length();
+      else num_Ns++;
       for (int i = 1; i < kmers.size() - 1; i++) {
         // skip kmers that contain an N
         if (i + kmer_len > found_N_pos) {
@@ -126,21 +129,17 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
           // find the next N
           found_N_pos = seq.find_first_of('N', found_N_pos + 1);
           if (found_N_pos == string::npos) found_N_pos = seq.length();
+          else num_Ns++;
           continue;
         }
-#ifdef FILTER_BAD_QUAL_IN_READ
-        char left_base = '0';
-        if (i > 0 && quals[i - 1] >= qual_offset + QUAL_CUTOFF) left_base = seq[i - 1];
-        char right_base = '0';
-        if (i + kmer_len < seq.length() && quals[i + kmer_len] >= qual_offset + QUAL_CUTOFF) right_base = seq[i + kmer_len];
-        int count = (i < found_bad_qual_kmer_pos) ? 1 : 0;
-#else
+        int count = 1;
+#ifdef KCOUNT_FILTER_BAD_QUAL_IN_READ
+        if (pass_type != BLOOM_SET_PASS && i + kmer_len > found_bad_qual_pos) count = 0;
+#endif
         char left_base = seq[i - 1];
         if (quals[i - 1] < qual_offset + qual_cutoff) left_base = '0';
         char right_base = seq[i + kmer_len];
         if (quals[i + kmer_len] < qual_offset + qual_cutoff) right_base = '0';
-        int count = 1;
-#endif
         kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
         DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
         num_kmers++;
@@ -154,9 +153,15 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
+  auto all_num_bad_quals = reduce_one(num_bad_quals, op_fast_add, 0).wait();
+  auto all_num_Ns = reduce_one(num_Ns, op_fast_add, 0).wait();
   auto all_distinct_kmers = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("Processed a total of ", all_num_lines, " lines (", all_num_reads, " reads)\n");
-  if (pass_type != BLOOM_SET_PASS) SLOG_VERBOSE("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
+  if (pass_type != BLOOM_SET_PASS) {
+    SLOG_VERBOSE("Found ", perc_str(all_distinct_kmers, all_num_kmers), " unique kmers\n");
+    if (all_num_bad_quals) SLOG_VERBOSE("Found ", perc_str(all_num_bad_quals, all_num_kmers), " bad quality positions\n");
+    if (all_num_Ns) SLOG_VERBOSE("Found ", perc_str(all_num_Ns, all_num_kmers), " kmers with Ns\n");
+  }
 }
 
 // count ctg kmers if using bloom

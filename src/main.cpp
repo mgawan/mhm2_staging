@@ -242,7 +242,7 @@ int main(int argc, char **argv) {
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
       alignments_dt.stop();
-      int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? BREAK_SCAFF_NS : 1);
+      int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? CGRAPH_BREAK_SCAFF_NS : 1);
       cgraph_dt.start();
       traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
                          fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);

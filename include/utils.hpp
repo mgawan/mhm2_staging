@@ -381,17 +381,18 @@ inline int check_dir(const char *path) {
 // example:  get_rank_path("path/to/file_output_data.txt", rank) -> "path/to/per_rank/<rankdir>/<rank>/file_output_data.txt"
 // of if rank == -1, "path/to/per_rank/file_output_data.txt"
 inline bool get_rank_path(string &fname, int rank) {
-  char buf[MAX_FILE_PATH];
+  const int MAX_RANKS_PER_DIR = 1024;
+  char buf[PATH_MAX];
   strcpy(buf, fname.c_str());
   int pathlen = strlen(buf);
-  char newPath[MAX_FILE_PATH*2+50];
+  char newPath[PATH_MAX*2+50];
   char *lastslash = strrchr(buf, '/');
   int checkDirs = 0;
   int thisDir;
   char *lastdir = NULL;
 
-  if (pathlen + 25 >= MAX_FILE_PATH) {
-    WARN("File path is too long (max: ", MAX_FILE_PATH, "): ", buf, "\n");
+  if (pathlen + 25 >= PATH_MAX) {
+    WARN("File path is too long (max: ", PATH_MAX, "): ", buf, "\n");
     return false;
   }
   if (lastslash) {
@@ -399,18 +400,18 @@ inline bool get_rank_path(string &fname, int rank) {
   }
   if (rank < 0) {
     if (lastslash) {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "%s/per_rank/%s", buf, lastslash + 1);
+      snprintf(newPath, PATH_MAX*2+50, "%s/per_rank/%s", buf, lastslash + 1);
       checkDirs = 1;
     } else {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "per_rank/%s", buf);
+      snprintf(newPath, PATH_MAX*2+50, "per_rank/%s", buf);
       checkDirs = 1;
     }
   } else {
     if (lastslash) {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "%s/per_rank/%08d/%08d/%s", buf, rank / MAX_RANKS_PER_DIR, rank, lastslash + 1);
+      snprintf(newPath, PATH_MAX*2+50, "%s/per_rank/%08d/%08d/%s", buf, rank / MAX_RANKS_PER_DIR, rank, lastslash + 1);
       checkDirs = 3;
     } else {
-      snprintf(newPath, MAX_FILE_PATH*2+50, "per_rank/%08d/%08d/%s", rank / MAX_RANKS_PER_DIR, rank, buf);
+      snprintf(newPath, PATH_MAX*2+50, "per_rank/%08d/%08d/%s", rank / MAX_RANKS_PER_DIR, rank, buf);
       checkDirs = 3;
     }
   }
@@ -448,28 +449,6 @@ inline int hamming_dist(string_view s1, string_view s2, bool require_equal_len=t
   for (int i = 0; i < min_size; i++)
     d += (s1[i] != s2[i]);
   return d;
-}
-
-inline bool is_overlap_mismatch(int dist, int overlap) {
-  if (dist > MISMATCH_THRES || dist > overlap / 10) return true;
-  return false;
-}
-
-inline std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, int max_overlap, int expected_overlap=-1) {
-  int min_dist = max_overlap;
-  if (expected_overlap != -1) {
-    int min_dist = hamming_dist(tail(s1, expected_overlap), head(s2, expected_overlap));
-    if (!is_overlap_mismatch(min_dist, expected_overlap)) return {min_dist, expected_overlap};
-  }
-  for (int d = std::min(max_overlap, (int)std::min(s1.size(), s2.size())); d >= 10; d--) {
-    int dist = hamming_dist(tail(s1, d), head(s2, d));
-    if (dist < min_dist) {
-      min_dist = dist;
-      expected_overlap = d;
-      if (dist == 0) break;
-    }
-  }
-  return {min_dist, expected_overlap};
 }
 
 static string remove_file_ext(const string &fname) {

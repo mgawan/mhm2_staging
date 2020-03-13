@@ -97,8 +97,8 @@ class KmerCtgDHT {
       } else {
         vector<CtgLoc> *ctg_locs = &it->second;
         // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
-        if (ctg_locs->size() >= MAX_KMER_MAPPINGS) {
-          assert(ctg_locs->size() <= MAX_KMER_MAPPINGS);
+        if (ctg_locs->size() >= KLIGN_MAX_KMER_TO_CTG_MAPPINGS) {
+          assert(ctg_locs->size() <= KLIGN_MAX_KMER_TO_CTG_MAPPINGS);
           _num_dropped++;
           return;
         }
@@ -162,13 +162,12 @@ public:
 
   int kmer_len;  
   
-  // aligner construction: match_score, mismatch_penalty, gap_open_penalty, gap_extension_penalty - no entry for ambiquity, which should be 2
-  // note SSW internal defaults are 2 2 3 1
+  // aligner construction: SSW internal defaults are 2 2 3 1
   KmerCtgDHT(int kmer_len, int max_store_size, int max_ctg_cache, Alns &alns)
     : kmer_map({})
     , kmer_store({})
     , insert_kmer({})
-    , ssw_aligner(1, 3, 5, 2, 2)
+    , ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, SSW_AMBIGUITY_COST)
     , num_alns(0)
     , num_perfect_alns(0)
     , num_excess_alns_reads(0)

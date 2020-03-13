@@ -342,8 +342,8 @@ public:
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
       double init_mem_free = get_free_mem();
-      bloom_filter1->init(cardinality, BLOOM_FP);
-      bloom_filter2->init(cardinality / 4, BLOOM_FP); // second bloom has far fewer entries - assume 75% are filtered out
+      bloom_filter1->init(cardinality, KCOUNT_BLOOM_FP);
+      bloom_filter2->init(cardinality / 4, KCOUNT_BLOOM_FP); // second bloom has far fewer entries - assume 75% filtered out
       SLOG_VERBOSE("Bloom filters used ", get_size_str(init_mem_free - get_free_mem()), " memory on node 0\n");
     } else {
       double init_mem_free = get_free_mem();
@@ -483,7 +483,7 @@ public:
     double init_mem_free = get_free_mem();
     barrier();
     // two bloom false positive rates applied
-    initial_kmer_dht_reservation = (int64_t) (cardinality2 * (1+BLOOM_FP) * (1+BLOOM_FP) + 1000);
+    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 1000);
     kmers->reserve( initial_kmer_dht_reservation );
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer) + sizeof(KmerCounts));
     SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",

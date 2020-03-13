@@ -1,20 +1,36 @@
+# maximum kmer length over all iterations
 add_definitions(-DMAX_KMER_LEN=128)
+
+# quality cutoff for rejecting bases as bad during kmer counting
 # quality encoding is logarithmic, so the probability of an error is:
 # cutoff 10: 10% chance
 # cutoff 20: 1% chance
 # cutoff 30: 0.1% chance
-add_definitions(-DQUAL_CUTOFF=20)
-add_definitions(-DFILTER_BAD_QUAL_IN_READ)
-add_definitions(-DMAX_KMER_MAPPINGS=10)
-add_definitions(-DBLOOM_FP=0.05)
-add_definitions(-DMAX_FILE_PATH=255)
-add_definitions(-DMAX_RANKS_PER_DIR=1024)
-add_definitions(-DMAX_RPCS_IN_FLIGHT=8192) 
-# 4MB in flight
-add_definitions(-DMIN_INFLIGHT_BYTES=41944304)
+add_definitions(-DKCOUNT_QUAL_CUTOFF=20)
+# if defined will filter out all kmers after a bad quality score (2) in the read
+add_definitions(-DKCOUNT_FILTER_BAD_QUAL_IN_READ)
+# false positive rate for bloom filter
+add_definitions(-DKCOUNT_BLOOM_FP=0.05)
+
+
+# limit on how many kmers can align to a contig
+add_definitions(-DKLIGN_MAX_KMER_TO_CTG_MAPPINGS=10)
+
+
+# maximum number of rpcs in flight at one time - needed to avoid memory issues with rpcs  
+# FIXME: make runtime option
+add_definitions(-DAGGR_STORE_MAX_RPCS_IN_FLIGHT=8192) 
+# minimum limit for bytes in flight - also related to memory issues in rpcs
+# FIXME: make runtime option
+add_definitions(-DAGGR_STORE_MIN_INFLIGHT_BYTES=41944304)
+
+# use colors in the output
 add_definitions(-DUSE_COLORS)
+
+# use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
-add_definitions(-DUSE_PROGBAR)
+
+
 add_definitions(-DMIN_CTG_PRINT_LEN=500)
 add_definitions(-DDEPTH_DIFF_THRES=0.1)
 add_definitions(-DMAX_DEPTH_DIFF=15)
@@ -23,27 +39,54 @@ add_definitions(-DMAX_SEARCH_LEVEL=5)
 add_definitions(-DMAX_QUEUE_SIZE=100)
 add_definitions(-DASSM_CLEN_THRES=500)
 add_definitions(-DALN_SEED_SPACE=8)
-add_definitions(-DUSE_ALNS_FOR_GAP_CORRECTION)
+
+
+# Max number of mismatches allowed when closing gaps - any more than and the scaffold will be broken
+add_definitions(-DCGRAPH_GAP_CLOSING_OVERLAP_MISMATCH_THRES=1)
+
+
 # This should be a parameter - it is a good way of tuning errors vs ctgy - the higher it is, the higher the errors and ctgy
-add_definitions(-DMISMATCH_THRES=1)
-# another good candidate for errors v ctgy tradeoff. THis applies to SSW alignments in gap closing
-add_definitions(-DSSW_MISMATCH_TOLERANCE=3)
-# FIXME: these should not be defined here!!
-add_definitions(-DBREAK_SCAFF_NS=10)
+# The max permissible number of mismatches in the overlap when closing spans
+# FIXME: should this be a parameter??
+add_definitions(-DCGRAPH_SPAN_OVERLAP_MISMATCH_THRES=1)
+# another good candidate for errors v ctgy tradeoff. 
+# For SSW alignments in gap closing: max number of mismatches allowed in the alignment
+add_definitions(-DCGRAPH_MAX_MISMATCHES_THRES=3)
+# max number of Ns in a gap before the scaffold gets broken - applied after all other scaffolding breaking
+add_definitions(-DCGRAPH_BREAK_SCAFF_NS=10)
+
+# parameters for SSW aligner
+add_definitions(-DSSW_MATCH_SCORE=1)
+add_definitions(-DSSW_MISMATCH_COST=1)
+add_definitions(-DSSW_GAP_OPENING_COST=1)
+add_definitions(-DSSW_GAP_EXTENDING_COST=1)
+add_definitions(-DSSW_AMBIGUITY_COST=1)
+#add_definitions(-DSSW_MISMATCH_COST=3)
+#add_definitions(-DSSW_GAP_OPENING_COST=5)
+#add_definitions(-DSSW_GAP_EXTENDING_COST=2)
+#add_definitions(-DSSW_AMBIGUITY_COST=2)
+
 add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
 add_definitions(-DWALK_SUPPORT_THRES=3)
 add_definitions(-DMAX_ALNS_PER_READ=20)
 add_definitions(-DALIGN_EXPAND_BASES=5)
 add_definitions(-DALN_WIGGLE=1)
 add_definitions(-DMAX_NUM_GET_CTGS=100000)
-# FIXME: these should be parameters
+
+# max and min kmer lengths for local assembly kmer walks
 add_definitions(-DLASSM_MAX_KMER_LEN=121)
 add_definitions(-DLASSM_MIN_KMER_LEN=21)
+# size of shift in iterative kmer walks
 add_definitions(-DLASSM_SHIFT_SIZE=8)
+# minimum score for low quality base
 add_definitions(-DLASSM_MIN_QUAL=10)
+# minimum score for high quality base
 add_definitions(-DLASSM_MIN_HI_QUAL=20)
+# parameters for depth matching
 add_definitions(-DLASSM_MIN_VIABLE_DEPTH=0.2)
 add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.3)
+# for fork resolution
 add_definitions(-DLASSM_RATING_THRES=0)
+# limit to restrict the computational overhead
 add_definitions(-DLASSM_MAX_COUNT_MERS_READS=3000)
 
