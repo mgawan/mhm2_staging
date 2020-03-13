@@ -187,7 +187,6 @@ private:
   upcxx::dist_object<reads_map_t> read_seqs;
   HASH_TABLE<cid_t, shared_ptr<Vertex> > vertex_cache;
   HASH_TABLE<CidPair, shared_ptr<Edge> > edge_cache;
-  const int MAX_CACHE_SIZE = 2000000;
 
   struct VertexDepthInfo {
     cid_t cid;
@@ -253,8 +252,8 @@ public:
 
   CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}), vertex_depth_store({}),
                update_depth_func({}), edge_gap_read_store({}), add_edge_gap_read_func({}) {
-    vertex_cache.reserve(MAX_CACHE_SIZE);
-    edge_cache.reserve(MAX_CACHE_SIZE);
+    vertex_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
+    edge_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
     vertex_depth_store.set_size("vertex depths store", ONE_MB);
     edge_gap_read_store.set_size("edge gaps store", ONE_MB);
   }
@@ -643,8 +642,7 @@ public:
     }
     auto v = get_vertex(cid);
     // load factor around .5
-    if (vertex_cache.size() < MAX_CACHE_SIZE / 2) vertex_cache[cid] = v;
-    //else DBG("vertex cache is full\n");
+    if (vertex_cache.size() < CGRAPH_MAX_CACHE_SIZE / 2) vertex_cache[cid] = v;
     return v;
   }
 
@@ -657,8 +655,7 @@ public:
       return it->second;
     }
     auto edge = get_edge(cids.cid1, cids.cid2);
-    if (edge_cache.size() < MAX_CACHE_SIZE / 2) edge_cache[cids] = edge;
-    //else DBG("edge cache is full\n");
+    if (edge_cache.size() < CGRAPH_MAX_CACHE_SIZE / 2) edge_cache[cids] = edge;
     return edge;
   }
 

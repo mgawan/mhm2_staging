@@ -50,6 +50,8 @@ add_definitions(-DCGRAPH_MIN_DEPTH_DIFF=5)
 # controls extent of search for matching depth in cgraph
 add_definitions(-DCGRAPH_MAX_SEARCH_LEVEL=5)
 add_definitions(-DCGRAPH_MAX_QUEUE_SIZE=100)
+# max number of entries in vertex cache or in edge cache
+add_definitions(-DCGRAPH_MAX_CACHE_SIZE=2000000)
 # max allowed degree in contig graph 
 add_definitions(-DCGRAPH_MAX_DEGREE=100)
 # threshold multiplier for best supported path over second best
