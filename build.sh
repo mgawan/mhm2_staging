@@ -9,9 +9,9 @@ if [ "$1" == "clean" ]; then
     #cmake --build $srcdir --target clean
     rm -rf build/*
 else
-    if hash module 2>/dev/null; then
-        module load upcxx
-    fi
+#    if hash module 2>/dev/null; then
+#        module load upcxx
+#    fi
     cd `pwd`/build
     if [ "$1" == "Debug" ]; then
         cmake $srcdir -DCMAKE_BUILD_TYPE=Debug

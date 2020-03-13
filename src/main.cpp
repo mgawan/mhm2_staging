@@ -151,6 +151,7 @@ int main(int argc, char **argv) {
   if (options->cache_reads) {
     load_cache_dt.start();
     auto free_mem = get_free_mem();
+    upcxx::barrier();
     for (auto fqr : fqr_list) {
       fqr->load_cache(options->qual_offset);
     }
