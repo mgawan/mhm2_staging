@@ -168,9 +168,9 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
     int missing_start_bases = unaligned_start - projected_off;
     if (unaligned_start == 0) {
       start_status = "FULL";
-    } else if (projected_off > 0 && missing_start_bases < ALN_WIGGLE) {
+    } else if (projected_off > 0 && missing_start_bases < KLIGN_UNALIGNED_THRES) {
       start_status = "GAP";
-    } else if (unaligned_start < ALN_WIGGLE) {
+    } else if (unaligned_start < KLIGN_UNALIGNED_THRES) {
       start_status = "INC";
     } else {
       (*reject_5_trunc)++;
@@ -186,9 +186,9 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
     int missing_end_bases = unaligned_end - projected_off;
     if (unaligned_end == 0) {
       end_status = "FULL";
-    } else if (projected_off > 0 && missing_end_bases < ALN_WIGGLE) {
+    } else if (projected_off > 0 && missing_end_bases < KLIGN_UNALIGNED_THRES) {
       end_status = "GAP";
-    } else if (unaligned_end < ALN_WIGGLE) {
+    } else if (unaligned_end < KLIGN_UNALIGNED_THRES) {
       end_status = "INC";
     } else {
       (*reject_3_trunc)++;

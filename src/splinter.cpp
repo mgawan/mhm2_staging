@@ -50,7 +50,7 @@ static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read
     }
     int unaligned_left = min(aln.rstart, aln.cstart);
     int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - aln.cstop);
-    if (unaligned_left > ALN_WIGGLE || unaligned_right > ALN_WIGGLE) {
+    if (unaligned_left > KLIGN_UNALIGNED_THRES || unaligned_right > KLIGN_UNALIGNED_THRES) {
       (*unaligned)++;
 //      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
 //          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");

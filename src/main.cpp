@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
           dump_ctgs_dt.stop();
         }
         SLOG(KBLUE "_________________________\n", KNORM);
-        ctgs.print_stats(ASSM_CLEN_THRES);
+        ctgs.print_stats(MIN_CTG_PRINT_LEN);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
@@ -266,7 +266,7 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________\n", KNORM);
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
   SLOG(KBLUE "_________________________\n", KNORM);
-  ctgs.print_stats(ASSM_CLEN_THRES);
+  ctgs.print_stats(MIN_CTG_PRINT_LEN);
   SLOG(KBLUE "_________________________\n", KNORM);
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");

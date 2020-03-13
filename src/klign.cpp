@@ -327,7 +327,7 @@ public:
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       // drop alns for reads with too many alns
-      if (read_alns.size() >= MAX_ALNS_PER_READ) break;
+      if (read_alns.size() >= KLIGN_MAX_ALNS_PER_READ) break;
       int pos_in_read = elem.second.pos_in_read;
       bool read_kmer_is_rc = elem.second.read_is_rc;
       CtgLoc ctg_loc = elem.second.ctg_loc;
@@ -352,8 +352,8 @@ public:
       int overlap_len = left_of_kmer + kmer_len + right_of_kmer;
 
       // add a few extra on either end if possible
-      int ctg_aln_len = overlap_len + min(ctg_loc.clen - (cstart + overlap_len), ALIGN_EXPAND_BASES);
-      int ctg_extra_offset = min(cstart, ALIGN_EXPAND_BASES);
+      int ctg_aln_len = overlap_len + min(ctg_loc.clen - (cstart + overlap_len), KLIGN_EXPAND_BASES);
+      int ctg_extra_offset = min(cstart, KLIGN_EXPAND_BASES);
       cstart -= ctg_extra_offset;
       ctg_aln_len += ctg_extra_offset;
 
@@ -401,7 +401,7 @@ public:
     }
 
     // only add alns if there are not too many for this read
-    if (read_alns.size() < MAX_ALNS_PER_READ) {
+    if (read_alns.size() < KLIGN_MAX_ALNS_PER_READ) {
       sort(read_alns.begin(), read_alns.end(), 
            [](const auto &elem1, const auto &elem2) {
              return elem1.score1 > elem2.score1;
@@ -502,7 +502,7 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
               auto read_record = kmer_to_read.read_record;
               int pos_in_read = kmer_to_read.pos_in_read;
               bool read_is_rc = kmer_to_read.is_rc;
-              if (read_record->aligned_ctgs_map.size() > MAX_ALNS_PER_READ) continue;
+              if (read_record->aligned_ctgs_map.size() > KLIGN_MAX_ALNS_PER_READ) continue;
               read_record->aligned_ctgs_map.insert({ctg_loc.cid, {pos_in_read, read_is_rc, ctg_loc}});
             }
           }
@@ -568,7 +568,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
       bool filled = false;
-      for (int i = 0; i < kmers.size(); i += ALN_SEED_SPACE) {
+      for (int i = 0; i < kmers.size(); i += KLIGN_SEED_SPACE) {
         Kmer kmer = kmers[i];
         Kmer kmer_rc = kmer.revcomp();
         bool is_rc = false;
@@ -579,7 +579,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
         auto it = kmer_read_map.find(kmer);
         if (it == kmer_read_map.end()) it = kmer_read_map.insert({kmer, {}}).first;
         it->second.push_back({read_record, i, is_rc});
-        if (kmer_read_map.size() >= MAX_NUM_GET_CTGS) filled = true;
+        if (kmer_read_map.size() >= KLIGN_MAX_NUM_GET_CTGS) filled = true;
       }
       if (filled) 
         num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
@@ -597,7 +597,7 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
                " are perfect\n");
   auto num_excess_alns_reads = kmer_ctg_dht.get_num_excess_alns_reads();
   if (num_excess_alns_reads)
-    SLOG_VERBOSE("Dropped ", num_excess_alns_reads, " reads because of alignments in excess of ", MAX_ALNS_PER_READ, "\n");
+    SLOG_VERBOSE("Dropped ", num_excess_alns_reads, " reads because of alignments in excess of ", KLIGN_MAX_ALNS_PER_READ, "\n");
   auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
   if (num_overlaps)
     SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");

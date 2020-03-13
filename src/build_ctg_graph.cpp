@@ -48,7 +48,7 @@ static void set_nbs() {
       for (cid_t cid : {edge->cids.cid1, edge->cids.cid2}) {
         auto v = _graph->get_vertex(cid);
         assert(!edge->excess_error);
-        if (v->end5.size() + v->end3.size() > MAX_CTG_GRAPH_DEGREE) {
+        if (v->end5.size() + v->end3.size() > CGRAPH_MAX_DEGREE) {
           edge->excess_error = true;
           clen_excess += v->clen;
           num_excess_ctgs++;

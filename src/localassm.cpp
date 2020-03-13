@@ -271,8 +271,8 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
                                   int64_t &num_alns_found, int64_t &num_alns_invalid) {
 
   auto classify_aln = [](int runaligned, int cunaligned) ->AlnStatus {
-    if (runaligned > cunaligned && cunaligned < ALN_WIGGLE) return AlnStatus::EXTENDS_CONTIG;
-    if (runaligned <= cunaligned && runaligned < ALN_WIGGLE) return AlnStatus::OVERLAPS_CONTIG;
+    if (runaligned > cunaligned && cunaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::EXTENDS_CONTIG;
+    if (runaligned <= cunaligned && runaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::OVERLAPS_CONTIG;
     return AlnStatus::NO_ALN;
   };
   

@@ -205,7 +205,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
                      " left excess ", left_excess, " right excess ", right_excess, " score ", ssw_aln.sw_score, 
                      " score next best ", ssw_aln.sw_score_next_best, " aln len ", aln_len, "\n", 
                      tail(ctg.seq, max_overlap), "\n", head(seq, max_overlap), "\n");
-            if (left_excess > ALN_WIGGLE || right_excess > ALN_WIGGLE) {
+            if (left_excess > KLIGN_UNALIGNED_THRES || right_excess > KLIGN_UNALIGNED_THRES) {
               break_scaffold = true;
               gap_stats.num_excess_breaks++;
               DBG_WALK("break neg gap\n");
@@ -263,9 +263,9 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
 
 static bool depth_match(double depth, double walk_depth) {
   double depth_diff = fabs(depth - walk_depth);
-  double allowable_diff = DEPTH_DIFF_THRES * walk_depth;
-  if (allowable_diff > MAX_DEPTH_DIFF) allowable_diff = MAX_DEPTH_DIFF;
-  if (allowable_diff < MIN_DEPTH_DIFF) allowable_diff = MIN_DEPTH_DIFF;
+  double allowable_diff = CGRAPH_DEPTH_DIFF_THRES * walk_depth;
+  if (allowable_diff > CGRAPH_MAX_DEPTH_DIFF) allowable_diff = CGRAPH_MAX_DEPTH_DIFF;
+  if (allowable_diff < CGRAPH_MIN_DEPTH_DIFF) allowable_diff = CGRAPH_MIN_DEPTH_DIFF;
   return (depth_diff <= allowable_diff);
 }
 
@@ -304,12 +304,12 @@ static cid_t bfs_branch(shared_ptr<Vertex> curr_v, int end, double walk_depth) {
       search_level++;
       string offset(6 + search_level * 2, ' ');
       // break if the search level is too high, or if the queue size is too big
-      if (search_level >= MAX_SEARCH_LEVEL) {
-        DBG_WALK(offset, "Reached max search level ", MAX_SEARCH_LEVEL, ", stopping...\n");
+      if (search_level >= CGRAPH_MAX_SEARCH_LEVEL) {
+        DBG_WALK(offset, "Reached max search level ", CGRAPH_MAX_SEARCH_LEVEL, ", stopping...\n");
         break;
       }
-      if (q.size() >= MAX_QUEUE_SIZE) {
-        DBG_WALK(offset, "Reached max queue size ", q.size(), " > ", MAX_QUEUE_SIZE, " stopping...\n");
+      if (q.size() >= CGRAPH_MAX_QUEUE_SIZE) {
+        DBG_WALK(offset, "Reached max queue size ", q.size(), " > ", CGRAPH_MAX_QUEUE_SIZE, " stopping...\n");
         break;
       }
       q.push({nullptr, 0});
@@ -478,7 +478,7 @@ static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kme
              });
         DBG_WALK("    -> most supported branch is ", nbs_support[0].second, " (", nbs_support[0].first, 
                  "), next best is ", nbs_support[1].second, " (", nbs_support[1].first, ")\n");
-        if (nbs_support[0].first >= WALK_SUPPORT_THRES * nbs_support[1].first && nbs_support[0].first > 2) {
+        if (nbs_support[0].first >= CGRAPH_WALK_SUPPORT_THRES * nbs_support[1].first && nbs_support[0].first > 2) {
           branch_chosen = nbs_support[0].second;
           DBG_WALK("    -> resolve most supported ", branch_chosen, "\n");
         }

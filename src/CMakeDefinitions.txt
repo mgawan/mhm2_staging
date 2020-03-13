@@ -12,10 +12,8 @@ add_definitions(-DKCOUNT_FILTER_BAD_QUAL_IN_READ)
 # false positive rate for bloom filter
 add_definitions(-DKCOUNT_BLOOM_FP=0.05)
 
-
 # limit on how many kmers can align to a contig
 add_definitions(-DKLIGN_MAX_KMER_TO_CTG_MAPPINGS=10)
-
 
 # maximum number of rpcs in flight at one time - needed to avoid memory issues with rpcs  
 # FIXME: make runtime option
@@ -30,29 +28,43 @@ add_definitions(-DUSE_COLORS)
 # use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
 
-
+# the minimum length of contigs to print in the final dump
+# FIXME: make runtime option
 add_definitions(-DMIN_CTG_PRINT_LEN=500)
-add_definitions(-DDEPTH_DIFF_THRES=0.1)
-add_definitions(-DMAX_DEPTH_DIFF=15)
-add_definitions(-DMIN_DEPTH_DIFF=5)
-add_definitions(-DMAX_SEARCH_LEVEL=5)
-add_definitions(-DMAX_QUEUE_SIZE=100)
-add_definitions(-DASSM_CLEN_THRES=500)
-add_definitions(-DALN_SEED_SPACE=8)
 
+# decreasing this value increases the alignment computation time, and it may improve results slightly
+add_definitions(-DKLIGN_SEED_SPACE=8)
+# max allowed alignments per read (to reduce overhead & imbalance)
+add_definitions(-DKLIGN_MAX_ALNS_PER_READ=20)
+# how many bases to add on either end for substrings that will be aligned
+add_definitions(-DKLIGN_EXPAND_BASES=5)
+# max number of unaligned bases to allow on the side of an alignment
+add_definitions(-DKLIGN_UNALIGNED_THRES=1)
+# limit on how many contigs to fetch for a read
+add_definitions(-DKLIGN_MAX_NUM_GET_CTGS=100000)
 
+# controls depth matching in cgraph
+add_definitions(-DCGRAPH_DEPTH_DIFF_THRES=0.1)
+add_definitions(-DCGRAPH_MAX_DEPTH_DIFF=15)
+add_definitions(-DCGRAPH_MIN_DEPTH_DIFF=5)
+# controls extent of search for matching depth in cgraph
+add_definitions(-DCGRAPH_MAX_SEARCH_LEVEL=5)
+add_definitions(-DCGRAPH_MAX_QUEUE_SIZE=100)
+# max allowed degree in contig graph 
+add_definitions(-DCGRAPH_MAX_DEGREE=100)
+# threshold multiplier for best supported path over second best
+add_definitions(-DCGRAPH_WALK_SUPPORT_THRES=3)
 # Max number of mismatches allowed when closing gaps - any more than and the scaffold will be broken
 add_definitions(-DCGRAPH_GAP_CLOSING_OVERLAP_MISMATCH_THRES=1)
-
-
 # This should be a parameter - it is a good way of tuning errors vs ctgy - the higher it is, the higher the errors and ctgy
 # The max permissible number of mismatches in the overlap when closing spans
 # FIXME: should this be a parameter??
 add_definitions(-DCGRAPH_SPAN_OVERLAP_MISMATCH_THRES=1)
-# another good candidate for errors v ctgy tradeoff. 
+# another good candidate for errors v ctgy tradeoff
 # For SSW alignments in gap closing: max number of mismatches allowed in the alignment
 add_definitions(-DCGRAPH_MAX_MISMATCHES_THRES=3)
 # max number of Ns in a gap before the scaffold gets broken - applied after all other scaffolding breaking
+# FIXME: make runtime option
 add_definitions(-DCGRAPH_BREAK_SCAFF_NS=10)
 
 # parameters for SSW aligner
@@ -61,17 +73,11 @@ add_definitions(-DSSW_MISMATCH_COST=1)
 add_definitions(-DSSW_GAP_OPENING_COST=1)
 add_definitions(-DSSW_GAP_EXTENDING_COST=1)
 add_definitions(-DSSW_AMBIGUITY_COST=1)
+# previous defaults
 #add_definitions(-DSSW_MISMATCH_COST=3)
 #add_definitions(-DSSW_GAP_OPENING_COST=5)
 #add_definitions(-DSSW_GAP_EXTENDING_COST=2)
 #add_definitions(-DSSW_AMBIGUITY_COST=2)
-
-add_definitions(-DMAX_CTG_GRAPH_DEGREE=100)
-add_definitions(-DWALK_SUPPORT_THRES=3)
-add_definitions(-DMAX_ALNS_PER_READ=20)
-add_definitions(-DALIGN_EXPAND_BASES=5)
-add_definitions(-DALN_WIGGLE=1)
-add_definitions(-DMAX_NUM_GET_CTGS=100000)
 
 # max and min kmer lengths for local assembly kmer walks
 add_definitions(-DLASSM_MAX_KMER_LEN=121)
@@ -89,4 +95,3 @@ add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.3)
 add_definitions(-DLASSM_RATING_THRES=0)
 # limit to restrict the computational overhead
 add_definitions(-DLASSM_MAX_COUNT_MERS_READS=3000)
-
