@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+#include <chrono>
 
 namespace StripedSmithWaterman {
 
@@ -193,6 +194,10 @@ namespace StripedSmithWaterman {
       const int8_t* translation_matrix,
       const int&    translation_matrix_size);
 
+    double get_ssw_secs() {
+      return ssw_dt.count();
+    }
+    
   private:
     int8_t* score_matrix_;
     int     score_matrix_size_;
@@ -207,6 +212,8 @@ namespace StripedSmithWaterman {
 
     int8_t* translated_reference_;
     int32_t reference_length_;
+    
+    mutable std::chrono::duration<double> ssw_dt;
 
     int TranslateBase(const char* bases, const int& length, int8_t* translated) const;
     void SetAllDefault(void);

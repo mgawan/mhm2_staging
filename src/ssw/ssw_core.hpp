@@ -117,7 +117,8 @@ s_align* ssw_align (const s_profile* prof,
 					const uint8_t flag,	
 					const uint16_t filters,
 					const int32_t filterd,
-					const int32_t maskLen);
+					const int32_t maskLen,
+                    std::chrono::duration<double> &ssw_dt);
 
 /*!	@function	Release the memory allocated by function ssw_align.
 	@param	a	pointer to the alignment result structure

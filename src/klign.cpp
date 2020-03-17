@@ -7,7 +7,6 @@
 
 #include <iostream>
 #include <algorithm>
-#include <chrono>
 #include <math.h>
 #include <stdarg.h>
 #include <unistd.h>
@@ -76,7 +75,6 @@ class KmerCtgDHT {
   int64_t num_excess_alns_reads;
   int64_t num_overlaps;
   
-  chrono::duration<double> ssw_dt;
   int64_t max_ctg_seq_cache_size;
   HASH_TABLE<cid_t, string> ctg_seq_cache;
   int64_t num_ctg_seq_cache_hits;
@@ -136,9 +134,7 @@ class KmerCtgDHT {
       discharge();
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
-      auto t = CLOCK_NOW();
       ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
-      ssw_dt += (CLOCK_NOW() - t);
     }
 
     int rstop = rstart + ssw_aln.ref_end + 1;
@@ -172,7 +168,6 @@ public:
     , num_perfect_alns(0)
     , num_excess_alns_reads(0)
     , num_overlaps(0)
-    , ssw_dt(0)
     , kmer_len(kmer_len)
     , num_ctg_seq_cache_hits(0)
     , ctg_seq_bytes_fetched(0)
@@ -240,11 +235,11 @@ public:
   }
 
   double get_av_ssw_secs() {
-    return reduce_one(ssw_dt.count(), op_fast_add, 0).wait() / rank_n();
+    return reduce_one(ssw_aligner.get_ssw_secs(), op_fast_add, 0).wait() / rank_n();
   }
   
   double get_max_ssw_secs() {
-    return reduce_one(ssw_dt.count(), op_fast_max, 0).wait();
+    return reduce_one(ssw_aligner.get_ssw_secs(), op_fast_max, 0).wait();
   }
 
   int64_t get_ctg_seq_cache_hits() {

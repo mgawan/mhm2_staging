@@ -67,6 +67,8 @@
  */
 #define kroundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 
+#define CLOCK_NOW std::chrono::high_resolution_clock::now
+
 typedef struct {
 	uint16_t score;
 	int32_t ref;	 //0-based position 
@@ -778,8 +780,10 @@ s_align* ssw_align (const s_profile* prof,
 					const uint8_t flag,	//  (from high to low) bit 5: return the best alignment beginning position; 6: if (ref_end1 - ref_begin1 <= filterd) && (read_end1 - read_begin1 <= filterd), return cigar; 7: if max score >= filters, return cigar; 8: always return cigar; if 6 & 7 are both setted, only return cigar when both filter fulfilled
 					const uint16_t filters,
 					const int32_t filterd,
-					const int32_t maskLen) {
+					const int32_t maskLen,
+                    std::chrono::duration<double> &ssw_dt) {
 
+    auto t = CLOCK_NOW();
 	alignment_end* bests = 0, *bests_reverse = 0;
 	__m128i* vP = 0;
 	int32_t word = 0, band_width = 0, readLen = prof->readLen;
@@ -805,15 +809,17 @@ s_align* ssw_align (const s_profile* prof,
 			fprintf(stderr, "Please set 2 to the score_size parameter of the function ssw_init, otherwise the alignment results will be incorrect.\n");
 			return 0;
 		}
-	}else if (prof->profile_word) {
+	} else if (prof->profile_word) {
 		bests = sw_sse2_word(ref, 0, refLen, readLen, weight_gapO, weight_gapE, prof->profile_word, -1, maskLen);
 		word = 1;
-	}else {
+	} else {
 		fprintf(stderr, "Please call the function ssw_init before ssw_align.\n");
 		return 0;
 	}
     
+    ssw_dt += (CLOCK_NOW() - t);
     upcxx::progress();
+    t = CLOCK_NOW();
     
 	r->score1 = bests[0].score;
 	r->ref_end1 = bests[0].ref;
@@ -831,7 +837,9 @@ s_align* ssw_align (const s_profile* prof,
 	// Find the beginning position of the best alignment.
 	read_reverse = seq_reverse(prof->read, r->read_end1);
     
+    ssw_dt += (CLOCK_NOW() - t);
     upcxx::progress();
+    t = CLOCK_NOW();
     
 	if (word == 0) {
 		vP = qP_byte(read_reverse, prof->mat, r->read_end1 + 1, prof->n, prof->bias);
@@ -846,7 +854,9 @@ s_align* ssw_align (const s_profile* prof,
 	r->read_begin1 = r->read_end1 - bests_reverse[0].read;
 	free(bests_reverse);
     
+    ssw_dt += (CLOCK_NOW() - t);
     upcxx::progress();
+    t = CLOCK_NOW();
     
 	if ((7&flag) == 0 || ((2&flag) != 0 && r->score1 < filters) || ((4&flag) != 0 && (r->ref_end1 - r->ref_begin1 > filterd || r->read_end1 - r->read_begin1 > filterd))) goto end;
 
@@ -863,6 +873,7 @@ s_align* ssw_align (const s_profile* prof,
 	}
 	
 end: 
+    ssw_dt += (CLOCK_NOW() - t);
 	return r;
 }
 
