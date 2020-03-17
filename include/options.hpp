@@ -108,7 +108,8 @@ public:
     if (upcxx::rank_me() == 0) {
       SLOG(KLBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
       // print out all compiler definitions
-      SLOG_VERBOSE(KLBLUE, "_________________________\nCompiler definitions:", KNORM, "\n");
+      SLOG_VERBOSE(KLBLUE, "_________________________", KNORM, "\n");
+      SLOG_VERBOSE(KLBLUE, "Compiler definitions:", KNORM, "\n");
       std::istringstream all_defs_ss(ALL_DEFNS);
       vector<string> all_defs((std::istream_iterator<string>(all_defs_ss)), std::istream_iterator<string>());
       for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");

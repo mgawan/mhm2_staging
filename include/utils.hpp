@@ -222,12 +222,12 @@ public:
     auto max_t_elapsed = upcxx::reduce_one(t_elapsed, upcxx::op_fast_max, 0).wait();
     auto avg_t_elapsed = upcxx::reduce_one(t_elapsed, upcxx::op_fast_add, 0).wait() / upcxx::rank_n();
     SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, " avg ", avg_t_elapsed,
-                 " s max ", max_t_elapsed, " s balance ", (avg_t_elapsed / max_t_elapsed), " ---\n", KNORM);
+                 " s max ", max_t_elapsed, " s balance ", (avg_t_elapsed / max_t_elapsed), " ---", KNORM, "\n");
     DBG("--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
   }
 
   void done() {
-    SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n", KNORM);
+    SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---", KNORM, "\n");
     DBG("--- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed, " s ---\n");
   }
 
@@ -274,7 +274,7 @@ public:
 
   ~Timer() {
     std::chrono::duration<double> t_elapsed = CLOCK_NOW() - t;
-    DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --\n", KNORM);
+    DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --", KNORM, "\n");
     upcxx::barrier();
     t_elapsed = CLOCK_NOW() - t;
     auto curr_free_mem = get_free_mem();
@@ -282,7 +282,7 @@ public:
     auto all_used_mem = upcxx::reduce_one(init_free_mem - curr_free_mem, upcxx::op_fast_add, 0).wait();
     SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ",
                  "(used ",  get_size_str(all_used_mem / _cores_per_node),
-                 ", free ", get_size_str(all_curr_free_mem / _cores_per_node), ") --\n", KNORM);
+                 ", free ", get_size_str(all_curr_free_mem / _cores_per_node), ") --", KNORM, "\n");
   }
 };
 

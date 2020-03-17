@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
     load_cache_dt.stop();
     auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0).wait();
     SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(all_mem_used / options->cores_per_node), 
-         " memory\n", KNORM);
+         " memory", KNORM, "\n");
   }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
@@ -172,7 +172,7 @@ int main(int argc, char **argv) {
     for (auto kmer_len : options->kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
-      SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, "\n\n", KNORM);
+      SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, KNORM, "\n\n");
       Kmer::set_k(kmer_len);
       // duration of kmer_dht
       analyze_kmers_dt.start();
@@ -216,12 +216,12 @@ int main(int argc, char **argv) {
 #endif
         dump_ctgs_dt.stop();
       }        
-      SLOG(KBLUE "_________________________\n", KNORM);
+      SLOG(KBLUE "_________________________", KNORM, "\n");
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
       SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", get_size_str(all_mem_used / options->cores_per_node), " memory\n", KNORM);
+           get_current_time(), ", used ", get_size_str(all_mem_used / options->cores_per_node), " memory", KNORM, "\n");
       barrier();
       prev_kmer_len = kmer_len;
     }
@@ -235,7 +235,7 @@ int main(int argc, char **argv) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
       Kmer::set_k(scaff_kmer_len);
-      SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, "\n\n", KNORM);
+      SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
       Alns alns;
       alignments_dt.start();
       find_alignments(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
@@ -254,21 +254,22 @@ int main(int argc, char **argv) {
           ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
           dump_ctgs_dt.stop();
         }
-        SLOG(KBLUE "_________________________\n", KNORM);
+        SLOG(KBLUE "_________________________", KNORM, "\n");
         ctgs.print_stats(MIN_CTG_PRINT_LEN);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
-      SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", get_size_str(all_mem_used / options->cores_per_node), " GB memory\n", KNORM);
+      SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
+           loop_t_elapsed.count(), " s at ", get_current_time(), ", used ", 
+           get_size_str(all_mem_used / options->cores_per_node), " GB memory", KNORM, "\n");
       barrier();
     }
   }
-  SLOG(KBLUE "_________________________\n", KNORM);
+  SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
-  SLOG(KBLUE "_________________________\n", KNORM);
+  SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.print_stats(MIN_CTG_PRINT_LEN);
-  SLOG(KBLUE "_________________________\n", KNORM);
+  SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");
   if (options->cache_reads) SLOG("    ", load_cache_dt.get_final(), "\n");
@@ -279,13 +280,13 @@ int main(int argc, char **argv) {
   SLOG("    ", cgraph_dt.get_final(), "\n");
   SLOG("    IO read time: ", FastqReader::get_io_time(), "\n");
   SLOG("    IO write time: ", dump_ctgs_dt.get_elapsed() + elapsed_write_io_t, "\n");
-  SLOG(KBLUE "_________________________\n", KNORM);
+  SLOG(KBLUE "_________________________", KNORM, "\n");
   double end_mem_free = get_free_mem();
   auto all_end_mem_free = reduce_one(end_mem_free, op_fast_add, 0).wait();
   auto all_used_mem = reduce_one(start_mem_free - end_mem_free, op_fast_add, 0).wait();
   if (!rank_me()) {
-    SLOG("Final free memory: ", setprecision(3), fixed, get_size_str(all_end_mem_free / options->cores_per_node), " (unreclaimed ",
-         get_size_str(all_used_mem / options->cores_per_node), ")\n");
+    SLOG("Final free memory: ", setprecision(3), fixed, get_size_str(all_end_mem_free / options->cores_per_node), 
+         " (unreclaimed ", get_size_str(all_used_mem / options->cores_per_node), ")\n");
     chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
     SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
          " for MHM version ", MHM_VERSION, "\n");
