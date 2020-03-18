@@ -200,10 +200,9 @@ public:
 
   Kmer revcomp() const {
     Kmer km(*this);
-    size_t nlongs = (Kmer::k + 31) / 32;
-    for (size_t i = 0; i < nlongs; i++) {
+    for (size_t i = 0; i < N_LONGS; i++) {
       uint64_t v = longs[i];
-      km.longs[nlongs - 1 - i] =
+      km.longs[N_LONGS - 1 - i] =
         (TWIN_TABLE[v & 0xFF] << 56) |
         (TWIN_TABLE[(v >> 8) & 0xFF] << 48) |
         (TWIN_TABLE[(v >> 16) & 0xFF] << 40) |
@@ -216,7 +215,7 @@ public:
     size_t shift = (Kmer::k % 32) ? 2 * (32 - (Kmer::k % 32)) : 0;
     uint64_t shiftmask = (Kmer::k % 32) ? (((1ULL << shift) - 1) << (64 - shift)) : 0ULL;
     km.longs[0] = km.longs[0] << shift;
-    for (size_t i = 1; i < nlongs; i++) {
+    for (size_t i = 1; i < N_LONGS; i++) {
       km.longs[i - 1] |= (km.longs[i] & shiftmask) >> (64 - shift);
       km.longs[i] = km.longs[i] << shift;
     }
@@ -226,24 +225,22 @@ public:
   Kmer forward_base(const char b) const {
     Kmer km(*this);
     km.longs[0] = km.longs[0] << 2;
-    size_t nlongs = (Kmer::k + 31) / 32;
-    for (size_t i = 1; i < nlongs; i++) {
+    for (size_t i = 1; i < N_LONGS; i++) {
       km.longs[i - 1] |= (km.longs[i] & (3ULL << 62)) >> 62;
       km.longs[i] = km.longs[i] << 2;
     }
     uint64_t x = (b & 4) >> 1;
-    km.longs[nlongs - 1] |= (x + ((x ^ (b & 2)) >> 1)) << (2 * (31 - ((k - 1) % 32)));
+    km.longs[N_LONGS - 1] |= (x + ((x ^ (b & 2)) >> 1)) << (2 * (31 - ((k - 1) % 32)));
     return km;
   }
 
   Kmer backward_base(const char b) const {
     Kmer km(*this);
-    size_t nlongs = (Kmer::k + 31) / 32;
-    km.longs[nlongs - 1] = km.longs[nlongs - 1] >> 2;
-    km.longs[nlongs - 1] &= (k % 32) ? (((1ULL << (2 * (k % 32))) - 1) << 2 * (32 - (k % 32))) : ~0ULL;
-    for (size_t i = 1; i < nlongs; i++) {
-      km.longs[nlongs - i] |= (km.longs[nlongs - i - 1] & 3ULL) << 62;
-      km.longs[nlongs - i - 1] = km.longs[nlongs - i - 1] >> 2;
+    km.longs[N_LONGS - 1] = km.longs[N_LONGS - 1] >> 2;
+    km.longs[N_LONGS - 1] &= (k % 32) ? (((1ULL << (2 * (k % 32))) - 1) << 2 * (32 - (k % 32))) : ~0ULL;
+    for (size_t i = 1; i < N_LONGS; i++) {
+      km.longs[N_LONGS - i] |= (km.longs[N_LONGS - i - 1] & 3ULL) << 62;
+      km.longs[N_LONGS - i - 1] = km.longs[N_LONGS - i - 1] >> 2;
     }
     uint64_t x = (b & 4) >> 1;
     km.longs[0] |= (x + ((x ^ (b & 2)) >> 1)) << 62;
