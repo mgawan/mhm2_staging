@@ -70,8 +70,9 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list) {
   return num_kmers / fraction;
 }
 
-static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, dist_object<KmerDHT> &kmer_dht, 
-                        PASS_TYPE pass_type) {
+template<int MAX_K>
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, 
+                        dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
   Timer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
@@ -97,7 +98,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
     string id, seq, quals;
     ProgressBar progbar(fqr->my_file_size(), progbar_prefix);
     size_t tot_bytes_read = 0;
-    vector<Kmer> kmers;
+    vector<Kmer<MAX_K>> kmers;
     while (true) {
       size_t bytes_read = fqr->get_next_fq_record(id, seq, quals);
       if (!bytes_read) break;
@@ -107,7 +108,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
       progbar.update(tot_bytes_read);
       if (seq.length() < kmer_len) continue;
       // split into kmers
-      Kmer::get_kmers(kmer_len, seq, kmers);
+      Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
 #ifdef KCOUNT_FILTER_BAD_QUAL_IN_READ
       size_t found_bad_qual_pos = seq.length();
       if (pass_type != BLOOM_SET_PASS) {
@@ -165,16 +166,17 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
 }
 
 // count ctg kmers if using bloom
-static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
+template<int MAX_K>
+static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   Timer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
-  vector<Kmer> kmers;
+  vector<Kmer<MAX_K>> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
     if (ctg->seq.length() >= kmer_len) {
-      Kmer::get_kmers(kmer_len, ctg->seq, kmers);
+      Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
@@ -193,7 +195,8 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   barrier();
 }
 
-static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht, 
+template<int MAX_K>
+static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht, 
                           bool use_bloom) {
   Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
@@ -203,12 +206,12 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
   double max_depth_diff = 0;
 #endif
   ProgressBar progbar(ctgs.size(), "Adding extra contig kmers from kmer length " + to_string(prev_kmer_len));
-  vector<Kmer> kmers;
+  vector<Kmer<MAX_K>> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
     if (ctg->seq.length() >= kmer_len + 2) {
-      Kmer::get_kmers(kmer_len, ctg->seq, kmers);
+      Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
@@ -239,8 +242,10 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
 #endif
 }
 
+template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht) {
+                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                   dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   Timer timer(__FILEFUNC__);
   
   _dynamic_min_depth = dynamic_min_depth;
@@ -277,3 +282,23 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
   //kmer_dht->purge_fx_kmers();
 }
 
+template
+void analyze_kmers<32>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
+                       bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                       dist_object<KmerDHT<32>> &kmer_dht);
+template
+void analyze_kmers<64>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
+                       bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                       dist_object<KmerDHT<64>> &kmer_dht);
+template
+void analyze_kmers<96>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
+                       bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                       dist_object<KmerDHT<96>> &kmer_dht);
+template
+void analyze_kmers<128>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
+                        bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                        dist_object<KmerDHT<128>> &kmer_dht);
+template
+void analyze_kmers<160>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
+                        bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                        dist_object<KmerDHT<160>> &kmer_dht);

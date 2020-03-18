@@ -45,8 +45,9 @@ struct ReadAndCtgLoc {
   CtgLoc ctg_loc;
 };
 
+template<int MAX_K>
 struct KmerCtgLocs {
-  Kmer kmer;
+  Kmer<MAX_K> kmer;
   vector<CtgLoc> ctg_locs;
   UPCXX_SERIALIZED_FIELDS(kmer, ctg_locs);
 };
@@ -55,17 +56,17 @@ struct KmerCtgLocs {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped = 0;
 
-
+template<int MAX_K>
 class KmerCtgDHT {
 
   struct KmerAndCtgLoc {
-    Kmer kmer;
+    Kmer<MAX_K> kmer;
     CtgLoc ctg_loc;
     UPCXX_SERIALIZED_FIELDS(kmer, ctg_loc);
   };
 
   AggrStore<KmerAndCtgLoc> kmer_store;
-  using kmer_map_t = HASH_TABLE<Kmer, vector<CtgLoc> >;
+  using kmer_map_t = HASH_TABLE<Kmer<MAX_K>, vector<CtgLoc> >;
   dist_object<kmer_map_t> kmer_map;
 #ifdef DUMP_ALNS
   zstr::ofstream *alns_file;
@@ -200,8 +201,8 @@ public:
 #endif
   }
 
-  size_t get_target_rank(Kmer &kmer) {
-    return std::hash<Kmer>{}(kmer) % rank_n();
+  size_t get_target_rank(Kmer<MAX_K> &kmer) {
+    return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
   }
 
   int64_t get_num_kmers(bool all = false) {
@@ -250,8 +251,8 @@ public:
     return reduce_one(ctg_seq_bytes_fetched, op_fast_add, 0).wait();
   }    
 
-  void add_kmer(Kmer kmer, CtgLoc &ctg_loc) {
-    Kmer kmer_rc = kmer.revcomp();
+  void add_kmer(Kmer<MAX_K> kmer, CtgLoc &ctg_loc) {
+    Kmer<MAX_K> kmer_rc = kmer.revcomp();
     ctg_loc.is_rc = false;
     if (kmer_rc < kmer) {
       kmer = kmer_rc;
@@ -268,19 +269,19 @@ public:
     barrier();
   }
 
-  future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer &kmer) {
+  future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer<MAX_K> &kmer) {
     return rpc(get_target_rank(kmer),
-               [](Kmer kmer, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
+               [](Kmer<MAX_K> kmer, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
                  const auto it = kmer_map->find(kmer);
                  if (it == kmer_map->end()) return {};
                  return it->second;
                }, kmer, kmer_map);
   }
 
-  future<vector<KmerCtgLocs>> get_ctgs_with_kmers(int target_rank, vector<Kmer> &kmers) {
+  future<vector<KmerCtgLocs<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
     return rpc(target_rank,
-               [](vector<Kmer> kmers, dist_object<kmer_map_t> &kmer_map) {// -> vector<KmerCtgLocs> {
-                 vector<KmerCtgLocs> kmer_ctg_locs;
+               [](vector<Kmer<MAX_K>> kmers, dist_object<kmer_map_t> &kmer_map) {// -> vector<Kmer<MAX_K>CtgLocs> {
+                 vector<KmerCtgLocs<MAX_K>> kmer_ctg_locs;
                  for (auto &kmer : kmers) {
                    const auto it = kmer_map->find(kmer);
                    if (it == kmer_map->end()) continue;
@@ -412,18 +413,19 @@ public:
 };
 
 
-static void build_alignment_index(KmerCtgDHT &kmer_ctg_dht, Contigs &ctgs) {
+template<int MAX_K>
+static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs) {
   Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
-  vector<Kmer> kmers;
+  vector<Kmer<MAX_K>> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
     global_ptr<char> seq_gptr = allocate<char>(ctg->seq.length() + 1);
     strcpy(seq_gptr.local(), ctg->seq.c_str());
     CtgLoc ctg_loc = { .cid = ctg->id, .seq_gptr = seq_gptr, .clen = (int)ctg->seq.length() };
-    Kmer::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq, kmers);
+    Kmer<MAX_K>::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq, kmers);
     num_kmers += kmers.size();
     for (int i = 0; i < kmers.size(); i++) {
       ctg_loc.pos_in_ctg = i;
@@ -463,11 +465,12 @@ struct KmerToRead {
 };
 
 
-static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToRead>> &kmer_read_map,
+template<int MAX_K>
+static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<KmerToRead>> &kmer_read_map,
                        vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer,
                        IntermittentTimer &get_ctgs_timer) {
   // extract a list of kmers for each target rank
-  auto kmer_lists = new vector<Kmer>[rank_n()];
+  auto kmer_lists = new vector<Kmer<MAX_K>>[rank_n()];
   for (auto &elem : kmer_read_map) {
     auto kmer = elem.first;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
@@ -482,7 +485,7 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
     //max_kmers = max(max_kmers, kmer_lists[i].size());
     //num_kmers += kmer_lists[i].size();
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
-      [&](vector<KmerCtgLocs> kmer_ctg_locs) {
+      [&](vector<KmerCtgLocs<MAX_K>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated vector of ctg locations
         for (auto &kmer_ctg_loc : kmer_ctg_locs) {
           // get the reads that this kmer mapped to
@@ -530,8 +533,8 @@ static int align_kmers(KmerCtgDHT &kmer_ctg_dht, HASH_TABLE<Kmer, vector<KmerToR
   return num_reads_aligned;
 }
 
-
-static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_list) {
+template<int MAX_K>
+static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> &fqr_list) {
   Timer timer(__FILEFUNC__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
@@ -546,8 +549,8 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
     ProgressBar progbar(fqr->my_file_size(), "Aligning reads to contigs");
     size_t tot_bytes_read = 0;
     vector<ReadRecord*> read_records;
-    HASH_TABLE<Kmer, vector<KmerToRead>> kmer_read_map;
-    vector<Kmer> kmers;
+    HASH_TABLE<Kmer<MAX_K>, vector<KmerToRead>> kmer_read_map;
+    vector<Kmer<MAX_K>> kmers;
     while (true) {
       progress();
       get_reads_timer.start();
@@ -558,14 +561,14 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
       progbar.update(tot_bytes_read);
       // this happens when a placeholder read with just a single N character is added after merging reads
       if (kmer_ctg_dht.kmer_len > read_seq.length()) continue;
-      Kmer::get_kmers(kmer_ctg_dht.kmer_len, read_seq, kmers);
+      Kmer<MAX_K>::get_kmers(kmer_ctg_dht.kmer_len, read_seq, kmers);
       tot_num_kmers += kmers.size();
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
       bool filled = false;
       for (int i = 0; i < kmers.size(); i += KLIGN_SEED_SPACE) {
-        Kmer kmer = kmers[i];
-        Kmer kmer_rc = kmer.revcomp();
+        Kmer<MAX_K> kmer = kmers[i];
+        Kmer<MAX_K> kmer_rc = kmer.revcomp();
         bool is_rc = false;
         if (kmer_rc < kmer) {
           kmer = kmer_rc;
@@ -613,11 +616,12 @@ static void do_alignments(KmerCtgDHT &kmer_ctg_dht, vector<FastqReader*> &fqr_li
   get_ctgs_timer.done_barrier();
 }
 
+template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache,
                      Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped = 0;
-  KmerCtgDHT kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
@@ -629,3 +633,19 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
   barrier();
 }
+
+template 
+void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                         Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                         Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                         Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                          Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                          Contigs &ctgs, Alns &alns);

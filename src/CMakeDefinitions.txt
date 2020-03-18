@@ -1,6 +1,3 @@
-# maximum kmer length over all iterations
-add_definitions(-DMAX_KMER_LEN=128)
-
 # quality cutoff for rejecting bases as bad during kmer counting
 # quality encoding is logarithmic, so the probability of an error is:
 # cutoff 10: 10% chance

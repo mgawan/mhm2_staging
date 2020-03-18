@@ -150,21 +150,21 @@ struct KmerCounts {
 
 };
 
-using KmerMap = HASH_TABLE<Kmer, KmerCounts, KmerHash, KmerEqual>;
 
-
+template<int MAX_K>
 class KmerDHT {
+  using KmerMap = HASH_TABLE<Kmer<MAX_K>, KmerCounts, KmerHash<MAX_K>, KmerEqual<MAX_K>>;
 
   // total bytes for k = 51: 16+18+18=52
   struct KmerAndExt {
-    Kmer kmer;
+    Kmer<MAX_K> kmer;
     char left, right;
     uint16_t count;
     UPCXX_SERIALIZED_FIELDS(kmer, left, right, count);
   };
 
   dist_object<KmerMap> kmers;
-  AggrStore<Kmer> kmer_store_bloom;
+  AggrStore<Kmer<MAX_K>> kmer_store_bloom;
   AggrStore<KmerAndExt> kmer_store;
   // The first bloom filter stores all kmers and is used to check for single occurrences to filter out
   dist_object<BloomFilter> bloom_filter1;
@@ -201,7 +201,7 @@ class KmerDHT {
   dist_object<InsertKmer> insert_kmer;
 
   struct BloomSet {
-    void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(Kmer<MAX_K> &kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
       // look for it in the first bloom filter - if not found, add it just to the first bloom filter
       // if found, add it to the second bloom filter
       if (!bloom_filter1->possibly_contains(kmer.get_bytes())) bloom_filter1->add(kmer.get_bytes());
@@ -211,7 +211,7 @@ class KmerDHT {
   dist_object<BloomSet> bloom_set;
 
   struct CtgBloomSet {
-    void operator()(Kmer &kmer, dist_object<BloomFilter> &bloom_filter2) {
+    void operator()(Kmer<MAX_K> &kmer, dist_object<BloomFilter> &bloom_filter2) {
       // only add to bloom_filter2
       bloom_filter2->add(kmer.get_bytes());//, kmer.get_num_bytes());
     }
@@ -354,7 +354,7 @@ public:
       cardinality /= 3;
       initial_kmer_dht_reservation = cardinality;
       kmers->reserve(cardinality);
-      double kmers_space_reserved = cardinality * (sizeof(Kmer) + sizeof(KmerCounts));
+      double kmers_space_reserved = cardinality * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
       SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
                    cardinality, " entries (", kmers->bucket_count(), " buckets)\n");
       barrier();
@@ -393,50 +393,50 @@ public:
     return kmers->size();
   }
 
-  upcxx::intrank_t get_kmer_target_rank(Kmer &kmer) {
-    return std::hash<Kmer>{}(kmer) % rank_n();
+  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) {
+    return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
   }
 
-  KmerCounts *get_local_kmer_counts(Kmer &kmer) {
+  KmerCounts *get_local_kmer_counts(Kmer<MAX_K> &kmer) {
     const auto it = kmers->find(kmer);
     if (it == kmers->end()) return nullptr;
     return &it->second;
   }
 
-  int32_t get_kmer_count(Kmer &kmer) {
+  int32_t get_kmer_count(Kmer<MAX_K> &kmer) {
     return rpc(get_kmer_target_rank(kmer),
-               [](Kmer kmer, dist_object<KmerMap> &kmers) -> uint16_t {
+               [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> uint16_t {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return 0;
                  else return it->second.count;
                }, kmer, kmers).wait();
   }
 
-  global_ptr<FragElem> get_kmer_uutig_frag(Kmer kmer) {
-    Kmer kmer_rc = kmer.revcomp();
+  global_ptr<FragElem> get_kmer_uutig_frag(Kmer<MAX_K> kmer) {
+    Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer = kmer_rc;
     return rpc(get_kmer_target_rank(kmer),
-               [](Kmer kmer, dist_object<KmerMap> &kmers) -> global_ptr<FragElem> {
+               [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> global_ptr<FragElem> {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) DIE("kmer not found ", kmer);
                  return it->second.uutig_frag;
                }, kmer, kmers).wait();
   }
 
-  bool kmer_exists(Kmer kmer) {
-    Kmer kmer_rc = kmer.revcomp();
+  bool kmer_exists(Kmer<MAX_K> kmer) {
+    Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer = kmer_rc;
     return rpc(get_kmer_target_rank(kmer),
-               [](Kmer kmer, dist_object<KmerMap> &kmers) -> bool {
+               [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> bool {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return false;
                  return true;
                }, kmer, kmers).wait();
   }
 
-  void add_kmer(Kmer kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
+  void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, uint16_t count, PASS_TYPE pass_type) {
     // get the lexicographically smallest
-    Kmer kmer_rc = kmer.revcomp();
+    Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) {
       kmer = kmer_rc;
       swap(left_ext, right_ext);
@@ -485,7 +485,7 @@ public:
     // two bloom false positive rates applied
     initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 1000);
     kmers->reserve( initial_kmer_dht_reservation );
-    double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer) + sizeof(KmerCounts));
+    double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
     SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
                  initial_kmer_dht_reservation, " entries (", kmers->bucket_count(), " buckets)\n");
     barrier();
@@ -583,11 +583,11 @@ public:
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
 
-  KmerMap::iterator local_kmers_begin() {
+  auto local_kmers_begin() {
     return kmers->begin();
   }
 
-  KmerMap::iterator local_kmers_end() {
+  auto local_kmers_end() {
     return kmers->end();
   }
 

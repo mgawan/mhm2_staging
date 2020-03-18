@@ -87,9 +87,10 @@ static string gptr_str(global_ptr<FragElem> gptr) {
 }
 
 #ifdef DEBUG
-static bool check_kmers(const string &seq, dist_object<KmerDHT> &kmer_dht, int kmer_len) {
-  vector<Kmer> kmers;
-  Kmer::get_kmers(kmer_len, seq, kmers);
+template<int MAX_K>
+static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht, int kmer_len) {
+  vector<Kmer<MAX_K>> kmers;
+  Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
   for (auto kmer : kmers) {
     if (!kmer_dht->kmer_exists(kmer)) return false;
   }
@@ -97,7 +98,8 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT> &kmer_dht, int k
 }
 #endif
 
-static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer, Dirn dirn, char prev_ext, 
+template<int MAX_K>
+static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, 
                                       global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
   auto kmer_rc = kmer.revcomp();
   bool is_rc = false;
@@ -106,7 +108,7 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
     is_rc = true;
   }
   return rpc(kmer_dht->get_kmer_target_rank(kmer), 
-             [](dist_object<KmerDHT> &kmer_dht, Kmer kmer, Dirn dirn, char prev_ext, bool revisit_allowed, 
+             [](dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, bool revisit_allowed, 
                 bool is_rc, global_ptr<FragElem> frag_elem_gptr) -> StepInfo {
                KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
                // this kmer doesn't exist, abort
@@ -136,8 +138,10 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT> &kmer_dht, Kmer kmer,
              }, kmer_dht, kmer, dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
 }
 
-static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer kmer, global_ptr<FragElem> frag_elem_gptr, 
-                                          Dirn dirn, string &uutig, int64_t &sum_depths, WalkTermStats &walk_term_stats) {
+template<int MAX_K>
+static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, 
+                                          global_ptr<FragElem> frag_elem_gptr, Dirn dirn, string &uutig, int64_t &sum_depths, 
+                                          WalkTermStats &walk_term_stats) {
   auto kmer_str = kmer.to_string();
   char prev_ext = 0;
   char next_ext = (dirn == Dirn::LEFT ? kmer_str.front() : kmer_str.back());
@@ -172,7 +176,9 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT> &kmer_dht, Kmer k
   }
 }
 
-static void construct_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
+template<int MAX_K>
+static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, 
+                            vector<global_ptr<FragElem>> &frag_elems) {
   Timer timer(__FILEFUNC__);
   // allocate space for biggest possible uutig in global storage
   WalkTermStats walk_term_stats = {0};
@@ -266,7 +272,9 @@ static void set_link_status(Dirn dirn, global_ptr<FragElem> &nb_gptr, bool &is_r
   }
 }
 
-static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
+template<int MAX_K>
+static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, 
+                             vector<global_ptr<FragElem>> &frag_elems) {
   Timer timer(__FILEFUNC__);
   // put all the uutigs found by this rank into my_uutigs
   int64_t num_uutigs = 0, num_equal_links = 0, num_non_recip = 0, num_short = 0,
@@ -382,7 +390,8 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
   return true;
 }
 
-static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems, 
+template<int MAX_K>
+static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems, 
                           Contigs &my_uutigs) {
   Timer timer(__FILEFUNC__);
   int64_t num_steps = 0, max_steps = 0, num_drops = 0, num_prev_visited = 0, num_repeats = 0;
@@ -429,7 +438,8 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, vec
                perc_str(all_num_repeats, all_num_frags), " repeats\n");
 }
 
-void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs) {
+template<int MAX_K>
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs) {
   Timer timer(__FILEFUNC__);
   vector<global_ptr<FragElem>> frag_elems;
   construct_frags(kmer_len, kmer_dht, frag_elems);
@@ -462,3 +472,14 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, 
   progbar.done();
 #endif
 }
+
+template
+void traverse_debruijn_graph<32>(unsigned kmer_len, dist_object<KmerDHT<32>> &kmer_dht, Contigs &my_uutigs);
+template
+void traverse_debruijn_graph<64>(unsigned kmer_len, dist_object<KmerDHT<64>> &kmer_dht, Contigs &my_uutigs);
+template
+void traverse_debruijn_graph<96>(unsigned kmer_len, dist_object<KmerDHT<96>> &kmer_dht, Contigs &my_uutigs);
+template
+void traverse_debruijn_graph<128>(unsigned kmer_len, dist_object<KmerDHT<128>> &kmer_dht, Contigs &my_uutigs);
+template
+void traverse_debruijn_graph<160>(unsigned kmer_len, dist_object<KmerDHT<160>> &kmer_dht, Contigs &my_uutigs);

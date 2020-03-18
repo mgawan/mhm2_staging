@@ -38,9 +38,13 @@ int _cores_per_node = 0;
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list);
+template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, 
-                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT> &kmer_dht);
-void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &my_uutigs);
+                          bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                          dist_object<KmerDHT<MAX_K>> &kmer_dht);
+template<int MAX_K>
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
+template<int MAX_K> 
 void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, Contigs &ctgs, 
                      Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
@@ -51,11 +55,11 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
 
 
 #ifdef USE_KMER_DEPTH
-static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &kmer_dht, Contigs &ctgs) {
+static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &ctgs) {
   Timer timer(__func__);
   int64_t num_zero_count = 0;
   int64_t tot_num_kmers = 0;
-  vector<Kmer> kmers;
+  vector<Kmer<MAX_K>> kmers;
   ProgressBar progbar(ctgs.size(), "Computing depths of kmers in contigs");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
@@ -63,7 +67,7 @@ static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &
     //if (ctg->seq.length() >= kmer_len + 2) {
       int num_kmers = ctg->seq.length() - kmer_len;
       ctg->kmer_depths.reserve(num_kmers);
-      Kmer::get_kmers(kmer_len, ctg->seq, kmers);
+      Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       tot_num_kmers += kmers.size();
       for (auto kmer : kmers) {
         auto kmer_rc = kmer.revcomp();
@@ -86,6 +90,52 @@ static void compute_depths_of_kmers_in_ctgs(int kmer_len, dist_object<KmerDHT> &
                " of zero count\n");
 }
 #endif
+
+struct StageTimers {
+  IntermittentTimer merge_reads, analyze_kmers, dbjg_traversal, alignments, localassm;
+};
+
+template<int MAX_K> 
+void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, Contigs &ctgs, 
+                IntermittentTimer &analyze_kmers_dt, IntermittentTimer &dbjg_traversal_dt, IntermittentTimer &alignments_dt,
+                IntermittentTimer &localassm_dt, shared_ptr<Options> options) {
+  SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, KNORM, "\n\n");
+  auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+  Kmer<MAX_K>::set_k(kmer_len);
+  // duration of kmer_dht
+  analyze_kmers_dt.start();
+  auto my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
+  dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->use_bloom);
+  barrier();
+  analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->use_bloom,
+                options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
+  analyze_kmers_dt.stop();
+  barrier();
+  dbjg_traversal_dt.start();
+  traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+  dbjg_traversal_dt.stop();
+#ifdef DEBUG
+  ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
+#endif
+  if (kmer_len < options->kmer_lens.back()) {
+    Alns alns;
+    alignments_dt.start();
+    find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+    alignments_dt.stop();
+    barrier();
+    localassm_dt.start();
+    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, options->insert_avg, options->insert_stddev, options->qual_offset, 
+              ctgs, alns);
+    localassm_dt.stop();
+  }
+#ifdef USE_KMER_DEPTHS
+  barrier();
+  compute_kmer_depths_dt.start();
+  compute_depths_of_kmers_in_ctgs(kmer_len, kmer_dht, ctgs);
+  compute_kmer_depths_dt.stop();
+#endif
+  barrier();
+}
 
 int main(int argc, char **argv) {
   upcxx::init();
@@ -116,22 +166,6 @@ int main(int argc, char **argv) {
   _cores_per_node = options->cores_per_node;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   
-/*
-  if (!rank_me()) {
-    string read_id = "@r0/1";
-    string seq =   "CGAATTTCGCTATGATCCGCTTCGACGTCACGGCAAGCTCGG";//TGGACTGGCGCTTGACGAACGCCTCACCCGTAAACCATAATTCGGCCACCAGAATGACGACTCCGGTATACCAGGCAGCCGAAGAAAGTTCCGGATTGCCATCGGGCG";
-    string quals = "IHIIHHHIHHIIHIGIIIHHHHHIDIFIGIIIEHIIIHHIHI";//HGGFIIGDHHCEIIFGIGHIHBIIEIAIIIHA<HIIBIIID:D>IIIIIIIEII@FIIIIBIEDID<IAIIAIFIIIIGII>=I;@II5IDEIIC;?IIDIIGI7III";
-    cout << read_id << "\n" << seq << "\n" << quals << "\n";
-    CachedRead cached_read(read_id, seq, quals, options->qual_offset);
-    read_id = "";
-    seq = "";
-    quals = "";
-    cached_read.unpack(read_id, seq, quals, options->qual_offset);
-    cout << read_id << "\n" << seq << "\n" << quals << "\n";
-  }
-  upcxx::finalize();
-  return 0;
-*/  
   // get total file size across all libraries
   double tot_file_size = 0;
   if (!rank_me()) {
@@ -172,42 +206,29 @@ int main(int argc, char **argv) {
     for (auto kmer_len : options->kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
-      SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, KNORM, "\n\n");
-      Kmer::set_k(kmer_len);
-      // duration of kmer_dht
-      analyze_kmers_dt.start();
-      auto my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
-      dist_object<KmerDHT> kmer_dht(world(), my_num_kmers, max_kmer_store, options->use_bloom);
-      barrier();
-      analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->use_bloom,
-                    options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
-      analyze_kmers_dt.stop();
-      barrier();
-      dbjg_traversal_dt.start();
-      traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-      dbjg_traversal_dt.stop();
-#ifdef DEBUG
-      ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
-#endif
-      if (kmer_len < options->kmer_lens.back()) {
-        Alns alns;
-        alignments_dt.start();
-        find_alignments(kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
-        alignments_dt.stop();
-        barrier();
-        localassm_dt.start();
-        localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, options->insert_avg, options->insert_stddev, options->qual_offset, 
-                  ctgs, alns);
-        localassm_dt.stop();
-      }
-#ifdef USE_KMER_DEPTHS
-      barrier();
-      compute_kmer_depths_dt.start();
-      compute_depths_of_kmers_in_ctgs(kmer_len, kmer_dht, ctgs);
-      compute_kmer_depths_dt.stop();
- #endif
-      barrier();
-      
+      auto max_k = (kmer_len / 32 + 1) * 32;
+      switch (max_k) {
+        case 32:
+          contigging<32>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
+                  localassm_dt, options);
+          break;
+        case 64:
+          contigging<64>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
+                  localassm_dt, options);
+          break;
+        case 96:
+          contigging<96>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
+                  localassm_dt, options);
+          break;
+        case 128:
+          contigging<128>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
+                  localassm_dt, options);
+          break;
+        case 160:
+          contigging<160>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
+                  localassm_dt, options);
+          break;
+      }                  
       if (options->checkpoint) {
         dump_ctgs_dt.start();
         ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
@@ -234,11 +255,11 @@ int main(int argc, char **argv) {
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
-      Kmer::set_k(scaff_kmer_len);
+      Kmer<160>::set_k(scaff_kmer_len);
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
       Alns alns;
       alignments_dt.start();
-      find_alignments(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+      find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif

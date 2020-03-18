@@ -31,6 +31,7 @@
  *  - Provide hash of kmers
  *  - Get last and next kmer, e.g. ACGT -> CGTT or ACGT -> AACGT
  *  */
+template<int MAX_K>
 class Kmer {
   inline static const uint64_t TWIN_TABLE[256] = {
     0xFF, 0xBF, 0x7F, 0x3F, 0xEF, 0xAF, 0x6F, 0x2F,
@@ -68,54 +69,30 @@ class Kmer {
   };
 
   inline static unsigned int k = 0;
-  inline static unsigned int n_longs = 0;
-
-//#define USE_VECTOR
-
-
-#ifdef USE_VECTOR
-  inline static int N_LONGS;
-  std::vector<uint64_t> longs;
-#else
-  inline static const int N_LONGS = ((MAX_KMER_LEN) + 31) / 32;
+  inline static const int N_LONGS = (MAX_K + 31) / 32;
   std::array<uint64_t, N_LONGS> longs;
-#endif
+
 public:
   // serialization has to be public
   UPCXX_SERIALIZED_FIELDS(longs);
 
   Kmer() {
     assert(Kmer::k > 0);
-#ifdef USE_VECTOR
-    longs.resize(N_LONGS, 0);
-#else
     longs.fill(0);
-#endif
   }
 
   Kmer(const Kmer& o) {
     assert(Kmer::k > 0);
-#ifdef USE_VECTOR
-    longs.resize(N_LONGS);
-#else
     longs = o.longs;
-#endif
   }
 
   explicit Kmer(const char *s) {
     assert(Kmer::k > 0);
-#ifdef USE_VECTOR
-    longs.resize(N_LONGS);
-#endif
     set_kmer(s);
   }
 
   static void set_k(unsigned int k) {
     Kmer::k = k;
-    Kmer::n_longs = (k + 31) / 32;
-#ifdef USE_VECTOR
-    Kmer::N_LONGS = Kmer::n_longs;
-#endif
   }
 
   static void get_kmers(int kmer_len, std::string seq, std::vector<Kmer> &kmers) {
@@ -126,9 +103,8 @@ public:
     if (seq.size() < Kmer::k) return;
     for (auto & c : seq) c = toupper(c);
     int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
-    int lastLong = n_longs - 1;
+    int lastLong = N_LONGS - 1;
     assert(lastLong >= 0 && lastLong < N_LONGS);
-    //std::vector<Kmer> kmers.resize(seq.size() - Kmer::k + 1, Kmer());
     kmers.resize(seq.size() - Kmer::k + 1);
     uint64_t buf[bufsize];
     uint8_t *bufPtr = (uint8_t *)buf;
@@ -166,15 +142,15 @@ public:
       // enumerate the kmers in the phase
       for (int i = shift; i < kmers.size(); i += 4) {
         int byteOffset = i / 4;
-        assert(byteOffset + n_longs * 8 <= bufsize * 8);
-        for (int l = 0; l < n_longs; l++) {
+        assert(byteOffset + N_LONGS * 8 <= bufsize * 8);
+        for (int l = 0; l < N_LONGS; l++) {
           kmers[i].longs[l] = BE2H(*((uint64_t *)(bufPtr + byteOffset + l * 8)));
         }
         // set remaining bits to 0
         kmers[i].longs[lastLong] &= endmask;
-        for (int l = n_longs; l < N_LONGS; l++) {
-          kmers[i].longs[l] = 0;
-        }
+//        for (int l = N_LONGS; l < N_LONGS; l++) {
+//          kmers[i].longs[l] = 0;
+//        }
       }
     }
   }
@@ -296,20 +272,22 @@ public:
   }
 
   std::pair<const uint8_t*, int> get_bytes() const {
-    return {reinterpret_cast<const uint8_t*>(longs.data()), n_longs * sizeof(uint64_t)};
+    return {reinterpret_cast<const uint8_t*>(longs.data()), N_LONGS * sizeof(uint64_t)};
   }
 
 };
 
 
+template<int MAX_K>
 struct KmerHash {
-  size_t operator()(const Kmer &km) const {
+  size_t operator()(const Kmer<MAX_K> &km) const {
     return km.hash();
   }
 };
 
+template<int MAX_K>
 struct KmerEqual {
-  size_t operator()(const Kmer &k1, const Kmer &k2) const {
+  size_t operator()(const Kmer<MAX_K> &k1, const Kmer<MAX_K> &k2) const {
     return k1 == k2;
   }
 };
@@ -318,17 +296,17 @@ struct KmerEqual {
 
 namespace std {
 
-  template<>
-  struct hash<Kmer> {
+  template<int MAX_K>
+  struct hash<Kmer<MAX_K>> {
     typedef std::size_t result_type;
-    result_type operator()(Kmer const& km) const {
+    result_type operator()(Kmer<MAX_K> const& km) const {
       return km.hash();
     }
   };
 }
 
-
-inline std::ostream& operator<<(std::ostream& out, const Kmer& k) {
+template<int MAX_K>
+inline std::ostream& operator<<(std::ostream& out, const Kmer<MAX_K>& k) {
   return out << k.to_string();
 };
 
