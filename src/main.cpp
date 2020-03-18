@@ -255,14 +255,30 @@ int main(int argc, char **argv) {
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto free_mem = get_free_mem();
-      Kmer<160>::set_k(scaff_kmer_len);
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
       Alns alns;
       alignments_dt.start();
-      find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
-#endif
+#endif      
+      auto max_k = (scaff_kmer_len / 32 + 1) * 32;
+      switch (max_k) {
+        case 32:
+          find_alignments<32>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          break;
+        case 64:
+          find_alignments<64>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          break;
+        case 96:
+          find_alignments<96>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          break;
+        case 128:
+          find_alignments<128>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          break;
+        case 160:
+          find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          break;
+      }                  
       alignments_dt.stop();
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? CGRAPH_BREAK_SCAFF_NS : 1);
       cgraph_dt.start();
@@ -282,7 +298,7 @@ int main(int argc, char **argv) {
       auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
       SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
            loop_t_elapsed.count(), " s at ", get_current_time(), ", used ", 
-           get_size_str(all_mem_used / options->cores_per_node), " GB memory", KNORM, "\n");
+           get_size_str(all_mem_used / options->cores_per_node), " memory", KNORM, "\n");
       barrier();
     }
   }

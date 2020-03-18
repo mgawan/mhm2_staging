@@ -621,6 +621,7 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
                      Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped = 0;
+  Kmer<MAX_K>::set_k(kmer_len);
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
