@@ -77,8 +77,6 @@ struct GapStats {
     int64_t tot_gaps = reduce_one(gaps, op_fast_add, 0).wait();
     int64_t tot_positive = reduce_one(positive, op_fast_add, 0).wait();
     int64_t tot_unclosed = reduce_one(unclosed, op_fast_add, 0).wait();
-    int64_t tot_corrected_splints = reduce_one(corrected_splints, op_fast_add, 0).wait();
-    int64_t tot_corrected_spans = reduce_one(corrected_spans, op_fast_add, 0).wait();
     int64_t tot_break_scaffs = reduce_one(num_break_scaffs, op_fast_add, 0).wait();
     int64_t tot_excess_breaks = reduce_one(num_excess_breaks, op_fast_add, 0).wait();
     int64_t tot_tolerance_breaks = reduce_one(num_tolerance_breaks, op_fast_add, 0).wait();
@@ -124,7 +122,6 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
       auto orient = walk.vertices[i].second;
       auto seq = _graph->get_vertex_seq(v->seq_gptr, v->clen);
       if (orient == Orient::REVCOMP) seq = revcomp(seq);
-      ScaffVertex scaff_vertex = { .cid = v->cid, .orient = orient, .depth = (int)v->depth, .len = v->clen };
       if (!prev_v) {
         // no previous vertex - the start of the scaffold
         ctg.seq = seq;
@@ -364,11 +361,6 @@ static cid_t bfs_branch(shared_ptr<Vertex> curr_v, int end, double walk_depth) {
 static vector<shared_ptr<Vertex> > search_for_next_nbs(int max_kmer_len, int kmer_len, QualityLevel quality_level,
                                                        shared_ptr<Vertex> curr_v, int end, double walk_depth, WalkStats &stats,
                                                        cid_t fwd_cid=-1) {
-  auto in_cid_list = [](vector<cid_t> cids, cid_t query_cid) -> bool {
-    for (auto cid : cids) if (cid == query_cid) return true;
-    return false;
-  };
-
   stats.num_steps++;
   // get the nbs from the correct end
   auto nbs_cids = (end == 5 ? curr_v->end5_merged : curr_v->end3_merged);
@@ -558,7 +550,6 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, QualityLevel qualit
       next_nbs_timer.start();
       auto next_nbs = search_for_next_nbs(max_kmer_len, kmer_len, quality_level, curr_v, end, walk_depth, walk_stats);
       next_nbs_timer.stop();
-      bool already_visited = false;
       if (!next_nbs.empty()) {
         // we have possibly multiple next nbs in sequence
         // update the last one and reject if it has insufficient depth remaining

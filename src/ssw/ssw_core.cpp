@@ -926,7 +926,7 @@ int32_t mark_mismatch (int32_t ref_begin1,
                        uint32_t** cigar,
                        int32_t* cigarLen) {
 
-    int32_t mismatch_length = 0, p = 0, i, length, j, s = *cigarLen + 2;
+    int32_t mismatch_length = 0, p = 0, i, length, s = *cigarLen + 2;
     uint32_t *new_cigar = (uint32_t*)malloc(s*sizeof(uint32_t)), length_m = 0,  length_x = 0;
     char op;
 

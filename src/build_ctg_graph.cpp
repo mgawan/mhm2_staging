@@ -151,7 +151,6 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
   string ctg_seq = "";
   cid_t cid = (tail ? edge->cids.cid1 : edge->cids.cid2);
   vector<string> seqs;
-  char buf[100];
   int max_len = 0;
   for (auto gap_read : edge->gap_reads) {
     if (gap_read.cid != cid) continue;
@@ -425,8 +424,8 @@ static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vecto
   for (auto &next_nbs : all_next_nbs) {
     progress();
     nb_cids_merged.push_back({});
-    auto last_nb = next_nbs.back();
-    DBG_BUILD("\tmerged path (len ", last_nb->vertex->clen + last_nb->edge->gap, ", depth ", last_nb->vertex->depth, "): ");
+    DBG_BUILD("\tmerged path (len ", next_nbs.back()->vertex->clen + next_nbs.back()->edge->gap, ", depth ",
+              next_nbs.back()->vertex->depth, "): ");
     for (auto &next_nb : next_nbs) {
       DBG_BUILD(next_nb->vertex->cid, " ");
       nb_cids_merged.back().push_back(next_nb->vertex->cid);

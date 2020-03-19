@@ -93,6 +93,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
     default: DIE("Should never get here");
   };
+  barrier();
   for (auto fqr : fqr_list) {
     fqr->reset();
     string id, seq, quals;

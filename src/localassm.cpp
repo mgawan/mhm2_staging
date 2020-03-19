@@ -324,7 +324,6 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
   Timer timer(__FILEFUNC__);
   int64_t num_alns_found = 0, num_alns_invalid = 0, num_direct = 0, num_proj = 0;
   int min_pair_len = insert_avg + 3 * insert_stddev;
-  int64_t max_alns = 0;
   IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns reads to contigs");
   int64_t aln_i = 0;
   AlnStatus start_status, end_status;
@@ -424,8 +423,6 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
 
 // return the result of the walk (f, r or x)
 static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, int walk_len_limit) {
-  bool have_forked = false;
-  int nsteps = 0;
   HASH_TABLE<string, bool> loop_check_ht;
   char walk_result = 'X';
   for (int nsteps = 0; nsteps < walk_len_limit; nsteps++) {
@@ -559,7 +556,6 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
                reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ",
                reduce_one(term_counts[2], op_fast_add, 0).wait(), " R\n");
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto tot_max_num_reads = reduce_one(max_num_reads, op_fast_max, 0).wait();
   auto tot_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
   auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
   auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();

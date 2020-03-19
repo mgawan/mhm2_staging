@@ -26,10 +26,10 @@ endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
     # ignore annoying warning on icc
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
 endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function")
 
 include(CMakeDefinitions.txt)
 

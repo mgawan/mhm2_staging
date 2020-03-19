@@ -277,7 +277,7 @@ static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
                              vector<global_ptr<FragElem>> &frag_elems) {
   Timer timer(__FILEFUNC__);
   // put all the uutigs found by this rank into my_uutigs
-  int64_t num_uutigs = 0, num_equal_links = 0, num_non_recip = 0, num_short = 0,
+  int64_t num_equal_links = 0, num_non_recip = 0, num_short = 0,
           num_left_links = 0, num_left_overlaps = 0, num_left_overlaps_rc = 0, 
           num_right_links = 0, num_right_overlaps = 0, num_right_overlaps_rc = 0;
   ProgressBar progbar(frag_elems.size(), "Cleaning fragment links");

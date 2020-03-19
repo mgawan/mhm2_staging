@@ -388,7 +388,7 @@ public:
         if (_fs.is_open()) close();
         if (rdbuf()) delete rdbuf();
     }
-    streampos zstr_tellg()
+    std::streampos zstr_tellg()
     {
         return _fs.tellg();
     }

@@ -161,7 +161,6 @@ public:
   }
 
   bool operator<(const Kmer& o) const {
-    bool r = false;
     for (size_t i = 0; i < N_LONGS; ++i) {
       if (longs[i] < o.longs[i]) return true;
       if (longs[i] > o.longs[i]) return false;

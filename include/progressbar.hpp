@@ -24,24 +24,13 @@ private:
   int64_t prev_ticks = 0;
   int64_t ten_perc = 0;
   int64_t total_ticks = 0;
-  const int64_t bar_width;
-  const int64_t prefix_width;
   const string prefix_str = "";
-  const char complete_char = '=';
-  const char incomplete_char = ' ';
   const std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
   std::chrono::steady_clock::time_point prev_time;
   std::istream *infile = nullptr;
 
 public:
-  ProgressBar(int64_t total, string prefix = "", int pwidth = 20,
-              int width = 50, char complete = '=', char incomplete = ' ')
-    : total_ticks{total}
-    , prefix_str{prefix}
-    , prefix_width{pwidth}
-    , bar_width{width}
-    , complete_char{complete}
-    , incomplete_char{incomplete} {
+  ProgressBar(int64_t total, string prefix = "") : total_ticks{total}, prefix_str{prefix} {
       if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
         ten_perc = total / 10;
         if (ten_perc == 0) ten_perc = 1;
@@ -50,15 +39,7 @@ public:
       }
     }
 
-  ProgressBar(const string &fname, std::istream *infile, string prefix = "", int pwidth = 20, int width = 50,
-              char complete = '=', char incomplete = ' ')
-    : infile{infile}
-    , total_ticks{0}
-    , prefix_str{prefix}
-    , prefix_width{pwidth}
-    , bar_width{width}
-    , complete_char{complete}
-    , incomplete_char{incomplete} {
+  ProgressBar(const string &fname, std::istream *infile, string prefix = "") : infile{infile}, total_ticks{0}, prefix_str{prefix} {
       if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
         int64_t sz = get_file_size(fname);
         if (sz < 0) std::cout << KRED << "Could not read the file size for: " << fname << std::flush;
@@ -82,8 +63,6 @@ public:
       if (upcxx::rank_me() != RANK_FOR_PROGRESS) return;
       if (total_ticks == 0) return;
       float progress = (float) ticks / total_ticks;
-      int pos = (int) (bar_width * progress);
-
       std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
       auto time_delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - prev_time).count();
@@ -101,8 +80,8 @@ public:
     std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
     DBG("Time ", prefix_str, ": ", (double)time_elapsed / 1000, "\n");
-    double max_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_max, 0).wait() / 1000;
-    double tot_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_add, 0).wait() / 1000;
+    double max_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_max, RANK_FOR_PROGRESS).wait() / 1000;
+    double tot_time = (double)upcxx::reduce_one(time_elapsed, upcxx::op_fast_add, RANK_FOR_PROGRESS).wait() / 1000;
     double av_time = tot_time / upcxx::rank_n();
     if (upcxx::rank_me() == RANK_FOR_PROGRESS) {
       SLOG_VERBOSE(std::setprecision(2), std::fixed, KLGREEN, "  Average ", av_time, " max ", max_time,

@@ -20,83 +20,83 @@ static CtgGraph *_graph = nullptr;
 
 
 // functions for evaluating the gap correction analytically assuming Gaussian insert size distribution
-// this is taken from meraculaus bmaToLinks.pl 
+// this is taken from meraculous bmaToLinks.pl 
 
-int erf(int x) {
-  int absX = (x < 0) ? -x : x;
-  int t = 1 / (1 + 0.5 * absX);
-  int t2 = t * t;
-  int t3 = t * t2;
-  int t4 = t * t3;
-  int t5 = t * t4;
-  int t6 = t * t5;
-  int t7 = t * t6;
-  int t8 = t * t7;
-  int t9 = t * t8;
-  int a0 = -1.26551223;
-  int a1 = 1.00002368;
-  int a2 = 0.37409196;
-  int a3 = 0.09678418;
-  int a4 = -0.18628806;
-  int a5 = 0.27886807;
-  int a6 = -1.13520398;
-  int a7 = 1.48851587;
-  int a8 = -0.82215223;
-  int a9 = 0.17087277;
-  int tau = t * exp(-x * x + a0 + a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5 + a6 * t6 + a7 * t7 + a8 * t8 + a9 * t9);
+double erf(int x) {
+  double absX = (x < 0) ? -x : x;
+  double t = 1 / (1 + 0.5 * absX);
+  double t2 = t * t;
+  double t3 = t * t2;
+  double t4 = t * t3;
+  double t5 = t * t4;
+  double t6 = t * t5;
+  double t7 = t * t6;
+  double t8 = t * t7;
+  double t9 = t * t8;
+  double a0 = -1.26551223;
+  double a1 = 1.00002368;
+  double a2 = 0.37409196;
+  double a3 = 0.09678418;
+  double a4 = -0.18628806;
+  double a5 = 0.27886807;
+  double a6 = -1.13520398;
+  double a7 = 1.48851587;
+  double a8 = -0.82215223;
+  double a9 = 0.17087277;
+  double tau = t * exp(-x * x + a0 + a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5 + a6 * t6 + a7 * t7 + a8 * t8 + a9 * t9);
   if (x < 0) return (tau - 1);
   else return (1 - tau);
 }
 
 
-int G0(int a, int b, int mu, int sigma) {
-  const int sqrtTwo = sqrt(2);
-  const int pi = 3.14159265359;
-  const int sqrtPi = sqrt(pi);
+double G0(double a, double b, double mu, double sigma) {
+  const double sqrtTwo = sqrt(2);
+  const double pi = 3.14159265359;
+  const double sqrtPi = sqrt(pi);
 
-  int rt2sig = sqrtTwo * sigma;
-  int erfa = erf((a - mu)/rt2sig);
-  int erfb = erf((b - mu)/rt2sig);
+  double rt2sig = sqrtTwo * sigma;
+  double erfa = erf((a - mu)/rt2sig);
+  double erfb = erf((b - mu)/rt2sig);
   return (sqrtPi/sqrtTwo) * sigma * (erfb - erfa);
 }
 
 
-int G1(int a, int b, int mu, int sigma) {
-  int za = (a - mu) / sigma;
-  int zb = (b - mu) / sigma;
-  int expa = exp(-0.5 * za * za);
-  int expb = exp(-0.5 * zb * zb);
-  int g0 = G0(a, b, mu, sigma);
+double G1(double a, double b, double mu, double sigma) {
+  double za = (a - mu) / sigma;
+  double zb = (b - mu) / sigma;
+  double expa = exp(-0.5 * za * za);
+  double expb = exp(-0.5 * zb * zb);
+  double g0 = G0(a, b, mu, sigma);
   return (sigma * sigma * (expa-expb) + mu * g0);
 }
 
 
-int G2(int a, int b, int mu, int sigma) {
-  int za = (a - mu) / sigma;
-  int zb = (b - mu) / sigma;
-  int expa = exp(-0.5 * za * za);
-  int expb = exp(-0.5 * zb * zb);
-  int g0 = G0(a, b, mu, sigma);
-  int g1 = G1(a, b, mu, sigma);
-  int sigma2 = sigma * sigma;
+double G2(double a, double b, double mu, double sigma) {
+  double za = (a - mu) / sigma;
+  double zb = (b - mu) / sigma;
+  double expa = exp(-0.5 * za * za);
+  double expb = exp(-0.5 * zb * zb);
+  double g0 = G0(a, b, mu, sigma);
+  double g1 = G1(a, b, mu, sigma);
+  double sigma2 = sigma * sigma;
   return (sigma2 * g0 + mu * g1 + sigma2 * (a * expa - b * expb));
 }
 
 
-int mean_spanning_clone(int g, int k, int l, int c1, int c2, int mu, int sigma) {
-  int x1 = g + 2 * k - 1;
-  int x2 = g + c1 + l;
-  int alpha = x2 - x1;
-  int x3 = g + c2 + l;
-  int x4 = x3 + alpha;
-  int num = 0;
-  int den = 0;
-  int N1 = G2(x1, x2, mu, sigma) - x1 * G1(x1, x2, mu, sigma);
-  int N2 = (x2 - x1) * G1(x2, x3, mu, sigma);
-  int N3 = x4 * G1(x3, x4, mu, sigma) - G2(x3, x4, mu, sigma);
-  int D1 = G1(x1, x2, mu, sigma) - x1 * G0(x1, x2, mu, sigma);
-  int D2 = (x2 - x1) * G0(x2, x3, mu, sigma);
-  int D3 = x4 * G0(x3, x4, mu, sigma) - G1(x3, x4, mu, sigma);
+double mean_spanning_clone(double g, double k, double l, double c1, double c2, double mu, double sigma) {
+  double x1 = g + 2 * k - 1;
+  double x2 = g + c1 + l;
+  double alpha = x2 - x1;
+  double x3 = g + c2 + l;
+  double x4 = x3 + alpha;
+  double num = 0;
+  double den = 0;
+  double N1 = G2(x1, x2, mu, sigma) - x1 * G1(x1, x2, mu, sigma);
+  double N2 = (x2 - x1) * G1(x2, x3, mu, sigma);
+  double N3 = x4 * G1(x3, x4, mu, sigma) - G2(x3, x4, mu, sigma);
+  double D1 = G1(x1, x2, mu, sigma) - x1 * G0(x1, x2, mu, sigma);
+  double D2 = (x2 - x1) * G0(x2, x3, mu, sigma);
+  double D3 = x4 * G0(x3, x4, mu, sigma) - G1(x3, x4, mu, sigma);
   num = N1 + N2 + N3;
   den = D1 + D2 + D3;
   if (den) {
@@ -108,18 +108,18 @@ int mean_spanning_clone(int g, int k, int l, int c1, int c2, int mu, int sigma) 
 }
 
 
-int estimate_gap_size(int meanAnchor, int k, int l, int c1, int c2, int mu, int sigma) {
-  int gMax = mu+3 * sigma - 2 * k;
-  int gMin = -(k - 2);
-  int gMid = mu-meanAnchor;
+double estimate_gap_size(double meanAnchor, double k, double l, double c1, double c2, double mu, double sigma) {
+  double gMax = mu+3 * sigma - 2 * k;
+  double gMin = -(k - 2);
+  double gMid = mu-meanAnchor;
   // Negative gap size padding disabled for metagenomes
   //if (gMid < gMin) gMid = gMin + 1;
   if (gMid > gMax) gMid = gMax - 1;
-  int aMax = mean_spanning_clone(gMax, k, l, c1, c2, mu, sigma) - gMax;
-  int aMin = mean_spanning_clone(gMin, k, l, c1, c2, mu, sigma) - gMin;
-  int aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
-  int deltaG = gMax-gMin;
-  int iterations = 0;
+  double aMax = mean_spanning_clone(gMax, k, l, c1, c2, mu, sigma) - gMax;
+  double aMin = mean_spanning_clone(gMin, k, l, c1, c2, mu, sigma) - gMin;
+  double aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
+  double deltaG = gMax-gMin;
+  double iterations = 0;
   while (deltaG > 10) {
     iterations++;
     if (meanAnchor > aMid) {
@@ -218,15 +218,6 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
 }
 
 
-static string get_ctg_aln_str(Aln &aln, const string &read_status) {
-  ostringstream os;
-  os << "Contig" << aln.cid << "." << (aln.orient == '+' ? 3 : 5) << "\t["
-     << read_status << " " << aln.read_id << " " << (aln.rstart + 1) << " " << aln.rstop << " " << aln.rlen
-     << " Contig" << aln.cid << " " << (aln.cstart + 1) << " " << aln.cstop << " " << aln.clen << " "
-     << (aln.orient == '+' ? "Plus" : "Minus") << "]";
-  return os.str();
-}
-
 
 // gets all the alns for a single read
 static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read) {
@@ -242,7 +233,6 @@ static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_
 
 
 static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
-  int end = (aln.cid == edge->cids.cid1 ? edge->end1 : edge->end2);
   int gap_start = 0;
   if (aln.cid == edge->cids.cid1) {
     if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-')) gap_start = aln.rstop;

@@ -85,7 +85,6 @@ class FastqReader {
   string fname;
   int max_read_len;
   char buf[BUF_SIZE + 1];
-  int64_t lines_read;
   int qual_offset;
   vector<std::unique_ptr<CachedRead>> cached_reads;
 
@@ -296,7 +295,7 @@ public:
     io_t.start();
     // first estimate the number of records
     size_t tot_bytes_read = 0;
-    int64_t records_processed = 0, num_records;
+    int64_t num_records = 0;
     string id, seq, quals;
     for (num_records = 0; num_records < 10000; num_records++) {
       size_t bytes_read = get_next_fq_record(id, seq, quals);

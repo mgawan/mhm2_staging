@@ -145,19 +145,19 @@ class KmerCtgDHT {
 
     if (orient == '-') switch_orient(rstart, rstop, rlen);
 
-    // for some reason, on Cori this causes an internal compiler error:
+    // for some reason, on Cori icc this causes an internal compiler error:
     // internal error: assertion failed at: "shared/cfe/edgcpfe/overload.c", line 9538
-    // aln = { .read_id = rname, .cid = cid,
-    //         .rstart = rstart, .rstop = rstop, .rlen = rlen,
-    //         .cstart = cstart, .cstop = cstop, .clen = clen,
-    //         .orient = orient, .score1 = ssw_aln.sw_score,
-    //         .score2 = ssw_aln.sw_score_next_best };
+    aln = { .read_id = rname, .cid = cid,
+            .rstart = rstart, .rstop = rstop, .rlen = rlen,
+            .cstart = cstart, .cstop = cstop, .clen = clen,
+            .orient = orient, .score1 = ssw_aln.sw_score,
+            .score2 = ssw_aln.sw_score_next_best };
+    /*
     aln.read_id = rname; aln.cid = cid;
     aln.rstart = rstart; aln.rstop = rstop; aln.rlen = rlen;
     aln.cstart = cstart; aln.cstop = cstop; aln.clen = clen;
     aln.orient = orient; aln.score1 = ssw_aln.sw_score; aln.score2 = ssw_aln.sw_score_next_best;
-  
-    int aln_len = rstop - rstart;
+    */
 #ifdef DUMP_ALNS
     *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
 #endif
@@ -369,7 +369,6 @@ public:
       
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
       string ctg_subseq;
-      bool ctg_in_cache = false;
       // if max_ctg_seq_cache_size is > 0, then we are using a cache
       if (max_ctg_seq_cache_size) {
         auto it = ctg_seq_cache.find(ctg_loc.cid);

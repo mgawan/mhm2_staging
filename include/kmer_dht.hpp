@@ -346,7 +346,6 @@ public:
       bloom_filter2->init(cardinality / 4, KCOUNT_BLOOM_FP); // second bloom has far fewer entries - assume 75% filtered out
       SLOG_VERBOSE("Bloom filters used ", get_size_str(init_mem_free - get_free_mem()), " memory on node 0\n");
     } else {
-      double init_mem_free = get_free_mem();
       barrier();
       // in this case we have to roughly estimate the hash table size because the space is reserved now
       // err on the side of excess because the whole point of doing this is speed and we don't want a
@@ -480,7 +479,6 @@ public:
                  cardinality2, " ratio is ", (double)cardinality2 / cardinality1, "\n");
     bloom_filter1->clear(); // no longer need it
 
-    double init_mem_free = get_free_mem();
     barrier();
     // two bloom false positive rates applied
     initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 1000);

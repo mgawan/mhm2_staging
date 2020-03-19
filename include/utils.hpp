@@ -184,7 +184,7 @@ static double get_free_mem(void) {
 }
 
 static string get_size_str(int64_t sz) {
-  int64_t abs_sz = abs(sz);
+  int64_t abs_sz = std::abs(sz);
   if (abs_sz < 1024) return to_string(abs_sz) + "B";
   double frac = 0;
   string units = "";
