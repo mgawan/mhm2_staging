@@ -26,9 +26,6 @@ add_definitions(-DUSE_BYTELL)
 # FIXME: make runtime option
 add_definitions(-DMIN_CTG_PRINT_LEN=500)
 
-# limit on how many contigs can match to a single seed - for uutigs, this should be only 1
-# add_definitions(-DKLIGN_MAX_SEED_TO_CTG_MAPPINGS=10) 
-add_definitions(-DKLIGN_MAX_SEED_TO_CTG_MAPPINGS=1) 
 # max allowed alignments per read (to reduce overhead & imbalance)
 add_definitions(-DKLIGN_MAX_ALNS_PER_READ=20)
 

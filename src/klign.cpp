@@ -46,15 +46,16 @@ struct ReadAndCtgLoc {
 };
 
 template<int MAX_K>
-struct KmerCtgLocs {
+struct KmerCtgLoc {
   Kmer<MAX_K> kmer;
-  vector<CtgLoc> ctg_locs;
-  UPCXX_SERIALIZED_FIELDS(kmer, ctg_locs);
+  CtgLoc ctg_loc;
+  UPCXX_SERIALIZED_FIELDS(kmer, ctg_loc);
 };
   
 
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped_seed_to_ctgs = 0;
+static int64_t _num_dropped_seed_to_ctgs_2 = 0;
 
 template<int MAX_K>
 class KmerCtgDHT {
@@ -66,7 +67,9 @@ class KmerCtgDHT {
   };
 
   AggrStore<KmerAndCtgLoc> kmer_store;
-  using kmer_map_t = HASH_TABLE<Kmer<MAX_K>, vector<CtgLoc> >;
+  // maps a kmer to a contig - the first part of the pair is set to true if this is a conflict,
+  // with a kmer mapping to multiple contigs
+  using kmer_map_t = HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>;
   dist_object<kmer_map_t> kmer_map;
 #ifdef DUMP_ALNS
   zstr::ofstream *alns_file;
@@ -91,29 +94,11 @@ class KmerCtgDHT {
       CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
       const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
       if (it == kmer_map->end()) {
-        kmer_map->insert({kmer_and_ctg_loc.kmer, {ctg_loc}});
+        kmer_map->insert({kmer_and_ctg_loc.kmer, {false, ctg_loc}});
       } else {
-        vector<CtgLoc> *ctg_locs = &it->second;
-        
-// FIXME: shouldn't I just drop all kmers in this case? They represent conflicting kmers, e.g. to high depth regions.
-// If there are good alignments, they could come from other parts of the contig
-// This could be done by dropping all ctg_locs->size() == KLIGN_MAX_SEED_TO_CTG_MAPPINGS later on
-
-// So this should be hardcoded to 2. Then if we have more than one mapping, we don't add anymore
-// later on, when fetching the contigs, if we have two mappings, we don't return the ctg.
-
-// actually, we shouldn't be using a vector here, but rather a single value, and that has a flag indicating
-// whether to drop it for conflicts later on
-        
-        if (ctg_locs->size() >= KLIGN_MAX_SEED_TO_CTG_MAPPINGS) {
-          assert(ctg_locs->size() <= KLIGN_MAX_SEED_TO_CTG_MAPPINGS);
-          _num_dropped_seed_to_ctgs++;
-          return;
-        }
-        // only add it if we don't already have a mapping from this kmer to this ctg
-        for (auto cl : it->second) 
-          if (cl.cid == ctg_loc.cid) return;
-        it->second.push_back(ctg_loc);
+        // in this case, we have a conflict, i.e. the kmer maps to multiple contigs
+        it->second.first = true;
+        _num_dropped_seed_to_ctgs++;
       }
     }
   };
@@ -205,6 +190,7 @@ public:
 
   void clear() {
     for (auto it = kmer_map->begin(); it != kmer_map->end(); ) {
+      _num_dropped_seed_to_ctgs_2++;
       it = kmer_map->erase(it);
     }
     kmer_store.clear();
@@ -247,6 +233,11 @@ public:
     else return reduce_all(_num_dropped_seed_to_ctgs, op_fast_add).wait();
   }
 
+  int64_t get_num_dropped_seed_to_ctgs_2(bool all = false) {
+    if (!all) return reduce_one(_num_dropped_seed_to_ctgs_2, op_fast_add, 0).wait();
+    else return reduce_all(_num_dropped_seed_to_ctgs_2, op_fast_add).wait();
+  }
+
   double get_av_ssw_secs() {
     return reduce_one(ssw_aligner.get_ssw_secs(), op_fast_add, 0).wait() / rank_n();
   }
@@ -281,29 +272,23 @@ public:
     barrier();
   }
 
-  future<vector<CtgLoc> > get_ctgs_with_kmer(Kmer<MAX_K> &kmer) {
-    return rpc(get_target_rank(kmer),
-               [](Kmer<MAX_K> kmer, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
-                 const auto it = kmer_map->find(kmer);
-// FIXME: here we shouldn't return anything if the numer of matches is too high                 
-                 if (it == kmer_map->end()) return {};
-                 return it->second;
-               }, kmer, kmer_map);
-  }
-
-  future<vector<KmerCtgLocs<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
+  future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
     return rpc(target_rank,
-               [](vector<Kmer<MAX_K>> kmers, dist_object<kmer_map_t> &kmer_map) {// -> vector<Kmer<MAX_K>CtgLocs> {
-                 vector<KmerCtgLocs<MAX_K>> kmer_ctg_locs;
+               [](vector<Kmer<MAX_K>> kmers, dist_object<kmer_map_t> &kmer_map) {
+                 vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
                  for (auto &kmer : kmers) {
                    const auto it = kmer_map->find(kmer);
                    if (it == kmer_map->end()) continue;
-                   kmer_ctg_locs.push_back({kmer, it->second});
+                   // skip conflicts
+                   if (it->second.first) continue;
+                   // now add it
+                   kmer_ctg_locs.push_back({kmer, it->second.second});
                  }
                  return kmer_ctg_locs;
                }, kmers, kmer_map);
   }
-  // this is really only for debugging
+
+#ifdef DEBUG
   void dump_ctg_kmers() {
     Timer timer(__FILEFUNC__);
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
@@ -313,7 +298,7 @@ public:
     ProgressBar progbar(kmer_map->size(), "Dumping kmers to " + dump_fname);
     int64_t i = 0;
     for (auto &elem : *kmer_map) {
-      auto ctg_loc = &elem.second[0];
+      auto ctg_loc = &elem.second;
       out_buf << elem.first << " " << elem.second.size() << " " << ctg_loc->clen << " " << ctg_loc->pos_in_ctg << " "
               << ctg_loc->is_rc << endl;
       i++;
@@ -328,6 +313,7 @@ public:
     progbar.done();
     SLOG_VERBOSE("Dumped ", this->get_num_kmers(), " kmers\n");
   }
+#endif
   
   void compute_alns_for_read(HASH_TABLE<cid_t, ReadAndCtgLoc> *aligned_ctgs_map, const string &rname, string rseq) {
     int rlen = rseq.length();
@@ -443,10 +429,13 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
-  auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs();
-  if (num_dropped_seed_to_ctgs) {
+  if (auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs(); num_dropped_seed_to_ctgs) {
     SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs, " excessive seed-to-contig mappings (", 
                  setprecision(2), fixed, (100.0 * num_dropped_seed_to_ctgs / tot_num_kmers), "%)\n");
+  }
+  if (auto num_dropped_seed_to_ctgs_2 = kmer_ctg_dht.get_num_dropped_seed_to_ctgs_2(); num_dropped_seed_to_ctgs_2) {
+    SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs_2, " excessive seed-to-contig mappings (", 
+                 setprecision(2), fixed, (100.0 * num_dropped_seed_to_ctgs_2 / tot_num_kmers), "% ) [CHECK]\n");
   }
 }
 
@@ -489,29 +478,26 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     //max_kmers = max(max_kmers, kmer_lists[i].size());
     //num_kmers += kmer_lists[i].size();
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
-      [&](vector<KmerCtgLocs<MAX_K>> kmer_ctg_locs) {
-        // iterate through the kmers, each one has an associated vector of ctg locations
+      [&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
+        // iterate through the kmers, each one has an associated ctg location
         for (auto &kmer_ctg_loc : kmer_ctg_locs) {
           // get the reads that this kmer mapped to
           auto kmer_read_map_it = kmer_read_map.find(kmer_ctg_loc.kmer);
           if (kmer_read_map_it == kmer_read_map.end()) DIE("Could not find kmer ", kmer_ctg_loc.kmer);
           // this is a list of the reads
           auto &kmer_to_reads = kmer_read_map_it->second;
-          // iterate through the ctg locations for this kmer returned by the dht
-          for (auto &ctg_loc : kmer_ctg_loc.ctg_locs) {
-            // now add the ctg loc to all the reads
-            for (auto &kmer_to_read : kmer_to_reads) {
-              auto read_record = kmer_to_read.read_record;
-              int pos_in_read = kmer_to_read.pos_in_read;
-              bool read_is_rc = kmer_to_read.is_rc;
-              if (read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
-                // too many mappings for this read, stop adding to it
-                num_excess_alns_reads++;
-                continue;
-              }
-              // this here ensures that we don't insert duplicate mappings
-              read_record->aligned_ctgs_map.insert({ctg_loc.cid, {pos_in_read, read_is_rc, ctg_loc}});
+          // now add the ctg loc to all the reads
+          for (auto &kmer_to_read : kmer_to_reads) {
+            auto read_record = kmer_to_read.read_record;
+            int pos_in_read = kmer_to_read.pos_in_read;
+            bool read_is_rc = kmer_to_read.is_rc;
+            if (read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
+              // too many mappings for this read, stop adding to it
+              num_excess_alns_reads++;
+              continue;
             }
+            // this here ensures that we don't insert duplicate mappings
+            read_record->aligned_ctgs_map.insert({kmer_ctg_loc.ctg_loc.cid, {pos_in_read, read_is_rc, kmer_ctg_loc.ctg_loc}});
           }
         }
       });
@@ -639,6 +625,7 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
                      Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
+  _num_dropped_seed_to_ctgs_2 = 0;
   Kmer<MAX_K>::set_k(kmer_len);
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();
