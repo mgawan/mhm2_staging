@@ -97,9 +97,14 @@ class KmerCtgDHT {
         
 // FIXME: shouldn't I just drop all kmers in this case? They represent conflicting kmers, e.g. to high depth regions.
 // If there are good alignments, they could come from other parts of the contig
-// I could mark them with a flag in the kmer_map so that they don't get used furthur on.
+// This could be done by dropping all ctg_locs->size() == KLIGN_MAX_SEED_TO_CTG_MAPPINGS later on
+
+// So this should be hardcoded to 2. Then if we have more than one mapping, we don't add anymore
+// later on, when fetching the contigs, if we have two mappings, we don't return the ctg.
+
+// actually, we shouldn't be using a vector here, but rather a single value, and that has a flag indicating
+// whether to drop it for conflicts later on
         
-        // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
         if (ctg_locs->size() >= KLIGN_MAX_SEED_TO_CTG_MAPPINGS) {
           assert(ctg_locs->size() <= KLIGN_MAX_SEED_TO_CTG_MAPPINGS);
           _num_dropped_seed_to_ctgs++;
@@ -280,6 +285,7 @@ public:
     return rpc(get_target_rank(kmer),
                [](Kmer<MAX_K> kmer, dist_object<kmer_map_t> &kmer_map) -> vector<CtgLoc> {
                  const auto it = kmer_map->find(kmer);
+// FIXME: here we shouldn't return anything if the numer of matches is too high                 
                  if (it == kmer_map->end()) return {};
                  return it->second;
                }, kmer, kmer_map);
