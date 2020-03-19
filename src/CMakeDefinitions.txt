@@ -9,9 +9,6 @@ add_definitions(-DKCOUNT_FILTER_BAD_QUAL_IN_READ)
 # false positive rate for bloom filter
 add_definitions(-DKCOUNT_BLOOM_FP=0.05)
 
-# limit on how many kmers can align to a contig
-add_definitions(-DKLIGN_MAX_KMER_TO_CTG_MAPPINGS=10)
-
 # maximum number of rpcs in flight at one time - needed to avoid memory issues with rpcs  
 # FIXME: make runtime option
 add_definitions(-DAGGR_STORE_MAX_RPCS_IN_FLIGHT=8192) 
@@ -29,16 +26,20 @@ add_definitions(-DUSE_BYTELL)
 # FIXME: make runtime option
 add_definitions(-DMIN_CTG_PRINT_LEN=500)
 
-# decreasing this value increases the alignment computation time, and it may improve results slightly
-add_definitions(-DKLIGN_SEED_SPACE=8)
+# limit on how many contigs can match to a single seed - for uutigs, this should be only 1
+# add_definitions(-DKLIGN_MAX_SEED_TO_CTG_MAPPINGS=10) 
+add_definitions(-DKLIGN_MAX_SEED_TO_CTG_MAPPINGS=1) 
 # max allowed alignments per read (to reduce overhead & imbalance)
 add_definitions(-DKLIGN_MAX_ALNS_PER_READ=20)
+
+# limit on how many contigs to fetch for a read at a time - this is across all ranks, so a form of buffering
+add_definitions(-DKLIGN_CTG_FETCH_BUF_SIZE=100000)
+# decreasing this value increases the alignment computation time, and it may improve results slightly
+add_definitions(-DKLIGN_SEED_SPACE=8)
 # how many bases to add on either end for substrings that will be aligned
 add_definitions(-DKLIGN_EXPAND_BASES=5)
 # max number of unaligned bases to allow on the side of an alignment
 add_definitions(-DKLIGN_UNALIGNED_THRES=1)
-# limit on how many contigs to fetch for a read
-add_definitions(-DKLIGN_MAX_NUM_GET_CTGS=100000)
 
 # controls depth matching in cgraph
 add_definitions(-DCGRAPH_DEPTH_DIFF_THRES=0.1)

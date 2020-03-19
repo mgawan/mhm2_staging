@@ -54,7 +54,7 @@ struct KmerCtgLocs {
   
 
 // global variables to avoid passing dist objs to rpcs
-static int64_t _num_dropped = 0;
+static int64_t _num_dropped_seed_to_ctgs = 0;
 
 template<int MAX_K>
 class KmerCtgDHT {
@@ -73,7 +73,6 @@ class KmerCtgDHT {
 #endif  
   int64_t num_alns;
   int64_t num_perfect_alns;
-  int64_t num_excess_alns_reads;
   int64_t num_overlaps;
   
   int64_t max_ctg_seq_cache_size;
@@ -95,10 +94,15 @@ class KmerCtgDHT {
         kmer_map->insert({kmer_and_ctg_loc.kmer, {ctg_loc}});
       } else {
         vector<CtgLoc> *ctg_locs = &it->second;
+        
+// FIXME: shouldn't I just drop all kmers in this case? They represent conflicting kmers, e.g. to high depth regions.
+// If there are good alignments, they could come from other parts of the contig
+// I could mark them with a flag in the kmer_map so that they don't get used furthur on.
+        
         // limit the number of matching contigs to any given kmer - this is an explosion in the graph anyway
-        if (ctg_locs->size() >= KLIGN_MAX_KMER_TO_CTG_MAPPINGS) {
-          assert(ctg_locs->size() <= KLIGN_MAX_KMER_TO_CTG_MAPPINGS);
-          _num_dropped++;
+        if (ctg_locs->size() >= KLIGN_MAX_SEED_TO_CTG_MAPPINGS) {
+          assert(ctg_locs->size() <= KLIGN_MAX_SEED_TO_CTG_MAPPINGS);
+          _num_dropped_seed_to_ctgs++;
           return;
         }
         // only add it if we don't already have a mapping from this kmer to this ctg
@@ -176,7 +180,6 @@ public:
     , ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, SSW_AMBIGUITY_COST)
     , num_alns(0)
     , num_perfect_alns(0)
-    , num_excess_alns_reads(0)
     , num_overlaps(0)
     , kmer_len(kmer_len)
     , num_ctg_seq_cache_hits(0)
@@ -229,19 +232,14 @@ public:
     else return reduce_all(num_alns, op_fast_add).wait();
   }
 
-  int64_t get_num_excess_alns_reads(bool all = false) {
-    if (!all) return reduce_one(num_excess_alns_reads, op_fast_add, 0).wait();
-    else return reduce_all(num_excess_alns_reads, op_fast_add).wait();
-  }
-
   int64_t get_num_overlaps(bool all = false) {
     if (!all) return reduce_one(num_overlaps, op_fast_add, 0).wait();
     else return reduce_all(num_overlaps, op_fast_add).wait();
   }
 
-  int64_t get_num_dropped(bool all = false) {
-    if (!all) return reduce_one(_num_dropped, op_fast_add, 0).wait();
-    else return reduce_all(_num_dropped, op_fast_add).wait();
+  int64_t get_num_dropped_seed_to_ctgs(bool all = false) {
+    if (!all) return reduce_one(_num_dropped_seed_to_ctgs, op_fast_add, 0).wait();
+    else return reduce_all(_num_dropped_seed_to_ctgs, op_fast_add).wait();
   }
 
   double get_av_ssw_secs() {
@@ -331,8 +329,6 @@ public:
     Alns read_alns;
     for (auto &elem : *aligned_ctgs_map) {
       progress();
-      // drop alns for reads with too many alns
-      if (read_alns.size() >= KLIGN_MAX_ALNS_PER_READ) break;
       int pos_in_read = elem.second.pos_in_read;
       bool read_kmer_is_rc = elem.second.read_is_rc;
       CtgLoc ctg_loc = elem.second.ctg_loc;
@@ -403,19 +399,13 @@ public:
                  ctg_extra_offset, read_extra_offset, overlap_len);
       num_alns++;
     }
-
-    // only add alns if there are not too many for this read
-    if (read_alns.size() < KLIGN_MAX_ALNS_PER_READ) {
-      sort(read_alns.begin(), read_alns.end(), 
-           [](const auto &elem1, const auto &elem2) {
-             return elem1.score1 > elem2.score1;
-           });
-      // sort the alns from best score to worst - this could be used in spanner later
-      for (int i = 0; i < read_alns.size(); i++) {
-        alns->add_aln(read_alns.get_aln(i));
-      }
-    } else {
-      num_excess_alns_reads += 1;
+    // sort the alns from best score to worst - this could be used in spanner later
+    sort(read_alns.begin(), read_alns.end(), 
+         [](const auto &elem1, const auto &elem2) {
+           return elem1.score1 > elem2.score1;
+         });
+    for (int i = 0; i < read_alns.size(); i++) {
+      alns->add_aln(read_alns.get_aln(i));
     }
   }
 };
@@ -447,10 +437,10 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
-  auto num_dropped = kmer_ctg_dht.get_num_dropped();
-  if (num_dropped) {
-    SLOG_VERBOSE("Dropped ", num_dropped, " excessive seed-to-contig mappings (", 
-                 setprecision(2), fixed, (100.0 * num_dropped / tot_num_kmers), "%)\n");
+  auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs();
+  if (num_dropped_seed_to_ctgs) {
+    SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs, " excessive seed-to-contig mappings (", 
+                 setprecision(2), fixed, (100.0 * num_dropped_seed_to_ctgs / tot_num_kmers), "%)\n");
   }
 }
 
@@ -476,7 +466,7 @@ struct KmerToRead {
 template<int MAX_K>
 static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<KmerToRead>> &kmer_read_map,
                        vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer,
-                       IntermittentTimer &get_ctgs_timer) {
+                       IntermittentTimer &get_ctgs_timer, int64_t &num_excess_alns_reads) {
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer<MAX_K>>[rank_n()];
   for (auto &elem : kmer_read_map) {
@@ -508,7 +498,12 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
               auto read_record = kmer_to_read.read_record;
               int pos_in_read = kmer_to_read.pos_in_read;
               bool read_is_rc = kmer_to_read.is_rc;
-              if (read_record->aligned_ctgs_map.size() > KLIGN_MAX_ALNS_PER_READ) continue;
+              if (read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
+                // too many mappings for this read, stop adding to it
+                num_excess_alns_reads++;
+                continue;
+              }
+              // this here ensures that we don't insert duplicate mappings
               read_record->aligned_ctgs_map.insert({ctg_loc.cid, {pos_in_read, read_is_rc, ctg_loc}});
             }
           }
@@ -522,8 +517,15 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
   kmer_read_map.clear();
   compute_alns_timer.start();
   int num_reads_aligned = 0;
-  //SLOG_VERBOSE("kmers dispatched min ", min_kmers, " max ", max_kmers, "\n");
+  // create a new list of records with all reads having < KLIGN_MAX_ALNS_PER_READ, i.e. those without excessive mappings
+  vector<ReadRecord*> good_read_records;
+  good_read_records.reserve(read_records.size());
   for (auto read_record : read_records) {
+    if (read_record->aligned_ctgs_map.size() < KLIGN_MAX_ALNS_PER_READ)
+      good_read_records.push_back(read_record);
+  }
+  // fetch contigs for each read
+  for (auto read_record : good_read_records) {
     progress();
     // compute alignments
     if (read_record->aligned_ctgs_map.size()) {
@@ -546,7 +548,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
   Timer timer(__FILEFUNC__);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
-  int64_t num_reads_aligned = 0;
+  int64_t num_reads_aligned = 0, num_excess_alns_reads = 0;
   IntermittentTimer compute_alns_timer(__FILENAME__ + string(":") + "Compute alns");
   IntermittentTimer get_reads_timer(__FILENAME__ + string(":") + "Get reads");
   IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
@@ -585,14 +587,16 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
         auto it = kmer_read_map.find(kmer);
         if (it == kmer_read_map.end()) it = kmer_read_map.insert({kmer, {}}).first;
         it->second.push_back({read_record, i, is_rc});
-        if (kmer_read_map.size() >= KLIGN_MAX_NUM_GET_CTGS) filled = true;
+        if (kmer_read_map.size() >= KLIGN_CTG_FETCH_BUF_SIZE) filled = true;
       }
       if (filled) 
-        num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
+        num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
+                                         num_excess_alns_reads);
       num_reads++;
     }
     if (read_records.size())
-      num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer);
+      num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
+                                       num_excess_alns_reads);
     progbar.done();
     barrier();
   }
@@ -601,9 +605,9 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
   auto tot_num_alns = kmer_ctg_dht.get_num_alns();
   SLOG_VERBOSE("Found ", tot_num_alns, " alignments of which ", perc_str(kmer_ctg_dht.get_num_perfect_alns(), tot_num_alns), 
                " are perfect\n");
-  auto num_excess_alns_reads = kmer_ctg_dht.get_num_excess_alns_reads();
+  auto tot_excess_alns_reads = reduce_one(num_excess_alns_reads, op_fast_add, 0).wait();
   if (num_excess_alns_reads)
-    SLOG_VERBOSE("Dropped ", num_excess_alns_reads, " reads because of alignments in excess of ", KLIGN_MAX_ALNS_PER_READ, "\n");
+    SLOG_VERBOSE("Dropped ", tot_excess_alns_reads, " reads because of alignments in excess of ", KLIGN_MAX_ALNS_PER_READ, "\n");
   auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
   if (num_overlaps)
     SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");
@@ -628,7 +632,7 @@ template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache,
                      Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
-  _num_dropped = 0;
+  _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();
