@@ -49,7 +49,7 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
                      Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
-void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, 
+void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
                         vector<FastqReader*> &fqr_list, int break_scaffolds, QualityLevel quality_level, 
                         Contigs &ctgs, Alns &alns);
 
@@ -280,10 +280,10 @@ int main(int argc, char **argv) {
           break;
       }                  
       alignments_dt.stop();
-      int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? CGRAPH_BREAK_SCAFF_NS : 1);
+      int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
       cgraph_dt.start();
       traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
-                         fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
+                         options->min_ctg_print_len, fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) {
@@ -292,7 +292,7 @@ int main(int argc, char **argv) {
           dump_ctgs_dt.stop();
         }
         SLOG(KBLUE "_________________________", KNORM, "\n");
-        ctgs.print_stats(MIN_CTG_PRINT_LEN);
+        ctgs.print_stats(options->min_ctg_print_len);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
@@ -303,9 +303,9 @@ int main(int argc, char **argv) {
     }
   }
   SLOG(KBLUE "_________________________", KNORM, "\n");
-  ctgs.dump_contigs("final_assembly", MIN_CTG_PRINT_LEN);
+  ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
   SLOG(KBLUE "_________________________", KNORM, "\n");
-  ctgs.print_stats(MIN_CTG_PRINT_LEN);
+  ctgs.print_stats(options->min_ctg_print_len);
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");

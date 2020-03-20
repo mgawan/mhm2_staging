@@ -48,6 +48,8 @@ public:
 #endif
   int insert_avg = 0;
   int insert_stddev = 0;
+  int min_ctg_print_len = 500;
+  int break_scaff_Ns = 10;
 
   bool load(int argc, char **argv) {
     CLI::App app("MHM (" + string(MHM_VERSION) + ")");
@@ -80,7 +82,13 @@ public:
     app.add_option("--max-ctg-cache", max_ctg_cache,
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
     app.add_option("--cores-per-node", cores_per_node,
-                   "Number of cores per node - needed for accurate memory estimate (default " + to_string(cores_per_node) + "\n");
+                   "Number of cores per node - needed for accurate memory estimate (default " +
+                   to_string(cores_per_node) + ")");
+    app.add_option("--min-ctg-print-len", min_ctg_print_len,
+                   "Minimum length required for printing a contig in the final assembly (default " +
+                   to_string(min_ctg_print_len) + ")");
+    app.add_option("--break-scaff-Ns", break_scaff_Ns,
+                   "Number of Ns allowed before a scaffold is broken (default " + to_string(break_scaff_Ns) + ")");
     app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
     app.add_flag("--cache-reads", cache_reads, "Cache reads in memory");
     app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round");
@@ -137,6 +145,8 @@ public:
 #endif
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
       SLOG("  cores per node:        ", cores_per_node, "\n");
+      SLOG("  min ctg print length:  ", min_ctg_print_len, "\n");
+      SLOG("  break scaff Ns:        ", break_scaff_Ns, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  cache reads:           ", YES_NO(cache_reads), "\n");
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");
