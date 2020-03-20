@@ -315,8 +315,9 @@ int main(int argc, char **argv) {
   SLOG("    ", alignments_dt.get_final(), "\n");
   SLOG("    ", localassm_dt.get_final(), "\n");
   SLOG("    ", cgraph_dt.get_final(), "\n");
-  SLOG("    IO read time: ", FastqReader::get_io_time(), "\n");
-  SLOG("    IO write time: ", dump_ctgs_dt.get_elapsed() + elapsed_write_io_t, "\n");
+  SLOG("    FASTQ total read time: ", FastqReader::get_io_time(), "\n");
+  SLOG("    merged FASTQ write time: ", elapsed_write_io_t, "\n");
+  SLOG("    Contigs write time: ", dump_ctgs_dt.get_elapsed(), "\n");
   SLOG(KBLUE "_________________________", KNORM, "\n");
   double end_mem_free = get_free_mem();
   auto all_end_mem_free = reduce_one(end_mem_free, op_fast_add, 0).wait();

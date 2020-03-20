@@ -55,7 +55,6 @@ struct KmerCtgLoc {
 
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped_seed_to_ctgs = 0;
-static int64_t _num_dropped_seed_to_ctgs_2 = 0;
 
 template<int MAX_K>
 class KmerCtgDHT {
@@ -190,7 +189,6 @@ public:
 
   void clear() {
     for (auto it = kmer_map->begin(); it != kmer_map->end(); ) {
-      _num_dropped_seed_to_ctgs_2++;
       it = kmer_map->erase(it);
     }
     kmer_store.clear();
@@ -231,11 +229,6 @@ public:
   int64_t get_num_dropped_seed_to_ctgs(bool all = false) {
     if (!all) return reduce_one(_num_dropped_seed_to_ctgs, op_fast_add, 0).wait();
     else return reduce_all(_num_dropped_seed_to_ctgs, op_fast_add).wait();
-  }
-
-  int64_t get_num_dropped_seed_to_ctgs_2(bool all = false) {
-    if (!all) return reduce_one(_num_dropped_seed_to_ctgs_2, op_fast_add, 0).wait();
-    else return reduce_all(_num_dropped_seed_to_ctgs_2, op_fast_add).wait();
   }
 
   double get_av_ssw_secs() {
@@ -429,14 +422,10 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
-  if (auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs(); num_dropped_seed_to_ctgs) {
+  auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs(); 
+  if (num_dropped_seed_to_ctgs) 
     SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs, " excessive seed-to-contig mappings (", 
                  setprecision(2), fixed, (100.0 * num_dropped_seed_to_ctgs / tot_num_kmers), "%)\n");
-  }
-  if (auto num_dropped_seed_to_ctgs_2 = kmer_ctg_dht.get_num_dropped_seed_to_ctgs_2(); num_dropped_seed_to_ctgs_2) {
-    SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs_2, " excessive seed-to-contig mappings (", 
-                 setprecision(2), fixed, (100.0 * num_dropped_seed_to_ctgs_2 / tot_num_kmers), "% ) [CHECK]\n");
-  }
 }
 
 
@@ -625,7 +614,6 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
                      Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
-  _num_dropped_seed_to_ctgs_2 = 0;
   Kmer<MAX_K>::set_k(kmer_len);
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
   barrier();
