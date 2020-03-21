@@ -9,6 +9,7 @@
 #include <fstream>
 #include <limits>
 #include <regex>
+#include <thread>
 #include <zlib.h>
 #include <upcxx/upcxx.hpp>
 
@@ -479,5 +480,36 @@ inline void switch_orient(int &start, int &stop, int &len) {
   start = len - stop;
   stop = len - tmp;
 }
+
+class MemoryTrackerThread {
+  std::thread *t = nullptr;
+  double start_free_mem, min_free_mem;
+  int ticks = 0;
+  bool fin = false;
+
+public:
+  void start() {
+    start_free_mem = get_free_mem();
+    min_free_mem = start_free_mem;
+    t = new std::thread([&] {
+      while (!fin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        double free_mem = get_free_mem();
+        if (free_mem < min_free_mem) min_free_mem = free_mem;
+        ticks++;
+      }
+    });
+  }
+
+  void stop() {
+    if (t) {
+      fin = true;
+      t->join();
+      delete t;
+      SOUT("Peak memory used ", get_size_str(start_free_mem - min_free_mem), ", final memory used ",
+           get_size_str(start_free_mem - get_free_mem()), "\n");
+    }
+  }
+};
 
 #endif

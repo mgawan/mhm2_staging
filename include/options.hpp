@@ -112,7 +112,6 @@ public:
 
     set_logger_verbose(verbose);
 
-    auto all_start_mem_free = upcxx::reduce_one(get_free_mem(), upcxx::op_fast_add, 0).wait();
     if (upcxx::rank_me() == 0) {
       SLOG(KLBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
       // print out all compiler definitions
@@ -153,11 +152,20 @@ public:
       SLOG("  verbose:               ", YES_NO(verbose), "\n");
       SLOG("_________________________", KNORM, "\n");
 
+    }
+    auto all_start_mem_free = upcxx::reduce_one(get_free_mem(), upcxx::op_fast_add, 0).wait();
+    if (!upcxx::rank_me()) {
       SLOG("Initial free memory: ", std::setprecision(3), std::fixed, get_size_str(all_start_mem_free / cores_per_node), "\n");
-      SLOG("Running with ", upcxx::rank_n(), " processes\n");
+      SLOG("Running with ", upcxx::rank_n(), " processes and ", upcxx::rank_n() / cores_per_node, " nodes\n");
 #ifdef DEBUG
       SWARN("Running low-performance debug mode");
 #endif
+      // get total file size across all libraries
+      double tot_file_size = 0;
+      for (auto const &reads_fname : reads_fname_list) tot_file_size += get_file_size(reads_fname);
+      SLOG("Total size of ", reads_fname_list.size(), " input file", (reads_fname_list.size() > 1 ? "s" : ""),
+           " is ", get_size_str(tot_file_size), "\n");
+      SLOG("Starting run at ", get_current_time(), "\n");
     }
     upcxx::barrier();
     return true;

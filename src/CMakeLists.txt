@@ -29,7 +29,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
 #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
 endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -pthread")
 
 include(CMakeDefinitions.txt)
 

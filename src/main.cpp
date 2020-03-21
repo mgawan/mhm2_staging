@@ -139,6 +139,8 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
 
 int main(int argc, char **argv) {
   upcxx::init();
+  MemoryTrackerThread memory_tracker;
+  memory_tracker.start();
   init_logger();
   IntermittentTimer merge_reads_dt(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
           load_cache_dt(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
@@ -166,13 +168,6 @@ int main(int argc, char **argv) {
   _cores_per_node = options->cores_per_node;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   
-  // get total file size across all libraries
-  double tot_file_size = 0;
-  if (!rank_me()) {
-    for (auto const &reads_fname : options->reads_fname_list) tot_file_size += get_file_size(reads_fname);
-    SLOG("Total size of ", options->reads_fname_list.size(), " input file", (options->reads_fname_list.size() > 1 ? "s" : ""),
-         " is ", (tot_file_size / ONE_GB), " GB\n");
-  }
   // first merge reads - the results will go in the per_rank directory
   double elapsed_write_io_t = 0;
   merge_reads_dt.start();
@@ -205,7 +200,6 @@ int main(int argc, char **argv) {
     max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
-      auto free_mem = get_free_mem();
       auto max_k = (kmer_len / 32 + 1) * 32;
       switch (max_k) {
         case 32:
@@ -240,9 +234,8 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________", KNORM, "\n");
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
-      SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-           get_current_time(), ", used ", get_size_str(all_mem_used / options->cores_per_node), " memory", KNORM, "\n");
+      SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
+           " s at ", get_current_time(), KNORM, "\n");
       barrier();
       prev_kmer_len = kmer_len;
     }
@@ -254,7 +247,6 @@ int main(int argc, char **argv) {
     }
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
-      auto free_mem = get_free_mem();
       SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
       Alns alns;
       alignments_dt.start();
@@ -295,10 +287,8 @@ int main(int argc, char **argv) {
         ctgs.print_stats(options->min_ctg_print_len);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0). wait();
       SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
-           loop_t_elapsed.count(), " s at ", get_current_time(), ", used ", 
-           get_size_str(all_mem_used / options->cores_per_node), " memory", KNORM, "\n");
+           loop_t_elapsed.count(), " s at ", get_current_time(), KNORM, "\n");
       barrier();
     }
   }
@@ -338,6 +328,7 @@ int main(int argc, char **argv) {
   }  
   
   barrier();
+  if (!rank_me()) memory_tracker.stop();
   upcxx::finalize();
   return 0;
 }
