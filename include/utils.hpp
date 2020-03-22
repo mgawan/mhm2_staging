@@ -501,14 +501,14 @@ public:
     });
   }
 
-  void stop() {
+  double stop() {
     if (t) {
       fin = true;
       t->join();
       delete t;
-      SOUT("Peak memory used ", get_size_str(start_free_mem - min_free_mem), ", final memory used ",
-           get_size_str(start_free_mem - get_free_mem()), "\n");
+      return (start_free_mem - min_free_mem);
     }
+    return 0;
   }
 };
 

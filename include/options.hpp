@@ -153,13 +153,13 @@ public:
       SLOG("_________________________", KNORM, "\n");
 
     }
-    auto all_start_mem_free = upcxx::reduce_one(get_free_mem(), upcxx::op_fast_add, 0).wait();
-    if (!upcxx::rank_me()) {
-      SLOG("Initial free memory: ", std::setprecision(3), std::fixed, get_size_str(all_start_mem_free / cores_per_node), "\n");
-      SLOG("Running with ", upcxx::rank_n(), " processes and ", upcxx::rank_n() / cores_per_node, " nodes\n");
+    auto num_nodes = upcxx::rank_n() / cores_per_node;
+    SLOG("Starting run with ", upcxx::rank_n(), " processes on ", num_nodes, " node", (num_nodes > 1 ? "s" : ""), " at ",
+         get_current_time(), "\n");
 #ifdef DEBUG
-      SWARN("Running low-performance debug mode");
+    SWARN("Running low-performance debug mode");
 #endif
+    if (!upcxx::rank_me()) {
       // get total file size across all libraries
       double tot_file_size = 0;
       for (auto const &reads_fname : reads_fname_list) tot_file_size += get_file_size(reads_fname);
