@@ -44,7 +44,6 @@ Run with `-h` to see options.
 To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the following modules:
 
 `module load cmake`  
-
 `module load upcxx`
 
 If building for KNL, make sure to first do
