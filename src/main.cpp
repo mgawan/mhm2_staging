@@ -301,6 +301,10 @@ int main(int argc, char **argv) {
       barrier();
     }
   }
+  for (auto fqr : fqr_list) {
+    delete fqr;
+  }  
+  
   SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
   SLOG(KBLUE "_________________________", KNORM, "\n");
@@ -330,10 +334,6 @@ int main(int argc, char **argv) {
   _dbgstream.flush();
   _dbgstream.close();
 #endif
-  for (auto fqr : fqr_list) {
-    delete fqr;
-  }  
-  
   barrier();
   node_team.destroy();
   barrier();
