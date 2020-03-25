@@ -42,7 +42,6 @@ public:
   bool checkpoint = true;
   bool show_progress = false;
   string ctgs_fname;
-  int cores_per_node = upcxx::rank_n();
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
 #endif
@@ -81,9 +80,6 @@ public:
                    "Maximum size for kmer store in MB (default " + to_string(max_kmer_store_mb) + "MB)");
     app.add_option("--max-ctg-cache", max_ctg_cache,
                    "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
-    app.add_option("--cores-per-node", cores_per_node,
-                   "Number of cores per node - needed for accurate memory estimate (default " +
-                   to_string(cores_per_node) + ")");
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
                    "Minimum length required for printing a contig in the final assembly (default " +
                    to_string(min_ctg_print_len) + ")");
@@ -143,7 +139,6 @@ public:
       if (!kmer_depths_fname.empty()) SLOG("  kmer depths file name: ", kmer_depths_fname, "\n");
 #endif
       SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
-      SLOG("  cores per node:        ", cores_per_node, "\n");
       SLOG("  min ctg print length:  ", min_ctg_print_len, "\n");
       SLOG("  break scaff Ns:        ", break_scaff_Ns, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
@@ -153,7 +148,7 @@ public:
       SLOG("_________________________", KNORM, "\n");
 
     }
-    auto num_nodes = upcxx::rank_n() / cores_per_node;
+    auto num_nodes = upcxx::rank_n() / upcxx::local_team().rank_n();
     SLOG("Starting run with ", upcxx::rank_n(), " processes on ", num_nodes, " node", (num_nodes > 1 ? "s" : ""), " at ",
          get_current_time(), "\n");
 #ifdef DEBUG

@@ -33,7 +33,6 @@ using namespace upcxx;
 ofstream _logstream;
 bool _verbose = false;
 bool _show_progress = false;
-int _cores_per_node = 0;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
@@ -137,7 +136,6 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   barrier();
 }
 
-#define IN_NODE_TEAM() (!(rank_me() % options->cores_per_node))
 
 int main(int argc, char **argv) {
   upcxx::init();
@@ -164,18 +162,10 @@ int main(int argc, char **argv) {
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
-  _cores_per_node = options->cores_per_node;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
   MemoryTrackerThread memory_tracker;
-  double start_mem_free = (IN_NODE_TEAM() ? get_free_mem() : 0);
-  // create teams of one process per node
-  auto node_team = world().split(IN_NODE_TEAM(), 0);
-  if (IN_NODE_TEAM()) {
-    auto all_start_mem_free = upcxx::reduce_one(start_mem_free, upcxx::op_fast_add, 0, node_team).wait();
-    SLOG("Initial free memory: ", std::setprecision(3), std::fixed, get_size_str(all_start_mem_free), "\n");
-    memory_tracker.start();
-  }
+  memory_tracker.start();
   // first merge reads - the results will go in the per_rank directory
   double elapsed_write_io_t = 0;
   merge_reads_dt.start();
@@ -187,16 +177,14 @@ int main(int argc, char **argv) {
   }
   if (options->cache_reads) {
     load_cache_dt.start();
-    double free_mem = (IN_NODE_TEAM() ? get_free_mem() : 0);
+    double free_mem = (!rank_me() ? get_free_mem() : 0);
     upcxx::barrier();
     for (auto fqr : fqr_list) {
       fqr->load_cache(options->qual_offset);
     }
     load_cache_dt.stop();
-    if (IN_NODE_TEAM()) {
-      auto all_mem_used = reduce_one(free_mem - get_free_mem(), op_fast_add, 0, node_team).wait();
-      SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(all_mem_used), " memory", KNORM, "\n");
-    }
+    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0", 
+         KNORM, "\n");
   }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
@@ -322,11 +310,7 @@ int main(int argc, char **argv) {
   SLOG("    merged FASTQ write time: ", elapsed_write_io_t, "\n");
   SLOG("    Contigs write time: ", dump_ctgs_dt.get_elapsed(), "\n");
   SLOG(KBLUE "_________________________", KNORM, "\n");
-  if (IN_NODE_TEAM()) {
-    double peak_mem_used = memory_tracker.stop();
-    auto all_peak_mem_used = reduce_one(peak_mem_used, op_fast_add, 0, node_team).wait();
-    SLOG("Peak memory used ", get_size_str(all_peak_mem_used), "\n");
-  }
+  memory_tracker.stop();
   chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
   SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
        " for MHM version ", MHM_VERSION, "\n");
@@ -334,8 +318,6 @@ int main(int argc, char **argv) {
   _dbgstream.flush();
   _dbgstream.close();
 #endif
-  barrier();
-  node_team.destroy();
   barrier();
   upcxx::finalize();
   return 0;

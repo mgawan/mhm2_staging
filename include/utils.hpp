@@ -68,7 +68,6 @@ enum class QualityLevel {
   ALL
 };
 
-extern int _cores_per_node;
 extern ofstream _logstream;
 extern bool _verbose;
 
@@ -268,7 +267,7 @@ public:
   Timer(const string &name) {
     t = CLOCK_NOW();
     this->name = name;
-    init_free_mem = get_free_mem();
+    init_free_mem = (!upcxx::rank_me() ? get_free_mem() : 0);
     //if (always_show) SLOG(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
     //else SLOG_VERBOSE(KLCYAN, "-- ", name, " (", init_free_mem, " GB free) --\n", KNORM);
   }
@@ -278,12 +277,11 @@ public:
     DBG(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s --", KNORM, "\n");
     upcxx::barrier();
     t_elapsed = CLOCK_NOW() - t;
-    auto curr_free_mem = get_free_mem();
-    auto all_curr_free_mem = upcxx::reduce_one(curr_free_mem, upcxx::op_fast_add, 0).wait();
-    auto all_used_mem = upcxx::reduce_one(init_free_mem - curr_free_mem, upcxx::op_fast_add, 0).wait();
+    auto curr_free_mem = (!upcxx::rank_me() ? get_free_mem() : 0);
+    auto used_mem = init_free_mem - curr_free_mem;
     SLOG_VERBOSE(KLCYAN, "-- ", name, " took ", std::setprecision(2), std::fixed, t_elapsed.count(), " s ",
-                 "(used ",  get_size_str(all_used_mem / _cores_per_node),
-                 ", free ", get_size_str(all_curr_free_mem / _cores_per_node), ") --", KNORM, "\n");
+                 "(memory used on node 0: ",  get_size_str(used_mem),
+                 ", free ", get_size_str(curr_free_mem), ") --", KNORM, "\n");
   }
 };
 
@@ -481,15 +479,23 @@ inline void switch_orient(int &start, int &stop, int &len) {
   stop = len - tmp;
 }
 
+#define IN_NODE_TEAM() (!(upcxx::rank_me() % upcxx::local_team().rank_n()))
+
 class MemoryTrackerThread {
   std::thread *t = nullptr;
   double start_free_mem, min_free_mem;
   int ticks = 0;
   bool fin = false;
+  std::unique_ptr<upcxx::team> node_team;
 
 public:
   void start() {
+    // create teams of one process per node
+    node_team = std::make_unique<upcxx::team>(upcxx::world().split(IN_NODE_TEAM(), 0));
+    if (!IN_NODE_TEAM()) return;
     start_free_mem = get_free_mem();
+    auto all_start_mem_free = upcxx::reduce_one(start_free_mem, upcxx::op_fast_add, 0, *node_team).wait();
+    SLOG("Initial free memory across all nodes: ", std::setprecision(3), std::fixed, get_size_str(start_free_mem), "\n");
     min_free_mem = start_free_mem;
     t = new std::thread([&] {
       while (!fin) {
@@ -501,14 +507,20 @@ public:
     });
   }
 
-  double stop() {
-    if (t) {
-      fin = true;
-      t->join();
-      delete t;
-      return (start_free_mem - min_free_mem);
+  void stop() {
+    if (IN_NODE_TEAM()) {
+      if (t) {
+        fin = true;
+        t->join();
+        delete t;
+        auto peak_mem = start_free_mem - min_free_mem;
+        auto all_peak_mem = upcxx::reduce_one(peak_mem, upcxx::op_fast_add, 0, *node_team).wait();
+        SLOG("Peak memory used across all nodes: ", get_size_str(all_peak_mem), "\n");
+      }
     }
-    return 0;
+    upcxx::barrier();
+    node_team->destroy();
+    upcxx::barrier();
   }
 };
 
