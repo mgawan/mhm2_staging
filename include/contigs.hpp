@@ -126,6 +126,7 @@ public:
   */
 
   void print_stats(int min_ctg_len) {
+    Timer timer(__FILEFUNC__);
     int64_t tot_len = 0, max_len = 0;
     double tot_depth = 0;
     vector<pair<int, int64_t>> length_sums({ {1, 0}, {5, 0}, {10, 0}, {25, 0}, {50, 0}});

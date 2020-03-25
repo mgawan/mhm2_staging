@@ -79,7 +79,7 @@ class KmerCtgDHT {
   
   int64_t max_ctg_seq_cache_size;
   HASH_TABLE<cid_t, string> ctg_seq_cache;
-  int64_t num_ctg_seq_cache_hits;
+  int64_t ctg_seq_bytes_from_cache;
   int64_t ctg_seq_bytes_fetched;
   
   Alns *alns;
@@ -171,7 +171,7 @@ public:
     , num_perfect_alns(0)
     , num_overlaps(0)
     , kmer_len(kmer_len)
-    , num_ctg_seq_cache_hits(0)
+    , ctg_seq_bytes_from_cache(0)
     , ctg_seq_bytes_fetched(0)
     , max_ctg_seq_cache_size(max_ctg_cache)
     , alns(&alns) {
@@ -239,8 +239,8 @@ public:
     return reduce_one(ssw_aligner.get_ssw_secs(), op_fast_max, 0).wait();
   }
 
-  int64_t get_ctg_seq_cache_hits() {
-    return reduce_one(num_ctg_seq_cache_hits, op_fast_add, 0).wait();
+  int64_t get_ctg_seq_bytes_from_cache() {
+    return reduce_one(ctg_seq_bytes_from_cache, op_fast_add, 0).wait();
   }
 
   int64_t get_ctg_seq_bytes_fetched() {
@@ -308,7 +308,8 @@ public:
   }
 #endif
   
-  void compute_alns_for_read(HASH_TABLE<cid_t, ReadAndCtgLoc> *aligned_ctgs_map, const string &rname, string rseq) {
+  void compute_alns_for_read(HASH_TABLE<cid_t, ReadAndCtgLoc> *aligned_ctgs_map, const string &rname, string rseq,
+                             IntermittentTimer &fetch_ctg_seqs_timer) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     Alns read_alns;
@@ -355,7 +356,7 @@ public:
         auto it = ctg_seq_cache.find(ctg_loc.cid);
         // found it in the cache, so fetch the subsequence needed
         if (it != ctg_seq_cache.end()) {
-          num_ctg_seq_cache_hits++;
+          ctg_seq_bytes_from_cache += ctg_aln_len;
           // only get the subsequence needed
           ctg_subseq = it->second.substr(cstart, ctg_aln_len);
         } else {
@@ -363,7 +364,9 @@ public:
           // space for whatever is getting fetched plus a null terminator
           char *seq_buf = new char[ctg_loc.clen + 1];
           // get the full seq
+          fetch_ctg_seqs_timer.start();
           rget(ctg_loc.seq_gptr, seq_buf, ctg_loc.clen).wait();
+          fetch_ctg_seqs_timer.stop();
           ctg_seq_bytes_fetched += ctg_loc.clen;
           string ctg_seq(seq_buf, ctg_loc.clen);
           delete[] seq_buf;
@@ -375,7 +378,9 @@ public:
       } else {
         // fetch only the substring
         char *seq_buf = new char[ctg_aln_len + 1];
+        fetch_ctg_seqs_timer.start();
         rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
+        fetch_ctg_seqs_timer.stop();
         ctg_subseq = string(seq_buf, ctg_aln_len);
         delete[] seq_buf;
         ctg_seq_bytes_fetched += ctg_aln_len;
@@ -450,7 +455,8 @@ struct KmerToRead {
 template<int MAX_K>
 static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<KmerToRead>> &kmer_read_map,
                        vector<ReadRecord*> &read_records, IntermittentTimer &compute_alns_timer,
-                       IntermittentTimer &get_ctgs_timer, int64_t &num_excess_alns_reads) {
+                       IntermittentTimer &get_ctgs_timer, IntermittentTimer &fetch_ctg_seqs_timer,
+                       int64_t &num_excess_alns_reads) {
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer<MAX_K>>[rank_n()];
   for (auto &elem : kmer_read_map) {
@@ -505,17 +511,14 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     if (read_record->aligned_ctgs_map.size() < KLIGN_MAX_ALNS_PER_READ)
       good_read_records.push_back(read_record);
   }
-  // fetch contigs for each read
+  // compute alignments for each read
   for (auto read_record : good_read_records) {
     progress();
     // compute alignments
     if (read_record->aligned_ctgs_map.size()) {
       num_reads_aligned++;
       // when all the ctgs are fetched, do the alignments
-      //num_reads_aligned++;
-      //compute_alns_timer.start();
-      kmer_ctg_dht.compute_alns_for_read(&read_record->aligned_ctgs_map, read_record->id, read_record->seq);
-      //compute_alns_timer.stop();
+      kmer_ctg_dht.compute_alns_for_read(&read_record->aligned_ctgs_map, read_record->id, read_record->seq, fetch_ctg_seqs_timer);
     }
     delete read_record;
   }
@@ -531,8 +534,8 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
   int64_t num_reads = 0;
   int64_t num_reads_aligned = 0, num_excess_alns_reads = 0;
   IntermittentTimer compute_alns_timer(__FILENAME__ + string(":") + "Compute alns");
-  IntermittentTimer get_reads_timer(__FILENAME__ + string(":") + "Get reads");
   IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
+  IntermittentTimer fetch_ctg_seqs_timer(__FILENAME__ + string(":") + "Fetch ctg seqs");
   barrier();
   for (auto fqr : fqr_list) {
     fqr->reset();
@@ -544,9 +547,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
     vector<Kmer<MAX_K>> kmers;
     while (true) {
       progress();
-      get_reads_timer.start();
       size_t bytes_read = fqr->get_next_fq_record(read_id, read_seq, quals);
-      get_reads_timer.stop();
       if (!bytes_read) break;
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
@@ -572,12 +573,12 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
       }
       if (filled) 
         num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
-                                         num_excess_alns_reads);
+                                         fetch_ctg_seqs_timer, num_excess_alns_reads);
       num_reads++;
     }
     if (read_records.size())
       num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
-                                       num_excess_alns_reads);
+                                       fetch_ctg_seqs_timer, num_excess_alns_reads);
     progbar.done();
     barrier();
   }
@@ -596,17 +597,17 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
   SLOG_VERBOSE("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
 
-  SLOG_VERBOSE("Ctg cache hits ", perc_str(kmer_ctg_dht.get_ctg_seq_cache_hits(), tot_num_alns), "\n");
-  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences\n");
+  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_from_cache()), " of contig sequences from cache\n");
+  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences from network\n");
   
   double av_ssw_secs = kmer_ctg_dht.get_av_ssw_secs();
   double max_ssw_secs = kmer_ctg_dht.get_max_ssw_secs();
   SLOG_VERBOSE("Average SSW time ", setprecision(2), fixed, av_ssw_secs, " s, ",
                "max ", setprecision(2), fixed, max_ssw_secs, " s, ",
                "balance ", setprecision(2), fixed, av_ssw_secs / max_ssw_secs, "\n");
-  compute_alns_timer.done_barrier();
-  get_reads_timer.done_barrier();
   get_ctgs_timer.done_barrier();
+  fetch_ctg_seqs_timer.done_barrier();
+  compute_alns_timer.done_barrier();
 }
 
 template<int MAX_K>
