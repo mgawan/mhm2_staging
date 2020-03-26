@@ -130,13 +130,10 @@ public:
       SLOG_VERBOSE("_________________________\n");
       SLOG("Options:\n");
       SLOG("  reads files:           ", vec_to_str(reads_fnames, ","), "\n");
-//      for (auto read_fname : reads_fnames) SLOG(read_fname, ",");
-      SLOG("\n");
       SLOG("  kmer lengths:          ", vec_to_str(kmer_lens, ","), "\n");
       if (max_kmer_len) SLOG("  max kmer length:       ", max_kmer_len, "\n");
       if (prev_kmer_len) SLOG("  prev kmer length:      ", prev_kmer_len, "\n");
       SLOG("  scaffold kmer lengths: ", vec_to_str(scaff_kmer_lens, ","), "\n");
-      SLOG("\n");
       SLOG("  quality offset:        ", qual_offset, "\n");
       SLOG("  max kmer store:        ", max_kmer_store_mb, "MB\n");
       SLOG("  max ctg cache:         ", max_ctg_cache, "\n");
