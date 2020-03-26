@@ -68,14 +68,19 @@ enum class QualityLevel {
   ALL
 };
 
+inline bool file_exists(const string &fname) {
+  ifstream ifs(fname, std::ios_base::binary);
+  return ifs.good();
+}
+
 extern ofstream _logstream;
 extern bool _verbose;
 
 inline void init_logger() {
   if (!upcxx::rank_me()) {
-    // FIXME: if the file already exists, move it to a timestamped version as backup
-    _logstream.open("mhmxx.log");
-    _logstream << "\n\n=======================================\n\n";
+    bool old_file = file_exists("mhmxx.log");
+    _logstream.open("mhmxx.log", std::ofstream::out | std::ofstream::app);
+    if (old_file) _logstream << "\n\n=======================================\n=======================================\n\n";
   }
 }
 
@@ -310,11 +315,6 @@ inline std::vector<string> split(const string &s, char delim) {
   return elems;
 }
 
-inline bool file_exists(const string &fname) {
-  ifstream ifs(fname, std::ios_base::binary);
-  return ifs.good();
-}
-
 inline void replace_spaces(string &s) {
   for (int i = 0; i < s.size(); i++)
     if (s[i] == ' ') s[i] = '_';
@@ -351,7 +351,7 @@ inline char comp_nucleotide(char ch) {
 }
 
 // returns 1 when it created the directory, 0 otherwise, -1 if there is an error
-inline int check_dir(const char *path) {
+inline int check_dir(const char *path, bool make=true) {
   if (0 != access(path, F_OK)) {
     if (ENOENT == errno) {
       // does not exist
@@ -360,14 +360,14 @@ inline int check_dir(const char *path) {
       mode_t oldumask = umask(0000);
       if (0 != mkdir(path, 0777) && 0 != access(path, F_OK)) {
         umask(oldumask);
-        fprintf(stderr, "Could not create the (missing) directory: %s (%s)", path, strerror(errno));
+        DIE("Could not create the directory: ", path, " (", strerror(errno), ")");
         return -1;
       }
       umask(oldumask);
     }
     if (ENOTDIR == errno) {
       // not a directory
-      fprintf(stderr, "Expected %s was a directory!", path);
+      DIE("Expected ", path, " was not a directory");
       return -1;
     }
   } else {
@@ -433,10 +433,11 @@ inline bool get_rank_path(string &fname, int rank) {
   return true;
 }
 
-inline string get_current_time() {
+inline string get_current_time(bool fname_fmt=false) {
   auto t = std::time(nullptr);
   std::ostringstream os;
-  os << std::put_time(localtime(&t), "%D %T");
+  if (!fname_fmt) os << std::put_time(localtime(&t), "%D %T");
+  else os << std::put_time(localtime(&t), "%y%m%d%H%M%S");
   return os.str();
 }
 
