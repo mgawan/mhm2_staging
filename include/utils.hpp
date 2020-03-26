@@ -349,7 +349,7 @@ inline char comp_nucleotide(char ch) {
 }
 
 // returns 1 when it created the directory, 0 otherwise, -1 if there is an error
-inline int check_dir(const char *path, bool make=true) {
+inline int check_dir(const char *path) {
   if (0 != access(path, F_OK)) {
     if (ENOENT == errno) {
       // does not exist
@@ -459,6 +459,12 @@ static string get_basename(const string &fname) {
   size_t i = fname.rfind('/', fname.length());
   if (i != string::npos) return(fname.substr(i + 1, fname.length() - i));
   return fname;
+}
+
+static string remove_fname_extension(const string &fname) {
+  size_t lastdot = fname.find_last_of(".");
+  if (lastdot == std::string::npos) return fname;
+  return fname.substr(0, lastdot);
 }
 
 static string get_merged_reads_fname(const string &reads_fname) {

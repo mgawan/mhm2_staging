@@ -58,7 +58,7 @@ public:
   vector<int> insert_size = {0, 0};
   int min_ctg_print_len = 500;
   int break_scaff_Ns = 10;
-  string output_dir = "mhmxx-run-n" + to_string(upcxx::rank_n()) + "-N" +
+  string output_dir = "mhmxx-run-<reads_fname[0]>-n" + to_string(upcxx::rank_n()) + "-N" +
       to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
   bool restart = false;
 
@@ -107,7 +107,7 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str();
-    app.add_option("-o,--output", output_dir, "Output directory")
+    auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                    ->capture_default_str();
     app.add_flag("--use-bloom", use_bloom,
                  "Use bloom filter to reduce memory at the increase of runtime")
@@ -140,27 +140,45 @@ public:
     // make sure we only use defaults for kmer lens if none of them were set by the user
     if (*kmer_lens_opt && !*scaff_kmer_lens_opt) scaff_kmer_lens = {};
     if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens_opt = {};
+    if (!*output_dir_opt) {
+      string first_read_fname = remove_fname_extension(get_basename(reads_fnames[0]));
+      output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
+          to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+    }
 
     if (show_progress) verbose = true;
 
     if (!upcxx::rank_me()) {
       // create the output directory and stripe it if not doing a restart
       if (restart) {
-        if (!check_dir(output_dir.c_str(), false)) DIE("Output directory ", output_dir, " for restart does not exist");
+        if (access(output_dir.c_str(), F_OK) == -1) {
+          ostringstream oss;
+          oss << KLRED << "Output directory " << output_dir << " for restart does not exist" << KNORM << endl;
+          throw std::runtime_error(oss.str());
+        }
       } else {
-        if (!check_dir(output_dir.c_str())) {
-          cerr << KLRED << "Output directory " << output_dir << " already exists. May overwrite existing files"
-               << KNORM << "\n";
+        if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
+          // could not create the directory
+          if (errno == EEXIST) {
+            cerr << KLRED << "Output directory " << output_dir << " already exists. May overwrite existing files"
+                 << KNORM << "\n";
+          } else {
+            ostringstream oss;
+            oss << KLRED << "Could not create output directory " << output_dir << ": " << strerror(errno) << endl;
+            throw std::runtime_error(oss.str());
+          }
         } else {
-          string cmd = "lfs setstripe -c -1 " + output_dir;
-          auto status = std::system(cmd.c_str());
-          if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            cerr << "Set Lustre striping on the output directory\n";
+          // created the directory - now stripe it if possible
+          if (WIFEXITED(std::system("which lfs")) == 0) {
+            string cmd = "lfs setstripe -c -1 " + output_dir + " 2>&1 >/dev/null";
+            auto status = std::system(cmd.c_str());
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cerr << "Set Lustre striping on the output directory\n";
+          }
         }
       }
     }
     upcxx::barrier();
-    // all change to the output director
+    // all change to the output directory
     if (chdir(output_dir.c_str()) == -1) {
       ostringstream oss;
       oss << KLRED << "Cannot change to output directory " << output_dir << ": " << strerror(errno) << KNORM << endl;
