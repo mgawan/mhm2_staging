@@ -495,7 +495,7 @@ public:
     if (!IN_NODE_TEAM()) return;
     start_free_mem = get_free_mem();
     auto all_start_mem_free = upcxx::reduce_one(start_free_mem, upcxx::op_fast_add, 0, *node_team).wait();
-    SLOG("Initial free memory across all nodes: ", std::setprecision(3), std::fixed, get_size_str(start_free_mem), "\n");
+    SLOG("Initial free memory across all nodes: ", std::setprecision(3), std::fixed, get_size_str(all_start_mem_free), "\n");
     min_free_mem = start_free_mem;
     t = new std::thread([&] {
       while (!fin) {
