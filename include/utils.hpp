@@ -81,7 +81,8 @@ inline void init_logger(bool verbose) {
   if (!upcxx::rank_me()) {
     bool old_file = file_exists("mhmxx.log");
     _logstream.open("mhmxx.log", std::ofstream::out | std::ofstream::app);
-    if (old_file) _logstream << "\n\n=======================================\n=======================================\n\n";
+    // the old file should only exist if this is a restart
+    if (old_file) _logstream << "\n\n==========  RESTART  ==================\n\n";
   }
 }
 
