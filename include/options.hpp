@@ -64,50 +64,63 @@ public:
 
     app.add_option("-r, --reads", reads_fnames,
                    "Files containing merged and unmerged reads in FASTQ format (comma separated)")
-                   -> required() -> delimiter(',');
+                   ->required() ->delimiter(',');
     app.add_option("-i, --insert", insert_size,
                    "Average insert length:standard deviation in insert size")
-                   -> required() -> delimiter(':');
-    app.add_option("-k, --kmer-lens", kmer_lens,
-                   "kmer lengths (comma separated - default " + vec_to_str(kmer_lens, ",") + ")")
-                  -> delimiter(',');
+                   ->required() ->delimiter(':') ->expected(2);
+    auto *kmer_lens_opt = app.add_option("-k, --kmer-lens", kmer_lens,
+                   "kmer lengths (comma separated)\n")
+                   ->delimiter(',') ->capture_default_str();
     app.add_option("--max-kmer-len", max_kmer_len,
-                   "Maximum kmer length (only need to specify if -k is not specified)");
+                   "Maximum kmer length (only need to specify if only doing scaffolding)");
     app.add_option("--prev-kmer-len", prev_kmer_len,
                    "Previous kmer length (only need to specify if restarting contigging)");
-    app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens,
-                   "kmer lengths for scaffolding (comma separated - default " + vec_to_str(scaff_kmer_lens, ",") + ")");
+    auto *scaff_kmer_lens_opt = app.add_option("-s, --scaff-kmer-lens", scaff_kmer_lens,
+                   "kmer lengths for scaffolding (comma separated)")
+                   ->delimiter(',') ->capture_default_str();
     app.add_option("-Q, --quality-offset", qual_offset,
-                   "Phred encoding offset (default " + to_string(qual_offset) + ")");
+                   "Phred encoding offset")
+                   ->capture_default_str();
     app.add_option("-c, --contigs", ctgs_fname,
                    "File with contigs used for restart");
 #ifdef USE_KMER_DEPTHS
     app.add_option("-d, --kmer-depths", kmer_depths_fname, "File with kmer depths for restart");
 #endif
     app.add_option("--dynamic-min-depth", dynamic_min_depth,
-                   "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome (default " +
-                   to_string(dynamic_min_depth) + ")");
+                   "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome")
+                   ->capture_default_str();
     app.add_option("--min-depth-thres", dmin_thres,
-                   "Absolute mininimum depth threshold for DeBruijn graph traversal (default " + to_string(dmin_thres) + ")");
+                   "Absolute mininimum depth threshold for DeBruijn graph traversal")
+                   ->capture_default_str();
     app.add_option("--max-kmer-store", max_kmer_store_mb,
-                   "Maximum size for kmer store in MB (default " + to_string(max_kmer_store_mb) + "MB)");
+                   "Maximum size for kmer store in MB")
+                   ->capture_default_str();
     app.add_option("--max-ctg-cache", max_ctg_cache,
-                   "Maximum entries for alignment contig cache (default " + to_string(max_ctg_cache) + ")");
+                   "Maximum entries for alignment contig cache")
+                   ->capture_default_str();
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
-                   "Minimum length required for printing a contig in the final assembly (default " +
-                   to_string(min_ctg_print_len) + ")");
+                   "Minimum length required for printing a contig in the final assembly")
+                   ->capture_default_str();
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
-                   "Number of Ns allowed before a scaffold is broken (default " + to_string(break_scaff_Ns) + ")");
+                   "Number of Ns allowed before a scaffold is broken")
+                   ->capture_default_str();
     app.add_flag("--use-bloom", use_bloom,
-                 "Use bloom filter to reduce memory at the increase of runtime");
+                 "Use bloom filter to reduce memory at the increase of runtime")
+                 ->capture_default_str();
     app.add_flag("--cache-reads", cache_reads,
-                 "Cache reads in memory");
+                 "Cache reads in memory")
+                 ->capture_default_str();
     app.add_flag("--checkpoint", checkpoint,
-                 "Checkpoint after each contig round");
+                 "Checkpoint after each contig round")
+                 ->capture_default_str();
     app.add_flag("--progress", show_progress,
-                 "Show progress");
+                 "Show progress")
+                 ->capture_default_str();
     app.add_flag("-v, --verbose", verbose,
-                 "Verbose output");
+                 "Verbose output")
+                 ->capture_default_str();
+
+    app.set_config("--config");
 
     try {
       app.parse(argc, argv);
@@ -115,6 +128,10 @@ public:
       if (upcxx::rank_me() == 0) app.exit(e);
       return false;
     }
+
+    // make sure we only use defaults for kmer lens if none of them were set by the user
+    if (*kmer_lens_opt && !*scaff_kmer_lens_opt) scaff_kmer_lens = {};
+    if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens_opt = {};
 
     if (show_progress) verbose = true;
     set_logger_verbose(verbose);
@@ -166,6 +183,9 @@ public:
       SLOG("Total size of ", reads_fnames.size(), " input file", (reads_fnames.size() > 1 ? "s" : ""),
            " is ", get_size_str(tot_file_size), "\n");
       SLOG("Starting run at ", get_current_time(), "\n");
+      // write out configuration file for restarts
+      ofstream ofs("mhmxx.config");
+      ofs << app.config_to_str(false, true);
     }
     upcxx::barrier();
     return true;
