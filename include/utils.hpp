@@ -76,16 +76,13 @@ inline bool file_exists(const string &fname) {
 extern ofstream _logstream;
 extern bool _verbose;
 
-inline void init_logger() {
+inline void init_logger(bool verbose) {
+  _verbose = verbose;
   if (!upcxx::rank_me()) {
     bool old_file = file_exists("mhmxx.log");
     _logstream.open("mhmxx.log", std::ofstream::out | std::ofstream::app);
     if (old_file) _logstream << "\n\n=======================================\n=======================================\n\n";
   }
-}
-
-inline void set_logger_verbose(bool verbose) {
-  _verbose = verbose;
 }
 
 inline void logger(ostringstream &os) {}

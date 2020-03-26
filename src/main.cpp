@@ -139,7 +139,6 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
 
 int main(int argc, char **argv) {
   upcxx::init();
-  init_logger();
   IntermittentTimer merge_reads_dt(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
           load_cache_dt(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
           analyze_kmers_dt(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),

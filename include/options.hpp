@@ -58,6 +58,9 @@ public:
   vector<int> insert_size = {0, 0};
   int min_ctg_print_len = 500;
   int break_scaff_Ns = 10;
+  string output_dir = "mhmxx-run-n" + to_string(upcxx::rank_n()) + "-N" +
+      to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+  bool restart = false;
 
   bool load(int argc, char **argv) {
     CLI::App app("MHMXX (" + string(MHMXX_VERSION) + ")");
@@ -104,6 +107,8 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str();
+    app.add_option("-o,--output", output_dir, "Output directory")
+                   ->capture_default_str();
     app.add_flag("--use-bloom", use_bloom,
                  "Use bloom filter to reduce memory at the increase of runtime")
                  ->capture_default_str();
@@ -112,6 +117,9 @@ public:
                  ->capture_default_str();
     app.add_flag("--checkpoint", checkpoint,
                  "Checkpoint after each contig round")
+                 ->capture_default_str();
+    app.add_flag("--restart", restart,
+                 "Restart in previous directory where a run failed")
                  ->capture_default_str();
     app.add_flag("--progress", show_progress,
                  "Show progress")
@@ -134,7 +142,40 @@ public:
     if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens_opt = {};
 
     if (show_progress) verbose = true;
-    set_logger_verbose(verbose);
+
+    if (!upcxx::rank_me()) {
+      if (restart) {
+        if (!check_dir(output_dir.c_str(), false)) DIE("Output directory ", output_dir, " for restart does not exist");
+      } else {
+        if (!check_dir(output_dir.c_str())) {
+          cerr << KLRED << "Output directory " << output_dir << " already exists. May overwrite existing files"
+               << KNORM << "\n";
+        } else {
+          // FIXME: now try to stripe the dir if lfs command can be found
+        }
+      }
+    }
+    upcxx::barrier();
+    if (chdir(output_dir.c_str()) == -1) {
+      ostringstream oss;
+      oss << KLRED << "Cannot change to output directory " << output_dir << ": " << strerror(errno) << KNORM << endl;
+      throw std::runtime_error(oss.str());
+    }
+    if (!upcxx::rank_me()) {
+      // check to see if mhmxx.log exists. If so, and not restarting, rename it
+      if (file_exists("mhmxx.log") && !restart) {
+        string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
+        cerr << KLRED << "mhmxx.log exists: renaming to " << new_log_fname << KNORM << endl;
+        if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
+      } else if (!file_exists("mhmxx.log") && restart) {
+        ostringstream oss;
+        oss << KLRED << "Could not restart - missing mhmxx.log in this directory" << KNORM << endl;
+        throw std::runtime_error(oss.str());
+      }
+    }
+    upcxx::barrier();
+
+    init_logger(verbose);
 
     if (upcxx::rank_me() == 0) {
       SLOG(KLBLUE, "MHMXX version ", MHMXX_VERSION, KNORM, "\n");
@@ -163,6 +204,8 @@ public:
       SLOG("  insert sizes:          ", vec_to_str(insert_size, ":"), "\n");
       SLOG("  min ctg print length:  ", min_ctg_print_len, "\n");
       SLOG("  break scaff Ns:        ", break_scaff_Ns, "\n");
+      SLOG("  output directory:      ", output_dir, "\n");
+      SLOG("  restart:               ", YES_NO(restart), "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
       SLOG("  cache reads:           ", YES_NO(cache_reads), "\n");
       SLOG("  show progress:         ", YES_NO(show_progress), "\n");
@@ -186,16 +229,6 @@ public:
       // write out configuration file for restarts
       ofstream ofs("mhmxx.config");
       ofs << app.config_to_str(false, true);
-      /*
-      // check to see if mhmxx.log exists. If so, and not restarting, rename it
-      if (file_exists("mhmxx.log") && !restart) {
-        string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        WARN("mhmxx.log exists: renaming to ", new_log_fname, "\n");
-        if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
-      } else if (!file_exists("mhmxx.log") && restart) {
-        DIE("Could not restart - missing mhmxx.log in this directory");
-      }
-      */
     }
     upcxx::barrier();
     return true;
