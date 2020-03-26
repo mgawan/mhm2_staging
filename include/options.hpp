@@ -144,6 +144,7 @@ public:
     if (show_progress) verbose = true;
 
     if (!upcxx::rank_me()) {
+      // create the output directory and stripe it if not doing a restart
       if (restart) {
         if (!check_dir(output_dir.c_str(), false)) DIE("Output directory ", output_dir, " for restart does not exist");
       } else {
@@ -151,11 +152,15 @@ public:
           cerr << KLRED << "Output directory " << output_dir << " already exists. May overwrite existing files"
                << KNORM << "\n";
         } else {
-          // FIXME: now try to stripe the dir if lfs command can be found
+          string cmd = "lfs setstripe -c -1 " + output_dir;
+          auto status = std::system(cmd.c_str());
+          if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            cerr << "Set Lustre striping on the output directory\n";
         }
       }
     }
     upcxx::barrier();
+    // all change to the output director
     if (chdir(output_dir.c_str()) == -1) {
       ostringstream oss;
       oss << KLRED << "Cannot change to output directory " << output_dir << ": " << strerror(errno) << KNORM << endl;
