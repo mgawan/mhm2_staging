@@ -108,11 +108,6 @@ class KmerCtgDHT {
                   int overlap_len) {
     Aln aln;
     StripedSmithWaterman::Alignment ssw_aln;
-    // use hamming distance for checking match first - works for > 90% of matches and reduces time spent doing SSW
-    //int hdist = hamming_dist(rseq.substr(read_extra_offset, overlap_len), cseq.substr(ctg_extra_offset, overlap_len) , true);
-    // allow for ~1% read error and at least 1
-    // int max_hdist = max(overlap_len / 100, 1);
-    //if (hdist < max_hdist) {
     if (cseq.compare(ctg_extra_offset, overlap_len, rseq, read_extra_offset, overlap_len) == 0) {
       num_perfect_alns++;
       ssw_aln.ref_begin = read_extra_offset;
@@ -589,7 +584,8 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
                " are perfect\n");
   auto tot_excess_alns_reads = reduce_one(num_excess_alns_reads, op_fast_add, 0).wait();
   if (num_excess_alns_reads)
-    SLOG_VERBOSE("Dropped ", tot_excess_alns_reads, " reads because of alignments in excess of ", KLIGN_MAX_ALNS_PER_READ, "\n");
+    SLOG_VERBOSE("Dropped ", tot_excess_alns_reads, " reads because of alignments in excess of ", 
+                 KLIGN_MAX_ALNS_PER_READ, "\n");
   auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
   if (num_overlaps)
     SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");

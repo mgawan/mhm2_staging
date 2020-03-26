@@ -46,7 +46,7 @@ public:
   int max_kmer_store_mb = 200;
   int max_ctg_cache = 0;
   bool use_bloom = true;
-  bool cache_reads = false;
+  bool cache_reads = true;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
@@ -66,15 +66,15 @@ public:
                    "Files containing merged and unmerged reads in FASTQ format (comma separated)")
                    ->required() ->delimiter(',');
     app.add_option("-i, --insert", insert_size,
-                   "Average insert length:standard deviation in insert size")
+                   "Insert size (average:stddev)")
                    ->required() ->delimiter(':') ->expected(2);
     auto *kmer_lens_opt = app.add_option("-k, --kmer-lens", kmer_lens,
                    "kmer lengths (comma separated)\n")
                    ->delimiter(',') ->capture_default_str();
     app.add_option("--max-kmer-len", max_kmer_len,
-                   "Maximum kmer length (only need to specify if only doing scaffolding)");
+                   "Maximum kmer length (need to specify if only scaffolding)");
     app.add_option("--prev-kmer-len", prev_kmer_len,
-                   "Previous kmer length (only need to specify if restarting contigging)");
+                   "Previous kmer length (need to specify if contigging and contig file is specified)");
     auto *scaff_kmer_lens_opt = app.add_option("-s, --scaff-kmer-lens", scaff_kmer_lens,
                    "kmer lengths for scaffolding (comma separated)")
                    ->delimiter(',') ->capture_default_str();

@@ -817,9 +817,9 @@ s_align* ssw_align (const s_profile* prof,
 		return 0;
 	}
     
-    ssw_dt += (CLOCK_NOW() - t);
-    upcxx::progress();
-    t = CLOCK_NOW();
+  ssw_dt += (CLOCK_NOW() - t);
+  upcxx::progress();
+  t = CLOCK_NOW();
     
 	r->score1 = bests[0].score;
 	r->ref_end1 = bests[0].ref;
@@ -837,10 +837,6 @@ s_align* ssw_align (const s_profile* prof,
 	// Find the beginning position of the best alignment.
 	read_reverse = seq_reverse(prof->read, r->read_end1);
     
-    ssw_dt += (CLOCK_NOW() - t);
-    upcxx::progress();
-    t = CLOCK_NOW();
-    
 	if (word == 0) {
 		vP = qP_byte(read_reverse, prof->mat, r->read_end1 + 1, prof->n, prof->bias);
 		bests_reverse = sw_sse2_byte(ref, 1, r->ref_end1 + 1, r->read_end1 + 1, weight_gapO, weight_gapE, vP, r->score1, prof->bias, maskLen);
@@ -853,10 +849,6 @@ s_align* ssw_align (const s_profile* prof,
 	r->ref_begin1 = bests_reverse[0].ref;
 	r->read_begin1 = r->read_end1 - bests_reverse[0].read;
 	free(bests_reverse);
-    
-    ssw_dt += (CLOCK_NOW() - t);
-    upcxx::progress();
-    t = CLOCK_NOW();
     
 	if ((7&flag) == 0 || ((2&flag) != 0 && r->score1 < filters) || ((4&flag) != 0 && (r->ref_end1 - r->ref_begin1 > filterd || r->read_end1 - r->read_begin1 > filterd))) goto end;
 
@@ -873,7 +865,7 @@ s_align* ssw_align (const s_profile* prof,
 	}
 	
 end: 
-    ssw_dt += (CLOCK_NOW() - t);
+  ssw_dt += (CLOCK_NOW() - t);
 	return r;
 }
 
