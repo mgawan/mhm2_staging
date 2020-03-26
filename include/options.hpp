@@ -24,13 +24,23 @@ class Options {
     return split_content;
   }
 
+  template <typename T>
+  string vec_to_str(vector<T> &vec, const string &delimiter) {
+    std::ostringstream oss;
+    for (auto elem : vec) {
+      oss << elem;
+      if (elem != vec.back()) oss << delimiter;
+    }
+    return oss.str();
+  }
+
 public:
 
-  vector<string> reads_fname_list;
-  vector<unsigned> kmer_lens = {};
+  vector<string> reads_fnames;
+  vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
   int max_kmer_len = 0;
   int prev_kmer_len = 0;
-  vector<unsigned> scaff_kmer_lens = {};
+  vector<unsigned> scaff_kmer_lens = {99, 33};
   int qual_offset = 33;
   bool verbose = false;
   int max_kmer_store_mb = 200;
@@ -45,29 +55,32 @@ public:
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
 #endif
-  int insert_avg = 0;
-  int insert_stddev = 0;
+  vector<int> insert_size = {0, 0};
   int min_ctg_print_len = 500;
   int break_scaff_Ns = 10;
 
   bool load(int argc, char **argv) {
-    CLI::App app("MHM (" + string(MHM_VERSION) + ")");
+    CLI::App app("MHMXX (" + string(MHMXX_VERSION) + ")");
 
-    string reads_fnames;
-    string kmer_lens_str;
-    string scaff_kmer_lens_str;
-    string ins_size_params;
-
-    app.add_option("-r, --reads", reads_fnames, "Files containing merged and unmerged reads in FASTQ format (comma separated)")
-      -> required();
-    app.add_option("-i, --insert", ins_size_params, "Average insert length:standard deviation in insert size")
-      ->required();
-    app.add_option("-k, --kmer-lens", kmer_lens_str, "kmer lengths (comma separated)");
-    app.add_option("--max-kmer-len", max_kmer_len, "Maximum kmer length (only need to specify if -k is not specified)");
-    app.add_option("--prev-kmer-len", prev_kmer_len, "Previous kmer length (only need to specify if restarting contigging)");
-    app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens_str, "kmer lengths for scaffolding (comma separated)");
-    app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (default " + to_string(qual_offset) + ")");
-    app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
+    app.add_option("-r, --reads", reads_fnames,
+                   "Files containing merged and unmerged reads in FASTQ format (comma separated)")
+                   -> required() -> delimiter(',');
+    app.add_option("-i, --insert", insert_size,
+                   "Average insert length:standard deviation in insert size")
+                   -> required() -> delimiter(':');
+    app.add_option("-k, --kmer-lens", kmer_lens,
+                   "kmer lengths (comma separated - default " + vec_to_str(kmer_lens, ",") + ")")
+                  -> delimiter(',');
+    app.add_option("--max-kmer-len", max_kmer_len,
+                   "Maximum kmer length (only need to specify if -k is not specified)");
+    app.add_option("--prev-kmer-len", prev_kmer_len,
+                   "Previous kmer length (only need to specify if restarting contigging)");
+    app.add_option("-s, --scaff_kmer_lens", scaff_kmer_lens,
+                   "kmer lengths for scaffolding (comma separated - default " + vec_to_str(scaff_kmer_lens, ",") + ")");
+    app.add_option("-Q, --quality-offset", qual_offset,
+                   "Phred encoding offset (default " + to_string(qual_offset) + ")");
+    app.add_option("-c, --contigs", ctgs_fname,
+                   "File with contigs used for restart");
 #ifdef USE_KMER_DEPTHS
     app.add_option("-d, --kmer-depths", kmer_depths_fname, "File with kmer depths for restart");
 #endif
@@ -85,11 +98,16 @@ public:
                    to_string(min_ctg_print_len) + ")");
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken (default " + to_string(break_scaff_Ns) + ")");
-    app.add_flag("--use-bloom", use_bloom, "Use bloom filter to reduce memory at the increase of runtime");
-    app.add_flag("--cache-reads", cache_reads, "Cache reads in memory");
-    app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round");
-    app.add_flag("--progress", show_progress, "Show progress");
-    app.add_flag("-v, --verbose", verbose, "Verbose output");
+    app.add_flag("--use-bloom", use_bloom,
+                 "Use bloom filter to reduce memory at the increase of runtime");
+    app.add_flag("--cache-reads", cache_reads,
+                 "Cache reads in memory");
+    app.add_flag("--checkpoint", checkpoint,
+                 "Checkpoint after each contig round");
+    app.add_flag("--progress", show_progress,
+                 "Show progress");
+    app.add_flag("-v, --verbose", verbose,
+                 "Verbose output");
 
     try {
       app.parse(argc, argv);
@@ -98,18 +116,11 @@ public:
       return false;
     }
 
-    reads_fname_list = split(reads_fnames, ',');
-    for (auto kmer_len : split(kmer_lens_str, ',')) kmer_lens.push_back(std::stoi(kmer_len.c_str()));
-    for (auto scaff_kmer_len : split(scaff_kmer_lens_str, ',')) scaff_kmer_lens.push_back(std::stoi(scaff_kmer_len.c_str()));
-    auto ins_size_params_list = split(ins_size_params, ':');
-    insert_avg = std::stoi(ins_size_params_list[0]);
-    insert_stddev = std::stoi(ins_size_params_list[1]);
     if (show_progress) verbose = true;
-
     set_logger_verbose(verbose);
 
     if (upcxx::rank_me() == 0) {
-      SLOG(KLBLUE, "MHM version ", MHM_VERSION, KNORM, "\n");
+      SLOG(KLBLUE, "MHMXX version ", MHMXX_VERSION, KNORM, "\n");
       // print out all compiler definitions
       SLOG_VERBOSE(KLBLUE, "_________________________", KNORM, "\n");
       SLOG_VERBOSE(KLBLUE, "Compiler definitions:", KNORM, "\n");
@@ -118,16 +129,13 @@ public:
       for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
       SLOG_VERBOSE("_________________________\n");
       SLOG("Options:\n");
-      SLOG("  reads files:           ");
-      for (auto read_fname : reads_fname_list) SLOG(read_fname, ",");
+      SLOG("  reads files:           ", vec_to_str(reads_fnames, ","), "\n");
+//      for (auto read_fname : reads_fnames) SLOG(read_fname, ",");
       SLOG("\n");
-      SLOG("  kmer lengths:          ");
-      for (auto kmer_len : kmer_lens) SLOG(kmer_len, ",");
-      SLOG("\n");
+      SLOG("  kmer lengths:          ", vec_to_str(kmer_lens, ","), "\n");
       if (max_kmer_len) SLOG("  max kmer length:       ", max_kmer_len, "\n");
       if (prev_kmer_len) SLOG("  prev kmer length:      ", prev_kmer_len, "\n");
-      SLOG("  scaffold kmer lengths: ");
-      for (auto scaff_kmer_len : scaff_kmer_lens) SLOG(scaff_kmer_len, ",");
+      SLOG("  scaffold kmer lengths: ", vec_to_str(scaff_kmer_lens, ","), "\n");
       SLOG("\n");
       SLOG("  quality offset:        ", qual_offset, "\n");
       SLOG("  max kmer store:        ", max_kmer_store_mb, "MB\n");
@@ -138,7 +146,7 @@ public:
 #ifdef USE_KMER_DEPTHS
       if (!kmer_depths_fname.empty()) SLOG("  kmer depths file name: ", kmer_depths_fname, "\n");
 #endif
-      SLOG("  insert sizes:          ", insert_avg, ":", insert_stddev, "\n");
+      SLOG("  insert sizes:          ", vec_to_str(insert_size, ":"), "\n");
       SLOG("  min ctg print length:  ", min_ctg_print_len, "\n");
       SLOG("  break scaff Ns:        ", break_scaff_Ns, "\n");
       SLOG("  use bloom:             ", YES_NO(use_bloom), "\n");
@@ -157,8 +165,8 @@ public:
     if (!upcxx::rank_me()) {
       // get total file size across all libraries
       double tot_file_size = 0;
-      for (auto const &reads_fname : reads_fname_list) tot_file_size += get_file_size(reads_fname);
-      SLOG("Total size of ", reads_fname_list.size(), " input file", (reads_fname_list.size() > 1 ? "s" : ""),
+      for (auto const &reads_fname : reads_fnames) tot_file_size += get_file_size(reads_fname);
+      SLOG("Total size of ", reads_fnames.size(), " input file", (reads_fnames.size() > 1 ? "s" : ""),
            " is ", get_size_str(tot_file_size), "\n");
       SLOG("Starting run at ", get_current_time(), "\n");
     }

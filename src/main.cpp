@@ -123,8 +123,8 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
     alignments_dt.stop();
     barrier();
     localassm_dt.start();
-    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, options->insert_avg, options->insert_stddev, options->qual_offset, 
-              ctgs, alns);
+    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, options->insert_size[0], options->insert_size[1],
+              options->qual_offset, ctgs, alns);
     localassm_dt.stop();
   }
 #ifdef USE_KMER_DEPTHS
@@ -169,10 +169,10 @@ int main(int argc, char **argv) {
   // first merge reads - the results will go in the per_rank directory
   double elapsed_write_io_t = 0;
   merge_reads_dt.start();
-  int read_len = merge_reads(options->reads_fname_list, options->qual_offset, elapsed_write_io_t);
+  int read_len = merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t);
   merge_reads_dt.stop();
   vector<FastqReader*> fqr_list;
-  for (auto const &reads_fname : options->reads_fname_list) {
+  for (auto const &reads_fname : options->reads_fnames) {
     fqr_list.push_back(new FastqReader(get_merged_reads_fname(reads_fname)));
   }
   if (options->cache_reads) {
@@ -271,7 +271,7 @@ int main(int argc, char **argv) {
       alignments_dt.stop();
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
       cgraph_dt.start();
-      traverse_ctg_graph(options->insert_avg, options->insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
+      traverse_ctg_graph(options->insert_size[0], options->insert_size[1], max_kmer_len, scaff_kmer_len, read_len,
                          options->min_ctg_print_len, fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
@@ -313,7 +313,7 @@ int main(int argc, char **argv) {
   memory_tracker.stop();
   chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
   SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
-       " for MHM version ", MHM_VERSION, "\n");
+       " for MHMXX version ", MHMXX_VERSION, "\n");
 #ifdef DEBUG
   _dbgstream.flush();
   _dbgstream.close();

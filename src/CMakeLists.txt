@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
-project(MHM)
+project(MHMXX)
 
 message("Building ${CMAKE_BUILD_TYPE} version")
 
@@ -89,8 +89,8 @@ if (GIT_FOUND)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
     string(TIMESTAMP _timestamp)
-    add_definitions("-DMHM_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) built on ${_timestamp}\"")
+    add_definitions("-DMHMXX_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) built on ${_timestamp}\"")
 else()
     string(TIMESTAMP _timestamp)
-    add_definitions("-DMHM_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp}\"")
+    add_definitions("-DMHMXX_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp}\"")
 endif()    
