@@ -24,9 +24,22 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
 endif()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
+execute_process(
+    COMMAND bash -c "CC --version 2>&1| head -n1|cut -d' ' -f2"
+    OUTPUT_VARIABLE BASE_CXX_COMPILER
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+message("Base CXX compiler: ${BASE_CXX_COMPILER}")
+#add_definitions(-DBASE_CXX_COMPILER=\"${BASE_CXX_COMPILER}\")
+
+# this only works on Cori where CC is defined
+if (${BASE_CXX_COMPILER} MATCHES "(ICC)")
     # ignore annoying warning on icc
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
+elseif (${BASE_CXX_COMPILER} MATCHES "(GCC)")
+    # ignore annoying warning on icc
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-catch-value")
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -pthread")
@@ -94,3 +107,4 @@ else()
     string(TIMESTAMP _timestamp)
     add_definitions("-DMHMXX_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp}\"")
 endif()    
+

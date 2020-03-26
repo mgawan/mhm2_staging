@@ -135,17 +135,18 @@ class KmerCtgDHT {
 
     // for some reason, on Cori icc this causes an internal compiler error:
     // internal error: assertion failed at: "shared/cfe/edgcpfe/overload.c", line 9538
+    /*
     aln = { .read_id = rname, .cid = cid,
             .rstart = rstart, .rstop = rstop, .rlen = rlen,
             .cstart = cstart, .cstop = cstop, .clen = clen,
             .orient = orient, .score1 = ssw_aln.sw_score,
             .score2 = ssw_aln.sw_score_next_best };
-    /*
+    */
     aln.read_id = rname; aln.cid = cid;
     aln.rstart = rstart; aln.rstop = rstop; aln.rlen = rlen;
     aln.cstart = cstart; aln.cstop = cstop; aln.clen = clen;
     aln.orient = orient; aln.score1 = ssw_aln.sw_score; aln.score2 = ssw_aln.sw_score_next_best;
-    */
+
 #ifdef DUMP_ALNS
     *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
 #endif
@@ -625,18 +626,18 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
   barrier();
 }
 
-template 
+extern template 
 void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
                          Contigs &ctgs, Alns &alns);
-template 
+extern template 
 void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
                          Contigs &ctgs, Alns &alns);
-template 
+extern template 
 void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
                          Contigs &ctgs, Alns &alns);
-template 
+extern template 
 void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
                           Contigs &ctgs, Alns &alns);
-template 
+extern template 
 void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
                           Contigs &ctgs, Alns &alns);
