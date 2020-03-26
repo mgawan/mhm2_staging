@@ -625,3 +625,19 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
   barrier();
 }
+
+template 
+void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                         Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                         Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                         Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                          Contigs &ctgs, Alns &alns);
+template 
+void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
+                          Contigs &ctgs, Alns &alns);
