@@ -125,8 +125,7 @@ def get_job_nodes():
         return get_pbs_job_nodes()
     if is_ge_job():
         return get_ge_job_nodes()
-    print("Warning: could not determine the number of nodes in this unsupported scheduler job", str(get_job_id()) +\
-          ". Only using 1")
+    print("Warning: could not determine the number of nodes in this unsupported scheduler. Using 1.")
     return 1
 
 
@@ -249,13 +248,14 @@ def main():
     
     check_exec('upcxx-run', '-h', 'UPC++')
     status = True
-    mhmxx_binary = '/home/users/shofmeyr/code/merac/mhmxx/build/mhmxx'
-    if not which(mhmxx_binary):
-      die("Cannot find binary ", mhmxx_binary)
-    print(sys.argv[1:])
-    cmd = ['upcxx-run', '-n', str(get_cores()), '-N', str(get_job_nodes()), '-shared-heap', '5%', '--', mhmxx_binary];
+    # expect mhmxx to be in same directory as mhmxx.py
+    mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
+    if not which(mhmxx_binary_path):
+      die("Cannot find binary mhmxx")
+    cmd = ['upcxx-run', '-n', str(get_cores()), '-N', str(get_job_nodes()), '-shared-heap', '5%', '--', mhmxx_binary_path];
     cmd.extend(sys.argv[1:])
-    print(cmd)
+    print('Executing:')
+    print(' '.join(cmd))
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in iter(proc.stdout.readline, b''):
@@ -290,7 +290,6 @@ def main():
 if __name__ == "__main__":
     # remove the .py from this script as the mhmxx wrapper needs to be excecuted for proper environment variable detection
     sys.argv[0] = os.path.splitext(sys.argv[0])[0] 
-    print("Starting mhmxx, executed as: " + ' '.join(sys.argv) + '\n' )
     status = 1
     try:
         status = main()
