@@ -257,12 +257,12 @@ public:
 
     auto *cfg_opt = app.set_config("--config", "mhmxx.config", "Load options from a configuration file");
 
-//    try {
+    try {
       app.parse(argc, argv);
-//    } catch(const CLI::ParseError &e) {
-//      if (upcxx::rank_me() == 0) app.exit(e);
-//      return false;
-//    }
+    } catch(const CLI::ParseError &e) {
+      if (upcxx::rank_me() == 0) app.exit(e);
+      return false;
+    }
 
     // we can get restart incorrectly set in the config file from restarted runs
     if (*cfg_opt) {
@@ -276,6 +276,7 @@ public:
       oss << KLRED << "Require read names if not restarting" << KNORM << endl;
       throw std::runtime_error(oss.str());
     }
+    upcxx::barrier();
 
     if (!*output_dir_opt) {
       string first_read_fname = remove_fname_extension(get_basename(reads_fnames[0]));
