@@ -47,16 +47,15 @@ Run with `-h` to see the various options.
 
 ## Cori notes:
 
-To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the following modules:
+To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the upcxx module:
 
-`module load cmake`  
 `module load upcxx`
 
 If building for KNL, make sure to first do
 
 `module switch craype-haswell craype-mic-knl`
 
-For Cori, it is recommended to stripe all files on the Lustre file system to ensure adequate IO performance, e.g.
+For Cori, it is recommended to stripe all input files on the Lustre file system to ensure adequate I/O performance, e.g.
 
 `lfs setstripe -c -1 reads.fastq`
 
