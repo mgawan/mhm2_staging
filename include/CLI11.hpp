@@ -11,10 +11,10 @@
 //
 // CLI11 1.8 Copyright (c) 2017-2019 University of Cincinnati, developed by Henry
 // Schreiner under NSF AWARD 1414736. All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms of CLI11, with or without
 // modification, are permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
 //    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
@@ -23,7 +23,7 @@
 // 3. Neither the name of the copyright holder nor the names of its contributors
 //    may be used to endorse or promote products derived from this software without
 //    specific prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -3336,6 +3336,14 @@ class Option : public OptionBase<Option> {
         }
         bool local_result;
 
+        // The results could be an array wrapped in [], from a default setting
+        // If so, strip off the brackets so the parsing does not fail
+        //std::cerr << results_.size() << ": " << detail::join(results_, " -- ") << std::endl;
+        for (auto & result : results_) {
+          if (result[0] == '[') result.erase(0, 1);
+          if (result.back() == ']') result.erase(result.length() - 1);
+        }
+
         // Num items expected or length of vector, always at least 1
         // Only valid for a trimming policy
         int trim_size =
@@ -4959,6 +4967,26 @@ class App {
         parse(std::move(args));
     }
 
+    void parse_config(const string &cfg_fname) {
+      ConfigINI cfg_ini;
+      auto cfg_opts = cfg_ini.from_file(cfg_fname);
+      // now fix issue where options are written out as [i,j] for default values, but not read in that way, causing crashes
+      for (auto &opt : cfg_opts) {
+        auto input0 = opt.inputs[0];
+//        if (input0[0].get_type_size() == 0) continue;
+        if (!input0.empty() && input0[0] == '[' && input0[input0.length() - 1] == ']')
+          opt.inputs = split(input0.substr(1, input0.length() - 2), ',');
+        /*
+        if (!upcxx::rank_me()) {
+          cerr << cfg_opt.fullname() << " = ";
+          for (auto &cfg_opt : cfg_opt.inputs) cerr << cfg_opt << " ";
+          cerr << endl;
+        }
+        */
+      }
+      _parse_config(cfg_opts);
+    }
+
     /// The real work is done here. Expects a reversed vector.
     /// Changes the vector to the remaining options.
     void parse(std::vector<std::string> &args) {
@@ -6474,7 +6502,8 @@ ConfigINI::to_config(const App *app, bool default_also, bool write_description, 
                     value = opt->get_default_str();
                 // Flag, one passed
             } else if(opt->count() == 1) {
-                value = "true";
+                //value = "true";
+              value = opt->results()[0];
 
                 // Flag, multiple passed
             } else if(opt->count() > 1) {
@@ -6482,7 +6511,8 @@ ConfigINI::to_config(const App *app, bool default_also, bool write_description, 
 
                 // Flag, not present
             } else if(opt->count() == 0 && default_also) {
-                value = "false";
+                //value = "false";
+              value = opt->get_default_str();
             }
 
             if(!value.empty()) {
@@ -6495,9 +6525,9 @@ ConfigINI::to_config(const App *app, bool default_also, bool write_description, 
 
                 // Don't try to quote anything that is not size 1
                 if(opt->get_items_expected() != 1)
-                    out << name << "=" << value << std::endl;
+                    out << "  " << std::setw(20) << std:: left << name  + " = " << value << std::endl;
                 else
-                    out << name << "=" << detail::add_quotes_if_needed(value) << std::endl;
+                    out << "  " << std::setw(20) << std::left << name + " = " << detail::add_quotes_if_needed(value) << std::endl;
             }
         }
     }

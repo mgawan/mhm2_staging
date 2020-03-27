@@ -162,6 +162,14 @@ int main(int argc, char **argv) {
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+  
+  if (!upcxx::rank_me()) {
+    // get total file size across all libraries
+    double tot_file_size = 0;
+    for (auto const &reads_fname : options->reads_fnames) tot_file_size += get_file_size(reads_fname);
+    SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
+         " is ", get_size_str(tot_file_size), "\n");
+  }
 
   MemoryTrackerThread memory_tracker;
   memory_tracker.start();

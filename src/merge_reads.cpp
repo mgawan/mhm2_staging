@@ -202,6 +202,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       SWARN("File ", out_fname, " already exists, skipping...");
       continue;
     }
+    
     // FIXME: unique number id (uint64_t) for reads
     // - do a reduction to find the max of all those estimates
     // - double the max to be sure - this becomes the block size
