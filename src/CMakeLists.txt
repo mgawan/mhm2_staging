@@ -72,8 +72,6 @@ add_executable(mhmxx
 
 target_link_libraries(mhmxx SSW_LIBRARY ${ZLIB_LIBRARIES})
 
-#install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
-
 # Set up version
 find_package(Git)
 if (GIT_FOUND)
@@ -108,3 +106,8 @@ else()
     add_definitions("-DMHMXX_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp}\"")
 endif()    
 
+
+#message("install prefix ${CMAKE_INSTALL_PREFIX}")
+#message("source dir ${CMAKE_SOURCE_DIR}")
+install(PROGRAMS ${CMAKE_SOURCE_DIR}/mhmxx.py DESTINATION ${CMAKE_SOURCE_DIR}/../build)
+#install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

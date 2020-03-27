@@ -18,6 +18,8 @@ else
     elif [ "$1" == "Release" ]; then
         cmake $srcdir -DCMAKE_BUILD_TYPE=Release
     fi
-    make -j
+    make -j install
+    # ensure python wrapper is in build
+    #cp -v $srcdir/mhmxx.py $srcdir/../build
 fi
 
