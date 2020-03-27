@@ -37,9 +37,9 @@ to really start from scratch.
 ## Running
 
 
-A typical command line to run (e.g. on 10 nodes each with 24 processors) is:
+A typical command line to run is:
 
-`mhmxx.py -r <READS.fastq> -i <insert_size_avg:insert_size_stddev> -k 21,33,55,77,99 -s 99,33`
+`mhmxx.py -r <READS_lib1.fastq>,<READS_lib2.fastq> -i <insert_size_avg:insert_size_stddev>`
 
 This will create a new output directory that contains the results.
 

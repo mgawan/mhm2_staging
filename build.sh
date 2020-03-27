@@ -7,8 +7,6 @@ srcdir=$rootdir/src
 
 INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/bin}
 
-echo $INSTALL_PATH
-
 if [ "$1" == "clean" ]; then
     rm -rf build/*
 else
