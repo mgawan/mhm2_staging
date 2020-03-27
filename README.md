@@ -17,7 +17,12 @@ or
 
 `./build.sh Debug`
 
-Once it has been built once, you can rebuild with
+These will install the binaries by default into the `bin` subdirectory in the root directory. To set a different install 
+directory, set the environment variable `MHMXX_INSTALL_PATH`, e.g.:
+
+`MHMXX_INSTALL_PATH=$SCRATCH/mhmxx-install ./build.sh Release`
+
+Once mhmxx has been built once, you can rebuild with
 
 `./build.sh`
 
@@ -31,13 +36,14 @@ to really start from scratch.
 
 ## Running
 
-A typical command line to run (e.g. on 10 nodes each with 24 processors) from the root source directory is:
 
-`upcxx-run -shared-heap 5% -n 240 -- ./build/mhmxx --cores-per-node 24 -r <READS.fastq> -i <insert_size_avg:insert_size_stddev> -k 21,33,55,77,99 -s 99,33`
+A typical command line to run (e.g. on 10 nodes each with 24 processors) is:
 
-This will run the application in the current directory. We suggest that you create a separate output directory and run from there.
+`mhmxx.py -r <READS.fastq> -i <insert_size_avg:insert_size_stddev> -k 21,33,55,77,99 -s 99,33`
 
-Run with `-h` to see options.
+This will create a new output directory that contains the results.
+
+Run with `-h` to see the various options.
 
 ## Cori notes:
 
@@ -50,8 +56,8 @@ If building for KNL, make sure to first do
 
 `module switch craype-haswell craype-mic-knl`
 
-Also, currently this does not build for the Intel compiler on Cori, so use Cray (e.g. or GNU
-
 For Cori, it is recommended to stripe all files on the Lustre file system to ensure adequate IO performance, e.g.
 
 `lfs setstripe -c -1 reads.fastq`
+
+The output directory (created using the `-o` parameter) is automatically striped.

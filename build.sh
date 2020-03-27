@@ -4,23 +4,20 @@ set -e
 
 rootdir=`pwd`
 srcdir=$rootdir/src
-echo $srcdir
+
+INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/bin}
+
+echo $INSTALL_PATH
 
 if [ "$1" == "clean" ]; then
-    #cmake --build $srcdir --target clean
     rm -rf build/*
 else
-#    if hash module 2>/dev/null; then
-#        module load upcxx
-#    fi
     cd $rootdir/build
     if [ "$1" == "Debug" ]; then
-        cmake $srcdir -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=$rootdir/bin
+        cmake $srcdir -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
     elif [ "$1" == "Release" ]; then
-        cmake $srcdir -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$rootdir/bin
+        cmake $srcdir -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
     fi
     make -j install
-    # ensure python wrapper is in build
-    #cp -v $srcdir/mhmxx.py $srcdir/../build
 fi
 
