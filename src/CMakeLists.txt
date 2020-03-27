@@ -109,5 +109,5 @@ endif()
 
 #message("install prefix ${CMAKE_INSTALL_PREFIX}")
 #message("source dir ${CMAKE_SOURCE_DIR}")
-install(PROGRAMS ${CMAKE_SOURCE_DIR}/mhmxx.py DESTINATION ${CMAKE_SOURCE_DIR}/../build)
-#install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(PROGRAMS ${CMAKE_SOURCE_DIR}/mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX})

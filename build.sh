@@ -2,7 +2,8 @@
 
 set -e
 
-srcdir=`pwd`/src
+rootdir=`pwd`
+srcdir=$rootdir/src
 echo $srcdir
 
 if [ "$1" == "clean" ]; then
@@ -12,11 +13,11 @@ else
 #    if hash module 2>/dev/null; then
 #        module load upcxx
 #    fi
-    cd `pwd`/build
+    cd $rootdir/build
     if [ "$1" == "Debug" ]; then
-        cmake $srcdir -DCMAKE_BUILD_TYPE=Debug
+        cmake $srcdir -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=$rootdir/bin
     elif [ "$1" == "Release" ]; then
-        cmake $srcdir -DCMAKE_BUILD_TYPE=Release
+        cmake $srcdir -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$rootdir/bin
     fi
     make -j install
     # ensure python wrapper is in build
