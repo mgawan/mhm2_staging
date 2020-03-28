@@ -15,7 +15,7 @@ orig_sighdlr = None
 proc = None
 
 
-def get_cores():
+def get_hwd_cores_per_node():
     """Query the hardware for physical cores"""
     try:
         import psutil
@@ -66,7 +66,7 @@ def is_ll_job():
     return os.environ.get('LOAD_STEP_ID') is not None
 
 
-def get_job_cores_per_node(defaultCores = get_cores()):
+def get_job_cores_per_node(defaultCores = get_hwd_cores_per_node()):
     """Query the job environment for the number of cores per node to use, if available"""
     # Only trust this environment variable from slurm, otherwise trust the hardware                                                                                                   
     ntasks_per_node = os.environ.get('SLURM_NTASKS_PER_NODE')
@@ -258,7 +258,10 @@ def main():
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not which(mhmxx_binary_path):
         die("Cannot find binary mhmxx")
-    cmd = ['upcxx-run', '-n', str(get_cores()), '-N', str(get_job_nodes()), '-shared-heap', '5%', '--', mhmxx_binary_path];
+    cores_per_node = get_hwd_cores_per_node()
+    num_nodes = get_job_nodes()
+    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', '5%', '--', 
+           mhmxx_binary_path];
     cmd.extend(sys.argv[1:])
     print('Executing:')
     print(' '.join(cmd))
