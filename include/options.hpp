@@ -130,6 +130,10 @@ class Options {
       }
     }
     upcxx::barrier();
+    // after we change to the output directory, relative paths will be incorrect, so we need to fix them
+    for (auto &fname : reads_fnames) {
+      if (fname[0] != '/') fname = "../" + fname;
+    }
     // all change to the output directory
     if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
       ostringstream oss;
@@ -286,19 +290,19 @@ public:
 
     if (show_progress) verbose = true;
 
-    setup_output_dir();
-    setup_log_file();
-
     if (restart) {
       // this mucking about is to ensure we don't get multiple failures messages if the config file does not parse
-      if (!upcxx::rank_me()) app.parse_config("mhmxx.config");
+      if (!upcxx::rank_me()) app.parse_config(output_dir + "/mhmxx.config");
       upcxx::barrier();
-      if (upcxx::rank_me()) app.parse_config("mhmxx.config");
+      if (upcxx::rank_me()) app.parse_config(output_dir + "/mhmxx.config");
     }
 
     // make sure we only use defaults for kmer lens if none of them were set by the user
     if (*kmer_lens_opt && !*scaff_kmer_lens_opt) scaff_kmer_lens = {};
     if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens_opt = {};
+
+    setup_output_dir();
+    setup_log_file();
 
     init_logger(verbose);
 

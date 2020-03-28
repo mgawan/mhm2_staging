@@ -246,9 +246,11 @@ def main():
     orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
+    auto_resume = False
     if "--auto-resume" in sys.argv:
         print("auto resume is enabled: will try to restart if run fails")
         sys.argv.remove("--auto-resume")
+        auto_resume = True
       
     check_exec('upcxx-run', '-h', 'UPC++')
     status = True
@@ -282,10 +284,11 @@ def main():
           #print("ERROR: proc return code ", proc.returncode, "\n");
           # FIXME: should restart if it is not the same restart stage as before - need to parse output to 
           # find that value
-          if completed:
+          if completed and auto_resume:
             cmd.append('--restart')
           else:
-            print("Could not restart, exiting...")
+            if auto_resume:
+              print("Could not restart, exiting...")
             return 1
         else:
           #print("SUCCESS: proc return code ", proc.returncode, "\n");
