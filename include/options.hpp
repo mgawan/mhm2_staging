@@ -286,6 +286,7 @@ public:
       string first_read_fname = remove_fname_extension(get_basename(reads_fnames[0]));
       output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
           to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+      output_dir_opt->default_val(output_dir);
     }
 
     if (show_progress) verbose = true;
