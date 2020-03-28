@@ -44,8 +44,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K> 
-void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, Contigs &ctgs, 
-                     Alns &alns);
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
@@ -119,7 +118,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     alignments_dt.start();
-    find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+    find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, ctgs, alns);
     alignments_dt.stop();
     barrier();
     localassm_dt.start();
@@ -263,19 +262,19 @@ int main(int argc, char **argv) {
       auto max_k = (scaff_kmer_len / 32 + 1) * 32;
       switch (max_k) {
         case 32:
-          find_alignments<32>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          find_alignments<32>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
           break;
         case 64:
-          find_alignments<64>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          find_alignments<64>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
           break;
         case 96:
-          find_alignments<96>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          find_alignments<96>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
           break;
         case 128:
-          find_alignments<128>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          find_alignments<128>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
           break;
         case 160:
-          find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_ctg_cache, ctgs, alns);
+          find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
           break;
       }                  
       alignments_dt.stop();

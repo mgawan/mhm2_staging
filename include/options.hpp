@@ -169,7 +169,6 @@ public:
   int qual_offset = 33;
   bool verbose = false;
   int max_kmer_store_mb = 200;
-  int max_ctg_cache = 0;
   // these defaults favor speed over memory
   bool use_bloom = false;
   bool cache_reads = true;
@@ -229,9 +228,6 @@ public:
     app.add_option("--max-kmer-store", max_kmer_store_mb,
                    "Maximum size for kmer store in MB")
                    ->capture_default_str() ->check(CLI::Range(1, 1000));
-    app.add_option("--max-ctg-cache", max_ctg_cache,
-                   "Maximum entries for alignment contig cache")
-                   ->capture_default_str() ->check(CLI::Range(0, 2000000));
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
                    "Minimum length required for printing a contig in the final assembly")
                    ->capture_default_str() ->check(CLI::Range(0, 100000));

@@ -77,9 +77,6 @@ class KmerCtgDHT {
   int64_t num_perfect_alns;
   int64_t num_overlaps;
   
-  int64_t max_ctg_seq_cache_size;
-  HASH_TABLE<cid_t, string> ctg_seq_cache;
-  int64_t ctg_seq_bytes_from_cache;
   int64_t ctg_seq_bytes_fetched;
   
   Alns *alns;
@@ -158,7 +155,7 @@ public:
   int kmer_len;  
   
   // aligner construction: SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size, int max_ctg_cache, Alns &alns)
+  KmerCtgDHT(int kmer_len, int max_store_size, Alns &alns)
     : kmer_map({})
     , kmer_store({})
     , insert_kmer({})
@@ -167,14 +164,11 @@ public:
     , num_perfect_alns(0)
     , num_overlaps(0)
     , kmer_len(kmer_len)
-    , ctg_seq_bytes_from_cache(0)
     , ctg_seq_bytes_fetched(0)
-    , max_ctg_seq_cache_size(max_ctg_cache)
     , alns(&alns) {
     
     ssw_filter.report_cigar = false;
     kmer_store.set_size("insert ctg seeds", max_store_size);
-    if (max_ctg_seq_cache_size) ctg_seq_cache.reserve(max_ctg_cache);
 
 #ifdef DUMP_ALNS
     string dump_fname = "klign-" + to_string(kmer_len) + ".alns.gz";
@@ -233,10 +227,6 @@ public:
   
   double get_max_ssw_secs() {
     return reduce_one(ssw_aligner.get_ssw_secs(), op_fast_max, 0).wait();
-  }
-
-  int64_t get_ctg_seq_bytes_from_cache() {
-    return reduce_one(ctg_seq_bytes_from_cache, op_fast_add, 0).wait();
   }
 
   int64_t get_ctg_seq_bytes_fetched() {
@@ -347,40 +337,14 @@ public:
       
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
       string ctg_subseq;
-      // if max_ctg_seq_cache_size is > 0, then we are using a cache
-      if (max_ctg_seq_cache_size) {
-        auto it = ctg_seq_cache.find(ctg_loc.cid);
-        // found it in the cache, so fetch the subsequence needed
-        if (it != ctg_seq_cache.end()) {
-          ctg_seq_bytes_from_cache += ctg_aln_len;
-          // only get the subsequence needed
-          ctg_subseq = it->second.substr(cstart, ctg_aln_len);
-        } else {
-          // not in cache, fetch the whole sequence
-          // space for whatever is getting fetched plus a null terminator
-          char *seq_buf = new char[ctg_loc.clen + 1];
-          // get the full seq
-          fetch_ctg_seqs_timer.start();
-          rget(ctg_loc.seq_gptr, seq_buf, ctg_loc.clen).wait();
-          fetch_ctg_seqs_timer.stop();
-          ctg_seq_bytes_fetched += ctg_loc.clen;
-          string ctg_seq(seq_buf, ctg_loc.clen);
-          delete[] seq_buf;
-          // if space in cache, add the contig
-          if (ctg_seq_cache.size() < max_ctg_seq_cache_size) ctg_seq_cache[ctg_loc.cid] = ctg_seq;
-          // get the subseq for alignment
-          ctg_subseq = ctg_seq.substr(cstart, ctg_aln_len);
-        }
-      } else {
-        // fetch only the substring
-        char *seq_buf = new char[ctg_aln_len + 1];
-        fetch_ctg_seqs_timer.start();
-        rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
-        fetch_ctg_seqs_timer.stop();
-        ctg_subseq = string(seq_buf, ctg_aln_len);
-        delete[] seq_buf;
-        ctg_seq_bytes_fetched += ctg_aln_len;
-      }
+      // fetch only the substring
+      char *seq_buf = new char[ctg_aln_len + 1];
+      fetch_ctg_seqs_timer.start();
+      rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
+      fetch_ctg_seqs_timer.stop();
+      ctg_subseq = string(seq_buf, ctg_aln_len);
+      delete[] seq_buf;
+      ctg_seq_bytes_fetched += ctg_aln_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
                  ctg_extra_offset, read_extra_offset, overlap_len);
       num_alns++;
@@ -593,9 +557,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
   auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
   SLOG_VERBOSE("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
-
-  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_from_cache()), " of contig sequences from cache\n");
-  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences from network\n");
+  SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences\n");
   
   double av_ssw_secs = kmer_ctg_dht.get_av_ssw_secs();
   double max_ssw_secs = kmer_ctg_dht.get_max_ssw_secs();
@@ -608,12 +570,11 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
 }
 
 template<int MAX_K>
-void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache,
-                     Contigs &ctgs, Alns &alns) {
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
-  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_ctg_cache, alns);
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, alns);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
@@ -627,17 +588,12 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
 }
 
 template 
-void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
-                         Contigs &ctgs, Alns &alns);
+void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
 template 
-void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
-                         Contigs &ctgs, Alns &alns);
+void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
 template 
-void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
-                         Contigs &ctgs, Alns &alns);
+void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
 template 
-void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
-                          Contigs &ctgs, Alns &alns);
+void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
 template 
-void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_ctg_cache, 
-                          Contigs &ctgs, Alns &alns);
+void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
