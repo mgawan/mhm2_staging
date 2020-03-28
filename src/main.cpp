@@ -203,7 +203,9 @@ int main(int argc, char **argv) {
   if (options->kmer_lens.size()) {
     max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
-      if (kmer_len == options->kmer_lens[1] && !options->restart) SDIE("testing auto resume");
+      // uncomment to test auto resume
+      //if (kmer_len == 33 && !options->restart) SDIE("testing auto resume");
+      //if (kmer_len == 55 && options->restart) SDIE("another test of auto resume");
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto max_k = (kmer_len / 32 + 1) * 32;
       switch (max_k) {

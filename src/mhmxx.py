@@ -247,7 +247,7 @@ def main():
     signal.signal(signal.SIGINT, handle_interrupt)
 
     if "--auto-resume" in sys.argv:
-        print("auto resume is enabled: will try to restart if run crashes or is terminated")
+        print("auto resume is enabled: will try to restart if run fails")
         sys.argv.remove("--auto-resume")
       
     check_exec('upcxx-run', '-h', 'UPC++')
@@ -262,12 +262,16 @@ def main():
     print(' '.join(cmd))
     
     while True:
+      completed = False
       try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in iter(proc.stdout.readline, b''):
           line = line.decode()
           print(line, end='')
           sys.stdout.flush()
+          # did we complete any new rounds?
+          if "Completed " in line:
+            completed = True
         if status:
           proc.wait()
         else:
@@ -275,14 +279,16 @@ def main():
           proc.wait()
 
         if proc.returncode not in [0, -15] or not status:
-          print("ERROR: proc return code ", proc.returncode, "\n");
-          if cmd[-1] != '--restart':
+          #print("ERROR: proc return code ", proc.returncode, "\n");
+          # FIXME: should restart if it is not the same restart stage as before - need to parse output to 
+          # find that value
+          if completed:
             cmd.append('--restart')
           else:
             print("Could not restart, exiting...")
             return 1
         else:
-          print("SUCCESS: proc return code ", proc.returncode, "\n");
+          #print("SUCCESS: proc return code ", proc.returncode, "\n");
           break
       except:
         if proc:
