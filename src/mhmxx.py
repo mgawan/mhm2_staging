@@ -125,7 +125,7 @@ def get_job_nodes():
         return get_pbs_job_nodes()
     if is_ge_job():
         return get_ge_job_nodes()
-    print("Warning: could not determine the number of nodes in this unsupported scheduler. Using 1.")
+    print("Warning: could not determine the number of nodes in this unsupported scheduler - using 1")
     return 1
 
 
@@ -245,46 +245,59 @@ def main():
     global proc
     orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
-    
+
+    if "--auto-resume" in sys.argv:
+        print("auto resume is enabled: will try to restart if run crashes or is terminated")
+        sys.argv.remove("--auto-resume")
+      
     check_exec('upcxx-run', '-h', 'UPC++')
     status = True
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not which(mhmxx_binary_path):
-      die("Cannot find binary mhmxx")
+        die("Cannot find binary mhmxx")
     cmd = ['upcxx-run', '-n', str(get_cores()), '-N', str(get_job_nodes()), '-shared-heap', '5%', '--', mhmxx_binary_path];
     cmd.extend(sys.argv[1:])
     print('Executing:')
     print(' '.join(cmd))
-    try:
+    
+    while True:
+      try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in iter(proc.stdout.readline, b''):
-            line = line.decode()
-            print(line, end='')
-            sys.stdout.flush()
+          line = line.decode()
+          print(line, end='')
+          sys.stdout.flush()
         if status:
-            proc.wait()
+          proc.wait()
         else:
-            handle_failure_termination(proc, run_log_file, options.verbose)
-            proc.wait()
+          handle_failure_termination(proc, run_log_file, options.verbose)
+          proc.wait()
 
         if proc.returncode not in [0, -15] or not status:
-            print("ERROR: proc return code ", proc.returncode, "\n");
+          print("ERROR: proc return code ", proc.returncode, "\n");
+          if cmd[-1] != '--restart':
+            cmd.append('--restart')
+          else:
+            print("Could not restart, exiting...")
+            return 1
         else:
-            print("SUCCESS: proc return code ", proc.returncode, "\n");
-    except:
+          print("SUCCESS: proc return code ", proc.returncode, "\n");
+          break
+      except:
         if proc:
-            try:
-                print("Terminating process after exception: ", sys.exc_info(), "\n")
-                traceback.print_tb(sys.exc_info()[2], limit=100)
-                proc.terminate()
-            except OSError:
-                pass
-            except:
-                print("Unexpected error in final except: ", sys.exc_info())
-                traceback.print_tb(sys.exc_info()[2], limit=100)
-                raise
+          try:
+            print("Terminating process after exception: ", sys.exc_info(), "\n")
+            traceback.print_tb(sys.exc_info()[2], limit=100)
+            proc.terminate()
+          except OSError:
+            pass
+          except:
+            print("Unexpected error in final except: ", sys.exc_info())
+            traceback.print_tb(sys.exc_info()[2], limit=100)
+            raise
         raise
+      
     return 0
 
 if __name__ == "__main__":
