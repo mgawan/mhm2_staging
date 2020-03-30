@@ -221,7 +221,7 @@ public:
     t_interval = 0;
   }
 
-  void done_barrier() {
+  void done_all() {
     auto max_t_elapsed = upcxx::reduce_one(t_elapsed, upcxx::op_fast_max, 0).wait();
     auto avg_t_elapsed = upcxx::reduce_one(t_elapsed, upcxx::op_fast_add, 0).wait() / upcxx::rank_n();
     SLOG_VERBOSE(KLCYAN, "--- ", name, " took ", std::setprecision(2), std::fixed, " avg ", avg_t_elapsed,

@@ -548,17 +548,16 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
     SLOG_VERBOSE("Dropped ", tot_excess_alns_reads, " reads because of alignments in excess of ", 
                  KLIGN_MAX_ALNS_PER_READ, "\n");
   auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
-  if (num_overlaps)
-    SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");
+  if (num_overlaps) SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");
   auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
   SLOG_VERBOSE("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
   SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences\n");
   
-  get_ctgs_timer.done_barrier();
-  fetch_ctg_seqs_timer.done_barrier();
-  compute_alns_timer.done_barrier();
-  ssw_timer.done_barrier();
+  get_ctgs_timer.done_all();
+  fetch_ctg_seqs_timer.done_all();
+  compute_alns_timer.done_all();
+  ssw_timer.done_all();
 }
 
 template<int MAX_K>

@@ -732,8 +732,8 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
         break;
       }
     } // loop until no more walks are found
-    next_nbs_timer.done_barrier();
-    walks_timer.done_barrier();
+    next_nbs_timer.done_all();
+    walks_timer.done_all();
   }
   barrier();
   // now add any unvisited to the walks

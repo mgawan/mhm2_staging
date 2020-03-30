@@ -478,10 +478,10 @@ static void merge_nbs()
         " merged ", num_merged_nbs, " avg degree ", ((double)num_merged_nbs / _graph->get_local_num_vertices()), 
         " max degree ", max_nbs, "\n");
     progbar.done();
-    t_merge_ends.done_barrier();
-    t_merge_get_nbs.done_barrier();
-    t_merge_sort_nbs.done_barrier();
-    t_merge_output_nbs.done_barrier();
+    t_merge_ends.done_all();
+    t_merge_get_nbs.done_all();
+    t_merge_sort_nbs.done_all();
+    t_merge_output_nbs.done_all();
   }
   barrier();
   auto tot_merges = reduce_one(num_merges, op_fast_add, 0).wait();

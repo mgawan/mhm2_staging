@@ -359,7 +359,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
   }
   progbar.done();
   barrier();
-  t_get_alns.done_barrier();
+  t_get_alns.done_all();
   auto tot_alns_found = reduce_one(num_alns_found, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed ", tot_alns_found, " alignments:\n");
   SLOG_VERBOSE("  invalid:   ", perc_str(reduce_one(num_alns_invalid, op_fast_add, 0).wait(), tot_alns_found), "\n");
@@ -548,8 +548,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
     ctgs.add_contig({.id = ctg->cid, .seq = ctg->seq, .depth = ctg->depth});
   }
   progbar.done();
-  count_mers_timer.done_barrier();
-  walk_mers_timer.done_barrier();
+  count_mers_timer.done_all();
+  walk_mers_timer.done_all();
   barrier();
   SLOG_VERBOSE("Walk terminations: ",
                reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
