@@ -260,7 +260,7 @@ def main():
         die("Cannot find binary mhmxx")
     cores_per_node = get_hwd_cores_per_node()
     num_nodes = get_job_nodes()
-    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', '5%', '--', 
+    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', '10%', '--', 
            mhmxx_binary_path];
     cmd.extend(sys.argv[1:])
     print('Executing:')
