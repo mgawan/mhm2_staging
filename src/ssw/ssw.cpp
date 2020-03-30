@@ -240,7 +240,6 @@ namespace StripedSmithWaterman {
     , ambiguity_penalty_(2)
     , translated_reference_(NULL)
     , reference_length_(0)
-    , ssw_dt(0)
   {
     BuildDefaultMatrix();
   }
@@ -262,7 +261,6 @@ namespace StripedSmithWaterman {
     , ambiguity_penalty_(ambiguity_penalty)
     , translated_reference_(NULL)
     , reference_length_(0)
-    , ssw_dt(0)
   {
     BuildDefaultMatrix();
   }
@@ -281,7 +279,6 @@ namespace StripedSmithWaterman {
     , gap_extending_penalty_(1)
     , translated_reference_(NULL)
     , reference_length_(0)
-    , ssw_dt(0)
   {
     score_matrix_ = new int8_t[score_matrix_size_ * score_matrix_size_];
     memcpy(score_matrix_, score_matrix, sizeof(int8_t) * score_matrix_size_ * score_matrix_size_);
@@ -373,7 +370,7 @@ namespace StripedSmithWaterman {
     s_align* s_al = ssw_align(profile, translated_reference_, reference_length_,
                               static_cast<int>(gap_opening_penalty_),
                               static_cast<int>(gap_extending_penalty_),
-                              flag, filter.score_filter, filter.distance_filter, maskLen, ssw_dt);
+                              flag, filter.score_filter, filter.distance_filter, maskLen);
 
     alignment->Clear();
     ConvertAlignment(*s_al, query_len, alignment);
@@ -414,7 +411,7 @@ namespace StripedSmithWaterman {
     s_align* s_al = ssw_align(profile, translated_ref, valid_ref_len,
                               static_cast<int>(gap_opening_penalty_),
                               static_cast<int>(gap_extending_penalty_),
-                              flag, filter.score_filter, filter.distance_filter, maskLen, ssw_dt);
+                              flag, filter.score_filter, filter.distance_filter, maskLen);
 
     alignment->Clear();
     ConvertAlignment(*s_al, query_len, alignment);

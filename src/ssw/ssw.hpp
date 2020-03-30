@@ -102,7 +102,7 @@ namespace StripedSmithWaterman {
             const int&    translation_matrix_size);
 
     Aligner(const Aligner &aligner);
-    
+
     ~Aligner(void);
 
     // =========
@@ -135,8 +135,8 @@ namespace StripedSmithWaterman {
     // @param    query     The query sequence.
     // @param    filter    The filter for the alignment.
     // @param    alignment The container contains the result.
-    // @param    maskLen   The distance between the optimal and suboptimal alignment ending position will >= maskLen. We suggest to 
-    //                     use readLen/2, if you don't have special concerns. Note: maskLen has to be >= 15, otherwise this function 
+    // @param    maskLen   The distance between the optimal and suboptimal alignment ending position will >= maskLen. We suggest to
+    //                     use readLen/2, if you don't have special concerns. Note: maskLen has to be >= 15, otherwise this function
     //                     will NOT return the suboptimal alignment information.
     // @return   True: succeed; false: fail.
     // =========
@@ -152,8 +152,8 @@ namespace StripedSmithWaterman {
     // @param    ref_len   The length of the reference sequence.
     // @param    filter    The filter for the alignment.
     // @param    alignment The container contains the result.
-    // @param    maskLen   The distance between the optimal and suboptimal alignment ending position will >= maskLen. We suggest to 
-    //                     use readLen/2, if you don't have special concerns. Note: maskLen has to be >= 15, otherwise this function 
+    // @param    maskLen   The distance between the optimal and suboptimal alignment ending position will >= maskLen. We suggest to
+    //                     use readLen/2, if you don't have special concerns. Note: maskLen has to be >= 15, otherwise this function
     //                     will NOT return the suboptimal alignment information.
     // @return   True: succeed; false: fail.
     // =========
@@ -194,10 +194,6 @@ namespace StripedSmithWaterman {
       const int8_t* translation_matrix,
       const int&    translation_matrix_size);
 
-    double get_ssw_secs() {
-      return ssw_dt.count();
-    }
-    
   private:
     int8_t* score_matrix_;
     int     score_matrix_size_;
@@ -212,8 +208,6 @@ namespace StripedSmithWaterman {
 
     int8_t* translated_reference_;
     int32_t reference_length_;
-    
-    mutable std::chrono::duration<double> ssw_dt;
 
     int TranslateBase(const char* bases, const int& length, int8_t* translated) const;
     void SetAllDefault(void);

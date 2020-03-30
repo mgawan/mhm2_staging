@@ -39,8 +39,8 @@ int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapse
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list);
 template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, 
-                          bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                          dist_object<KmerDHT<MAX_K>> &kmer_dht);
+                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
+                   dist_object<KmerDHT<MAX_K>> &kmer_dht);
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K> 
@@ -210,23 +210,23 @@ int main(int argc, char **argv) {
       switch (max_k) {
         case 32:
           contigging<32>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                  localassm_dt, options);
+                         localassm_dt, options);
           break;
         case 64:
           contigging<64>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                  localassm_dt, options);
+                         localassm_dt, options);
           break;
         case 96:
           contigging<96>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                  localassm_dt, options);
+                         localassm_dt, options);
           break;
         case 128:
           contigging<128>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                  localassm_dt, options);
+                          localassm_dt, options);
           break;
         case 160:
           contigging<160>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                  localassm_dt, options);
+                          localassm_dt, options);
           break;
       }                  
       if (options->checkpoint) {

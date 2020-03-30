@@ -773,17 +773,15 @@ void init_destroy (s_profile* p) {
 }
 
 s_align* ssw_align (const s_profile* prof, 
-					const int8_t* ref, 
-				  	int32_t refLen, 
-				  	const uint8_t weight_gapO, 
-				  	const uint8_t weight_gapE, 
-					const uint8_t flag,	//  (from high to low) bit 5: return the best alignment beginning position; 6: if (ref_end1 - ref_begin1 <= filterd) && (read_end1 - read_begin1 <= filterd), return cigar; 7: if max score >= filters, return cigar; 8: always return cigar; if 6 & 7 are both setted, only return cigar when both filter fulfilled
-					const uint16_t filters,
-					const int32_t filterd,
-					const int32_t maskLen,
-                    std::chrono::duration<double> &ssw_dt) {
+                    const int8_t* ref, 
+                    int32_t refLen, 
+                    const uint8_t weight_gapO, 
+                    const uint8_t weight_gapE, 
+                    const uint8_t flag,	//  (from high to low) bit 5: return the best alignment beginning position; 6: if (ref_end1 - ref_begin1 <= filterd) && (read_end1 - read_begin1 <= filterd), return cigar; 7: if max score >= filters, return cigar; 8: always return cigar; if 6 & 7 are both setted, only return cigar when both filter fulfilled
+                    const uint16_t filters,
+                    const int32_t filterd,
+                    const int32_t maskLen) {
 
-    auto t = CLOCK_NOW();
 	alignment_end* bests = 0, *bests_reverse = 0;
 	__m128i* vP = 0;
 	int32_t word = 0, band_width = 0, readLen = prof->readLen;
@@ -816,10 +814,6 @@ s_align* ssw_align (const s_profile* prof,
 		fprintf(stderr, "Please call the function ssw_init before ssw_align.\n");
 		return 0;
 	}
-    
-  ssw_dt += (CLOCK_NOW() - t);
-  upcxx::progress();
-  t = CLOCK_NOW();
     
 	r->score1 = bests[0].score;
 	r->ref_end1 = bests[0].ref;
@@ -865,7 +859,6 @@ s_align* ssw_align (const s_profile* prof,
 	}
 	
 end: 
-  ssw_dt += (CLOCK_NOW() - t);
 	return r;
 }
 
