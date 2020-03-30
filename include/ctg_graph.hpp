@@ -194,8 +194,6 @@ private:
     int clen;
   };
 
-  AggrStore<VertexDepthInfo> vertex_depth_store;
-
   struct EdgeGapReadInfo {
     CidPair cids;
     GapRead gap_read;
@@ -250,11 +248,10 @@ private:
 public:
   int max_read_len;
 
-  CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}), vertex_depth_store({}),
+  CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}),
                update_depth_func({}), edge_gap_read_store({}), add_edge_gap_read_func({}) {
     vertex_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
     edge_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
-    vertex_depth_store.set_size("vertex depths store", ONE_MB);
     edge_gap_read_store.set_size("edge gaps store", ONE_MB);
   }
 
