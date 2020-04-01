@@ -29,10 +29,6 @@ using std::cout;
 using std::cerr;
 using std::min;
 
-#ifndef NDEBUG
-#define DEBUG
-#endif
-
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define __FILEFUNC__ (__FILENAME__ + string(":") + __func__)
 

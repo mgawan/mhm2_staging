@@ -1,9 +1,21 @@
 cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
-project(MHMXX)
+
+message(STATUS "finding UPCXX for MHMxx build")
+find_package(UPCXX 2019.9.0.1 REQUIRED)
+if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
+  message(STATUS "UPCXX_UTILS is using the UPCXX::upcxx library interface: ${UPCXX_LIBRARIES}")
+  find_package(UPCXX REQUIRED)
+else()
+  find_program(UPCXX_EXEC upcxx)
+  set(CMAKE_CXX_COMPILER ${UPCXX_EXEC})
+  message(STATUS "UPCXX_UTILS is using upcxx directly as the UPCXX::upcxx library interface is not available in this low version of cmake: ${CMAKE_VERSION}"    )
+  unset(UPCXX_LIBRARIES)
+endif()
 
 message("Building ${CMAKE_BUILD_TYPE} version")
 
-#find_package(UPCXX REQUIRED)
+find_package(Threads REQUIRED)
+
 find_package(ZLIB 1.2.3 REQUIRED)
 include_directories(BEFORE ${ZLIB_INCLUDE_DIRECTORIES})
 get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
@@ -15,14 +27,6 @@ message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L$
 #set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_CXX_COMPILER upcxx)
-
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -network=udp")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
-else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O")
-endif()
 
 execute_process(
     COMMAND bash -c "CC --version 2>&1| head -n1|cut -d' ' -f2"
@@ -33,16 +37,16 @@ execute_process(
 message("Base CXX compiler: ${BASE_CXX_COMPILER}")
 #add_definitions(-DBASE_CXX_COMPILER=\"${BASE_CXX_COMPILER}\")
 
-# this only works on Cori where CC is defined
-if (${BASE_CXX_COMPILER} MATCHES "(ICC)")
-    # ignore annoying warning on icc
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
-elseif (${BASE_CXX_COMPILER} MATCHES "(GCC)")
-    # ignore annoying warning on icc
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-catch-value")
-endif()
+## this only works on Cori where CC is defined
+#if (${BASE_CXX_COMPILER} MATCHES "(ICC)")
+#    # ignore annoying warning on icc
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
+#elseif (${BASE_CXX_COMPILER} MATCHES "(GCC)")
+#    # ignore annoying warning on icc
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-catch-value")
+#endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -pthread")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -pthread")
 
 include(CMakeDefinitions.txt)
 
@@ -60,7 +64,7 @@ add_definitions(-DALL_DEFNS=\"${all_defs}\")
 # include mateidavid's zstr c++ library
 include_directories("${CMAKE_SOURCE_DIR}/zstr/src")
 # include ssw library
-include_directories("${CMAKE_SOURCE_DIR}/ssw")
+include_directories("ssw")
 # all the other headers
 include_directories("${CMAKE_SOURCE_DIR}/../include")
 
@@ -70,7 +74,7 @@ add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp 
     walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp)
 
-target_link_libraries(mhmxx SSW_LIBRARY ${ZLIB_LIBRARIES})
+target_link_libraries(mhmxx Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} ${UPCXX_LIBRARIES})
 
 # Set up version
 find_package(Git)
@@ -109,5 +113,5 @@ endif()
 
 #message("install prefix ${CMAKE_INSTALL_PREFIX}")
 #message("source dir ${CMAKE_SOURCE_DIR}")
-install(PROGRAMS ${CMAKE_SOURCE_DIR}/mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

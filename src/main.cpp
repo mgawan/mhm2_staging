@@ -14,8 +14,7 @@
 
 using namespace std;
 
-#ifndef NDEBUG
-#define DEBUG
+#ifdef DEBUG
 ofstream _dbgstream;
 #endif
 
@@ -207,28 +206,30 @@ int main(int argc, char **argv) {
       //if (kmer_len == 55 && options->restart) SDIE("another test of auto resume");
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto max_k = (kmer_len / 32 + 1) * 32;
+      
+#define CONTIG_K(KMER_LEN) \
+        case KMER_LEN: \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, localassm_dt, options); \
+          break
+      
       switch (max_k) {
-        case 32:
-          contigging<32>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                         localassm_dt, options);
-          break;
-        case 64:
-          contigging<64>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                         localassm_dt, options);
-          break;
-        case 96:
-          contigging<96>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                         localassm_dt, options);
-          break;
-        case 128:
-          contigging<128>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                          localassm_dt, options);
-          break;
-        case 160:
-          contigging<160>(kmer_len, prev_kmer_len, fqr_list, ctgs, analyze_kmers_dt, dbjg_traversal_dt, alignments_dt, 
-                          localassm_dt, options);
-          break;
-      }                  
+        CONTIG_K(32);
+#if MAX_BUILD_KMER >= 64
+        CONTIG_K(64);
+#endif
+#if MAX_BUILD_KMER >= 96
+        CONTIG_K(96);
+#endif
+#if MAX_BUILD_KMER >= 128
+        CONTIG_K(128);
+#endif
+#if MAX_BUILD_KMER >= 160
+        CONTIG_K(160);
+#endif
+          default: DIE("Built for maxk=", MAX_BUILD_KMER, " not k=", max_k);
+      }      
+#undef CONTIG_K
+      
       if (options->checkpoint) {
         dump_ctgs_dt.start();
         ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
@@ -260,23 +261,32 @@ int main(int argc, char **argv) {
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif      
       auto max_k = (scaff_kmer_len / 32 + 1) * 32;
+      
+#define FIND_ALIGNMENTS(KMER_LEN) \
+        case KMER_LEN: \
+          find_alignments<KMER_LEN>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns); \
+          break
+      
       switch (max_k) {
-        case 32:
-          find_alignments<32>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+          FIND_ALIGNMENTS(32);
+#if MAX_BUILD_KMER >= 64
+          FIND_ALIGNMENTS(64);
+#endif
+#if MAX_BUILD_KMER >= 96
+          FIND_ALIGNMENTS(96);
+#endif
+#if MAX_BUILD_KMER >= 128
+          FIND_ALIGNMENTS(128);
+#endif
+#if MAX_BUILD_KMER >= 160
+          FIND_ALIGNMENTS(160);
+#endif
+          default: DIE("Built for maximum kmer of ", MAX_BUILD_KMER, " not ", max_k);
           break;
-        case 64:
-          find_alignments<64>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
-          break;
-        case 96:
-          find_alignments<96>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
-          break;
-        case 128:
-          find_alignments<128>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
-          break;
-        case 160:
-          find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
-          break;
-      }                  
+      }
+      
+#undef FIND_ALIGNMENTS
+      
       alignments_dt.stop();
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
       cgraph_dt.start();

@@ -578,13 +578,25 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
   barrier();
 }
 
-template 
-void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
-template 
-void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
-template 
-void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
-template 
-void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
-template 
-void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+
+#define FA(KMER_LEN) \
+    template \
+    void find_alignments<KMER_LEN>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns)
+
+
+FA(32);
+#if MAX_BUILD_KMER >= 64
+FA(64);
+#endif
+#if MAX_BUILD_KMER >= 96
+FA(96);
+#endif
+#if MAX_BUILD_KMER >= 128
+FA(128);
+#endif
+#if MAX_BUILD_KMER >= 160
+FA(160);
+#endif
+
+#undef FA
+

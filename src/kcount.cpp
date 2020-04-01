@@ -283,23 +283,24 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
   //kmer_dht->purge_fx_kmers();
 }
 
-template
-void analyze_kmers<32>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                       bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                       dist_object<KmerDHT<32>> &kmer_dht);
-template
-void analyze_kmers<64>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                       bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                       dist_object<KmerDHT<64>> &kmer_dht);
-template
-void analyze_kmers<96>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                       bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                       dist_object<KmerDHT<96>> &kmer_dht);
-template
-void analyze_kmers<128>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                        bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                        dist_object<KmerDHT<128>> &kmer_dht);
-template
-void analyze_kmers<160>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                        bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                        dist_object<KmerDHT<160>> &kmer_dht);
+#define AK(KMER_LEN) \
+  template \
+  void analyze_kmers<KMER_LEN>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, \
+                               bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs,  \
+                               dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
+
+AK(32);
+#if MAX_BUILD_KMER >= 64
+AK(64);
+#endif
+#if MAX_BUILD_KMER >= 96
+AK(96);
+#endif
+#if MAX_BUILD_KMER >= 128
+AK(128);
+#endif
+#if MAX_BUILD_KMER >= 160
+AK(160);
+#endif
+
+#undef AK

@@ -473,13 +473,22 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
 #endif
 }
 
-template
-void traverse_debruijn_graph<32>(unsigned kmer_len, dist_object<KmerDHT<32>> &kmer_dht, Contigs &my_uutigs);
-template
-void traverse_debruijn_graph<64>(unsigned kmer_len, dist_object<KmerDHT<64>> &kmer_dht, Contigs &my_uutigs);
-template
-void traverse_debruijn_graph<96>(unsigned kmer_len, dist_object<KmerDHT<96>> &kmer_dht, Contigs &my_uutigs);
-template
-void traverse_debruijn_graph<128>(unsigned kmer_len, dist_object<KmerDHT<128>> &kmer_dht, Contigs &my_uutigs);
-template
-void traverse_debruijn_graph<160>(unsigned kmer_len, dist_object<KmerDHT<160>> &kmer_dht, Contigs &my_uutigs);
+#define TDG_K(KMER_LEN) \
+    template \
+    void traverse_debruijn_graph<KMER_LEN>(unsigned kmer_len, dist_object<KmerDHT<KMER_LEN>> &kmer_dht, Contigs &my_uutigs)
+
+TDG_K(32);
+#if MAX_BUILD_KMER >= 64
+TDG_K(64);
+#endif
+#if MAX_BUILD_KMER >= 96
+TDG_K(96);
+#endif
+#if MAX_BUILD_KMER >= 128
+TDG_K(128);
+#endif
+#if MAX_BUILD_KMER >= 160
+TDG_K(160);
+#endif
+
+#undef TDG_K
