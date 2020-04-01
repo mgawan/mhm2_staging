@@ -249,7 +249,7 @@ def main():
 
     argparser = argparse.ArgumentParser(add_help=False)
     argparser.add_argument("--auto-resume", action="store_true", help="Automatically resume after a failure")
-    argparser.add_argument("--shared-heap", help="Shared heap as a percentage of memory")
+    argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
     
     options, unknown_options = argparser.parse_known_args()
 
@@ -266,7 +266,6 @@ def main():
     num_nodes = get_job_nodes()
     cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', options.shared_heap, '--', 
            mhmxx_binary_path];
-#    cmd.extend(sys.argv[1:])
     cmd.extend(unknown_options)
     print('Executing:')
     print(' '.join(cmd))
