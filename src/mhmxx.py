@@ -9,6 +9,7 @@ import os
 import datetime
 import time
 import traceback
+import argparse
 
 
 orig_sighdlr = None
@@ -246,12 +247,15 @@ def main():
     orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
-    auto_resume = False
-    if "--auto-resume" in sys.argv:
+    argparser = argparse.ArgumentParser(add_help=False)
+    argparser.add_argument("--auto-resume", action="store_true", help="Automatically resume after a failure")
+    argparser.add_argument("--shared-heap", help="Shared heap as a percentage of memory")
+    
+    options, unknown_options = argparser.parse_known_args()
+
+    if options.auto_resume:
         print("auto resume is enabled: will try to restart if run fails")
-        sys.argv.remove("--auto-resume")
-        auto_resume = True
-      
+    
     check_exec('upcxx-run', '-h', 'UPC++')
     status = True
     # expect mhmxx to be in same directory as mhmxx.py
@@ -260,56 +264,57 @@ def main():
         die("Cannot find binary mhmxx")
     cores_per_node = get_hwd_cores_per_node()
     num_nodes = get_job_nodes()
-    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', '10%', '--', 
+    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', options.shared_heap, '--', 
            mhmxx_binary_path];
-    cmd.extend(sys.argv[1:])
+#    cmd.extend(sys.argv[1:])
+    cmd.extend(unknown_options)
     print('Executing:')
     print(' '.join(cmd))
     
     while True:
       completed = False
       try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        for line in iter(proc.stdout.readline, b''):
-          line = line.decode()
-          print(line, end='')
-          sys.stdout.flush()
-          # did we complete any new rounds?
-          if "Completed " in line:
-            completed = True
-        if status:
-          proc.wait()
-        else:
-          handle_failure_termination(proc, run_log_file, options.verbose)
-          proc.wait()
-
-        if proc.returncode not in [0, -15] or not status:
-          #print("ERROR: proc return code ", proc.returncode, "\n");
-          # FIXME: should restart if it is not the same restart stage as before - need to parse output to 
-          # find that value
-          if completed and auto_resume:
-            cmd.append('--restart')
+          proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          for line in iter(proc.stdout.readline, b''):
+              line = line.decode()
+              print(line, end='')
+              sys.stdout.flush()
+              # did we complete any new rounds?
+              if "Completed " in line:
+                  completed = True
+          if status:
+              proc.wait()
           else:
-            if auto_resume:
-              print("Could not restart, exiting...")
-            return 1
-        else:
-          #print("SUCCESS: proc return code ", proc.returncode, "\n");
-          break
+              handle_failure_termination(proc, run_log_file, options.verbose)
+              proc.wait()
+
+          if proc.returncode not in [0, -15] or not status:
+              #print("ERROR: proc return code ", proc.returncode, "\n");
+              # FIXME: should restart if it is not the same restart stage as before - need to parse output to 
+              # find that value
+              if completed and options.auto_resume:
+                  cmd.append('--restart')
+              else:
+                  if options.auto_resume:
+                      print("Could not restart, exiting...")
+              return 1
+          else:
+              #print("SUCCESS: proc return code ", proc.returncode, "\n");
+              break
       except:
-        if proc:
-          try:
-            print("Terminating process after exception: ", sys.exc_info(), "\n")
-            traceback.print_tb(sys.exc_info()[2], limit=100)
-            proc.terminate()
-          except OSError:
-            pass
-          except:
-            print("Unexpected error in final except: ", sys.exc_info())
-            traceback.print_tb(sys.exc_info()[2], limit=100)
-            raise
-        raise
-      
+          if proc:
+              try:
+                  print("Terminating process after exception: ", sys.exc_info(), "\n")
+                  traceback.print_tb(sys.exc_info()[2], limit=100)
+                  proc.terminate()
+              except OSError:
+                  pass
+              except:
+                  print("Unexpected error in final except: ", sys.exc_info())
+                  traceback.print_tb(sys.exc_info()[2], limit=100)
+                  raise
+          raise
+
     return 0
 
 if __name__ == "__main__":
