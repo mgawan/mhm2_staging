@@ -7,6 +7,7 @@ extern "C" {
 extern const char *MHMXX_VERSION;
 extern const char *MHMXX_VERSION_DATE;
 extern const char *MHMXX_BUILD_DATE;
+extern const char *MHMXX_BRANCH;
 
 #define MAX_BUILD_KMER_STR "Maximum kmer len=MAX_BUILD_KMER"
 
