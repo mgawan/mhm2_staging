@@ -29,58 +29,48 @@ using upcxx::promise;
 
 // this class aggregates updates into local buffers and then periodically does an rpc to dispatch them
 
-template<typename T>
+template<typename T, typename... Data>
 class AggrStore {
-
   using RankStore = vector<T>;
   using Store = vector<RankStore>;
-  using RpcFutures = deque< future<> >;
+  using RpcFutures = deque<future<>>;
+  using UpdateFunc = std::function<void(T, Data&...)>;
 
   Store store;
   RpcFutures rpc_futures;
   int64_t max_store_size;
-  int max_rpcs_in_flight; // Limit for the number of rpcs in flight. This limit exists to prevent the dispatch buffers from growing indefinitely
+  // Limit for the number of rpcs in flight. This limit exists to prevent the dispatch buffers from growing indefinitely
+  int max_rpcs_in_flight;
 
-  void wait_max_rpcs() {
-    progress();
-    while (!rpc_futures.empty() && rpc_futures.size() >= max_rpcs_in_flight) {
-      rpc_futures.front().wait();
-      rpc_futures.pop_front();
+  // save the update function to use in both update and flush
+  dist_object<UpdateFunc> update_func = dist_object<UpdateFunc>({});
+  // save all associated data structures as a tuple of a variable number of parameters
+  std::tuple<Data...> data;
+
+  // operates on a vector of elements in the store
+  static void update_remote(AggrStore *astore, intrank_t target_rank, Data &...data) {
+    // wait for space in rpc futures queue
+    while (!astore->rpc_futures.empty() && astore->rpc_futures.size() >= astore->max_rpcs_in_flight) {
+      astore->rpc_futures.front().wait();
+      astore->rpc_futures.pop_front();
     }
-  }
-
-  // operation on 1 element (i.e. no store)
-  template<typename FuncDistObj, typename ...Args>
-  void update_remote1(intrank_t target_rank, T &elem, FuncDistObj &func, Args &...args) {
-    wait_max_rpcs();
     auto fut = rpc(target_rank,
-                   [](FuncDistObj &func, T elem, Args &...args) {
-                     (*func)(elem, args...);
-                   }, func, elem, args...);
-
-    rpc_futures.push_back(fut);
-  }
-
-  // operate on a vector of elements in the store
-  template<typename FuncDistObj, typename ...Args>
-  void update_remote(intrank_t target_rank, FuncDistObj &func, Args &...args) {
-    wait_max_rpcs();
-    auto fut = rpc(target_rank,
-                   [](FuncDistObj &func, view<T> rank_store, Args &...args) {
-                     for (auto elem : rank_store) (*func)(elem, args...);
-                   }, func, make_view(store[target_rank].begin(), store[target_rank].end()), args...);
-
-    rpc_futures.push_back(fut);
-    store[target_rank].clear();
+                   [](dist_object<UpdateFunc> &update_func, view<T> rank_store, Data &...data) {
+                     for (auto elem : rank_store) (*update_func)(elem, data...);
+                   }, astore->update_func,
+                   make_view(astore->store[target_rank].begin(), astore->store[target_rank].end()), data...);
+    astore->rpc_futures.push_back(fut);
+    astore->store[target_rank].clear();
   }
 
 public:
 
-  AggrStore()
+  AggrStore(Data&... data)
     : store({})
     , rpc_futures()
     , max_store_size(0)
-    , max_rpcs_in_flight(AGGR_STORE_MAX_RPCS_IN_FLIGHT) {}
+    , max_rpcs_in_flight(AGGR_STORE_MAX_RPCS_IN_FLIGHT)
+    , data(data...) {}
 
   virtual ~AggrStore() {
     clear();
@@ -98,7 +88,6 @@ public:
     } else {
       store.resize(rank_n(), {});
     }
-
     // reduce max in flight if necessary
     int64_t tmp_inflight_bytes = max_store_bytes - (max_store_size * rank_n() * sizeof(T)); // calc remaining memory for rpcs
     // hard minimum limit
@@ -115,8 +104,13 @@ public:
     SLOG_VERBOSE("  - buffers: max over all target ranks ", get_size_str(max_target_buf * rank_n()), "\n");
     SLOG_VERBOSE("  - RPCs in flight: max ", max_rpcs_in_flight, " RPCs of ", get_size_str(per_rpc_bytes),
          " max per RPC (", get_size_str(max_rpcs_in_flight * per_rpc_bytes), ")\n");
-    SLOG_VERBOSE("  - max possible memory: ", get_size_str(max_target_buf * rank_n() + per_rpc_bytes * max_rpcs_in_flight), "\n");
+    SLOG_VERBOSE("  - max possible memory: ", get_size_str(max_target_buf * rank_n() + per_rpc_bytes * max_rpcs_in_flight),
+                 "\n");
     barrier();
+  }
+
+  void set_update_func(UpdateFunc update_func) {
+    *(this->update_func) = update_func;
   }
 
   void clear() {
@@ -128,22 +122,17 @@ public:
     RpcFutures().swap(rpc_futures);
   }
 
-  template<typename FuncDistObj, typename ...Args>
-  void update(intrank_t target_rank, T &elem, FuncDistObj &func, Args &...args) {
+  void update(intrank_t target_rank, T &elem) {
     assert(max_store_size > 0);
-    if (max_store_size <= 0) {
-        update_remote1(target_rank, elem, func, args...);
-        return;
-    }
     store[target_rank].push_back(elem);
     if (store[target_rank].size() < max_store_size) return;
-    update_remote(target_rank, func, args...);
+    std::apply(update_remote, std::tuple_cat(std::make_tuple(this, target_rank), data));
   }
 
-  template<typename FuncDistObj, typename ...Args>
-  void flush_updates(FuncDistObj &func, Args &...args) {
+  void flush_updates() {
     for (int target_rank = 0; target_rank < rank_n(); target_rank++) {
-      if (max_store_size > 0 && store[target_rank].size()) update_remote(target_rank, func, args...);
+      if (max_store_size > 0 && store[target_rank].size())
+        std::apply(update_remote, std::tuple_cat(std::make_tuple(this, target_rank), data));
     }
     for (auto fut : rpc_futures) fut.wait();
     rpc_futures.clear();

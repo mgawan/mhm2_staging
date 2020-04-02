@@ -93,6 +93,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
     case NO_BLOOM_PASS: progbar_prefix = "Parsing reads file to count kmers"; break;
     default: DIE("Should never get here");
   };
+  kmer_dht->set_pass(pass_type);
   barrier();
   for (auto fqr : fqr_list) {
     fqr->reset();
@@ -142,14 +143,14 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
         if (quals[i - 1] < qual_offset + qual_cutoff) left_base = '0';
         char right_base = seq[i + kmer_len];
         if (quals[i + kmer_len] < qual_offset + qual_cutoff) right_base = '0';
-        kmer_dht->add_kmer(kmers[i], left_base, right_base, count, pass_type);
+        kmer_dht->add_kmer(kmers[i], left_base, right_base, count);
         DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
         num_kmers++;
       }
       progress();
     }
     progbar.done();
-    kmer_dht->flush_updates(pass_type);
+    kmer_dht->flush_updates();
   }
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
@@ -173,6 +174,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
   vector<Kmer<MAX_K>> kmers;
+  kmer_dht->set_pass(CTG_BLOOM_SET_PASS);
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
@@ -181,13 +183,13 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
-        kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], 1, CTG_BLOOM_SET_PASS);
+        kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], 1);
       }
       num_kmers += kmers.size();
     }
     progress();
   }
-  kmer_dht->flush_updates(CTG_BLOOM_SET_PASS);
+  kmer_dht->flush_updates();
   progbar.done();
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
@@ -208,6 +210,7 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
 #endif
   ProgressBar progbar(ctgs.size(), "Adding extra contig kmers from kmer length " + to_string(prev_kmer_len));
   vector<Kmer<MAX_K>> kmers;
+  kmer_dht->set_pass(CTG_KMERS_PASS);
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
@@ -223,14 +226,14 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
         max_depth_diff = max(max_depth_diff, abs(kmer_depth - depth));
         depth = kmer_depth;
 #endif
-        kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], depth, CTG_KMERS_PASS);
+        kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], depth);
         num_kmers++;
       }
     }
     progress();
   }
   progbar.done();
-  kmer_dht->flush_updates(CTG_KMERS_PASS);
+  kmer_dht->flush_updates();
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();

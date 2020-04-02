@@ -179,12 +179,12 @@ struct Vertex {
 
 class CtgGraph {
 private:
-  using vertex_map_t = HASH_TABLE<cid_t, Vertex>;
-  using edge_map_t = HASH_TABLE<CidPair, Edge>;
-  using reads_map_t = HASH_TABLE<string, string>;
-  upcxx::dist_object<vertex_map_t> vertices;
-  upcxx::dist_object<edge_map_t> edges;
-  upcxx::dist_object<reads_map_t> read_seqs;
+  using vertex_map_t = upcxx::dist_object<HASH_TABLE<cid_t, Vertex>>;
+  using edge_map_t = upcxx::dist_object<HASH_TABLE<CidPair, Edge>>;
+  using reads_map_t = upcxx::dist_object<HASH_TABLE<string, string>>;
+  vertex_map_t vertices;
+  edge_map_t edges;
+  reads_map_t read_seqs;
   HASH_TABLE<cid_t, shared_ptr<Vertex> > vertex_cache;
   HASH_TABLE<CidPair, shared_ptr<Edge> > edge_cache;
 
@@ -203,10 +203,10 @@ private:
     UPCXX_SERIALIZED_FIELDS(cids, gap_read, aln_len, aln_score);
   };
 
-  AggrStore<EdgeGapReadInfo> edge_gap_read_store;
+  AggrStore<EdgeGapReadInfo, edge_map_t&> edge_gap_read_store;
 
-  edge_map_t::iterator edge_iter;
-  vertex_map_t::iterator vertex_iter;
+  HASH_TABLE<cid_t, Vertex>::iterator vertex_iter;
+  HASH_TABLE<CidPair, Edge>::iterator edge_iter;
 
   size_t get_vertex_target_rank(cid_t cid) {
     return std::hash<cid_t>{}(cid) % upcxx::rank_n();
@@ -219,9 +219,9 @@ private:
   size_t get_read_target_rank(const string &r) {
     return std::hash<string>{}(r) % upcxx::rank_n();
   }
-
+/*
   struct UpdateDepthFunc {
-    void operator()(VertexDepthInfo &vertex_depth_info, upcxx::dist_object<vertex_map_t> &vertices) {
+    void operator()(VertexDepthInfo &vertex_depth_info, vertex_map_t &vertices) {
       const auto it = vertices->find(vertex_depth_info.cid);
       if (it == vertices->end()) DIE("could not fetch vertex ", vertex_depth_info.cid, "\n");
       auto v = &it->second;
@@ -231,28 +231,25 @@ private:
     }
   };
   dist_object<UpdateDepthFunc> update_depth_func;
+*/
 
-
-  struct AddEdgeGapReadFunc {
-    void operator()(EdgeGapReadInfo &edge_gap_read_info, upcxx::dist_object<edge_map_t> &edges) {
-      const auto it = edges->find(edge_gap_read_info.cids);
-      if (it == edges->end()) DIE("SPAN edge not found ", edge_gap_read_info.cids.cid1, " ", edge_gap_read_info.cids.cid2, "\n");
-      auto edge = &it->second;
-      edge->gap_reads.push_back(edge_gap_read_info.gap_read);
-      edge->aln_len = max(edge->aln_len, edge_gap_read_info.aln_len);
-      edge->aln_score = max(edge->aln_score, edge_gap_read_info.aln_score);
-    }
-  };
-  dist_object<AddEdgeGapReadFunc> add_edge_gap_read_func;
-
-public:
+ public:
   int max_read_len;
 
-  CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}),
-               update_depth_func({}), edge_gap_read_store({}), add_edge_gap_read_func({}) {
+  CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}), edge_gap_read_store(edges) {
     vertex_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
     edge_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
     edge_gap_read_store.set_size("edge gaps store", ONE_MB);
+    edge_gap_read_store.set_update_func(
+      [](EdgeGapReadInfo edge_gap_read_info, edge_map_t &edges) {
+        const auto it = edges->find(edge_gap_read_info.cids);
+        if (it == edges->end())
+          DIE("SPAN edge not found ", edge_gap_read_info.cids.cid1, " ", edge_gap_read_info.cids.cid2, "\n");
+        auto edge = &it->second;
+        edge->gap_reads.push_back(edge_gap_read_info.gap_read);
+        edge->aln_len = max(edge->aln_len, edge_gap_read_info.aln_len);
+        edge->aln_score = max(edge->aln_score, edge_gap_read_info.aln_score);
+      });
   }
 
   void clear() {
@@ -295,7 +292,7 @@ public:
       return make_shared<Vertex>(it->second);
     }
     return upcxx::rpc(target_rank,
-                      [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid) {
+                      [](vertex_map_t &vertices, cid_t cid) {
                         const auto it = vertices->find(cid);
                         if (it == vertices->end()) return Vertex({.cid = -1});
                         return it->second;
@@ -308,7 +305,7 @@ public:
 
   int get_vertex_clen(cid_t cid) {
     return upcxx::rpc(get_vertex_target_rank(cid),
-                      [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid) {
+                      [](vertex_map_t &vertices, cid_t cid) {
                         const auto it = vertices->find(cid);
                         if (it == vertices->end()) return -1;
                         return it->second.clen;
@@ -323,7 +320,7 @@ public:
 
   void set_vertex_visited(cid_t cid) {
     upcxx::rpc(get_vertex_target_rank(cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid) {
+               [](vertex_map_t &vertices, cid_t cid) {
                  const auto it = vertices->find(cid);
                  if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto v = &it->second;
@@ -333,7 +330,7 @@ public:
 
   void update_vertex_walk(cid_t cid, int walk_score, int walk_i) {
     upcxx::rpc(get_vertex_target_rank(cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid, int walk_score, int walk_i, int myrank) {
+               [](vertex_map_t &vertices, cid_t cid, int walk_score, int walk_i, int myrank) {
                  const auto it = vertices->find(cid);
                  if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto v = &it->second;
@@ -374,7 +371,7 @@ public:
     v.seq_gptr = upcxx::allocate<char>(v.clen + 1);
     strcpy(v.seq_gptr.local(), seq.c_str());
     upcxx::rpc(get_vertex_target_rank(v.cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, Vertex v) {
+               [](vertex_map_t &vertices, Vertex v) {
                  v.visited = false;
                  vertices->insert({v.cid, v});
                }, vertices, v).wait();
@@ -382,7 +379,7 @@ public:
 
   void add_vertex_nb(cid_t cid, cid_t nb, char end) {
     upcxx::rpc(get_vertex_target_rank(cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid, cid_t nb, int end) {
+               [](vertex_map_t &vertices, cid_t cid, cid_t nb, int end) {
                  const auto it = vertices->find(cid);
                  if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto v = &it->second;
@@ -415,7 +412,7 @@ public:
 
   void mark_edge_short_aln(CidPair cids) {
     upcxx::rpc(get_edge_target_rank(cids),
-               [](upcxx::dist_object<edge_map_t> &edges, CidPair cids) {
+               [](edge_map_t &edges, CidPair cids) {
                  const auto it = edges->find(cids);
                  if (it == edges->end()) DIE("Can't find edge ", cids);
                  it->second.short_aln = true;
@@ -433,7 +430,7 @@ public:
       return make_shared<Edge>(it->second);
     }
     return upcxx::rpc(target_rank,
-                      [](upcxx::dist_object<edge_map_t> &edges, CidPair cids) -> Edge {
+                      [](edge_map_t &edges, CidPair cids) -> Edge {
                         const auto it = edges->find(cids);
                         if (it == edges->end()) return Edge({.cids = {-1, -1}});
                         return it->second;
@@ -461,7 +458,7 @@ public:
 
   void add_or_update_edge(Edge &edge) {
     upcxx::rpc(get_edge_target_rank(edge.cids),
-               [](upcxx::dist_object<edge_map_t> &edges, Edge new_edge) {
+               [](edge_map_t &edges, Edge new_edge) {
                  const auto it = edges->find(new_edge.cids);
                  if (it == edges->end()) {
                    // not found, always insert
@@ -503,11 +500,11 @@ public:
   void add_edge_gap_read(CidPair cids, GapRead gap_read, int aln_len, int aln_score) {
     auto target_rank = get_edge_target_rank(cids);
     EdgeGapReadInfo edge_gap_read_info = { cids, gap_read, aln_len, aln_score };
-    edge_gap_read_store.update(target_rank, edge_gap_read_info, add_edge_gap_read_func, edges);
+    edge_gap_read_store.update(target_rank, edge_gap_read_info);
   }
 
   void flush_edge_gap_reads() {
-    edge_gap_read_store.flush_updates(add_edge_gap_read_func, edges);
+    edge_gap_read_store.flush_updates();
   }
 
   void purge_error_edges(int64_t *mismatched, int64_t *conflicts, int64_t *empty_spans) {
@@ -544,7 +541,7 @@ public:
 
   void remove_nb(cid_t cid, int end, cid_t nb) {
     upcxx::rpc(get_vertex_target_rank(cid),
-               [](upcxx::dist_object<vertex_map_t> &vertices, cid_t cid, int end, cid_t nb) {
+               [](vertex_map_t &vertices, cid_t cid, int end, cid_t nb) {
                  const auto it = vertices->find(cid);
                  if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto v = &it->second;
@@ -585,14 +582,14 @@ public:
 
   void add_pos_gap_read(const string &read_name) {
     upcxx::rpc(get_read_target_rank(read_name),
-               [](upcxx::dist_object<reads_map_t> &read_seqs, string read_name) {
+               [](reads_map_t &read_seqs, string read_name) {
                  read_seqs->insert({read_name, ""});
                }, read_seqs, read_name).wait();
   }
 
   bool update_read_seq(const string &read_name, const string &seq) {
     return upcxx::rpc(get_read_target_rank(read_name),
-                      [](upcxx::dist_object<reads_map_t> &read_seqs, string read_name, string seq) {
+                      [](reads_map_t &read_seqs, string read_name, string seq) {
                         auto it = read_seqs->find(read_name);
                         if (it == read_seqs->end()) return false;
                         (*read_seqs)[read_name] = seq;
@@ -602,7 +599,7 @@ public:
 
   string get_read_seq(const string &read_name) {
     return upcxx::rpc(get_read_target_rank(read_name),
-                      [](upcxx::dist_object<reads_map_t> &read_seqs, string read_name) -> string {
+                      [](reads_map_t &read_seqs, string read_name) -> string {
                         const auto it = read_seqs->find(read_name);
                         if (it == read_seqs->end()) return string("");
                         return it->second;
