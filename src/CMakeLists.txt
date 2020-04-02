@@ -74,44 +74,7 @@ add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp 
     walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp)
 
-target_link_libraries(mhmxx Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} ${UPCXX_LIBRARIES})
+target_link_libraries(mhmxx Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} ${UPCXX_LIBRARIES} MHMXX_VERSION_LIB)
 
-# Set up version
-find_package(Git)
-if (GIT_FOUND)
-    # Get the current working branch
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_BRANCH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-    # Get the latest abbreviated commit hash of the working branch
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} log -1 --format=%h
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_COMMIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-    execute_process(
-        COMMAND bash -c "${GIT_EXECUTABLE} diff --quiet --exit-code || echo -dirty"
-        OUTPUT_VARIABLE GIT_DIFF
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} tag
-        OUTPUT_VARIABLE GIT_TAG
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-    string(TIMESTAMP _timestamp)
-    add_definitions("-DMHMXX_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) built on ${_timestamp}\"")
-else()
-    string(TIMESTAMP _timestamp)
-    add_definitions("-DMHMXX_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp}\"")
-endif()    
-
-
-#message("install prefix ${CMAKE_INSTALL_PREFIX}")
-#message("source dir ${CMAKE_SOURCE_DIR}")
 install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <upcxx/upcxx.hpp>
 
+#include "version.h"
+
 #include "utils.hpp"
 #include "CLI11.hpp"
 
