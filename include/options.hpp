@@ -218,8 +218,8 @@ public:
                    "Phred encoding offset")
                    ->capture_default_str() ->check(CLI::IsMember({33, 64}));
     app.add_option("-c, --contigs", ctgs_fname,
-                   "File with contigs used for restart")
-                   ->check(CLI::ExistingFile);
+                   "File with contigs used for restart");
+//                   ->check(CLI::ExistingFile);
     app.add_option("--dynamic-min-depth", dynamic_min_depth,
                    "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome")
                    ->capture_default_str() ->check(CLI::Range(0.1, 1.0));

@@ -118,7 +118,7 @@ public:
       (*rpcs_expected)[i] = 0;
     }
     tot_rpcs_sent = 0;
-    Store().swap(store);
+    //Store().swap(store);
   }
 
   void update(intrank_t target_rank, T &elem) {
