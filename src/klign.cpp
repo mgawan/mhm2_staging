@@ -238,9 +238,7 @@ public:
 
   void flush_add_kmers() {
     Timer timer(__FILEFUNC__);
-    barrier();
     kmer_store.flush_updates();
-    barrier();
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
@@ -373,9 +371,8 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
       progress();
     }
   }
-  progbar.done();
   kmer_ctg_dht.flush_add_kmers();
-  barrier();
+  progbar.done();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");

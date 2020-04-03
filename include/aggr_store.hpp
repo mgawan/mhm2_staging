@@ -94,7 +94,7 @@ public:
     SLOG_VERBOSE(desc, ": using an aggregating store for each rank of max ", get_size_str(max_store_bytes / rank_n()),
                  " per target rank\n");
     SLOG_VERBOSE("  - max ", max_store_size_per_target, " entries of ", get_size_str(sizeof(T)), " per target rank\n");
-    SLOG_VERBOSE("  - max RPCs in flight: ", max_rpcs_in_flight, "\n");
+    SLOG_VERBOSE("  - max RPCs in flight: ", (!max_rpcs_in_flight ? "unlimited" : to_string(max_rpcs_in_flight)), "\n");
     barrier();
   }
 
@@ -134,9 +134,8 @@ public:
     }
     barrier();
     // now wait for all of our rpcs
-    while (*tot_rpcs_expected != *tot_rpcs_processed) {
-      progress();
-    }
+    while (*tot_rpcs_expected != *tot_rpcs_processed) progress();
+
     barrier();
     clear();
     barrier();

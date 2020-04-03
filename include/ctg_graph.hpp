@@ -194,17 +194,6 @@ private:
     int clen;
   };
 
-  struct EdgeGapReadInfo {
-    CidPair cids;
-    GapRead gap_read;
-    int aln_len;
-    int aln_score;
-
-    UPCXX_SERIALIZED_FIELDS(cids, gap_read, aln_len, aln_score);
-  };
-
-  AggrStore<EdgeGapReadInfo, edge_map_t&> edge_gap_read_store;
-
   HASH_TABLE<cid_t, Vertex>::iterator vertex_iter;
   HASH_TABLE<CidPair, Edge>::iterator edge_iter;
 
@@ -219,37 +208,13 @@ private:
   size_t get_read_target_rank(const string &r) {
     return std::hash<string>{}(r) % upcxx::rank_n();
   }
-/*
-  struct UpdateDepthFunc {
-    void operator()(VertexDepthInfo &vertex_depth_info, vertex_map_t &vertices) {
-      const auto it = vertices->find(vertex_depth_info.cid);
-      if (it == vertices->end()) DIE("could not fetch vertex ", vertex_depth_info.cid, "\n");
-      auto v = &it->second;
-      v->depth += (vertex_depth_info.depth / vertex_depth_info.clen);
-      if (v->clen != vertex_depth_info.clen)
-        DIE("Mismatched clen for ctg ", vertex_depth_info.cid, ": ", vertex_depth_info.clen, " != ", v->clen, "\n");
-    }
-  };
-  dist_object<UpdateDepthFunc> update_depth_func;
-*/
 
  public:
   int max_read_len;
 
-  CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}), edge_gap_read_store(edges) {
+  CtgGraph() : vertices({}), edges({}), read_seqs({}), vertex_cache({}), edge_cache({}) {
     vertex_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
     edge_cache.reserve(CGRAPH_MAX_CACHE_SIZE);
-    edge_gap_read_store.set_size("edge gaps store", ONE_MB);
-    edge_gap_read_store.set_update_func(
-      [](EdgeGapReadInfo edge_gap_read_info, edge_map_t &edges) {
-        const auto it = edges->find(edge_gap_read_info.cids);
-        if (it == edges->end())
-          DIE("SPAN edge not found ", edge_gap_read_info.cids.cid1, " ", edge_gap_read_info.cids.cid2, "\n");
-        auto edge = &it->second;
-        edge->gap_reads.push_back(edge_gap_read_info.gap_read);
-        edge->aln_len = max(edge->aln_len, edge_gap_read_info.aln_len);
-        edge->aln_score = max(edge->aln_score, edge_gap_read_info.aln_score);
-      });
   }
 
   void clear() {
@@ -495,16 +460,6 @@ private:
                    }
                  }
                }, edges, edge).wait();
-  }
-
-  void add_edge_gap_read(CidPair cids, GapRead gap_read, int aln_len, int aln_score) {
-    auto target_rank = get_edge_target_rank(cids);
-    EdgeGapReadInfo edge_gap_read_info = { cids, gap_read, aln_len, aln_score };
-    edge_gap_read_store.update(target_rank, edge_gap_read_info);
-  }
-
-  void flush_edge_gap_reads() {
-    edge_gap_read_store.flush_updates();
   }
 
   void purge_error_edges(int64_t *mismatched, int64_t *conflicts, int64_t *empty_spans) {

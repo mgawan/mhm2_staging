@@ -476,10 +476,8 @@ public:
 
   void flush_updates() {
     Timer timer(__FILEFUNC__);
-    barrier();
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) kmer_store_bloom.flush_updates();
     else kmer_store.flush_updates();
-    barrier();
   }
 
   void purge_kmers(int threshold) {
