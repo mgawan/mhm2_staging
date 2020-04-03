@@ -8,7 +8,6 @@
 #include "utils.hpp"
 
 using std::vector;
-using std::deque;
 
 using upcxx::intrank_t;
 using upcxx::rank_me;
@@ -33,14 +32,15 @@ template<typename T, typename... Data>
 class AggrStore {
   using RankStore = vector<T>;
   using Store = vector<RankStore>;
-  using RpcFutures = deque<future<>>;
   using UpdateFunc = std::function<void(T, Data&...)>;
 
   Store store;
-  RpcFutures rpc_futures;
   int64_t max_store_size;
-  // Limit for the number of rpcs in flight. This limit exists to prevent the dispatch buffers from growing indefinitely
   int max_rpcs_in_flight;
+  vector<int> rpcs_sent;
+  int64_t tot_rpcs_sent;
+  dist_object<int64_t> tot_rpcs_expected;
+  dist_object<int64_t> tot_rpcs_processed;
 
   // save the update function to use in both update and flush
   dist_object<UpdateFunc> update_func = dist_object<UpdateFunc>({});
@@ -49,17 +49,17 @@ class AggrStore {
 
   // operates on a vector of elements in the store
   static void update_remote(AggrStore *astore, intrank_t target_rank, Data &...data) {
-    // wait for space in rpc futures queue
-    while (!astore->rpc_futures.empty() && astore->rpc_futures.size() >= astore->max_rpcs_in_flight) {
-      astore->rpc_futures.front().wait();
-      astore->rpc_futures.pop_front();
-    }
-    auto fut = rpc(target_rank,
-                   [](dist_object<UpdateFunc> &update_func, view<T> rank_store, Data &...data) {
-                     for (auto elem : rank_store) (*update_func)(elem, data...);
-                   }, astore->update_func,
-                   make_view(astore->store[target_rank].begin(), astore->store[target_rank].end()), data...);
-    astore->rpc_futures.push_back(fut);
+    astore->tot_rpcs_sent++;
+    astore->rpcs_sent[target_rank]++;
+    rpc_ff(target_rank,
+           [](dist_object<UpdateFunc> &update_func, view<T> rank_store, dist_object<int64_t> &tot_rpcs_processed,
+              Data &...data) {
+             (*tot_rpcs_processed)++;
+             for (auto elem : rank_store) {
+               (*update_func)(elem, data...);
+             }
+           }, astore->update_func, make_view(astore->store[target_rank].begin(), astore->store[target_rank].end()),
+           astore->tot_rpcs_processed, data...);
     astore->store[target_rank].clear();
   }
 
@@ -67,10 +67,15 @@ public:
 
   AggrStore(Data&... data)
     : store({})
-    , rpc_futures()
     , max_store_size(0)
+    , rpcs_sent({})
+    , tot_rpcs_sent(0)
+    , tot_rpcs_expected(0)
+    , tot_rpcs_processed(0)
     , max_rpcs_in_flight(AGGR_STORE_MAX_RPCS_IN_FLIGHT)
-    , data(data...) {}
+    , data(data...) {
+    rpcs_sent.resize(upcxx::rank_n(), 0);
+  }
 
   virtual ~AggrStore() {
     clear();
@@ -117,9 +122,12 @@ public:
     for (auto s : store) {
       if (!s.empty()) throw string("rank store is not empty!");
     }
-    if (!rpc_futures.empty()) throw string("rpc_futures are not empty!");
-    Store().swap(store);
-    RpcFutures().swap(rpc_futures);
+    for (int i = 0; i < rpcs_sent.size(); i++) {
+      rpcs_sent[i] = 0;
+    }
+    tot_rpcs_sent = 0;
+    *tot_rpcs_expected = 0;
+    *tot_rpcs_processed = 0;
   }
 
   void update(intrank_t target_rank, T &elem) {
@@ -131,11 +139,22 @@ public:
 
   void flush_updates() {
     for (int target_rank = 0; target_rank < rank_n(); target_rank++) {
-      if (max_store_size > 0 && store[target_rank].size())
+      if (max_store_size > 0 && store[target_rank].size()) {
         std::apply(update_remote, std::tuple_cat(std::make_tuple(this, target_rank), data));
+      }
+      // tell the target how many rpcs we sent to it
+      rpc(target_rank,
+          [](dist_object<int64_t> &tot_rpcs_expected, int64_t rpcs_sent) {
+            (*tot_rpcs_expected) += rpcs_sent;
+          }, tot_rpcs_expected, rpcs_sent[target_rank]).wait();
     }
-    for (auto fut : rpc_futures) fut.wait();
-    rpc_futures.clear();
+    barrier();
+    // now wait for all of our rpcs
+    while (*tot_rpcs_expected != *tot_rpcs_processed) {
+      progress();
+    }
+    barrier();
+    clear();
     barrier();
   }
 
