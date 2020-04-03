@@ -65,11 +65,13 @@ class KmerCtgDHT {
     UPCXX_SERIALIZED_FIELDS(kmer, ctg_loc);
   };
 
-  AggrStore<KmerAndCtgLoc> kmer_store;
   // maps a kmer to a contig - the first part of the pair is set to true if this is a conflict,
   // with a kmer mapping to multiple contigs
-  using kmer_map_t = HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>;
-  dist_object<kmer_map_t> kmer_map;
+  using kmer_map_t = dist_object<HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>>;
+  kmer_map_t kmer_map;
+
+  AggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
+
 #ifdef DUMP_ALNS
   zstr::ofstream *alns_file;
 #endif  
@@ -85,21 +87,6 @@ class KmerCtgDHT {
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
   
-  struct InsertKmer {
-    void operator()(KmerAndCtgLoc &kmer_and_ctg_loc, dist_object<kmer_map_t> &kmer_map) {
-      CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
-      const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
-      if (it == kmer_map->end()) {
-        kmer_map->insert({kmer_and_ctg_loc.kmer, {false, ctg_loc}});
-      } else {
-        // in this case, we have a conflict, i.e. the kmer maps to multiple contigs
-        it->second.first = true;
-        _num_dropped_seed_to_ctgs++;
-      }
-    }
-  };
-  dist_object<InsertKmer> insert_kmer;
-
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
                   int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset,
                   int overlap_len, IntermittentTimer &ssw_timer) {
@@ -159,8 +146,7 @@ public:
   // aligner construction: SSW internal defaults are 2 2 3 1
   KmerCtgDHT(int kmer_len, int max_store_size, Alns &alns)
     : kmer_map({})
-    , kmer_store({})
-    , insert_kmer({})
+    , kmer_store(kmer_map)
     , ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, SSW_AMBIGUITY_COST)
     , num_alns(0)
     , num_perfect_alns(0)
@@ -171,6 +157,18 @@ public:
     
     ssw_filter.report_cigar = false;
     kmer_store.set_size("insert ctg seeds", max_store_size);
+    kmer_store.set_update_func( 
+      [](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
+        CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
+        const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
+        if (it == kmer_map->end()) {
+          kmer_map->insert({kmer_and_ctg_loc.kmer, {false, ctg_loc}});
+        } else {
+          // in this case, we have a conflict, i.e. the kmer maps to multiple contigs
+          it->second.first = true;
+          _num_dropped_seed_to_ctgs++;
+        }
+      });
 
 #ifdef DUMP_ALNS
     string dump_fname = "klign-" + to_string(kmer_len) + ".alns.gz";
@@ -194,7 +192,7 @@ public:
 #endif
   }
 
-  size_t get_target_rank(Kmer<MAX_K> &kmer) {
+  intrank_t get_target_rank(Kmer<MAX_K> &kmer) {
     return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
   }
 
@@ -235,19 +233,19 @@ public:
       ctg_loc.is_rc = true;
     }
     KmerAndCtgLoc kmer_and_ctg_loc = { kmer, ctg_loc };
-    kmer_store.update(get_target_rank(kmer), kmer_and_ctg_loc, insert_kmer, kmer_map);
+    kmer_store.update(get_target_rank(kmer), kmer_and_ctg_loc);
   }
 
   void flush_add_kmers() {
     Timer timer(__FILEFUNC__);
     barrier();
-    kmer_store.flush_updates(insert_kmer, kmer_map);
+    kmer_store.flush_updates();
     barrier();
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
     return rpc(target_rank,
-               [](vector<Kmer<MAX_K>> kmers, dist_object<kmer_map_t> &kmer_map) {
+               [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
                  vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
                  for (auto &kmer : kmers) {
                    const auto it = kmer_map->find(kmer);

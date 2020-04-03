@@ -188,8 +188,8 @@ int main(int argc, char **argv) {
       fqr->load_cache(options->qual_offset);
     }
     load_cache_dt.stop();
-    SLOG(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0", 
-         KNORM, "\n");
+    SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0", 
+                 KNORM, "\n");
   }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
