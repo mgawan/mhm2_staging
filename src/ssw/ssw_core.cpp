@@ -42,8 +42,6 @@
 #include <string.h>
 #include <math.h>
 
-#include <upcxx/upcxx.hpp>
-
 #include "ssw_core.hpp"
 
 #ifdef __GNUC__
