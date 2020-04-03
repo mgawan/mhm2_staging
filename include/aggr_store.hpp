@@ -111,14 +111,12 @@ public:
     for (auto s : store) {
       if (!s.empty()) throw string("rank store is not empty!");
     }
-    rpcs_sent.clear();
     for (int i = 0; i < rpcs_sent.size(); i++) {
       rpcs_sent[i] = 0;
       (*rpcs_processed)[i] = 0;
       (*rpcs_expected)[i] = 0;
     }
     tot_rpcs_sent = 0;
-    //Store().swap(store);
   }
 
   void update(intrank_t target_rank, T &elem) {
