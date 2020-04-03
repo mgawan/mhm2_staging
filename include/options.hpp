@@ -168,7 +168,8 @@ public:
   vector<unsigned> scaff_kmer_lens = {99, 33};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store_mb = 500;
+  int max_kmer_store_mb = 200;
+  int max_rpcs_in_flight = 100;
   // these defaults favor speed over memory
   bool use_bloom = false;
   bool cache_reads = true;
@@ -227,7 +228,10 @@ public:
                    ->capture_default_str() ->check(CLI::Range(1, 100));
     app.add_option("--max-kmer-store", max_kmer_store_mb,
                    "Maximum size for kmer store in MB")
-                   ->capture_default_str() ->check(CLI::Range(1, 10000));
+                   ->capture_default_str() ->check(CLI::Range(1, 1000));
+    app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight,
+                   "Maximum number of RPCs in flight, per process (0 = unlimited)")
+                   ->capture_default_str() ->check(CLI::Range(0, 10000));
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
                    "Minimum length required for printing a contig in the final assembly")
                    ->capture_default_str() ->check(CLI::Range(0, 100000));

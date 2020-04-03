@@ -144,7 +144,7 @@ public:
   int kmer_len;  
   
   // aligner construction: SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size, Alns &alns)
+  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns)
     : kmer_map({})
     , kmer_store(kmer_map)
     , ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, SSW_AMBIGUITY_COST)
@@ -156,7 +156,7 @@ public:
     , alns(&alns) {
     
     ssw_filter.report_cigar = false;
-    kmer_store.set_size("insert ctg seeds", max_store_size);
+    kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
     kmer_store.set_update_func( 
       [](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
         CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
@@ -556,11 +556,12 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
 }
 
 template<int MAX_K>
-void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns) {
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_rpcs_in_flight,
+                     Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
-  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, alns);
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
@@ -574,12 +575,13 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
 }
 
 template 
-void find_alignments<32>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+void find_alignments<32>(unsigned, vector<FastqReader*>&, int, int, Contigs&, Alns&);
 template 
-void find_alignments<64>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+void find_alignments<64>(unsigned, vector<FastqReader*>&, int, int, Contigs&, Alns&);
 template 
-void find_alignments<96>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+void find_alignments<96>(unsigned, vector<FastqReader*>&, int, int, Contigs&, Alns&);
 template 
-void find_alignments<128>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+void find_alignments<128>(unsigned, vector<FastqReader*>&, int, int, Contigs&, Alns&);
 template 
-void find_alignments<160>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+void find_alignments<160>(unsigned, vector<FastqReader*>&, int, int, Contigs&, Alns&);
+

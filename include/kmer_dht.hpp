@@ -171,6 +171,7 @@ class KmerDHT {
   AggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
   AggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
   int64_t max_kmer_store_bytes;
+  int max_rpcs_in_flight;
   int64_t initial_kmer_dht_reservation;
   int64_t bloom1_cardinality;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
@@ -178,7 +179,7 @@ class KmerDHT {
 
 public:
 
-  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, bool use_bloom)
+  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int max_rpcs_in_flight, bool use_bloom)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -186,12 +187,13 @@ public:
     , kmer_store(kmers, bloom_filter2)
     , max_kmer_store_bytes(max_kmer_store_bytes)
     , initial_kmer_dht_reservation(0)
+    , max_rpcs_in_flight(max_rpcs_in_flight)
     , bloom1_cardinality(0) {
 
     // main purpose of the timer here is to track memory usage
     Timer timer(__FILEFUNC__);
-    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes);
-    else kmer_store.set_size("kmers", max_kmer_store_bytes);
+    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight);
+    else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
@@ -455,7 +457,7 @@ public:
 
     // purge the kmer store and prep the kmer + count
     kmer_store_bloom.clear();
-    kmer_store.set_size("kmers", max_kmer_store_bytes);
+    kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
 
     int64_t cardinality1 = bloom_filter1->estimate_num_items();
     int64_t cardinality2 = bloom_filter2->estimate_num_items();

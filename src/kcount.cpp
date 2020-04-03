@@ -149,8 +149,8 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<FastqReader*>
       }
       progress();
     }
-    kmer_dht->flush_updates();
     progbar.done();
+    kmer_dht->flush_updates();
   }
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
   auto all_num_lines = reduce_one(num_lines, op_fast_add, 0).wait();
@@ -189,8 +189,8 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
     }
     progress();
   }
-  kmer_dht->flush_updates();
   progbar.done();
+  kmer_dht->flush_updates();
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
@@ -232,8 +232,8 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
     }
     progress();
   }
-  kmer_dht->flush_updates();
   progbar.done();
+  kmer_dht->flush_updates();
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();

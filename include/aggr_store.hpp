@@ -37,10 +37,10 @@ class AggrStore {
   Store store;
   int64_t max_store_size_per_target;
   int max_rpcs_in_flight;
-  vector<int> rpcs_sent;
+  vector<int64_t> rpcs_sent;
   int64_t tot_rpcs_sent;
-  dist_object<int64_t> tot_rpcs_expected;
-  dist_object<int64_t> tot_rpcs_processed;
+  dist_object<vector<int64_t>> rpcs_expected;
+  dist_object<vector<int64_t>> rpcs_processed;
 
   // save the update function to use in both update and flush
   dist_object<UpdateFunc> update_func = dist_object<UpdateFunc>({});
@@ -53,18 +53,20 @@ class AggrStore {
     astore->rpcs_sent[target_rank]++;
     // limit the number in flight by making sure we don't have too many more sent than received (with good load balance,
     // every process is sending and receiving about the same number)
+    // we don't actually want to check every possible rank's count while waiting, so just check the target rank
     if (astore->max_rpcs_in_flight) {
-      while (astore->tot_rpcs_sent > *(astore->tot_rpcs_processed) + astore->max_rpcs_in_flight) progress();
+      auto rpcs_sent_per_rank = astore->tot_rpcs_sent / rank_n();
+      while (rpcs_sent_per_rank - (*astore->rpcs_processed)[target_rank] > astore->max_rpcs_in_flight) progress();
     }
     rpc_ff(target_rank,
-           [](dist_object<UpdateFunc> &update_func, view<T> rank_store, dist_object<int64_t> &tot_rpcs_processed,
-              Data &...data) {
-             (*tot_rpcs_processed)++;
+           [](dist_object<UpdateFunc> &update_func, view<T> rank_store, dist_object<vector<int64_t>> &rpcs_processed,
+              intrank_t source_rank, Data &...data) {
+             (*rpcs_processed)[source_rank]++;
              for (auto elem : rank_store) {
                (*update_func)(elem, data...);
              }
            }, astore->update_func, make_view(astore->store[target_rank].begin(), astore->store[target_rank].end()),
-           astore->tot_rpcs_processed, data...);
+           astore->rpcs_processed, rank_me(), data...);
     astore->store[target_rank].clear();
   }
 
@@ -75,18 +77,21 @@ public:
     , max_store_size_per_target(0)
     , rpcs_sent({})
     , tot_rpcs_sent(0)
-    , tot_rpcs_expected(0)
-    , tot_rpcs_processed(0)
-    , max_rpcs_in_flight(AGGR_STORE_MAX_RPCS_IN_FLIGHT)
+    , rpcs_expected({})
+    , rpcs_processed({})
+    , max_rpcs_in_flight(0)
     , data(data...) {
     rpcs_sent.resize(upcxx::rank_n(), 0);
+    rpcs_processed->resize(upcxx::rank_n(), 0);
+    rpcs_expected->resize(upcxx::rank_n(), 0);
   }
 
   virtual ~AggrStore() {
     clear();
   }
 
-  void set_size(const string &desc, int64_t max_store_bytes) {
+  void set_size(const string &desc, int64_t max_store_bytes, int64_t max_rpcs_in_flight) {
+    this->max_rpcs_in_flight = max_rpcs_in_flight;
     store.resize(rank_n(), {});
     // at least 10 entries per target rank
     max_store_size_per_target = max_store_bytes / sizeof(T) / rank_n();
@@ -106,12 +111,14 @@ public:
     for (auto s : store) {
       if (!s.empty()) throw string("rank store is not empty!");
     }
+    rpcs_sent.clear();
     for (int i = 0; i < rpcs_sent.size(); i++) {
       rpcs_sent[i] = 0;
+      (*rpcs_processed)[i] = 0;
+      (*rpcs_expected)[i] = 0;
     }
     tot_rpcs_sent = 0;
-    *tot_rpcs_expected = 0;
-    *tot_rpcs_processed = 0;
+    Store().swap(store);
   }
 
   void update(intrank_t target_rank, T &elem) {
@@ -128,15 +135,18 @@ public:
       }
       // tell the target how many rpcs we sent to it
       rpc(target_rank,
-          [](dist_object<int64_t> &tot_rpcs_expected, int64_t rpcs_sent) {
-            (*tot_rpcs_expected) += rpcs_sent;
-          }, tot_rpcs_expected, rpcs_sent[target_rank]).wait();
+          [](dist_object<vector<int64_t>> &rpcs_expected, int64_t rpcs_sent, intrank_t source_rank) {
+            (*rpcs_expected)[source_rank] += rpcs_sent;
+          }, rpcs_expected, rpcs_sent[target_rank], rank_me()).wait();
     }
     barrier();
+    int64_t tot_rpcs_processed = 0;
     // now wait for all of our rpcs
-    while (*tot_rpcs_expected != *tot_rpcs_processed) progress();
-
-    barrier();
+    for (int i = 0; i < rpcs_expected->size(); i++) {
+      while ((*rpcs_expected)[i] != (*rpcs_processed)[i]) progress();
+      tot_rpcs_processed += (*rpcs_processed)[i];
+    }
+    SLOG_VERBOSE("Rank 0 sent ", tot_rpcs_sent, " rpcs and received ", tot_rpcs_processed, "\n");
     clear();
     barrier();
   }
