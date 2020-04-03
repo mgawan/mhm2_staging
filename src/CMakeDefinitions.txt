@@ -9,12 +9,10 @@ add_definitions(-DKCOUNT_FILTER_BAD_QUAL_IN_READ)
 # false positive rate for bloom filter
 add_definitions(-DKCOUNT_BLOOM_FP=0.05)
 
-# maximum number of rpcs in flight at one time - needed to avoid memory issues with rpcs  
+# maximum number of rpcs in flight from one process at one time - needed to avoid memory issues with rpcs  
 # Don't make a runtime option because this will be obsolete with Rob's library
-add_definitions(-DAGGR_STORE_MAX_RPCS_IN_FLIGHT=8192) 
-# minimum limit for bytes in flight - also related to memory issues in rpcs
-# Don't make a runtime option - obsolete with Rob's library
-add_definitions(-DAGGR_STORE_MIN_INFLIGHT_BYTES=41944304)
+# Set to 0 for unlimited
+add_definitions(-DAGGR_STORE_MAX_RPCS_IN_FLIGHT=0) 
 
 # use colors in the output
 add_definitions(-DUSE_COLORS)

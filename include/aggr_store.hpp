@@ -35,7 +35,7 @@ class AggrStore {
   using UpdateFunc = std::function<void(T, Data&...)>;
 
   Store store;
-  int64_t max_store_size;
+  int64_t max_store_size_per_target;
   int max_rpcs_in_flight;
   vector<int> rpcs_sent;
   int64_t tot_rpcs_sent;
@@ -51,6 +51,11 @@ class AggrStore {
   static void update_remote(AggrStore *astore, intrank_t target_rank, Data &...data) {
     astore->tot_rpcs_sent++;
     astore->rpcs_sent[target_rank]++;
+    // limit the number in flight by making sure we don't have too many more sent than received (with good load balance,
+    // every process is sending and receiving about the same number)
+    if (astore->max_rpcs_in_flight) {
+      while (astore->tot_rpcs_sent > *(astore->tot_rpcs_processed) + astore->max_rpcs_in_flight) progress();
+    }
     rpc_ff(target_rank,
            [](dist_object<UpdateFunc> &update_func, view<T> rank_store, dist_object<int64_t> &tot_rpcs_processed,
               Data &...data) {
@@ -67,7 +72,7 @@ public:
 
   AggrStore(Data&... data)
     : store({})
-    , max_store_size(0)
+    , max_store_size_per_target(0)
     , rpcs_sent({})
     , tot_rpcs_sent(0)
     , tot_rpcs_expected(0)
@@ -82,35 +87,14 @@ public:
   }
 
   void set_size(const string &desc, int64_t max_store_bytes) {
-    int64_t tmp_max_rpcs_in_flight = 500L * rank_n() / 100L + 1;
-    // hard maximum limit
-    max_rpcs_in_flight = tmp_max_rpcs_in_flight > max_rpcs_in_flight ? max_rpcs_in_flight : tmp_max_rpcs_in_flight;
-    max_store_size = max_store_bytes / (sizeof(T) * (rank_n() + max_rpcs_in_flight));
-    if (max_store_size <= 1) {
-      // no reason for delay and storage of 1 entry (i.e. small max mem at large scale), still uses max_rpcs_in_flight
-      max_store_size = 0;
-      store.clear();
-    } else {
-      store.resize(rank_n(), {});
-    }
-    // reduce max in flight if necessary
-    int64_t tmp_inflight_bytes = max_store_bytes - (max_store_size * rank_n() * sizeof(T)); // calc remaining memory for rpcs
-    // hard minimum limit
-    int64_t max_inflight_bytes = tmp_inflight_bytes > AGGR_STORE_MIN_INFLIGHT_BYTES ?
-                                 tmp_inflight_bytes : AGGR_STORE_MIN_INFLIGHT_BYTES;
-    int64_t per_rpc_bytes = (max_store_size > 0 ? max_store_size : 1) * sizeof(T);
-    if (max_rpcs_in_flight * per_rpc_bytes > max_inflight_bytes)
-      max_rpcs_in_flight = max_inflight_bytes / per_rpc_bytes + 1;
-    size_t max_target_buf = max_store_size * sizeof(T);
+    store.resize(rank_n(), {});
+    // at least 10 entries per target rank
+    max_store_size_per_target = max_store_bytes / sizeof(T) / rank_n();
+    if (max_store_size_per_target < 10) max_store_size_per_target = 10;
     SLOG_VERBOSE(desc, ": using an aggregating store for each rank of max ", get_size_str(max_store_bytes / rank_n()),
                  " per target rank\n");
-    SLOG_VERBOSE("  - buffers: max ", max_store_size, " entries of ", get_size_str(sizeof(T)),
-         " per target rank (", get_size_str(max_target_buf), ")\n");
-    SLOG_VERBOSE("  - buffers: max over all target ranks ", get_size_str(max_target_buf * rank_n()), "\n");
-    SLOG_VERBOSE("  - RPCs in flight: max ", max_rpcs_in_flight, " RPCs of ", get_size_str(per_rpc_bytes),
-         " max per RPC (", get_size_str(max_rpcs_in_flight * per_rpc_bytes), ")\n");
-    SLOG_VERBOSE("  - max possible memory: ", get_size_str(max_target_buf * rank_n() + per_rpc_bytes * max_rpcs_in_flight),
-                 "\n");
+    SLOG_VERBOSE("  - max ", max_store_size_per_target, " entries of ", get_size_str(sizeof(T)), " per target rank\n");
+    SLOG_VERBOSE("  - max RPCs in flight: ", max_rpcs_in_flight, "\n");
     barrier();
   }
 
@@ -131,15 +115,15 @@ public:
   }
 
   void update(intrank_t target_rank, T &elem) {
-    assert(max_store_size > 0);
+    assert(max_store_size_per_target > 0);
     store[target_rank].push_back(elem);
-    if (store[target_rank].size() < max_store_size) return;
+    if (store[target_rank].size() < max_store_size_per_target) return;
     std::apply(update_remote, std::tuple_cat(std::make_tuple(this, target_rank), data));
   }
 
   void flush_updates() {
     for (int target_rank = 0; target_rank < rank_n(); target_rank++) {
-      if (max_store_size > 0 && store[target_rank].size()) {
+      if (max_store_size_per_target > 0 && store[target_rank].size()) {
         std::apply(update_remote, std::tuple_cat(std::make_tuple(this, target_rank), data));
       }
       // tell the target how many rpcs we sent to it
