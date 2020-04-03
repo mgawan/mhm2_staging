@@ -189,8 +189,8 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
     }
     progress();
   }
-  kmer_dht->flush_updates();
   progbar.done();
+  kmer_dht->flush_updates();
   DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
