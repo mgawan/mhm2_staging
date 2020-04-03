@@ -129,19 +129,25 @@ public:
   }
 
   void flush_updates() {
-    for (int target_rank = 0; target_rank < rank_n(); target_rank++) {
+    // when we update, every rank starts at a different rank to avoid bottlenecks
+    int target_rank = rank_me();
+    upcxx::future<> base_fut = upcxx::make_future<>();
+    for (int i = 0; i < rank_n(); i++) {
       if (max_store_size_per_target > 0 && store[target_rank].size()) {
         std::apply(update_remote, std::tuple_cat(std::make_tuple(this, target_rank), data));
       }
       // tell the target how many rpcs we sent to it
-      rpc(target_rank,
+      upcxx::future<> fut = rpc(target_rank,
           [](dist_object<vector<int64_t>> &rpcs_expected, int64_t rpcs_sent, intrank_t source_rank) {
             (*rpcs_expected)[source_rank] += rpcs_sent;
-          }, rpcs_expected, rpcs_sent[target_rank], rank_me()).wait();
+          }, rpcs_expected, rpcs_sent[target_rank], rank_me());
+      base_fut = upcxx::when_all(base_fut, fut);
+      target_rank = (target_rank + 1) % rank_n();
     }
+    base_fut.wait();
     barrier();
     int64_t tot_rpcs_processed = 0;
-    // now wait for all of our rpcs
+    // now wait for all of our rpcs.
     for (int i = 0; i < rpcs_expected->size(); i++) {
       while ((*rpcs_expected)[i] != (*rpcs_processed)[i]) progress();
       tot_rpcs_processed += (*rpcs_processed)[i];
