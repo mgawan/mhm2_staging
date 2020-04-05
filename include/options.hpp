@@ -168,7 +168,7 @@ public:
   vector<unsigned> scaff_kmer_lens = {99, 33};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store_mb = 200;
+  int max_kmer_store_mb = 50;
   int max_rpcs_in_flight = 100;
   // these defaults favor speed over memory
   bool use_bloom = false;
