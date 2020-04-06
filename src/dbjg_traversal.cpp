@@ -463,6 +463,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
     it->id = cid;
     cid++;
   }
+  barrier();
 #ifdef DEBUG
   ProgressBar progbar(frag_elems.size(), "Checking kmers in uutigs");
   for (auto uutig : my_uutigs) {

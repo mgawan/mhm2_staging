@@ -158,6 +158,7 @@ int main(int argc, char **argv) {
   _dbgstream.open(dbg_fname);
 #endif
 
+  auto init_start_t = chrono::high_resolution_clock::now();
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
@@ -198,6 +199,9 @@ int main(int argc, char **argv) {
 #ifdef USE_KMER_DEPTHS
   if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
 #endif
+  chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
+  SLOG(KBLUE, "\nCompleted initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
+       get_current_time(), KNORM, "\n");
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
   if (options->kmer_lens.size()) {
@@ -299,14 +303,21 @@ int main(int argc, char **argv) {
       barrier();
     }
   }
+  auto fin_start_t = chrono::high_resolution_clock::now();
   for (auto fqr : fqr_list) {
     delete fqr;
   }  
   
   SLOG(KBLUE "_________________________", KNORM, "\n");
+  dump_ctgs_dt.start();
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
+  dump_ctgs_dt.stop();
   SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.print_stats(options->min_ctg_print_len);
+  chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
+  SLOG(KBLUE, "\nCompleted finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
+       KNORM, "\n");
+  
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");
