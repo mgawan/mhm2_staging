@@ -6525,9 +6525,9 @@ ConfigINI::to_config(const App *app, bool default_also, bool write_description, 
 
                 // Don't try to quote anything that is not size 1
                 if(opt->get_items_expected() != 1)
-                    out << "  " << std::setw(20) << std:: left << name  + " = " << value << std::endl;
+                    out << "  " << std::setw(25) << std:: left << name  + " = " << value << std::endl;
                 else
-                    out << "  " << std::setw(20) << std::left << name + " = " << detail::add_quotes_if_needed(value) << std::endl;
+                    out << "  " << std::setw(25) << std::left << name + " = " << detail::add_quotes_if_needed(value) << std::endl;
             }
         }
     }

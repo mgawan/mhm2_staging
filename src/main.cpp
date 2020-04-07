@@ -44,7 +44,8 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K> 
-void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns);
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_rpcs_in_flight, 
+                     Contigs &ctgs, Alns &alns);
 void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
@@ -103,7 +104,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   // duration of kmer_dht
   analyze_kmers_dt.start();
   auto my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
-  dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->use_bloom);
+  dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->max_rpcs_in_flight, options->use_bloom);
   barrier();
   analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->use_bloom,
                 options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
@@ -118,7 +119,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     alignments_dt.start();
-    find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+    find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
     alignments_dt.stop();
     barrier();
     localassm_dt.start();
@@ -157,6 +158,7 @@ int main(int argc, char **argv) {
   _dbgstream.open(dbg_fname);
 #endif
 
+  auto init_start_t = chrono::high_resolution_clock::now();
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   _show_progress = options->show_progress;
@@ -197,6 +199,9 @@ int main(int argc, char **argv) {
 #ifdef USE_KMER_DEPTHS
   if (!options->kmer_depths_fname.empty()) ctgs.load_kmer_depths(options->kmer_depths_fname);
 #endif
+  chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
+  SLOG(KBLUE, "\nCompleted initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
+       get_current_time(), KNORM, "\n");
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
   if (options->kmer_lens.size()) {
@@ -262,19 +267,19 @@ int main(int argc, char **argv) {
       auto max_k = (scaff_kmer_len / 32 + 1) * 32;
       switch (max_k) {
         case 32:
-          find_alignments<32>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+          find_alignments<32>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
           break;
         case 64:
-          find_alignments<64>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+          find_alignments<64>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
           break;
         case 96:
-          find_alignments<96>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+          find_alignments<96>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
           break;
         case 128:
-          find_alignments<128>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+          find_alignments<128>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
           break;
         case 160:
-          find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, ctgs, alns);
+          find_alignments<160>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
           break;
       }                  
       alignments_dt.stop();
@@ -298,14 +303,21 @@ int main(int argc, char **argv) {
       barrier();
     }
   }
+  auto fin_start_t = chrono::high_resolution_clock::now();
   for (auto fqr : fqr_list) {
     delete fqr;
   }  
   
   SLOG(KBLUE "_________________________", KNORM, "\n");
+  dump_ctgs_dt.start();
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
+  dump_ctgs_dt.stop();
   SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.print_stats(options->min_ctg_print_len);
+  chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
+  SLOG(KBLUE, "\nCompleted finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
+       KNORM, "\n");
+  
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");
