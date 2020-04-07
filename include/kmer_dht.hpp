@@ -206,7 +206,9 @@ public:
       // in this case we have to roughly estimate the hash table size because the space is reserved now
       // err on the side of excess because the whole point of doing this is speed and we don't want a
       // hash table resize
-      cardinality /= 10;
+      // Unfortunately, this estimate depends on the depth of the sample - high depth means more wasted memory,
+      // but low depth means potentially resizing the hash table, which is very expensive
+      cardinality /= 6;
       initial_kmer_dht_reservation = cardinality;
       double kmers_space_reserved = cardinality * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
       auto node0_cores = upcxx::local_team().rank_n();
