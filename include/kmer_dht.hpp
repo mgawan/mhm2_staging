@@ -206,12 +206,15 @@ public:
       // in this case we have to roughly estimate the hash table size because the space is reserved now
       // err on the side of excess because the whole point of doing this is speed and we don't want a
       // hash table resize
-      cardinality /= 3;
+      cardinality /= 10;
       initial_kmer_dht_reservation = cardinality;
-      kmers->reserve(cardinality);
       double kmers_space_reserved = cardinality * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
-      SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
-                   cardinality, " entries (", kmers->bucket_count(), " buckets)\n");
+      auto node0_cores = upcxx::local_team().rank_n();
+      SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved),
+                   " for kmer hash tables with ", node0_cores * cardinality, " entries on node 0\n");
+      double init_free_mem = get_free_mem();
+      kmers->reserve(cardinality);
+      SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
     }
     start_t = CLOCK_NOW();
@@ -469,10 +472,13 @@ public:
     barrier();
     // two bloom false positive rates applied
     initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 1000);
-    kmers->reserve( initial_kmer_dht_reservation );
+    auto node0_cores = upcxx::local_team().rank_n();
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
-    SLOG_VERBOSE("Rank 0 is reserving ", get_size_str(kmers_space_reserved), " for kmer hash table with ",
-                 initial_kmer_dht_reservation, " entries (", kmers->bucket_count(), " buckets)\n");
+    SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved),
+                 " for kmer hash tables with ", node0_cores * initial_kmer_dht_reservation, " entries on node 0\n");
+    double init_free_mem = get_free_mem();
+    kmers->reserve(initial_kmer_dht_reservation);
+    SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
     barrier();
   }
 
