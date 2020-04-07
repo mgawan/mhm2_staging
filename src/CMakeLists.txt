@@ -26,7 +26,7 @@ endif()
 
 execute_process(
     #    COMMAND bash -c "CC --version 2>&1| head -n1|cut -d' ' -f2"
-    COMMAND bash -c "upcxx --version 2>&1|head -n6|tail -n1|cut -d' ' -f2"
+    COMMAND bash -c "upcxx --version 2>&1|head -n6|tail -n1|cut -d' ' -f1"
     OUTPUT_VARIABLE BASE_CXX_COMPILER
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -34,11 +34,10 @@ execute_process(
 message("Base CXX compiler: ${BASE_CXX_COMPILER}")
 #add_definitions(-DBASE_CXX_COMPILER=\"${BASE_CXX_COMPILER}\")
 
-# this only works on Cori where CC is defined
-if (${BASE_CXX_COMPILER} MATCHES "(ICC)")
+if (${BASE_CXX_COMPILER} MATCHES "icpc")
     # ignore annoying warning on icc
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
-elseif (${BASE_CXX_COMPILER} MATCHES "(GCC)")
+elseif (${BASE_CXX_COMPILER} MATCHES "g\\+\\+")
     # ignore annoying warning on gcc
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-catch-value")
 endif()
