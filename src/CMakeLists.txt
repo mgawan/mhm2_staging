@@ -25,7 +25,8 @@ else()
 endif()
 
 execute_process(
-    COMMAND bash -c "CC --version 2>&1| head -n1|cut -d' ' -f2"
+    #    COMMAND bash -c "CC --version 2>&1| head -n1|cut -d' ' -f2"
+    COMMAND bash -c "upcxx --version 2>&1|head -n6|tail -n1|cut -d' ' -f2"
     OUTPUT_VARIABLE BASE_CXX_COMPILER
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -38,7 +39,7 @@ if (${BASE_CXX_COMPILER} MATCHES "(ICC)")
     # ignore annoying warning on icc
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
 elseif (${BASE_CXX_COMPILER} MATCHES "(GCC)")
-    # ignore annoying warning on icc
+    # ignore annoying warning on gcc
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-catch-value")
 endif()
 
@@ -100,10 +101,10 @@ if (GIT_FOUND)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
     string(TIMESTAMP _timestamp)
-    add_definitions("-DMHMXX_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) built on ${_timestamp}\"")
+    add_definitions("-DMHMXX_VERSION=\"${GIT_TAG}-${GIT_COMMIT_HASH}${GIT_DIFF}-${GIT_BRANCH} (${CMAKE_BUILD_TYPE}) built on ${_timestamp} with ${BASE_CXX_COMPILER}\"")
 else()
     string(TIMESTAMP _timestamp)
-    add_definitions("-DMHMXX_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp}\"")
+    add_definitions("-DMHMXX_VERSION=\"unknown version (${CMAKE_BUILD_TYPE}) build on ${_timestamp} with ${BASE_CXX_COMPILER}\"")
 endif()    
 
 
