@@ -124,7 +124,7 @@ class Options {
           if (WIFEXITED(std::system("which lfs")) == 0) {
             string cmd = "lfs setstripe -c -1 " + output_dir + " 2>&1 >/dev/null";
             auto status = std::system(cmd.c_str());
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cerr << "Set Lustre striping on the output directory\n";
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
           }
         }
       }

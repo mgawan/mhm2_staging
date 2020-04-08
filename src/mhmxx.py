@@ -23,8 +23,8 @@ _proc = None
 _output_dir = ''
 
 def print_red(*args):
-    print("\033[91m", *args, sep='',  end='')
-    print("\033[00m")
+    print("\033[91m", *args, sep='',  end='', file=sys.stderr)
+    print("\033[00m", file=sys.stderr)
 
 def get_hwd_cores_per_node():
     """Query the hardware for physical cores"""
@@ -167,7 +167,7 @@ def exit_all(status):
 
 
 def die(*args):
-    print('\n', KRED, 'FATAL ERROR:', *args, file=sys.stderr)
+    print_red('\nFATAL ERROR:', *args)
     sys.stdout.flush()
     sys.stderr.flush()
     exit_all(1)
@@ -197,10 +197,10 @@ def capture_err(err_msgs):
 def print_err_msgs(err_msgs):
     global _output_dir
     err_msgs.append('==============================================')
-    print_red("Check " + _output_dir + "err.log for details")
+    print_red("Check " + _output_dir + "/err.log for details")
     # keep track of all msg copies so we don't print duplicates
     seen_msgs = {}
-    with open(_output_dir + 'err.log', 'w') as f:
+    with open(_output_dir + '/err.log', 'w') as f:
         for msg in err_msgs:
             clean_msg = msg.strip()
             #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
@@ -259,9 +259,9 @@ def main():
           err_thread.join()
           if _proc.returncode not in [0, -15] or not status:
               signame = ''
-              if -_proc.returncode <= len(SIGNAMES):
+              if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
                   signame = ' (' + SIGNAMES[-_proc.returncode - 1] + ')'
-              print_red("ERROR: subprocess terminated with return code ", _proc.returncode, signame);
+              print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame);
               err_msgs.append("ERROR: subprocess terminated with return code " + str(_proc.returncode) + signame);
               print_err_msgs(err_msgs)
               if completed_round and options.auto_resume:
@@ -274,18 +274,18 @@ def main():
           else:
               break
       except:
-          print_red("Subprocess failed to start")
+          print_red("\nSubprocess failed to start")
           traceback.print_tb(sys.exc_info()[2], limit=100)
           print_err_msgs(err_msgs)
           if _proc:
               try:
-                  print_red("Terminating subprocess after exception: ", sys.exc_info(), "\n")
+                  print_red("\nTerminating subprocess after exception: ", sys.exc_info(), "\n")
                   traceback.print_tb(sys.exc_info()[2], limit=100)
                   _proc.terminate()
               except OSError:
                   pass
               except:
-                  print_red("Unexpected error in forced termination of subprocess: ", sys.exc_info())
+                  print_red("\nUnexpected error in forced termination of subprocess: ", sys.exc_info())
                   traceback.print_tb(sys.exc_info()[2], limit=100)
                   raise
           raise
@@ -302,7 +302,7 @@ if __name__ == "__main__":
         raise
     except:
         e = sys.exc_info()[0]
-        print("\n", KRED, "Caught an exception %s in mhmxx.py!\n\n" % e, file=sys.stderr); 
+        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e); 
         traceback.print_exc(file=sys.stderr)
     finally:
         exit_all(status)
