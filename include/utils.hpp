@@ -122,25 +122,25 @@ inline void logger(ostream &stream, bool fail, bool serial, bool flush, T first,
     logger(cout, false, true, true, ##__VA_ARGS__);      \
   } while (0)
 #define WARN(...) do {                                                  \
-    logger(_logstream, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
+    logger(_logstream, false, false, true, "\n", KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
            "> WARNING: ", ##__VA_ARGS__, KNORM, "\n");                  \
-    logger(cerr, false, false, true, KRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
+    logger(cerr, false, false, true, "\n", KRED, "[", upcxx::rank_me(), "] <", __FILENAME__, ":", __LINE__, \
            "> WARNING: ", ##__VA_ARGS__, KNORM, "\n");                  \
   } while (0)
 #define DIE(...) do {                                                   \
-    logger(_logstream, false, false, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+    logger(_logstream, false, false, true, "\n", KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
            "> ERROR: ", ##__VA_ARGS__, KNORM, "\n");                    \
-    logger(cerr, true, false, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+    logger(cerr, true, false, true, "\n", KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
            "> ERROR: ", ##__VA_ARGS__, KNORM, "\n");                    \
   } while (0)
 #define SWARN(...) do {                                                 \
-    logger(cerr, false, true, true, KRED, "\nWARNING: ", ##__VA_ARGS__, KNORM, "\n\n"); \
-    logger(_logstream, false, true, true, KRED, "\nWARNING: ", ##__VA_ARGS__, KNORM, "\n\n"); \
+    logger(cerr, false, true, true, "\n", KRED, "WARNING: ", ##__VA_ARGS__, KNORM, "\n\n"); \
+    logger(_logstream, false, true, true, "\n", KRED, "WARNING: ", ##__VA_ARGS__, KNORM, "\n\n"); \
   } while (0)
 #define SDIE(...) do {                                                  \
-    logger(_logstream, false, true, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+    logger(_logstream, false, true, true, "\n", KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
            "> ERROR: ", ##__VA_ARGS__, KNORM, "\n");                    \
-    logger(cerr, true, true, true, KLRED, "\n[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
+    logger(cerr, true, true, true, "\n", KLRED, "[", upcxx::rank_me(), "] <", __FILENAME__ , ":", __LINE__, \
            "> ERROR: ", ##__VA_ARGS__, KNORM, "\n");                    \
   } while (0)
 

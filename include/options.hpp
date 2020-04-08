@@ -105,18 +105,18 @@ class Options {
       if (restart) {
         if (access(output_dir.c_str(), F_OK) == -1) {
           ostringstream oss;
-          oss << KLRED << "Output directory " << output_dir << " for restart does not exist" << KNORM << endl;
+          oss << KLRED << "WARNING: Output directory " << output_dir << " for restart does not exist" << KNORM << endl;
           throw std::runtime_error(oss.str());
         }
       } else {
         if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
           // could not create the directory
           if (errno == EEXIST) {
-            cerr << KLRED << "Output directory " << output_dir << " already exists. May overwrite existing files"
-                << KNORM << "\n";
+            cerr << KLRED << "WARNING: Output directory " << output_dir << " already exists. May overwrite existing files"
+                 << KNORM << "\n";
           } else {
             ostringstream oss;
-            oss << KLRED << "Could not create output directory " << output_dir << ": " << strerror(errno) << endl;
+            oss << KLRED << "ERROR: Could not create output directory " << output_dir << ": " << strerror(errno) << endl;
             throw std::runtime_error(oss.str());
           }
         } else {
@@ -148,11 +148,11 @@ class Options {
       // check to see if mhmxx.log exists. If so, and not restarting, rename it
       if (file_exists("mhmxx.log") && !restart) {
         string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        cerr << KLRED << "mhmxx.log exists: renaming to " << new_log_fname << KNORM << endl;
+        cerr << KLRED << "WARNING: mhmxx.log exists: renaming to " << new_log_fname << KNORM << endl;
         if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
       } else if (!file_exists("mhmxx.log") && restart) {
         ostringstream oss;
-        oss << KLRED << "Could not restart - missing mhmxx.log in this directory" << KNORM << endl;
+        oss << KLRED << "ERROR: Could not restart - missing mhmxx.log in this directory" << KNORM << endl;
         throw std::runtime_error(oss.str());
       }
     }
