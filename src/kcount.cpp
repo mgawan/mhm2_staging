@@ -199,8 +199,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
 }
 
 template<int MAX_K>
-static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht, 
-                          bool use_bloom) {
+static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   Timer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
@@ -248,14 +247,14 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
 
 template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list,
-                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                   dist_object<KmerDHT<MAX_K>> &kmer_dht) {
+                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
+                   double &num_kmers_factor) {
   Timer timer(__FILEFUNC__);
   
   _dynamic_min_depth = dynamic_min_depth;
   _dmin_thres = dmin_thres;
     
-  if (use_bloom) {
+  if (kmer_dht->get_use_bloom()) {
     count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, BLOOM_SET_PASS);
     if (ctgs.size()) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
     kmer_dht->reserve_space_and_clear_bloom1();
@@ -264,14 +263,15 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
     count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, NO_BLOOM_PASS);
   }
   barrier();
-  SLOG_VERBOSE("kmer DHT load factor: ", kmer_dht->load_factor(), "\n");
+  kmer_dht->print_load_factor();
   barrier();
+  num_kmers_factor = kmer_dht->get_num_kmers_factor();
   kmer_dht->purge_kmers(2);
   int64_t new_count = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("After purge of kmers < 2, there are ", new_count, " unique kmers\n");
   barrier();
   if (ctgs.size()) {
-    add_ctg_kmers(kmer_len, prev_kmer_len, ctgs, kmer_dht, use_bloom);
+    add_ctg_kmers(kmer_len, prev_kmer_len, ctgs, kmer_dht);
     kmer_dht->purge_kmers(1);
   }
   barrier();
@@ -288,9 +288,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 
 #define AK(KMER_LEN) \
   template \
-  void analyze_kmers<KMER_LEN>(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, \
-                               bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs,  \
-                               dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
+  void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<FastqReader*>&, double, int, Contigs&, dist_object< KmerDHT<KMER_LEN> >&, double&)
 
 AK(32);
 #if MAX_BUILD_KMER >= 64
@@ -307,3 +305,4 @@ AK(160);
 #endif
 
 #undef AK
+

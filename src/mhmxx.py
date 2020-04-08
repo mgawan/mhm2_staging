@@ -10,11 +10,23 @@ import datetime
 import time
 import traceback
 import argparse
+import threading
+import io
+#import re
 
+SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGKILL', 'SIGUSR1',
+            'SIGSEGV', 'SIGUSR2', 'SIGPIPE', 'SIGALRM', 'SIGTERM', 'SIGSTKFLT', 'SIGCHLD', 'SIGCONT', 'SIGSTOP', 'SIGTSTP',
+            'SIGTTIN', 'SIGTTOU', 'SIGURG', 'SIGXCPU', 'SIGXFSZ', 'SIGVTALRM', 'SIGPROF', 'SIGWINCH', 'SIGIO', 'SIGPWR', 'SIGSYS']
 
-orig_sighdlr = None
-proc = None
+_orig_sighdlr = None
+_proc = None
+_output_dir = ''
+_err_thread = None
+_stop_thread = False
 
+def print_red(*args):
+    print("\033[91m", *args, sep='',  end='', file=sys.stderr)
+    print("\033[00m", file=sys.stderr)
 
 def get_hwd_cores_per_node():
     """Query the hardware for physical cores"""
@@ -138,24 +150,28 @@ def which(file_name):
     return None
 
 def handle_interrupt(signum, frame):
-    print('\n\nInterrupt received, signal', signum)
-    signal.signal(signal.SIGINT, orig_sighdlr)
+    global _orig_sighdlr
+    global _stop_thread
+    print_red('\n\nInterrupt received, signal', signum)
+    _stop_thread = True
+    signal.signal(signal.SIGINT, _orig_sighdlr)
     exit_all(1)
 
 
 def exit_all(status):
-    if proc:
-        #os.kill(proc.pid, signal.SIGINT)
+    global _proc
+    if _proc:
+        #os.kill(_proc.pid, signal.SIGINT)
         try:
-            proc.terminate()
+            _proc.terminate()
         except OSError:
             pass
-            #print("Process ", proc, " is already terminated\n")
+            #print("Process ", _proc, " is already terminated\n")
     sys.exit(status)
 
 
 def die(*args):
-    print('\nFATAL ERROR:', *args, file=sys.stderr)
+    print_red('\nFATAL ERROR:', *args)
     sys.stdout.flush()
     sys.stderr.flush()
     exit_all(1)
@@ -172,79 +188,42 @@ def check_exec(cmd, args, expected):
     except subprocess.CalledProcessError as err:
         die('Could not execute', test_exec +':', err)
 
+def capture_err(err_msgs):
+    global _proc
+    global _stop_thread
+    for line in iter(_proc.stderr.readline, b''):
+        line = line.decode()
+        if 'WARNING' in line:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+        err_msgs.append(line)
+        if _stop_thread:
+            return
+    _proc.wait()
 
-def handle_failure_termination(proc, verbose=False):
-    print("mhmxx detected a failure in process pid=%d, reading output and terminating at %s" % \
-          (proc.pid, str(datetime.datetime.now())))
-    # get any remaininginput, then send two interrupts and a term
-    if proc:
-        try:
-            try:
-                if proc.poll() is None:
-                    time.sleep(1)
-                    if proc.poll() is None:
-                        print("Sending SIGINT at %s\n" % (str(datetime.datetime.now())))
-                        proc.send_signal(2)
-            except OSError:
-                print("Process is already gone\n")
-                pass
-                  
-            if proc.poll() is None:
-                time.sleep(1)
-                if proc.poll() is None:
-                    print("Sending SIGINT again at %s\n" % (str(datetime.datetime.now())))
-                    proc.send_signal(2)
-                    time.sleep(1)
-                    if proc.poll() is None:
-                        time.sleep(1)
-                        if proc.poll() is None:
-                            print("Sending SIGTERM at %s\n" % (str(datetime.datetime.now())))
-                            proc.terminate()
-                            time.sleep(1)
-                            if proc.poll() is None:
-                                print("Sending SIGKILL at %s\n" % (str(datetime.datetime.now())))
-                                proc.kill()
-                                time.sleep(1)
+def print_err_msgs(err_msgs):
+    global _output_dir
+    err_msgs.append('==============================================')
+    print_red("Check " + _output_dir + "err.log for details")
+    # keep track of all msg copies so we don't print duplicates
+    seen_msgs = {}
+    with open(_output_dir + 'err.log', 'w') as f:
+        for msg in err_msgs:
+            clean_msg = msg.strip()
+            #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
+            if clean_msg not in seen_msgs:
+                f.write(clean_msg + '\n')
+                f.flush()
+                seen_msgs[clean_msg] = True
 
-            outs,errs = proc.communicate(None)
-            if outs:
-                outs = outs.decode()
-                print("Got some stdout from the failed process at %s" % (str(datetime.datetime.now())))
-                if verbose:
-                    print(outs)
-                    sys.stdout.flush()
-                print(outs)
-                for line in outs:
-                    if 'srun: error' in line and 'REQUEST_FILE_BCAST' in line and os.environ.get('SLURM_BCAST') is not None: # Issue228
-                        print("Detected a SLURM_BCAST error, disabling that optimization.")
-                        del os.environ['SLURM_BCAST']
-                        os.environ['NO_SLURM_BCAST'] = '1'
-            if errs:
-                errs = errs.decode()
-                print("Got some stderr from the failed process at %s" % (str(datetime.datetime.now())))
-                print(errs)
-                sys.stderr.write(errs)
-                sys.stderr.flush()
-                sys.stdout.flush()
-                for line in errs:
-                    # Issue228
-                    if 'srun: error' in line and 'REQUEST_FILE_BCAST' in line and os.environ.get('SLURM_BCAST') is not None: 
-                        print("Detected a SLURM_BCAST error, disabling that optimization.")
-                        del os.environ['SLURM_BCAST']
-                        os.environ['NO_SLURM_BCAST'] = '1'
-        except OSError:
-            print("Process is gone\n")
-            pass
-        except:
-            print("Unexpected error: ", sys.exc_info())
-            traceback.print_tb(sys.exc_info()[2], limit=100)
-            pass
-      
-      
+    
 def main():
-    global orig_sighdlr
-    global proc
-    orig_sighdlr = signal.getsignal(signal.SIGINT)
+    global _orig_sighdlr
+    global _proc
+    global _output_dir
+    global _err_thread
+    
+    _orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
     argparser = argparse.ArgumentParser(add_help=False)
@@ -254,10 +233,9 @@ def main():
     options, unknown_options = argparser.parse_known_args()
 
     if options.auto_resume:
-        print("auto resume is enabled: will try to restart if run fails")
+        print("--auto-resume is enabled: will try to restart if run fails")
     
     check_exec('upcxx-run', '-h', 'UPC++')
-    status = True
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not which(mhmxx_binary_path):
@@ -270,46 +248,66 @@ def main():
     print('Executing:')
     print(' '.join(cmd))
     
+    err_msgs = []
     while True:
-      completed = False
+      completed_round = False
       try:
-          proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-          for line in iter(proc.stdout.readline, b''):
+          _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          # thread captures the error stream
+          _err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
+          _err_thread.start()
+          for line in iter(_proc.stdout.readline, b''):
               line = line.decode()
-              print(line, end='')
+              sys.stdout.write(line)
               sys.stdout.flush()
-              # did we complete any new rounds?
-              if "Completed " in line:
-                  completed = True
-          if status:
-              proc.wait()
-          else:
-              handle_failure_termination(proc, run_log_file, options.verbose)
-              proc.wait()
-
-          if proc.returncode not in [0, -15] or not status:
-              #print("ERROR: proc return code ", proc.returncode, "\n");
-              # FIXME: should restart if it is not the same restart stage as before - need to parse output to 
-              # find that value
-              if completed and options.auto_resume:
+              if line.startswith('  output = '):
+                  _output_dir = line.split()[2]
+                  if _output_dir[-1] != '/':
+                      _output_dir += '/'
+              if 'Completed ' in line and 'initialization' not in line:
+                  completed_round = True
+                  
+          _err_thread.join()
+          if _proc.returncode not in [0, -15] or not status:
+              signame = ''
+              if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
+                  signame = ' (' + SIGNAMES[-_proc.returncode - 1] + ')'
+              print_red("\nERROR: subprocess terminated with return code ", -_proc.returncode, signame);
+              err_msgs.append("ERROR: subprocess terminated with return code " + str(-_proc.returncode) + signame);
+              print_err_msgs(err_msgs)
+              if completed_round and options.auto_resume:
+                  print_red('Trying to restart...')
                   cmd.append('--restart')
               else:
                   if options.auto_resume:
-                      print("Could not restart, exiting...")
-              return 1
+                      print_red("No additional completed round. Could not restart, exiting...")
+                  return signal.SIGABRT
           else:
-              #print("SUCCESS: proc return code ", proc.returncode, "\n");
+              warnings = []
+              for msg in err_msgs:
+                  msg = msg.strip()
+                  if 'WARNING' in msg:
+                      warnings.append(msg)
+                  elif msg != '':
+                      sys.stderr.write(msg + '\n')
+              if len(warnings) > 0:
+                  print('There were', len(warnings), 'warnings:', file=sys.stderr)
+                  for warning in warnings:
+                      sys.stderr.write(warning + '\n')
               break
       except:
-          if proc:
+          print_red("\nSubprocess failed to start")
+          traceback.print_tb(sys.exc_info()[2], limit=100)
+          print_err_msgs(err_msgs)
+          if _proc:
               try:
-                  print("Terminating process after exception: ", sys.exc_info(), "\n")
+                  print_red("\nTerminating subprocess after exception: ", sys.exc_info(), "\n")
                   traceback.print_tb(sys.exc_info()[2], limit=100)
-                  proc.terminate()
+                  _proc.terminate()
               except OSError:
                   pass
               except:
-                  print("Unexpected error in final except: ", sys.exc_info())
+                  print_red("\nUnexpected error in forced termination of subprocess: ", sys.exc_info())
                   traceback.print_tb(sys.exc_info()[2], limit=100)
                   raise
           raise
@@ -326,7 +324,7 @@ if __name__ == "__main__":
         raise
     except:
         e = sys.exc_info()[0]
-        print("\nCaught an exception %s in mhmxx.py!\n\n" % e, file=sys.stderr); 
+        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e); 
         traceback.print_exc(file=sys.stderr)
     finally:
         exit_all(status)

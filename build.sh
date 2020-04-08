@@ -2,6 +2,8 @@
 
 set -e
 
+SECONDS=0
+
 rootdir=`pwd`
 srcdir=$rootdir/src
 
@@ -19,3 +21,4 @@ else
     make -j install
 fi
 
+echo "Build took $((SECONDS))s"

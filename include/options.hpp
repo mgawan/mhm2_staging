@@ -107,18 +107,18 @@ class Options {
       if (restart) {
         if (access(output_dir.c_str(), F_OK) == -1) {
           ostringstream oss;
-          oss << KLRED << "Output directory " << output_dir << " for restart does not exist" << KNORM << endl;
+          oss << KLRED << "WARNING: Output directory " << output_dir << " for restart does not exist" << KNORM << endl;
           throw std::runtime_error(oss.str());
         }
       } else {
         if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
           // could not create the directory
           if (errno == EEXIST) {
-            cerr << KLRED << "Output directory " << output_dir << " already exists. May overwrite existing files"
-                << KNORM << "\n";
+            cerr << KLRED << "WARNING: Output directory " << output_dir << " already exists. May overwrite existing files"
+                 << KNORM << "\n";
           } else {
             ostringstream oss;
-            oss << KLRED << "Could not create output directory " << output_dir << ": " << strerror(errno) << endl;
+            oss << KLRED << "ERROR: Could not create output directory " << output_dir << ": " << strerror(errno) << endl;
             throw std::runtime_error(oss.str());
           }
         } else {
@@ -126,7 +126,7 @@ class Options {
           if (WIFEXITED(std::system("which lfs")) == 0) {
             string cmd = "lfs setstripe -c -1 " + output_dir + " 2>&1 >/dev/null";
             auto status = std::system(cmd.c_str());
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cerr << "Set Lustre striping on the output directory\n";
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
           }
         }
       }
@@ -150,11 +150,11 @@ class Options {
       // check to see if mhmxx.log exists. If so, and not restarting, rename it
       if (file_exists("mhmxx.log") && !restart) {
         string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        cerr << KLRED << "mhmxx.log exists: renaming to " << new_log_fname << KNORM << endl;
+        cerr << KLRED << "WARNING: mhmxx.log exists: renaming to " << new_log_fname << KNORM << endl;
         if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
       } else if (!file_exists("mhmxx.log") && restart) {
         ostringstream oss;
-        oss << KLRED << "Could not restart - missing mhmxx.log in this directory" << KNORM << endl;
+        oss << KLRED << "ERROR: Could not restart - missing mhmxx.log in this directory" << KNORM << endl;
         throw std::runtime_error(oss.str());
       }
     }
@@ -170,12 +170,8 @@ public:
   vector<unsigned> scaff_kmer_lens = {99, 33};
   int qual_offset = 33;
   bool verbose = false;
-  // there is a trade-off in kmer store size here. The larger the store, the fewer the rpcs sent. However, large
-  // rpcs mean a long time processing the rpc at the target, which blocks processing of other messages, and so
-  // causes a slow-down
-  int max_kmer_store_mb = 100;
-  // these defaults favor speed over memory
-  bool use_bloom = false;
+  int max_kmer_store_mb = 50;
+  int max_rpcs_in_flight = 100;
   bool cache_reads = true;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
@@ -222,8 +218,8 @@ public:
                    "Phred encoding offset")
                    ->capture_default_str() ->check(CLI::IsMember({33, 64}));
     app.add_option("-c, --contigs", ctgs_fname,
-                   "File with contigs used for restart")
-                   ->check(CLI::ExistingFile);
+                   "File with contigs used for restart");
+//                   ->check(CLI::ExistingFile);
     app.add_option("--dynamic-min-depth", dynamic_min_depth,
                    "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome")
                    ->capture_default_str() ->check(CLI::Range(0.1, 1.0));
@@ -232,7 +228,10 @@ public:
                    ->capture_default_str() ->check(CLI::Range(1, 100));
     app.add_option("--max-kmer-store", max_kmer_store_mb,
                    "Maximum size for kmer store in MB")
-                   ->capture_default_str() ->check(CLI::Range(1, 10000));
+                   ->capture_default_str() ->check(CLI::Range(1, 1000));
+    app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight,
+                   "Maximum number of RPCs in flight, per process (0 = unlimited)")
+                   ->capture_default_str() ->check(CLI::Range(0, 10000));
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
                    "Minimum length required for printing a contig in the final assembly")
                    ->capture_default_str() ->check(CLI::Range(0, 100000));
@@ -241,9 +240,6 @@ public:
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
-    app.add_flag("--use-bloom", use_bloom,
-                 "Use bloom filter to reduce memory at the increase of runtime")
-                  ->default_val(use_bloom ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--cache-reads", cache_reads,
                  "Cache reads in memory")
                  ->default_val(cache_reads ? "true" : "false") ->capture_default_str() ->multi_option_policy();

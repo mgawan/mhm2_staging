@@ -144,7 +144,7 @@ public:
   int kmer_len;  
   
   // aligner construction: SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size, Alns &alns)
+  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns)
     : kmer_map({})
     , kmer_store(kmer_map)
     , ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, SSW_AMBIGUITY_COST)
@@ -156,7 +156,7 @@ public:
     , alns(&alns) {
     
     ssw_filter.report_cigar = false;
-    kmer_store.set_size("insert ctg seeds", max_store_size);
+    kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
     kmer_store.set_update_func( 
       [](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
         CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
@@ -238,9 +238,7 @@ public:
 
   void flush_add_kmers() {
     Timer timer(__FILEFUNC__);
-    barrier();
     kmer_store.flush_updates();
-    barrier();
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
@@ -373,9 +371,8 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
       progress();
     }
   }
-  progbar.done();
   kmer_ctg_dht.flush_add_kmers();
-  barrier();
+  progbar.done();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
@@ -559,11 +556,12 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
 }
 
 template<int MAX_K>
-void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns) {
+void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_rpcs_in_flight,
+                     Contigs &ctgs, Alns &alns) {
   Timer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
-  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, alns);
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
@@ -576,10 +574,9 @@ void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_
   barrier();
 }
 
-
 #define FA(KMER_LEN) \
     template \
-    void find_alignments<KMER_LEN>(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, Contigs &ctgs, Alns &alns)
+    void find_alignments<KMER_LEN>(unsigned, vector<FastqReader*>&, int, int, Contigs&, Alns&)
 
 
 FA(32);
@@ -597,4 +594,5 @@ FA(160);
 #endif
 
 #undef FA
+
 

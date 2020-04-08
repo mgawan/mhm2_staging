@@ -55,7 +55,9 @@ If building for KNL, make sure to first do
 
 `module switch craype-haswell craype-mic-knl`
 
-For Cori, it is recommended to stripe all input files on the Lustre file system to ensure adequate I/O performance, e.g.
+It is recommended to use either PrgEnv-gnu or PrgEnv-cray. Builds with the Intel compiler run very slowly and currently there seems to be some bug that causes the execution to hang. This is not present with the other compilers.
+
+It is recommended to stripe all input files on the Lustre file system to ensure adequate I/O performance, e.g.
 
 `lfs setstripe -c -1 reads.fastq`
 
