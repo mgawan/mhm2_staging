@@ -261,16 +261,16 @@ def main():
               signame = ''
               if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
                   signame = ' (' + SIGNAMES[-_proc.returncode - 1] + ')'
-              print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame);
-              err_msgs.append("ERROR: subprocess terminated with return code " + str(_proc.returncode) + signame);
+              print_red("\nERROR: subprocess terminated with return code ", -_proc.returncode, signame);
+              err_msgs.append("ERROR: subprocess terminated with return code " + str(-_proc.returncode) + signame);
               print_err_msgs(err_msgs)
               if completed_round and options.auto_resume:
                   print_red('Trying to restart...')
                   cmd.append('--restart')
               else:
                   if options.auto_resume:
-                      print_red("Could not restart, exiting...")
-                  return 1
+                      print_red("No additional completed round. Could not restart, exiting...")
+                  return signal.SIGABRT
           else:
               break
       except:
