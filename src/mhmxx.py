@@ -272,7 +272,6 @@ def main():
                       print_red("Could not restart, exiting...")
                   return 1
           else:
-              print("SUCCESS: subprocess return code ", _proc.returncode, "\n");
               break
       except:
           print_red("Subprocess failed to start")
