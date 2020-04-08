@@ -256,16 +256,17 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
     
   if (kmer_dht->get_use_bloom()) {
     count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, BLOOM_SET_PASS);
+    num_kmers_factor = kmer_dht->get_num_kmers_factor();
     if (ctgs.size()) count_ctg_kmers(kmer_len, ctgs, kmer_dht);
     kmer_dht->reserve_space_and_clear_bloom1();
     count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, BLOOM_COUNT_PASS);
   } else {
     count_kmers(kmer_len, qual_offset, fqr_list, kmer_dht, NO_BLOOM_PASS);
+    num_kmers_factor = kmer_dht->get_num_kmers_factor();
   }
   barrier();
   kmer_dht->print_load_factor();
   barrier();
-  num_kmers_factor = kmer_dht->get_num_kmers_factor();
   kmer_dht->purge_kmers(2);
   int64_t new_count = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("After purge of kmers < 2, there are ", new_count, " unique kmers\n");
