@@ -283,9 +283,17 @@ def main():
                       print_red("No additional completed round. Could not restart, exiting...")
                   return signal.SIGABRT
           else:
+              warnings = []
               for msg in err_msgs:
-                  sys.stderr.write(msg)
-                  sys.stderr.flush()
+                  msg = msg.strip()
+                  if 'WARNING' in msg:
+                      warnings.append(msg)
+                  elif msg != '':
+                      sys.stderr.write(msg + '\n')
+              if len(warnings) > 0:
+                  print('There were', len(warnings), 'warnings:', file=sys.stderr)
+                  for warning in warnings:
+                      sys.stderr.write(warning + '\n')
               break
       except:
           print_red("\nSubprocess failed to start")
