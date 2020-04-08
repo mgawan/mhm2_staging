@@ -197,10 +197,10 @@ def capture_err(err_msgs):
 def print_err_msgs(err_msgs):
     global _output_dir
     err_msgs.append('==============================================')
-    print_red("Check " + _output_dir + "/err.log for details")
+    print_red("Check " + _output_dir + "err.log for details")
     # keep track of all msg copies so we don't print duplicates
     seen_msgs = {}
-    with open(_output_dir + '/err.log', 'w') as f:
+    with open(_output_dir + 'err.log', 'w') as f:
         for msg in err_msgs:
             clean_msg = msg.strip()
             #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
@@ -253,6 +253,8 @@ def main():
               sys.stdout.flush()
               if line.startswith('  output = '):
                   _output_dir = line.split()[2]
+                  if _output_dir[-1] != '/':
+                      _output_dir += '/'
               if 'Completed ' in line and 'initialization' not in line:
                   completed_round = True
                   
