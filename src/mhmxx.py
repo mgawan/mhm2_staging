@@ -21,6 +21,7 @@ SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGB
 _orig_sighdlr = None
 _proc = None
 _output_dir = ''
+_err_thread = None
 
 def print_red(*args):
     print("\033[91m", *args, sep='',  end='', file=sys.stderr)
@@ -150,6 +151,7 @@ def which(file_name):
 def handle_interrupt(signum, frame):
     global _orig_sighdlr
     print_red('\n\nInterrupt received, signal', signum)
+    _err_thread.stop()
     signal.signal(signal.SIGINT, _orig_sighdlr)
     exit_all(1)
 
@@ -214,6 +216,8 @@ def main():
     global _orig_sighdlr
     global _proc
     global _output_dir
+    global _err_thread
+    
     _orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
@@ -245,8 +249,8 @@ def main():
       try:
           _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
           # thread captures the error stream
-          err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
-          err_thread.start()
+          _err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
+          _err_thread.start()
           for line in iter(_proc.stdout.readline, b''):
               line = line.decode()
               sys.stdout.write(line)
@@ -258,7 +262,7 @@ def main():
               if 'Completed ' in line and 'initialization' not in line:
                   completed_round = True
                   
-          err_thread.join()
+          _err_thread.join()
           if _proc.returncode not in [0, -15] or not status:
               signame = ''
               if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
