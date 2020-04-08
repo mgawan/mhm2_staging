@@ -194,8 +194,9 @@ public:
     // main purpose of the timer here is to track memory usage
     Timer timer(__FILEFUNC__);
     auto node0_cores = upcxx::local_team().rank_n();
-    // check if we have enough memory to run without bloom - require 1.5x the estimate for non-bloom
-    double required_space = 1.5 * cardinality / 6 * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+    // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
+    // want to run out of memory
+    double required_space = 2.0 * cardinality / 6 * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
     SLOG_VERBOSE("Without bloom filters, require ", get_size_str(required_space), " per node, and there is ",
                  get_size_str(get_free_mem()), " available on node0\n");
     if (get_free_mem() >= required_space) {
