@@ -52,7 +52,6 @@ using upcxx::delete_array;
 //#define DBG_INSERT_KMER DBG
 #define DBG_INSERT_KMER(...)
 
-
 enum PASS_TYPE { BLOOM_SET_PASS, BLOOM_COUNT_PASS, NO_BLOOM_PASS, CTG_BLOOM_SET_PASS, CTG_KMERS_PASS };
 
 using ext_count_t = uint16_t;
@@ -173,6 +172,7 @@ class KmerDHT {
   int64_t max_kmer_store_bytes;
   int max_rpcs_in_flight;
   int64_t initial_kmer_dht_reservation;
+  int64_t my_num_kmers;
   int64_t bloom1_cardinality;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
@@ -180,7 +180,7 @@ class KmerDHT {
 
 public:
 
-  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int max_rpcs_in_flight)
+  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -188,6 +188,7 @@ public:
     , kmer_store(kmers, bloom_filter2)
     , max_kmer_store_bytes(max_kmer_store_bytes)
     , initial_kmer_dht_reservation(0)
+    , my_num_kmers(my_num_kmers)
     , max_rpcs_in_flight(max_rpcs_in_flight)
     , bloom1_cardinality(0) {
 
@@ -196,9 +197,11 @@ public:
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
-    double required_space = 2.0 * cardinality / 6 * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
-    SLOG_VERBOSE("Without bloom filters, require ", get_size_str(required_space), " per node, and there is ",
-                 get_size_str(get_free_mem()), " available on node0\n");
+    auto my_adjusted_num_kmers = my_num_kmers * num_kmers_factor;
+    double required_space = 2.0 * my_adjusted_num_kmers * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ",
+                 get_size_str(required_space), " per node, and there is ", get_size_str(get_free_mem()),
+                 " available on node0\n");
     if (get_free_mem() >= required_space) {
       use_bloom = false;
       SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
@@ -213,8 +216,9 @@ public:
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
       double init_mem_free = get_free_mem();
-      bloom_filter1->init(cardinality, KCOUNT_BLOOM_FP);
-      bloom_filter2->init(cardinality / 4, KCOUNT_BLOOM_FP); // second bloom has far fewer entries - assume 75% filtered out
+      bloom_filter1->init(my_num_kmers, KCOUNT_BLOOM_FP);
+      // second bloom has far fewer kmers
+      bloom_filter2->init(my_num_kmers * num_kmers_factor, KCOUNT_BLOOM_FP);
       SLOG_VERBOSE("Bloom filters used ", get_size_str(init_mem_free - get_free_mem()), " memory on node 0\n");
     } else {
       barrier();
@@ -223,13 +227,12 @@ public:
       // hash table resize
       // Unfortunately, this estimate depends on the depth of the sample - high depth means more wasted memory,
       // but low depth means potentially resizing the hash table, which is very expensive
-      cardinality /= 6;
-      initial_kmer_dht_reservation = cardinality;
-      double kmers_space_reserved = cardinality * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
+      initial_kmer_dht_reservation = my_adjusted_num_kmers;
+      double kmers_space_reserved = my_adjusted_num_kmers * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
       SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved),
-                   " for kmer hash tables with ", node0_cores * cardinality, " entries on node 0\n");
+                   " for kmer hash tables with ", node0_cores * my_adjusted_num_kmers, " entries on node 0\n");
       double init_free_mem = get_free_mem();
-      kmers->reserve(cardinality);
+      kmers->reserve(my_adjusted_num_kmers);
       SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
     }
@@ -403,11 +406,17 @@ public:
     return reduce_one(kmers->max_load_factor(), op_fast_max, 0).wait();
   }
 
-  float load_factor() {
-    int64_t cardinality = initial_kmer_dht_reservation * rank_n();
+  void print_load_factor() {
+    int64_t num_kmers_est = initial_kmer_dht_reservation * rank_n();
     int64_t num_kmers = get_num_kmers();
-    SLOG_VERBOSE("Originally reserved ", cardinality, " and now have ", num_kmers, " elements\n");
-    return reduce_one(kmers->load_factor(), op_fast_add, 0).wait() / upcxx::rank_n();
+    SLOG_VERBOSE("Originally reserved ", num_kmers_est, " and now have ", num_kmers, " elements\n");
+    auto avg_load_factor = reduce_one(kmers->load_factor(), op_fast_add, 0).wait() / upcxx::rank_n();
+    SLOG_VERBOSE("kmer DHT load factor: ", avg_load_factor, "\n");
+  }
+
+  double get_num_kmers_factor() {
+    // add in some slop so as not to get too close to the resize threshold
+    return (double)kmers->size() / my_num_kmers * 1.5;
   }
 
   int64_t get_local_num_kmers(void) {
