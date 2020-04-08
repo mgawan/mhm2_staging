@@ -22,6 +22,7 @@ _orig_sighdlr = None
 _proc = None
 _output_dir = ''
 _err_thread = None
+_stop_thread = False
 
 def print_red(*args):
     print("\033[91m", *args, sep='',  end='', file=sys.stderr)
@@ -150,8 +151,9 @@ def which(file_name):
 
 def handle_interrupt(signum, frame):
     global _orig_sighdlr
+    global _stop_thread
     print_red('\n\nInterrupt received, signal', signum)
-    _err_thread.stop()
+    _stop_thread = True
     signal.signal(signal.SIGINT, _orig_sighdlr)
     exit_all(1)
 
@@ -188,12 +190,15 @@ def check_exec(cmd, args, expected):
 
 def capture_err(err_msgs):
     global _proc
+    global _stop_thread
     for line in iter(_proc.stderr.readline, b''):
         line = line.decode()
         if 'WARNING' in line:
             sys.stderr.write(line)
             sys.stderr.flush()
-        err_msgs.append(line)      
+        err_msgs.append(line)
+        if _stop_thread:
+            return
     _proc.wait()
 
 def print_err_msgs(err_msgs):
