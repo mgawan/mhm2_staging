@@ -39,8 +39,7 @@ int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapse
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list);
 template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, 
-                   bool use_bloom, double dynamic_min_depth, int dmin_thres, Contigs &ctgs, 
-                   dist_object<KmerDHT<MAX_K>> &kmer_dht);
+                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht);
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K> 
@@ -104,10 +103,10 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   // duration of kmer_dht
   analyze_kmers_dt.start();
   auto my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
-  dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->max_rpcs_in_flight, options->use_bloom);
+  dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->max_rpcs_in_flight);
   barrier();
-  analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->use_bloom,
-                options->dynamic_min_depth, options->dmin_thres, ctgs, kmer_dht);
+  analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->dynamic_min_depth, options->dmin_thres, 
+                ctgs, kmer_dht);
   analyze_kmers_dt.stop();
   barrier();
   dbjg_traversal_dt.start();

@@ -176,10 +176,11 @@ class KmerDHT {
   int64_t bloom1_cardinality;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
+  bool use_bloom;
 
 public:
 
-  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int max_rpcs_in_flight, bool use_bloom)
+  KmerDHT(uint64_t cardinality, int max_kmer_store_bytes, int max_rpcs_in_flight)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -192,6 +193,19 @@ public:
 
     // main purpose of the timer here is to track memory usage
     Timer timer(__FILEFUNC__);
+    auto node0_cores = upcxx::local_team().rank_n();
+    // check if we have enough memory to run without bloom - require 1.5x the estimate for non-bloom
+    double required_space = 1.5 * cardinality / 6 * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+    SLOG_VERBOSE("Without bloom filters, require ", get_size_str(required_space), " per node, and there is ",
+                 get_size_str(get_free_mem()), " available on node0\n");
+    if (get_free_mem() >= required_space) {
+      use_bloom = false;
+      SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
+    } else {
+      use_bloom = true;
+      SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
+    }
+
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight);
     else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
     if (use_bloom) {
@@ -211,7 +225,6 @@ public:
       cardinality /= 6;
       initial_kmer_dht_reservation = cardinality;
       double kmers_space_reserved = cardinality * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
-      auto node0_cores = upcxx::local_team().rank_n();
       SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved),
                    " for kmer hash tables with ", node0_cores * cardinality, " entries on node 0\n");
       double init_free_mem = get_free_mem();
@@ -231,6 +244,10 @@ public:
     kmer_store_bloom.clear();
     kmer_store.clear();
     clear();
+  }
+
+  bool get_use_bloom() {
+    return use_bloom;
   }
 
   void set_pass(PASS_TYPE pass_type) {

@@ -170,8 +170,6 @@ public:
   bool verbose = false;
   int max_kmer_store_mb = 50;
   int max_rpcs_in_flight = 100;
-  // these defaults favor speed over memory
-  bool use_bloom = false;
   bool cache_reads = true;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
@@ -240,9 +238,6 @@ public:
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
-    app.add_flag("--use-bloom", use_bloom,
-                 "Use bloom filter to reduce memory at the increase of runtime")
-                  ->default_val(use_bloom ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--cache-reads", cache_reads,
                  "Cache reads in memory")
                  ->default_val(cache_reads ? "true" : "false") ->capture_default_str() ->multi_option_policy();
