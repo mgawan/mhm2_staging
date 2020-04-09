@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+if [ -n "$MHMXX_BUILD_ENV" ]; then
+    source $MHMXX_BUILD_ENV
+fi
+
 set -e
 
 SECONDS=0
