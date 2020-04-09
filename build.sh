@@ -5,18 +5,17 @@ set -e
 SECONDS=0
 
 rootdir=`pwd`
-srcdir=$rootdir
 
-INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/bin}
+INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/install}
 
 if [ "$1" == "clean" ]; then
     rm -rf build/*
+    rm -rf $INSTALL_PATH
 else
     cd $rootdir/build
-    if [ "$1" == "Debug" ]; then
-        cmake $srcdir -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
-    elif [ "$1" == "Release" ]; then
-        cmake $srcdir -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
+    if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
+        rm -rf $INSTALL_PATH
+        cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH 
     fi
     make -j install
 fi
