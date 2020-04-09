@@ -14,10 +14,6 @@
 
 using namespace std;
 
-#ifdef DEBUG
-ofstream _dbgstream;
-#endif
-
 #include "upcxx_utils.hpp"
 #include "options.hpp"
 #include "fastq.hpp"

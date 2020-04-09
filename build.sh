@@ -5,7 +5,7 @@ set -e
 SECONDS=0
 
 rootdir=`pwd`
-srcdir=$rootdir/src
+srcdir=$rootdir
 
 INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/bin}
 
