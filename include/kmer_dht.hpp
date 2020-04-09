@@ -420,6 +420,7 @@ public:
   }
 
   double get_num_kmers_factor() {
+    if (use_bloom) return (double)bloom_filter1->estimate_num_items() / my_num_kmers * 1.5;
     // add in some slop so as not to get too close to the resize threshold
     return (double)kmers->size() / my_num_kmers * 1.5;
   }
