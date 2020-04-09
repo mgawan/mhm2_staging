@@ -17,7 +17,7 @@ or
 
 `./build.sh Debug`
 
-These will install the binaries by default into the `bin` subdirectory in the repository root directory. To set a different install 
+These will install the binaries by default into the `install/bin` subdirectory in the repository root directory. To set a different install 
 directory, set the environment variable `MHMXX_INSTALL_PATH`, e.g.:
 
 `MHMXX_INSTALL_PATH=$SCRATCH/mhmxx-install ./build.sh Release`
