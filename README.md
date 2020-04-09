@@ -57,7 +57,7 @@ Run with `-h` to see the various options.
 
 ## Cori notes:
 
-To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the upcxx module:
+To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the upcxx module and the cmake module.
 
 All six permuations of gnu, cray and intel environments on haswell and knl hardware are supported
 by sourcing one of these environments:
