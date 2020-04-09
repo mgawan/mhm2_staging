@@ -62,20 +62,16 @@ endforeach()
 
 add_definitions(-DALL_DEFNS=\"${all_defs}\")
 
-# include mateidavid's zstr c++ library
-include_directories("${CMAKE_SOURCE_DIR}/zstr/src")
+
 # include ssw library
 include_directories("ssw")
-# all the other headers
-include_directories("${CMAKE_SOURCE_DIR}/../include")
-
 add_subdirectory(ssw)
 
 add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp 
     walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp)
 
-target_link_libraries(mhmxx Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} ${UPCXX_LIBRARIES} MHMXX_VERSION_LIB)
+target_link_libraries(mhmxx Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES} MHMXX_VERSION_LIB)
 
 install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

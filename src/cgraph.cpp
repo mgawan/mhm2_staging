@@ -9,9 +9,12 @@
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
+
 #include "ctg_graph.hpp"
 #include "utils.hpp"
-#include "progressbar.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
 #include "fastq.hpp"
@@ -19,6 +22,7 @@
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, int read_len,

@@ -3,8 +3,11 @@
 #include <regex>
 #include <upcxx/upcxx.hpp>
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
+
 #include "utils.hpp"
-#include "progressbar.hpp"
 #include "ctg_graph.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
@@ -12,6 +15,7 @@
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int read_len, Alns &alns, CtgGraph *graph);
 void get_splints_from_alns(Alns &alns, CtgGraph *graph);

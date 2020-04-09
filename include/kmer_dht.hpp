@@ -9,12 +9,16 @@
 #include <stdarg.h>
 #include <upcxx/upcxx.hpp>
 
-#include "progressbar.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/timers.hpp"
+#include "upcxx_utils/mem_profile.hpp"
+
 #include "utils.hpp"
 #include "kmer.hpp"
 #include "bloom.hpp"
 #include "zstr.hpp"
-#include "aggr_store.hpp"
 
 using std::vector;
 using std::pair;
@@ -46,6 +50,7 @@ using upcxx::global_ptr;
 using upcxx::new_array;
 using upcxx::delete_array;
 
+using namespace upcxx_utils;
 
 //#define DBG_INS_CTG_KMER DBG
 #define DBG_INS_CTG_KMER(...)
@@ -167,8 +172,8 @@ class KmerDHT {
   dist_object<BloomFilter> bloom_filter1;
   // the second bloom filer stores only kmers that are above the repeat depth, and is used for correctly sizing the kmer hash table
   dist_object<BloomFilter> bloom_filter2;
-  AggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
-  AggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
+  FlatAggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
+  FlatAggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
   int64_t max_kmer_store_bytes;
   int max_rpcs_in_flight;
   int64_t initial_kmer_dht_reservation;

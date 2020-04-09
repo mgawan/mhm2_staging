@@ -4,15 +4,18 @@
 #include <queue>
 #include <upcxx/upcxx.hpp>
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
+
 #include "ssw.hpp"
 #include "utils.hpp"
-#include "progressbar.hpp"
-#include "colors.h"
 #include "ctg_graph.hpp"
 #include "contigs.hpp"
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 
 static CtgGraph *_graph = nullptr;

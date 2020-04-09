@@ -13,18 +13,21 @@
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/flat_aggr_store.hpp"
+
 #include "utils.hpp"
-#include "progressbar.hpp"
 #include "ssw.hpp"
 #include "contigs.hpp"
 #include "kmer.hpp"
-#include "aggr_store.hpp"
 #include "zstr.hpp"
 #include "fastq.hpp"
 #include "alignments.hpp"
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 //#define DUMP_ALNS
 
@@ -70,7 +73,7 @@ class KmerCtgDHT {
   using kmer_map_t = dist_object<HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>>;
   kmer_map_t kmer_map;
 
-  AggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
+  FlatAggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
 
 #ifdef DUMP_ALNS
   zstr::ofstream *alns_file;

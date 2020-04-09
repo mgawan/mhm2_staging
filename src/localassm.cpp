@@ -3,8 +3,11 @@
 #include <regex>
 #include <upcxx/upcxx.hpp>
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+
 #include "utils.hpp"
-#include "progressbar.hpp"
+
 #include "contigs.hpp"
 #include "alignments.hpp"
 #include "fastq.hpp"
@@ -13,6 +16,7 @@
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 
 enum class AlnStatus { NO_ALN, OVERLAPS_CONTIG, EXTENDS_CONTIG };

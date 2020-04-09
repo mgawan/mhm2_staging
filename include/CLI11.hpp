@@ -4975,7 +4975,7 @@ class App {
         auto input0 = opt.inputs[0];
 //        if (input0[0].get_type_size() == 0) continue;
         if (!input0.empty() && input0[0] == '[' && input0[input0.length() - 1] == ']')
-          opt.inputs = split(input0.substr(1, input0.length() - 2), ',');
+          opt.inputs = CLI::detail::split(input0.substr(1, input0.length() - 2), ',');
         /*
         if (!upcxx::rank_me()) {
           cerr << cfg_opt.fullname() << " = ";

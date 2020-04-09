@@ -72,7 +72,7 @@ else()
   message(STATUS "No external upcxx-utils package provided")
   message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 endif()
-find_package(UPCXX_UTILS 0.2.2 QUIET)
+find_package(UPCXX_UTILS 0.3.0 QUIET)
 if(NOT UPCXX_UTILS_FOUND)
 
   message(STATUS "Did not find an installation of upcxx_utils, including submodule in src/upcxx_utils")
@@ -85,5 +85,8 @@ else()
   message(STATUS "Appended the UPCXX_UTILS_DIR to the CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 endif()
 message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
+
+# include mateidavid's zstr c++ library
+include_directories("zstr/src")
 
 add_subdirectory(src)

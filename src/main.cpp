@@ -18,7 +18,7 @@ using namespace std;
 ofstream _dbgstream;
 #endif
 
-#include "utils.hpp"
+#include "upcxx_utils.hpp"
 #include "options.hpp"
 #include "fastq.hpp"
 #include "kmer.hpp"
@@ -28,6 +28,7 @@ ofstream _dbgstream;
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 ofstream _logstream;
 bool _verbose = false;

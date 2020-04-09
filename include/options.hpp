@@ -8,12 +8,17 @@
 
 #include "version.h"
 
-#include "utils.hpp"
 #include "CLI11.hpp"
 
 using std::cout;
 using std::endl;
 using std::vector;
+
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/timers.hpp"
+
+using namespace upcxx_utils;
+
 
 #define YES_NO(X) ((X) ? "YES" : "NO")
 
@@ -280,7 +285,7 @@ public:
     upcxx::barrier();
 
     if (!*output_dir_opt) {
-      string first_read_fname = remove_fname_extension(get_basename(reads_fnames[0]));
+      string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
       output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
           to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
       output_dir_opt->default_val(output_dir);
@@ -302,7 +307,7 @@ public:
     setup_output_dir();
     setup_log_file();
 
-    init_logger(verbose);
+    init_logger("mhmxx.log", verbose);
 
     SLOG(KLBLUE, "MHMXX version ", MHMXX_VERSION, KNORM, "\n");
 

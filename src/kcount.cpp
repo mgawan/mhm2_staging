@@ -9,14 +9,20 @@
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
+#include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/mem_profile.hpp"
+
 #include "utils.hpp"
-#include "progressbar.hpp"
 #include "kmer_dht.hpp"
 #include "fastq.hpp"
 #include "contigs.hpp"
 
 using namespace std;
 using namespace upcxx;
+using namespace upcxx_utils;
 
 //#define DBG_DUMP_KMERS
 

@@ -1,6 +1,10 @@
 #ifndef _ALIGNMENT_HPP
 #define _ALIGNMENT_HPP
 
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+
+using namespace upcxx_utils;
 
 struct Aln {
   string read_id;

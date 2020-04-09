@@ -8,14 +8,18 @@
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
 
-#include "utils.hpp"
-#include "progressbar.hpp"
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
 
 using std::string;
 using std::string_view;
+using std::to_string;
 
 using upcxx::rank_me;
 using upcxx::rank_n;
+
+using namespace upcxx_utils;
 
 #define INT_CEIL(numerator, denominator) (((numerator) - 1) / (denominator) + 1)
 #define BUF_SIZE 2047

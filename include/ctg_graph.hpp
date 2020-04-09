@@ -12,9 +12,13 @@
 #include <algorithm>
 #include <upcxx/upcxx.hpp>
 
-#include "progressbar.hpp"
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/timers.hpp"
+
+
 #include "utils.hpp"
-#include "aggr_store.hpp"
 
 using std::pair;
 using std::string;
@@ -31,6 +35,8 @@ using std::get;
 using std::make_tuple;
 using std::min;
 using std::max;
+
+using namespace upcxx_utils;
 
 //#define DBG_BUILD DBG
 #define DBG_BUILD(...)

@@ -7,13 +7,19 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string>
+
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
 
 #include "zstr.hpp"
-#include "progressbar.hpp"
+#include "utils.hpp"
 
 using std::pair;
 using std::vector;
 using std::string;
+using std::to_string;
 using std::endl;
 using std::max;
 using std::memory_order_relaxed;
@@ -30,6 +36,7 @@ using upcxx::global_ptr;
 using upcxx::new_;
 using upcxx::dist_object;
 
+using namespace upcxx_utils;
 
 struct Contig {
   int64_t id;

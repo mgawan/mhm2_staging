@@ -19,7 +19,10 @@ using namespace upcxx;
 #include "zstr.hpp"
 #include "utils.hpp"
 #include "fastq.hpp"
-#include "progressbar.hpp"
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+
+using namespace upcxx_utils;
 
 static const double Q2Perror[] = {
   1.0,
