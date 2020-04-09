@@ -12,8 +12,6 @@ if [ "$1" == "clean" ]; then
     rm -rf build/*
     rm -rf $INSTALL_PATH
 else
-    # this is needed for cori, even if it is already loaded into the environment
-    module load upcxx 2>&1 >/dev/null || true
     cd $rootdir/build
     if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
         rm -rf build/*
