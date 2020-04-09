@@ -10,7 +10,7 @@ add_definitions(-DKCOUNT_FILTER_BAD_QUAL_IN_READ)
 add_definitions(-DKCOUNT_BLOOM_FP=0.05)
 
 # use colors in the output
-add_definitions(-DUSE_COLORS)
+add_definitions(-DCONFIG_USE_COLORS)
 
 # use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
