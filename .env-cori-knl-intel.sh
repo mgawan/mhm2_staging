@@ -1,3 +1,4 @@
+module rm upcxx
 module rm PrgEnv-gnu
 module rm PrgEnv-cray
 module load PrgEnv-intel
