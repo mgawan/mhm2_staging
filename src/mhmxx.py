@@ -264,6 +264,12 @@ def main():
                   _output_dir = line.split()[2]
                   if _output_dir[-1] != '/':
                       _output_dir += '/'
+                  # get rid of any leftover error logs
+                  try: 
+                      os.remove(_output_dir + 'err.log')
+                  except:
+                      pass
+                      
               if 'Completed ' in line and 'initialization' not in line:
                   completed_round = True
                   
