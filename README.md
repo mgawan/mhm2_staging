@@ -9,11 +9,21 @@ https://bitbucket.org/berkeleylab/upcxx/wiki/Home
 
 ## Building
 
-To build, simply run
+To build, first ensure that upcxx is in your PATH:
+
+for example, on cori, source one of the .env-cori....sh files
+
+source .env-cori-knl-gnu.sh
+
+then, use cmake directly:
+
+`mkdir -p build && cd build && cmake -DCMAKE_INSTALL_PREFIX=path-to-install .. && make -j all install`
+
+or, use the build wrapper script and simply run:
 
 `./build.sh Release`
 
-or
+or:
 
 `./build.sh Debug`
 
@@ -49,11 +59,10 @@ Run with `-h` to see the various options.
 
 To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the upcxx module:
 
-`module load upcxx`
+All six permuations of gnu, cray and intel environments on haswell and knl hardware are supported
+by sourcing one of these environments:
 
-If building for KNL, make sure to first do
-
-`module switch craype-haswell craype-mic-knl`
+.env-cori-haswell-cray.sh  .env-cori-haswell-gnu.sh  .env-cori-haswell-intel.sh  .env-cori-knl-cray.sh  .env-cori-knl-gnu.sh  .env-cori-knl-intel.sh
 
 It is recommended to use either PrgEnv-gnu or PrgEnv-cray. Builds with the Intel compiler run very slowly and currently there seems to be some bug that causes the execution to hang. This is not present with the other compilers.
 
