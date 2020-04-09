@@ -22,45 +22,7 @@ get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
 link_directories(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
 message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
 
-# For some reason these don't work on NERSC's Cori or Linux. So We just explicitly include the -std=c++17 in the CXX flags below
-#set(CMAKE_CXX_STANDARD 17)
-#set(CMAKE_CXX_STANDARD_REQUIRED ON)
-#set(CMAKE_CXX_EXTENSIONS OFF)
-
-
-# execute_process(
-#    #    COMMAND bash -c "CC --version 2>&1| head -n1|cut -d' ' -f2"
-#    COMMAND bash -c "upcxx --version 2>&1|head -n6|tail -n1|cut -d' ' -f1"
-#    OUTPUT_VARIABLE BASE_CXX_COMPILER
-#    OUTPUT_STRIP_TRAILING_WHITESPACE
-#    )
-
-#message("Base CXX compiler: ${BASE_CXX_COMPILER}")
-#add_definitions(-DBASE_CXX_COMPILER=\"${BASE_CXX_COMPILER}\")
-
-# if (${BASE_CXX_COMPILER} MATCHES "icpc")
-#    # ignore annoying warning on icc
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd597")
-# elseif (${BASE_CXX_COMPILER} MATCHES "g\\+\\+")
-#    # ignore annoying warning on g++
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-catch-value")
-# endif()
-
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -Wno-catch-value")
-
-include(CMakeDefinitions.txt)
-
-# a bit of jiggery-pokery to get a list of all compile time definitions in the code
-get_directory_property(dir_defs COMPILE_DEFINITIONS)
-set(all_defs "")
-message("Definitions:")
-foreach(d ${dir_defs})
-    message("  " ${d})
-    set(all_defs "${all_defs} ${d}")
-endforeach()
-
-add_definitions(-DALL_DEFNS=\"${all_defs}\")
-
 
 # include ssw library
 include_directories("ssw")
