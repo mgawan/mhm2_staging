@@ -194,7 +194,10 @@ public:
   bool restart = false;
 
   bool load(int argc, char **argv) {
-    CLI::App app("MHMXX (" + string(MHMXX_VERSION) + ")");
+    //MHMXX version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
+    string full_version_str = "MHMXX version " + string(MHMXX_VERSION) + "-" + string(MHMXX_BRANCH) + " built on " +
+        string(MHMXX_BUILD_DATE);
+    CLI::App app(full_version_str);
     app.add_option("-r, --reads", reads_fnames,
                    "Files containing merged and unmerged reads in FASTQ format (comma separated)")
                    ->delimiter(',') ->check(CLI::ExistingFile);
@@ -309,7 +312,7 @@ public:
 
     init_logger("mhmxx.log", verbose);
 
-    SLOG(KLBLUE, "MHMXX version ", MHMXX_VERSION, KNORM, "\n");
+    SLOG(KLBLUE, "MHMXX version ", full_version_str, KNORM, "\n");
 
     if (restart) get_restart_options();
 

@@ -27,7 +27,7 @@ or:
 
 `./build.sh Debug`
 
-These will install the binaries by default into the `bin` subdirectory in the repository root directory. To set a different install 
+These will install the binaries by default into the `install/bin` subdirectory in the repository root directory. To set a different install 
 directory, set the environment variable `MHMXX_INSTALL_PATH`, e.g.:
 
 `MHMXX_INSTALL_PATH=$SCRATCH/mhmxx-install ./build.sh Release`
@@ -63,6 +63,8 @@ All six permuations of gnu, cray and intel environments on haswell and knl hardw
 by sourcing one of these environments:
 
 .env-cori-haswell-cray.sh  .env-cori-haswell-gnu.sh  .env-cori-haswell-intel.sh  .env-cori-knl-cray.sh  .env-cori-knl-gnu.sh  .env-cori-knl-intel.sh
+
+Note: both loading of upcxx and cmake should be added to your .bash_profile file, otherwise the build will fail.
 
 It is recommended to use either PrgEnv-gnu or PrgEnv-cray. Builds with the Intel compiler run very slowly and currently there seems to be some bug that causes the execution to hang. This is not present with the other compilers.
 

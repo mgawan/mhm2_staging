@@ -2,4 +2,4 @@ build*
 .dir-locals.el
 scripts
 nbproject
-bin
+install

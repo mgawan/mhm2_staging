@@ -14,6 +14,7 @@ if [ "$1" == "clean" ]; then
 else
     cd $rootdir/build
     if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
+        rm -rf build/*
         rm -rf $INSTALL_PATH
         cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH 
     fi
