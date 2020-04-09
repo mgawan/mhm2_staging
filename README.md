@@ -51,6 +51,12 @@ To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need th
 
 `module load upcxx`
 
+And the cmake module:
+
+`module load cmake`
+
+Note: both loading of upcxx and cmake should be added to your .bash_profile file, otherwise the build will fail.
+
 If building for KNL, make sure to first do
 
 `module switch craype-haswell craype-mic-knl`
