@@ -54,6 +54,8 @@ if(NOT APPLE)
     add_definitions(-D_XOPEN_SOURCE=700)
 endif()
 
+include(CMakeDefinitions.txt)
+
 # verify submodules
 include(CheckSubmodules)
 CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
@@ -61,7 +63,6 @@ CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
 # set version
 include_directories(include)
 GET_GIT_VERSION(MHMXX)
-
 
 # add upcxx-utils
 if (DEFINED ENV{UPCXX_UTILS_DIR} AND EXISTS $ENV{UPCXX_UTILS_DIR})
@@ -90,3 +91,4 @@ message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 include_directories("zstr/src")
 
 add_subdirectory(src)
+
