@@ -5175,6 +5175,12 @@ class App {
         return config_formatter_->to_config(this, default_also, write_description, "");
     }
 
+    /// Produce a vector of strings that could be read in as a config of the current values of the App. Set default_also to
+    /// include default arguments. Prefix will add a string to the beginning of each option.
+    std::vector<std::string> config_to_str_vector(bool default_also = false, bool write_description = false) const {
+        return detail::split(config_formatter_->to_config(this, default_also, write_description, ""), '\n');
+    }
+
     /// Makes a help message, using the currently configured formatter
     /// Will only do one subcommand at a time
     std::string help(std::string prev = "", AppFormatMode mode = AppFormatMode::Normal) const {

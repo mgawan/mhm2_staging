@@ -326,7 +326,8 @@ public:
       for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
       SLOG_VERBOSE("_________________________\n");
       SLOG(KLBLUE, "Options:", KNORM, "\n");
-      SLOG(KLBLUE, app.config_to_str(true, false), KNORM);
+      auto all_opts_strings = app.config_to_str_vector(true, false);
+      for (auto &opt_str : all_opts_strings) SLOG(KLBLUE, opt_str, KNORM, "\n");
       SLOG(KLBLUE, "_________________________", KNORM, "\n");
     }
     auto num_nodes = upcxx::rank_n() / upcxx::local_team().rank_n();
