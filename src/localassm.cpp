@@ -231,7 +231,7 @@ using MerMap = HASH_TABLE<string, MerFreqs>;
 
 static void process_reads(int kmer_len, vector<FastqReader*> &fqr_list, ReadsToCtgsDHT &reads_to_ctgs, 
                           CtgsWithReadsDHT &ctgs_dht) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_reads = 0;
   int64_t num_read_maps_found = 0;
   for (auto fqr : fqr_list) {
@@ -325,7 +325,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
     return false;
   };
 
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_alns_found = 0, num_alns_invalid = 0, num_direct = 0, num_proj = 0;
   int min_pair_len = insert_avg + 3 * insert_stddev;
   IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns reads to contigs");
@@ -374,7 +374,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
 
 
 static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   // process the local ctgs and insert into the distributed hash table
   ProgressBar progbar(ctgs.size(), "Adding contigs to distributed hash table");
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
@@ -511,7 +511,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
 
 static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_avg, int insert_stddev, int max_kmer_len,
                         int kmer_len, int qual_offset) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
   int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0,
@@ -580,7 +580,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 
 void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
   add_ctgs(ctgs_dht, ctgs);
   ReadsToCtgsDHT reads_to_ctgs(100);

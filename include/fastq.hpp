@@ -294,7 +294,7 @@ public:
   }
 
   void load_cache(int qual_offset_param) {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     qual_offset = qual_offset_param;
     io_t.start();
     // first estimate the number of records

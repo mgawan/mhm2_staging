@@ -138,7 +138,7 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
 
 
 void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   _graph = graph;
   AlnStats stats = {0};
   IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns splints");

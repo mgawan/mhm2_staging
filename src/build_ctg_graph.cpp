@@ -25,7 +25,7 @@ static CtgGraph *_graph = nullptr;
 
 
 static void add_vertices_from_ctgs(Contigs &ctgs) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
   for (auto ctg : ctgs) {
     Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
@@ -40,7 +40,7 @@ static void add_vertices_from_ctgs(Contigs &ctgs) {
 
 
 static void set_nbs() {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   {
     int64_t clen_excess = 0;
     int64_t num_excess_ctgs = 0;
@@ -226,7 +226,7 @@ static std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, 
 }
 
 static void parse_reads(int kmer_len, const vector<FastqReader*> &fqr_list) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
 
   int64_t num_seqs_added = 0;
   int64_t num_reads = 0;
@@ -444,7 +444,7 @@ static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vecto
 static void merge_nbs()
 {
   barrier();
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_merges = 0;
   int64_t num_orphans = 0;
   int max_orphan_len = 0;
@@ -499,7 +499,7 @@ static void merge_nbs()
 
 /*
 void mark_short_aln_edges(int max_kmer_len) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   // make sure we don't use an out-of-date edge
   barrier();
   _graph->clear_caches();
@@ -531,7 +531,7 @@ void mark_short_aln_edges(int max_kmer_len) {
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, int read_len,
                      vector<FastqReader*> &fqr_list, Contigs &ctgs, Alns &alns) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   _graph = graph;
   add_vertices_from_ctgs(ctgs);
   get_splints_from_alns(alns, graph);

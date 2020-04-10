@@ -133,7 +133,7 @@ public:
   */
 
   void print_stats(int min_ctg_len) {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     int64_t tot_len = 0, max_len = 0;
     double tot_depth = 0;
     vector<pair<int, int64_t>> length_sums({ {1, 0}, {5, 0}, {10, 0}, {25, 0}, {50, 0}});
@@ -207,7 +207,7 @@ public:
   }
 
   void dump_contigs(const string &fname, int min_ctg_len) {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     string tmpfname = fname + ".tmp"; // make a .tmp file and rename on success
     string fasta = "";
     for (auto it = contigs.begin(); it != contigs.end(); ++it) {
@@ -274,7 +274,7 @@ public:
       return f.tellg();
     };
 
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     contigs.clear();
     string line;
     string ctg_prefix = ">Contig";

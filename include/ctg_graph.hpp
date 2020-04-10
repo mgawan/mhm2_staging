@@ -615,7 +615,7 @@ private:
   }
 
   void print_stats(int min_ctg_print_len, string graph_fname="") {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     auto get_avg_min_max = [](vector<int64_t> &vals) -> string {
       int64_t total = (!vals.size() ? 0 : std::accumulate(vals.begin(), vals.end(), 0));
       int64_t max_val = (!vals.size() ? 0 : *std::max_element(vals.begin(), vals.end()));
