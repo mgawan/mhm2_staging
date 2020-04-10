@@ -28,7 +28,6 @@ using namespace upcxx_utils;
 
 ofstream _logstream;
 bool _verbose = false;
-bool _show_progress = false;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
@@ -115,7 +114,7 @@ int main(int argc, char **argv) {
   auto init_start_t = chrono::high_resolution_clock::now();
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
-  _show_progress = options->show_progress;
+  ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   
   if (!upcxx::rank_me()) {

@@ -374,8 +374,8 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
       progress();
     }
   }
-  kmer_ctg_dht.flush_add_kmers();
   progbar.done();
+  kmer_ctg_dht.flush_add_kmers();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");

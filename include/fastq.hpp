@@ -329,26 +329,9 @@ public:
     io_t.stop();
     fclose(f);
     f = nullptr;
+    // FIXME: this gives a messed up elapsed time
     io_t.done();
     FastqReader::overall_io_t += io_t.get_elapsed();
-/*
-    reset();
-    std::ofstream outf("reads" + to_string(rank_me()) + ".fastq");
-    while (true) {
-      id = "";
-      seq = "";
-      quals = "";
-      size_t bytes_read = get_next_fq_record(id, seq, quals);
-      if (!bytes_read) break;
-      outf << id << "\n" << seq << "\n" << "+\n" << quals << "\n";
-    }
-    outf.close();
-    reset();
-
-    upcxx::barrier();
-//    upcxx::finalize();
-//    exit(0);
-*/
   }
 
 };
