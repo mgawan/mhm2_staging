@@ -295,8 +295,6 @@ public:
       output_dir_opt->default_val(output_dir);
     }
 
-    if (show_progress) verbose = true;
-
     if (restart) {
       // this mucking about is to ensure we don't get multiple failures messages if the config file does not parse
       if (!upcxx::rank_me()) app.parse_config(output_dir + "/mhmxx.config");
