@@ -172,7 +172,7 @@ def exit_all(status):
 
 
 def die(*args):
-    print_red('\nFATAL ERROR:', *args)
+    print_red('\nFATAL ERROR: ', *args)
     sys.stdout.flush()
     sys.stderr.flush()
     exit_all(1)
@@ -181,13 +181,13 @@ def die(*args):
 def check_exec(cmd, args, expected):
     test_exec = which(cmd)
     if not test_exec:
-        die('Cannot find', cmd)
+        die('Cannot find ', cmd)
     try:
         result = subprocess.check_output([test_exec, args]).decode()
         if expected not in result:
-            die(test_exec, 'failed to execute')
+            die(test_exec, ' failed to execute')
     except subprocess.CalledProcessError as err:
-        die('Could not execute', test_exec +':', err)
+        die('Could not execute ', test_exec +': ', err)
 
 def capture_err(err_msgs):
     global _proc
@@ -235,7 +235,7 @@ def main():
 
     if options.auto_resume:
         print("--auto-resume is enabled: will try to restart if run fails")
-    
+
     check_exec('upcxx-run', '-h', 'UPC++')
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
