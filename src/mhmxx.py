@@ -12,6 +12,7 @@ import traceback
 import argparse
 import threading
 import io
+import string
 #import re
 
 SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGKILL', 'SIGUSR1',
@@ -247,7 +248,7 @@ def main():
     cmd.extend(unknown_options)
     print('Executing:')
     print(' '.join(cmd))
-    
+
     err_msgs = []
     while True:
       completed_round = False
@@ -260,8 +261,12 @@ def main():
               line = line.decode()
               sys.stdout.write(line)
               sys.stdout.flush()
-              if line.startswith('  output = '):
-                  _output_dir = line.split()[2]
+              if '  output = ' in line:
+                  _output_dir = line.split()[3]
+                  onlyascii = ''.join([s for s in _output_dir if ord(s) < 127 and ord(s) >= 32])
+                  _output_dir = onlyascii;
+                  if _output_dir.endswith('[0m'):
+                      _output_dir = _output_dir[:-3]
                   if _output_dir[-1] != '/':
                       _output_dir += '/'
                   # get rid of any leftover error logs
