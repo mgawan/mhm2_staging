@@ -307,7 +307,6 @@ def main():
                       sys.stderr.write(warning + '\n')
               break
       except:
-          print_red("\nSubprocess failed to start")
           traceback.print_tb(sys.exc_info()[2], limit=100)
           print_err_msgs(err_msgs)
           if _proc:
