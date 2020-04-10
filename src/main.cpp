@@ -55,7 +55,9 @@ template<int MAX_K>
 void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, Contigs &ctgs, double &num_kmers_factor,
                 IntermittentTimer &analyze_kmers_dt, IntermittentTimer &dbjg_traversal_dt, IntermittentTimer &alignments_dt,
                 IntermittentTimer &localassm_dt, shared_ptr<Options> options) {
-  SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, KNORM, "\n\n");
+  SLOG(KBLUE, "_________________________", KNORM, "\n");
+  SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
+  SLOG("\n");
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   {
     Kmer<MAX_K>::set_k(kmer_len);
@@ -150,7 +152,8 @@ int main(int argc, char **argv) {
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
-  SLOG(KBLUE, "\nCompleted initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
+  SLOG("\n");
+  SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
        get_current_time(), KNORM, "\n");
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
@@ -197,7 +200,8 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________", KNORM, "\n");
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
+      SLOG("\n");
+      SLOG(KBLUE, "Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
            " s at ", get_current_time(), KNORM, "\n");
       barrier();
       prev_kmer_len = kmer_len;
@@ -210,7 +214,9 @@ int main(int argc, char **argv) {
     }
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
-      SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
+      SLOG(KBLUE, "_________________________", KNORM, "\n");
+      SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n");
+      SLOG("\n");
       Alns alns;
       alignments_dt.start();
 #ifdef DEBUG      
@@ -261,7 +267,8 @@ int main(int argc, char **argv) {
         ctgs.print_stats(options->min_ctg_print_len);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
+      SLOG("\n");
+      SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
            loop_t_elapsed.count(), " s at ", get_current_time(), KNORM, "\n");
       barrier();
     }
@@ -277,7 +284,8 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.print_stats(options->min_ctg_print_len);
   chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
-  SLOG(KBLUE, "\nCompleted finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
+  SLOG("\n");
+  SLOG(KBLUE, "Completed finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
        KNORM, "\n");
 
   SLOG(KBLUE "_________________________", KNORM, "\n");

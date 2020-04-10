@@ -26,13 +26,17 @@ struct AlnStats {
 
   void print() {
     int64_t tot_nalns = reduce_one(nalns, op_fast_add, 0).wait();
-    SLOG_VERBOSE(setprecision(2), fixed,
-                 "Processed ", tot_nalns, " alignments:\n",
-                 "    unaligned:          ", perc_str(reduce_one(unaligned, op_fast_add, 0).wait(), tot_nalns), "\n",
-                 "    containments:       ", perc_str(reduce_one(containments, op_fast_add, 0).wait(), tot_nalns), "\n",
-                 "    short alns:         ", perc_str(reduce_one(short_alns, op_fast_add, 0).wait(), tot_nalns), "\n",
-                 "    circular:           ", perc_str(reduce_one(circular, op_fast_add, 0).wait(), tot_nalns), "\n", 
-                 "    bad overlaps:       ", perc_str(reduce_one(bad_overlaps, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed, "Processed ", tot_nalns, " alignments:\n");
+    SLOG_VERBOSE(setprecision(2), fixed, "    unaligned:          ", 
+                 perc_str(reduce_one(unaligned, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed, "    containments:       ", 
+                 perc_str(reduce_one(containments, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed, "    short alns:         ",
+                 perc_str(reduce_one(short_alns, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed, "    circular:           ", 
+                 perc_str(reduce_one(circular, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed, "    bad overlaps:       ", 
+                 perc_str(reduce_one(bad_overlaps, op_fast_add, 0).wait(), tot_nalns), "\n");
   }
 };
 
