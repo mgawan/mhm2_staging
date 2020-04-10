@@ -72,6 +72,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
     dbjg_traversal_dt.start();
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
     dbjg_traversal_dt.stop();
+    BarrierTimer bt("After dbjg_traversal");
   }
 #ifdef DEBUG
   ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
