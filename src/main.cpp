@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
       
 #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, analyze_kmers_dt, dbjg_traversal_dt, \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, analyze_kmers_dt, dbjg_traversal_dt,\
                          alignments_dt, localassm_dt, options); \
           break
       
@@ -271,7 +271,6 @@ int main(int argc, char **argv) {
   for (auto fqr : fqr_list) {
     delete fqr;
   }  
-  
   SLOG(KBLUE "_________________________", KNORM, "\n");
   dump_ctgs_dt.start();
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
@@ -281,7 +280,7 @@ int main(int argc, char **argv) {
   chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
   SLOG(KBLUE, "\nCompleted finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
        KNORM, "\n");
-  
+
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");
