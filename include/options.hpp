@@ -187,7 +187,7 @@ public:
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
 #endif
-  vector<int> insert_size = {300, 30};
+  vector<int> insert_size = {0, 0};
   int min_ctg_print_len = 500;
   int break_scaff_Ns = 10;
   string output_dir = "mhmxx-run-<reads_fname[0]>-n" + to_string(upcxx::rank_n()) + "-N" +

@@ -46,7 +46,7 @@ void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, i
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
                         vector<FastqReader*> &fqr_list, int break_scaffolds, QualityLevel quality_level, 
                         Contigs &ctgs, Alns &alns);
-pair<int, int> calculate_insert_size(Alns &alns);
+pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev);
 
 struct StageTimers {
   IntermittentTimer merge_reads, analyze_kmers, dbjg_traversal, alignments, localassm;
@@ -84,11 +84,10 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
     find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
     alignments_dt.stop();
     barrier();
-    calculate_insert_size(alns);
+    auto [insert_avg, insert_stddev] = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1]);
     barrier();
     localassm_dt.start();
-    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, options->insert_size[0], options->insert_size[1],
-              options->qual_offset, ctgs, alns);
+    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, insert_avg, insert_stddev, options->qual_offset, ctgs, alns);
     localassm_dt.stop();
   }
   barrier();
@@ -255,9 +254,10 @@ int main(int argc, char **argv) {
 #undef FIND_ALIGNMENTS
       
       alignments_dt.stop();
+      auto [insert_avg, insert_stddev] = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1]);
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
       cgraph_dt.start();
-      traverse_ctg_graph(options->insert_size[0], options->insert_size[1], max_kmer_len, scaff_kmer_len, read_len,
+      traverse_ctg_graph(insert_avg, insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
                          options->min_ctg_print_len, fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       cgraph_dt.stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
