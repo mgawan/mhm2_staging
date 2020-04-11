@@ -215,8 +215,9 @@ public:
       SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
     }
 
-    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight);
-    else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
+    bool useHHSS = false; // set true when repeats are expected, especially after localization
+    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
+    else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
