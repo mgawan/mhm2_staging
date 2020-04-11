@@ -137,7 +137,7 @@ class KmerCtgDHT {
     aln.orient = orient; aln.score1 = ssw_aln.sw_score; aln.score2 = ssw_aln.sw_score_next_best;
 
 #ifdef DUMP_ALNS
-    *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
+    *alns_file << "MERALIGNER\t" << aln.to_string() << "\n";
 #endif
     read_alns.add_aln(aln);
   }
@@ -272,7 +272,7 @@ public:
     for (auto &elem : *kmer_map) {
       auto ctg_loc = &elem.second;
       out_buf << elem.first << " " << elem.second.size() << " " << ctg_loc->clen << " " << ctg_loc->pos_in_ctg << " "
-              << ctg_loc->is_rc << endl;
+              << ctg_loc->is_rc << "\n";
       i++;
       if (!(i % 1000)) {
         dump_file << out_buf.str();

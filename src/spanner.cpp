@@ -378,7 +378,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
       string ctg2 = "Contig" + to_string(edge->cids.cid2) + "." + to_string(edge->end2);
       string link = (ctg1 < ctg2 ? ctg1 + "<=>" + ctg2 : ctg2 + "<=>" + ctg1);
 #ifdef DUMP_LINKS
-      links_file << "SPAN\t" << link << "\t0|" << edge->support << "\t" << edge->gap << "\t" << mean_gap_estimate << endl;
+      links_file << "SPAN\t" << link << "\t0|" << edge->support << "\t" << edge->gap << "\t" << mean_gap_estimate << "\n";
 #endif
     }
   }
