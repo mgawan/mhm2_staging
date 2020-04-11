@@ -24,6 +24,18 @@ message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L$
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -Wno-catch-value")
 
+# a bit of jiggery-pokery to get a list of all compile time definitions in the code
+get_directory_property(dir_defs COMPILE_DEFINITIONS)
+set(all_defs "")
+message("Definitions:")
+foreach(d ${dir_defs})
+    message("  " ${d})
+    set(all_defs "${all_defs} ${d}")
+endforeach()
+
+add_definitions(-DALL_DEFNS=\"${all_defs}\")
+
+
 # include ssw library
 include_directories("ssw")
 add_subdirectory(ssw)

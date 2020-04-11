@@ -34,7 +34,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
                         vector<FastqReader*> &fqr_list, int break_scaff_Ns, QualityLevel quality_level, 
                         Contigs &ctgs, Alns &alns) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   
   CtgGraph graph;
   build_ctg_graph(&graph, insert_avg, insert_stddev, kmer_len, read_len, fqr_list, ctgs, alns);

@@ -198,7 +198,7 @@ public:
     , bloom1_cardinality(0) {
 
     // main purpose of the timer here is to track memory usage
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
@@ -490,7 +490,7 @@ public:
   }
 
   void reserve_space_and_clear_bloom1() {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     // at this point we're done with generating the bloom filters, so we can drop the first bloom filter and
     // allocate the kmer hash table
 
@@ -519,13 +519,13 @@ public:
   }
 
   void flush_updates() {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) kmer_store_bloom.flush_updates();
     else kmer_store.flush_updates();
   }
 
   void purge_kmers(int threshold) {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     auto num_prior_kmers = get_num_kmers();
     int64_t num_purged = 0;
     for (auto it = kmers->begin(); it != kmers->end(); ) {
@@ -544,7 +544,7 @@ public:
 
   /*
   void purge_fx_kmers() {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     auto num_prior_kmers = get_num_kmers();
     int64_t num_purged = 0;
     for (auto it = kmers->begin(); it != kmers->end(); ) {
@@ -562,7 +562,7 @@ public:
   */
 
   void compute_kmer_exts() {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     for (auto &elem : *kmers) {
       auto kmer_counts = &elem.second;
       kmer_counts->left = kmer_counts->get_left_ext();
@@ -575,7 +575,7 @@ public:
   // where L is left extension and R is right extension, one char, either X, F or A, C, G, T
   // where N is the count of the kmer frequency
   void dump_kmers(int k) {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     string dump_fname = "kmers-" + to_string(k) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);

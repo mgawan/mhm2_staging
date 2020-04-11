@@ -28,7 +28,6 @@ using namespace upcxx_utils;
 
 ofstream _logstream;
 bool _verbose = false;
-bool _show_progress = false;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
@@ -56,7 +55,9 @@ template<int MAX_K>
 void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, Contigs &ctgs, double &num_kmers_factor,
                 IntermittentTimer &analyze_kmers_dt, IntermittentTimer &dbjg_traversal_dt, IntermittentTimer &alignments_dt,
                 IntermittentTimer &localassm_dt, shared_ptr<Options> options) {
-  SLOG(KBLUE "_________________________\nContig generation k = ", kmer_len, KNORM, "\n\n");
+  SLOG(KBLUE, "_________________________", KNORM, "\n");
+  SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
+  SLOG("\n");
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   {
     Kmer<MAX_K>::set_k(kmer_len);
@@ -116,7 +117,7 @@ int main(int argc, char **argv) {
   auto init_start_t = chrono::high_resolution_clock::now();
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
-  _show_progress = options->show_progress;
+  ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   
   if (!upcxx::rank_me()) {
@@ -152,7 +153,8 @@ int main(int argc, char **argv) {
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
-  SLOG(KBLUE, "\nCompleted initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
+  SLOG("\n");
+  SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
        get_current_time(), KNORM, "\n");
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
@@ -168,7 +170,7 @@ int main(int argc, char **argv) {
       
 #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, analyze_kmers_dt, dbjg_traversal_dt, \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, analyze_kmers_dt, dbjg_traversal_dt,\
                          alignments_dt, localassm_dt, options); \
           break
       
@@ -199,7 +201,8 @@ int main(int argc, char **argv) {
       SLOG(KBLUE "_________________________", KNORM, "\n");
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      SLOG(KBLUE, "\nCompleted contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
+      SLOG("\n");
+      SLOG(KBLUE, "Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
            " s at ", get_current_time(), KNORM, "\n");
       barrier();
       prev_kmer_len = kmer_len;
@@ -212,7 +215,9 @@ int main(int argc, char **argv) {
     }
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
       auto loop_start_t = chrono::high_resolution_clock::now();
-      SLOG(KBLUE "_________________________\nScaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
+      SLOG(KBLUE, "_________________________", KNORM, "\n");
+      SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n");
+      SLOG("\n");
       Alns alns;
       alignments_dt.start();
 #ifdef DEBUG      
@@ -263,7 +268,8 @@ int main(int argc, char **argv) {
         ctgs.print_stats(options->min_ctg_print_len);
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
-      SLOG(KBLUE, "\nCompleted scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
+      SLOG("\n");
+      SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
            loop_t_elapsed.count(), " s at ", get_current_time(), KNORM, "\n");
       barrier();
     }
@@ -272,7 +278,6 @@ int main(int argc, char **argv) {
   for (auto fqr : fqr_list) {
     delete fqr;
   }  
-  
   SLOG(KBLUE "_________________________", KNORM, "\n");
   dump_ctgs_dt.start();
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
@@ -280,9 +285,10 @@ int main(int argc, char **argv) {
   SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.print_stats(options->min_ctg_print_len);
   chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
-  SLOG(KBLUE, "\nCompleted finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
+  SLOG("\n");
+  SLOG(KBLUE, "Completed finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
        KNORM, "\n");
-  
+
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
   SLOG("    ", merge_reads_dt.get_final(), "\n");

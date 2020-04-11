@@ -240,7 +240,7 @@ public:
   }
 
   void flush_add_kmers() {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     kmer_store.flush_updates();
   }
 
@@ -262,7 +262,7 @@ public:
 
 #ifdef DEBUG
   void dump_ctg_kmers() {
-    Timer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false, true);
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
@@ -356,7 +356,7 @@ public:
 
 template<int MAX_K>
 static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
   vector<Kmer<MAX_K>> kmers;
@@ -374,8 +374,8 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
       progress();
     }
   }
-  kmer_ctg_dht.flush_add_kmers();
   progbar.done();
+  kmer_ctg_dht.flush_add_kmers();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
@@ -482,7 +482,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
 
 template<int MAX_K>
 static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> &fqr_list) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
   int64_t num_reads_aligned = 0, num_excess_alns_reads = 0;
@@ -561,7 +561,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<FastqReader*> 
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_rpcs_in_flight,
                      Contigs &ctgs, Alns &alns) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns);
@@ -597,5 +597,4 @@ FA(160);
 #endif
 
 #undef FA
-
 

@@ -112,18 +112,19 @@ class Options {
       if (restart) {
         if (access(output_dir.c_str(), F_OK) == -1) {
           ostringstream oss;
-          oss << KLRED << "WARNING: Output directory " << output_dir << " for restart does not exist" << KNORM << endl;
+          oss << KLRED << "WARNING: " << KNORM << " Output directory " << output_dir << " for restart does not exist" << endl;
           throw std::runtime_error(oss.str());
         }
       } else {
         if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
           // could not create the directory
           if (errno == EEXIST) {
-            cerr << KLRED << "WARNING: Output directory " << output_dir << " already exists. May overwrite existing files"
-                 << KNORM << "\n";
+            cerr << KLRED << "WARNING: " << KNORM << " Output directory " << output_dir
+                 << " already exists. May overwrite existing files\n";
           } else {
             ostringstream oss;
-            oss << KLRED << "ERROR: Could not create output directory " << output_dir << ": " << strerror(errno) << endl;
+            oss << KLRED << "ERROR: " << KNORM  << " Could not create output directory " << output_dir
+                << ": " << strerror(errno) << endl;
             throw std::runtime_error(oss.str());
           }
         } else {
@@ -155,11 +156,11 @@ class Options {
       // check to see if mhmxx.log exists. If so, and not restarting, rename it
       if (file_exists("mhmxx.log") && !restart) {
         string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        cerr << KLRED << "WARNING: mhmxx.log exists: renaming to " << new_log_fname << KNORM << endl;
+        cerr << KLRED << "WARNING: " << KNORM << " mhmxx.log exists: renaming to " << new_log_fname << endl;
         if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
       } else if (!file_exists("mhmxx.log") && restart) {
         ostringstream oss;
-        oss << KLRED << "ERROR: Could not restart - missing mhmxx.log in this directory" << KNORM << endl;
+        oss << KLRED << "ERROR: " << KNORM << " Could not restart - missing mhmxx.log in this directory" << endl;
         throw std::runtime_error(oss.str());
       }
     }
@@ -294,8 +295,6 @@ public:
       output_dir_opt->default_val(output_dir);
     }
 
-    if (show_progress) verbose = true;
-
     if (restart) {
       // this mucking about is to ensure we don't get multiple failures messages if the config file does not parse
       if (!upcxx::rank_me()) app.parse_config(output_dir + "/mhmxx.config");
@@ -325,7 +324,8 @@ public:
       for (auto &def : all_defs) SLOG_VERBOSE("  ", def, "\n");
       SLOG_VERBOSE("_________________________\n");
       SLOG(KLBLUE, "Options:", KNORM, "\n");
-      SLOG(KLBLUE, app.config_to_str(true, false), KNORM);
+      auto all_opts_strings = app.config_to_str_vector(true, false);
+      for (auto &opt_str : all_opts_strings) SLOG(KLBLUE, opt_str, KNORM, "\n");
       SLOG(KLBLUE, "_________________________", KNORM, "\n");
     }
     auto num_nodes = upcxx::rank_n() / upcxx::local_team().rank_n();

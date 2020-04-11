@@ -182,7 +182,7 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
 template<int MAX_K>
 static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, 
                             vector<global_ptr<FragElem>> &frag_elems) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   // allocate space for biggest possible uutig in global storage
   WalkTermStats walk_term_stats = {0};
   int64_t num_walks = 0;
@@ -278,7 +278,7 @@ static void set_link_status(Dirn dirn, global_ptr<FragElem> &nb_gptr, bool &is_r
 template<int MAX_K>
 static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, 
                              vector<global_ptr<FragElem>> &frag_elems) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   // put all the uutigs found by this rank into my_uutigs
   int64_t num_equal_links = 0, num_non_recip = 0, num_short = 0,
           num_left_links = 0, num_left_overlaps = 0, num_left_overlaps_rc = 0, 
@@ -396,7 +396,7 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
 template<int MAX_K>
 static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems, 
                           Contigs &my_uutigs) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_steps = 0, max_steps = 0, num_drops = 0, num_prev_visited = 0, num_repeats = 0;
   ProgressBar progbar(frag_elems.size(), "Connecting fragments");
   for (auto frag_elem_gptr : frag_elems) {
@@ -443,7 +443,7 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
 
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs) {
-  Timer timer(__FILEFUNC__);
+  BarrierTimer timer(__FILEFUNC__, false, true);
   vector<global_ptr<FragElem>> frag_elems;
   construct_frags(kmer_len, kmer_dht, frag_elems);
   clean_frag_links(kmer_len, kmer_dht, frag_elems);
