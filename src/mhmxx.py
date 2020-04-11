@@ -144,6 +144,8 @@ def get_job_nodes():
 
 
 def which(file_name):
+    if os.path.exists(file_name) and os.access(file_name, os.X_OK):
+        return file_name
     for path in os.environ["PATH"].split(os.pathsep):
         full_path = os.path.join(path, file_name)
         if os.path.exists(full_path) and os.access(full_path, os.X_OK):
@@ -240,7 +242,7 @@ def main():
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not which(mhmxx_binary_path):
-        die("Cannot find binary mhmxx")
+        die("Cannot find binary mhmxx from: ", sys.argv[0], " ", mhmxx_binary_path)
     cores_per_node = get_hwd_cores_per_node()
     num_nodes = get_job_nodes()
     cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', options.shared_heap, '--', 
