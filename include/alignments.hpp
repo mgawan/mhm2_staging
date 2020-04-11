@@ -1,8 +1,10 @@
 #ifndef _ALIGNMENT_HPP
 #define _ALIGNMENT_HPP
 
+#include <upcxx/upcxx.hpp>
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "zstr.hpp"
 
 using namespace upcxx_utils;
 
@@ -25,10 +27,10 @@ struct Aln {
 
 
 class Alns {
-  
+
   vector<Aln> alns;
   int64_t num_dups;
-  
+
 public:
 
   Alns() : num_dups(0) {}
@@ -37,11 +39,11 @@ public:
     alns.clear();
     vector<Aln>().swap(alns);
   }
-    
+
   void add_aln(Aln &aln) {
     // check for duplicate alns first - do this backwards because only the most recent entries could be for this read
     for (auto it = alns.rbegin(); it != alns.rend(); ++it) {
-      // we have no more entries for this read 
+      // we have no more entries for this read
       if (it->read_id != aln.read_id) break;
       // now check for equality
       if (it->rstart == aln.rstart && it->rstop == aln.rstop && it->cstart == aln.cstart && it->cstop == aln.cstop) {
@@ -55,15 +57,15 @@ public:
   Aln &get_aln(int64_t i) {
     return alns[i];
   }
-  
+
   size_t size() {
     return alns.size();
   }
 
   int64_t get_num_dups() {
-    return reduce_one(num_dups, op_fast_add, 0).wait();
+    return upcxx::reduce_one(num_dups, upcxx::op_fast_add, 0).wait();
   }
-  
+
   auto begin() {
     return alns.begin();
   }
@@ -80,7 +82,7 @@ public:
     size_t bytes_written = 0;
     int64_t i = 0;
     for (auto aln : alns) {
-      out_buf << aln.to_string() << endl;
+      out_buf << aln.to_string() << std::endl;
       progbar.update();
       i++;
       if (!(i % 1000)) {
@@ -95,10 +97,10 @@ public:
     }
     f.close();
     progbar.done();
-    barrier();
+    upcxx::barrier();
   }
 };
 
-  
+
 #endif
 
