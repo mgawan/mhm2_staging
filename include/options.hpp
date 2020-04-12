@@ -178,6 +178,7 @@ public:
   bool verbose = false;
   int max_kmer_store_mb = 50;
   int max_rpcs_in_flight = 100;
+  bool use_heavy_hitters = false; // only enable when files are localized
   bool cache_reads = true;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
@@ -241,6 +242,9 @@ public:
     app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight,
                    "Maximum number of RPCs in flight, per process (0 = unlimited)")
                    ->capture_default_str() ->check(CLI::Range(0, 10000));
+    app.add_flag("--use-heavy-hitters", use_heavy_hitters,
+                   "Activate the Heavy Hitter Streaming Store")
+                   ->capture_default_str();
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
                    "Minimum length required for printing a contig in the final assembly")
                    ->capture_default_str() ->check(CLI::Range(0, 100000));

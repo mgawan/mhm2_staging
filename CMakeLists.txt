@@ -54,6 +54,7 @@ if(NOT APPLE)
     add_definitions(-D_XOPEN_SOURCE=700)
 endif()
 
+# include all definitions (will be applied to upcxx-utils too)
 include(CMakeDefinitions.txt)
 
 # verify submodules
@@ -63,9 +64,6 @@ CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
 # set version
 include_directories(include)
 GET_GIT_VERSION(MHMXX)
-
-# include all definitions (will be applied to upcxx-utils too
-include(CMakeDefinitions.txt)
 
 # add upcxx-utils
 if (DEFINED ENV{UPCXX_UTILS_DIR} AND EXISTS $ENV{UPCXX_UTILS_DIR})

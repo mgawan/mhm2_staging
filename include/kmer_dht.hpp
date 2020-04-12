@@ -185,7 +185,7 @@ class KmerDHT {
 
 public:
 
-  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight)
+  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool useHHSS = false)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -215,7 +215,6 @@ public:
       SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
     }
 
-    bool useHHSS = false; // set true when repeats are expected, especially after localization
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
     else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
     if (use_bloom) {
