@@ -42,7 +42,7 @@ add_subdirectory(ssw)
 
 add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp 
-    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp)
+    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp)
 
 target_link_libraries(mhmxx Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES} MHMXX_VERSION_LIB)
 

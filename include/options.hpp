@@ -69,8 +69,8 @@ class Options {
     }
     if (!last_stage.empty()) {
       auto fields = split(last_stage, ' ');
-      string stage_type = fields[1];
-      int k = std::stoi(fields[5]);
+      string stage_type = fields[3];
+      int k = std::stoi(fields[7]);
       if (stage_type == "contig") {
         if (k == kmer_lens.back()) {
           max_kmer_len = kmer_lens.back();
@@ -94,11 +94,11 @@ class Options {
       SLOG("\n*** Restarting from previous run at stage ", stage_type, " k = ",
            (stage_type == "contig" ? kmer_lens[0] : scaff_kmer_lens[0]), " ***\n\n");
       SLOG(KLBLUE, "Restart options:\n",
-           "  kmer-lens =         ", vec_to_str(kmer_lens), "\n",
-           "  scaff-kmer-lens =   ", vec_to_str(scaff_kmer_lens), "\n",
-           "  prev-kmer-len =     ", prev_kmer_len, "\n",
-           "  max-kmer-len =      ", max_kmer_len, "\n",
-           "  contigs =           ", ctgs_fname, KNORM, "\n");
+           "  kmer-lens =              ", vec_to_str(kmer_lens), "\n",
+           "  scaff-kmer-lens =        ", vec_to_str(scaff_kmer_lens), "\n",
+           "  prev-kmer-len =          ", prev_kmer_len, "\n",
+           "  max-kmer-len =           ", max_kmer_len, "\n",
+           "  contigs =                ", ctgs_fname, KNORM, "\n");
       if (!upcxx::rank_me() && !file_exists(ctgs_fname))
         SDIE("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
     } else {
@@ -187,7 +187,7 @@ public:
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
 #endif
-  vector<int> insert_size = {300, 30};
+  vector<int> insert_size = {0, 0};
   int min_ctg_print_len = 500;
   int break_scaff_Ns = 10;
   string output_dir = "mhmxx-run-<reads_fname[0]>-n" + to_string(upcxx::rank_n()) + "-N" +
