@@ -46,16 +46,28 @@ void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, i
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
                         vector<FastqReader*> &fqr_list, int break_scaffolds, QualityLevel quality_level, 
                         Contigs &ctgs, Alns &alns);
-pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev);
+pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size);
 
 struct StageTimers {
-  IntermittentTimer merge_reads, analyze_kmers, dbjg_traversal, alignments, localassm;
+  IntermittentTimer *merge_reads, *load_cache, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs, 
+    *compute_kmer_depths;
+};
+
+static StageTimers stage_timers = {
+  .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"), 
+  .load_cache = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
+  .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
+  .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
+  .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
+  .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
+  .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
+  .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
+  .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")
 };
 
 template<int MAX_K> 
 void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, Contigs &ctgs, double &num_kmers_factor,
-                IntermittentTimer &analyze_kmers_dt, IntermittentTimer &dbjg_traversal_dt, IntermittentTimer &alignments_dt,
-                IntermittentTimer &localassm_dt, shared_ptr<Options> options) {
+                int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
   SLOG("\n");
@@ -63,32 +75,35 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   {
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
-    analyze_kmers_dt.start();
+    stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight);
     barrier();
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->dynamic_min_depth, options->dmin_thres, 
                   ctgs, kmer_dht, num_kmers_factor);
-    analyze_kmers_dt.stop();
+    stage_timers.analyze_kmers->stop();
     barrier();
-    dbjg_traversal_dt.start();
+    stage_timers.dbjg_traversal->start();
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
-    dbjg_traversal_dt.stop();
+    stage_timers.dbjg_traversal->stop();
   }
 #ifdef DEBUG
   ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
 #endif
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
-    alignments_dt.start();
+    stage_timers.alignments->start();
     find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
-    alignments_dt.stop();
+    stage_timers.alignments->stop();
     barrier();
-    auto [insert_avg, insert_stddev] = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1]);
+    tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
+                                                     max_expected_ins_size);
+    // insert size should never be larger than this; if it is that signals some error in the assembly 
+    max_expected_ins_size = ins_avg + 8 * ins_stddev;
     barrier();
-    localassm_dt.start();
-    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, insert_avg, insert_stddev, options->qual_offset, ctgs, alns);
-    localassm_dt.stop();
+    stage_timers.localassm->start();
+    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, ins_avg, ins_stddev, options->qual_offset, ctgs, alns);
+    stage_timers.localassm->stop();
   }
   barrier();
 }
@@ -96,15 +111,6 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
 
 int main(int argc, char **argv) {
   upcxx::init();
-  IntermittentTimer merge_reads_dt(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
-          load_cache_dt(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
-          analyze_kmers_dt(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
-          dbjg_traversal_dt(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
-          alignments_dt(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
-          localassm_dt(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
-          cgraph_dt(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
-          dump_ctgs_dt(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
-          compute_kmer_depths_dt(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths");
   auto start_t = chrono::high_resolution_clock::now();
 
 #ifdef DEBUG
@@ -133,21 +139,21 @@ int main(int argc, char **argv) {
   memory_tracker.start();
   // first merge reads - the results will go in the per_rank directory
   double elapsed_write_io_t = 0;
-  merge_reads_dt.start();
+  stage_timers.merge_reads->start();
   int read_len = merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t);
-  merge_reads_dt.stop();
+  stage_timers.merge_reads->stop();
   vector<FastqReader*> fqr_list;
   for (auto const &reads_fname : options->reads_fnames) {
     fqr_list.push_back(new FastqReader(get_merged_reads_fname(reads_fname)));
   }
   if (options->cache_reads) {
-    load_cache_dt.start();
+    stage_timers.load_cache->start();
     double free_mem = (!rank_me() ? get_free_mem() : 0);
     upcxx::barrier();
     for (auto fqr : fqr_list) {
       fqr->load_cache(options->qual_offset);
     }
-    load_cache_dt.stop();
+    stage_timers.load_cache->stop();
     SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0", 
                  KNORM, "\n");
   }
@@ -160,6 +166,9 @@ int main(int argc, char **argv) {
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
   double num_kmers_factor = 1.0 / 3;
+  int max_expected_ins_size = 0;
+  int ins_avg = 0;
+  int ins_stddev = 0;
   if (options->kmer_lens.size()) {
     max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
@@ -171,8 +180,8 @@ int main(int argc, char **argv) {
       
 #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, analyze_kmers_dt, dbjg_traversal_dt,\
-                         alignments_dt, localassm_dt, options); \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, max_expected_ins_size, ins_avg, \
+                               ins_stddev, options); \
           break
       
       switch (max_k) {
@@ -190,14 +199,14 @@ int main(int argc, char **argv) {
 #if MAX_BUILD_KMER >= 160
         CONTIG_K(160);
 #endif
-          default: DIE("Built for maxk=", MAX_BUILD_KMER, " not k=", max_k);
+          default: DIE("Built for max k = ", MAX_BUILD_KMER, " not k = ", max_k);
       }      
 #undef CONTIG_K
       
       if (options->checkpoint) {
-        dump_ctgs_dt.start();
+        stage_timers.dump_ctgs->start();
         ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
-        dump_ctgs_dt.stop();
+        stage_timers.dump_ctgs->stop();
       }        
       SLOG(KBLUE "_________________________", KNORM, "\n");
       ctgs.print_stats(500);
@@ -220,7 +229,7 @@ int main(int argc, char **argv) {
       SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n");
       SLOG("\n");
       Alns alns;
-      alignments_dt.start();
+      stage_timers.alignments->start();
 #ifdef DEBUG      
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif      
@@ -252,19 +261,19 @@ int main(int argc, char **argv) {
       }
       
 #undef FIND_ALIGNMENTS
-      
-      alignments_dt.stop();
-      auto [insert_avg, insert_stddev] = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1]);
+      stage_timers.alignments->stop();
+      // note: we don't recalculate insert sizes here because they should be decent from the contigging, and there are more
+      // errors in scaffolding so the insert sizes will be less reliable
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
-      cgraph_dt.start();
-      traverse_ctg_graph(insert_avg, insert_stddev, max_kmer_len, scaff_kmer_len, read_len,
+      stage_timers.cgraph->start();
+      traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, read_len,
                          options->min_ctg_print_len, fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
-      cgraph_dt.stop();
+      stage_timers.cgraph->stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) {
-          dump_ctgs_dt.start();
+          stage_timers.dump_ctgs->start();
           ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
-          dump_ctgs_dt.stop();
+          stage_timers.dump_ctgs->stop();
         }
         SLOG(KBLUE "_________________________", KNORM, "\n");
         ctgs.print_stats(options->min_ctg_print_len);
@@ -281,9 +290,9 @@ int main(int argc, char **argv) {
     delete fqr;
   }  
   SLOG(KBLUE "_________________________", KNORM, "\n");
-  dump_ctgs_dt.start();
+  stage_timers.dump_ctgs->start();
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
-  dump_ctgs_dt.stop();
+  stage_timers.dump_ctgs->stop();
   SLOG(KBLUE "_________________________", KNORM, "\n");
   ctgs.print_stats(options->min_ctg_print_len);
   chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
@@ -293,16 +302,16 @@ int main(int argc, char **argv) {
 
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
-  SLOG("    ", merge_reads_dt.get_final(), "\n");
-  if (options->cache_reads) SLOG("    ", load_cache_dt.get_final(), "\n");
-  SLOG("    ", analyze_kmers_dt.get_final(), "\n");
-  SLOG("    ", dbjg_traversal_dt.get_final(), "\n");
-  SLOG("    ", alignments_dt.get_final(), "\n");
-  SLOG("    ", localassm_dt.get_final(), "\n");
-  SLOG("    ", cgraph_dt.get_final(), "\n");
+  SLOG("    ", stage_timers.merge_reads->get_final(), "\n");
+  if (options->cache_reads) SLOG("    ", stage_timers.load_cache->get_final(), "\n");
+  SLOG("    ", stage_timers.analyze_kmers->get_final(), "\n");
+  SLOG("    ", stage_timers.dbjg_traversal->get_final(), "\n");
+  SLOG("    ", stage_timers.alignments->get_final(), "\n");
+  SLOG("    ", stage_timers.localassm->get_final(), "\n");
+  SLOG("    ", stage_timers.cgraph->get_final(), "\n");
   SLOG("    FASTQ total read time: ", FastqReader::get_io_time(), "\n");
   SLOG("    merged FASTQ write time: ", elapsed_write_io_t, "\n");
-  SLOG("    Contigs write time: ", dump_ctgs_dt.get_elapsed(), "\n");
+  SLOG("    Contigs write time: ", stage_timers.dump_ctgs->get_elapsed(), "\n");
   SLOG(KBLUE "_________________________", KNORM, "\n");
   memory_tracker.stop();
   chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
