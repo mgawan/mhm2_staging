@@ -370,6 +370,8 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
       int clen1 = _graph->get_vertex(edge->cids.cid1)->clen;
       int clen2 = _graph->get_vertex(edge->cids.cid2)->clen;
       if (clen1 >= clen2) swap(clen1, clen2);
+      // it appears that the full complex calculation (taken from meraculous) doesn't actually improve anything 
+      // compared to a simple setting based on the insert average
       edge->gap = estimate_gap_size(mean_offset, kmer_len, read_len, clen1, clen2, insert_avg, insert_stddev);
 //      edge->gap = mean_gap_estimate;
       if (edge->gap > 0) num_pos_spans++;
