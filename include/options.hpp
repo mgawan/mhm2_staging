@@ -304,7 +304,7 @@ public:
 
     // make sure we only use defaults for kmer lens if none of them were set by the user
     if (*kmer_lens_opt && !*scaff_kmer_lens_opt) scaff_kmer_lens = {};
-    if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens_opt = {};
+    if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens = {};
 
     setup_output_dir();
     setup_log_file();

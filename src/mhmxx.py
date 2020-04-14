@@ -243,9 +243,15 @@ def main():
         die("Cannot find binary mhmxx")
     cores_per_node = get_hwd_cores_per_node()
     num_nodes = get_job_nodes()
-    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', options.shared_heap, '--', 
-           mhmxx_binary_path];
-    cmd.extend(unknown_options)
+    cmd = ['upcxx-run', '-n']
+    if 'GASNET_PSHM_NODES' in os.environ:
+        cmd.extend([os.getenv('GASNET_PSHM_NODES')])
+    else:
+        cmd.extend([str(cores_per_node * num_nodes)])
+    if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
+        cmd.extend(['-shared-heap', options.shared_heap])
+    cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
+    cmd.extend(unknown_options);
     print('Executing:')
     print(' '.join(cmd))
 
