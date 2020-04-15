@@ -13,7 +13,8 @@ import argparse
 import threading
 import io
 import string
-#import re
+import datetime
+
 
 SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGKILL', 'SIGUSR1',
             'SIGSEGV', 'SIGUSR2', 'SIGPIPE', 'SIGALRM', 'SIGTERM', 'SIGSTKFLT', 'SIGCHLD', 'SIGCONT', 'SIGSTOP', 'SIGTSTP',
@@ -252,11 +253,12 @@ def main():
         cmd.extend(['-shared-heap', options.shared_heap])
     cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
     cmd.extend(unknown_options);
-    print('Executing:')
-    print(' '.join(cmd))
+    
+    print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
 
     err_msgs = []
     while True:
+      started_exec = False
       completed_round = False
       try:
           _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -264,6 +266,10 @@ def main():
           _err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
           _err_thread.start()
           for line in iter(_proc.stdout.readline, b''):
+              if not started_exec:
+                  print('Started executing at ' + str(datetime.datetime.now()));
+                  started_exec = True
+                  
               line = line.decode()
               sys.stdout.write(line)
               sys.stdout.flush()
