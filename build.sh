@@ -25,4 +25,11 @@ else
     make -j install
 fi
 
+if [ -n "$MHMXX_BUILD_ENV" ]; then
+    env_id=`echo $MHMXX_BUILD_ENV|cut -d '.' -f2|cut -d '-' -f2-`
+    cd $INSTALL_PATH/bin
+    mv mhmxx mhmxx.$env_id
+    ln -s mhmxx.$env_id mhmxx
+fi
+
 echo "Build took $((SECONDS))s"
