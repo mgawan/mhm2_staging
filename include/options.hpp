@@ -129,10 +129,12 @@ class Options {
           }
         } else {
           // created the directory - now stripe it if possible
-          if (WIFEXITED(std::system("which lfs")) == 0) {
-            string cmd = "lfs setstripe -c -1 " + output_dir + " 2>&1 >/dev/null";
+          auto status = std::system("which lfs 2>&1 > /dev/null");
+          if (WIFEXITED(status)) {
+            string cmd = "lfs setstripe -c -1 " + output_dir;
             auto status = std::system(cmd.c_str());
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
+            else cout << "Failed to create output dir: " << WEXITSTATUS(status) << endl;
           }
         }
       }
