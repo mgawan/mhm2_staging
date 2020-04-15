@@ -224,7 +224,13 @@ public:
     if (rank_me() == rank_n() - 1) end_read = file_size;
     else end_read = get_fptr_for_next_record(end_read);
     if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
-    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+    if (cached) {
+      // instruct the OS not to cache this file - potentially uses up a lot of space and we cache this anyway
+      posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_DONTNEED);
+    } else {
+      // tell the OS this file will be accessed sequentially
+      posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+    }
     SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
     DBG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), "\n");
   }
