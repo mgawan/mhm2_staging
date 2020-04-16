@@ -419,7 +419,6 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     SLOG_VERBOSE("Total bytes read ", tot_bytes_read, "\n");
     num_reads += num_pairs * 2;
   }
-  SWARN("Free mem now ", get_size_str(get_free_mem()));
   elapsed_write_io_t = dump_reads_t.get_elapsed();
   dump_reads_t.done();
   barrier();
