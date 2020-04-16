@@ -162,7 +162,7 @@ int main(int argc, char **argv) {
   chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
   SLOG("\n");
   SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
-       get_current_time(), KNORM, "\n");
+       get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
   double num_kmers_factor = 1.0 / 3;
@@ -213,7 +213,7 @@ int main(int argc, char **argv) {
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       SLOG("\n");
       SLOG(KBLUE, "Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
-           " s at ", get_current_time(), KNORM, "\n");
+           " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
       barrier();
       prev_kmer_len = kmer_len;
     }
@@ -281,7 +281,8 @@ int main(int argc, char **argv) {
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       SLOG("\n");
       SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
-           loop_t_elapsed.count(), " s at ", get_current_time(), KNORM, "\n");
+           loop_t_elapsed.count(), " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)",
+           KNORM, "\n");
       barrier();
     }
   }
@@ -297,8 +298,8 @@ int main(int argc, char **argv) {
   ctgs.print_stats(options->min_ctg_print_len);
   chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
   SLOG("\n");
-  SLOG(KBLUE, "Completed finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(), 
-       KNORM, "\n");
+  SLOG(KBLUE, "Completed finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(),
+       " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
 
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");

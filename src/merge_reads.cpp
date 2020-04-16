@@ -19,8 +19,7 @@ using namespace upcxx;
 #include "zstr.hpp"
 #include "utils.hpp"
 #include "fastq.hpp"
-#include "upcxx_utils/log.hpp"
-#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils.hpp"
 
 using namespace upcxx_utils;
 
@@ -135,29 +134,15 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 }
 
 
-static void dump_merged_reads(const string &reads_fname, ostringstream &out_buf) {
+static void dump_merged_reads(const string &reads_fname, const string &out_str) {
   BarrierTimer timer(__FILEFUNC__, false, true);
-  /*
-  string out_str = out_buf.str();
-  string out_fname = get_merged_reads_fname(reads_fname, PER_RANK_FILE); 
-  if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, overwriting...");
-  int64_t bytes_written = 0;
-  zstr::ofstream out_file_gz(out_fname);
-  if (!out_str.empty()) {
-    out_file_gz << out_str;
-    bytes_written += out_str.length();
-  }
-  out_file_gz.close();
-  // store the uncompressed size in a secondary file
-  write_uncompressed_file_size(out_fname + ".uncompressedSize", bytes_written);
-  */
-  string out_str = out_buf.str();
-  string out_fname = get_merged_reads_fname(reads_fname); 
-  auto sz = out_str.size();
+  string out_fname = get_merged_reads_fname(reads_fname);
+
   atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
   global_ptr<size_t> fpos = nullptr;
   if (!rank_me()) fpos = new_<size_t>(0);
   fpos = broadcast(fpos, 0).wait();
+  auto sz = out_str.length();
   size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
   // wait until all ranks have updated the global counter
   barrier();
@@ -213,7 +198,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     
     FastqReader fqr(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
-    ostringstream out_buf;
+    string outputs;
     
     int max_read_len = 0;
     int64_t overlap_len = 0;
@@ -241,12 +226,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       if (!bytes_read2) break;
       tot_bytes_read += bytes_read1 + bytes_read2;
       progbar.update(tot_bytes_read);
-      if (id1.substr(0, id1.length() - 2) != id2.substr(0, id2.length() - 2)) DIE("Mismatched pairs ", id1, " ", id2);
+
+      if (id1.compare(0, id1.length() - 2, id2, 0, id2.length() -2) != 0) DIE("Mismatched pairs ", id1, " ", id2);
       if (id1[id1.length() - 1] != '1' || id2[id2.length() - 1] != '2') DIE("Mismatched pair numbers ", id1, " ", id2);
 
       bool is_merged = 0;
       int8_t abort_merge = 0;
-
+      
       // revcomp the second mate pair and reverse the second quals
       string rc_seq2 = revcomp(seq2);
       string rev_quals2 = quals2;
@@ -394,8 +380,10 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
                        
         is_merged = true;
         num_merged++;
+        ostringstream out_buf;
         out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
         out_buf << "@r" << read_id << "/2\nN\n+\n" << (char)qual_offset << "\n";
+        outputs += out_buf.str();
         int read_len = seq1.length(); // caculate new merged length
         if (max_read_len < read_len) max_read_len = read_len;
         merged_len += read_len;
@@ -403,15 +391,18 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       }
       if (!is_merged) {
         // write without the revcomp
+        ostringstream out_buf;
         out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
         out_buf << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
+        outputs += out_buf.str();
       }
       // inc by 2 so that we can use a later optimization of treating the even as /1 and the odd as /2
       read_id += 2;
     }
     progbar.done();
-    dump_reads_t.start();    
-    dump_merged_reads(reads_fname, out_buf);
+    barrier();
+    dump_reads_t.start();
+    dump_merged_reads(reads_fname, outputs);
     dump_reads_t.stop();
     auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
     auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
@@ -428,6 +419,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     SLOG_VERBOSE("Total bytes read ", tot_bytes_read, "\n");
     num_reads += num_pairs * 2;
   }
+  SWARN("Free mem now ", get_size_str(get_free_mem()));
   elapsed_write_io_t = dump_reads_t.get_elapsed();
   dump_reads_t.done();
   barrier();
