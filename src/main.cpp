@@ -77,7 +77,8 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
-    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight);
+    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
+                                         options->force_bloom);
     barrier();
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->dynamic_min_depth, options->dmin_thres, 
                   ctgs, kmer_dht, num_kmers_factor);

@@ -181,6 +181,7 @@ public:
   int max_kmer_store_mb = 50;
   int max_rpcs_in_flight = 100;
   bool cache_reads = true;
+  bool force_bloom = false;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
@@ -254,6 +255,9 @@ public:
     app.add_flag("--cache-reads", cache_reads,
                  "Cache reads in memory")
                  ->default_val(cache_reads ? "true" : "false") ->capture_default_str() ->multi_option_policy();
+    app.add_flag("--force-bloom", force_bloom,
+                 "Always use bloom filters")
+                 ->default_val(force_bloom ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--checkpoint", checkpoint,
                  "Checkpoint after each contig round")
                  ->default_val(checkpoint ? "true" : "false") ->capture_default_str() ->multi_option_policy();
