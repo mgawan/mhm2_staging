@@ -3,3 +3,4 @@ build*
 scripts
 nbproject
 install
+.vscode
