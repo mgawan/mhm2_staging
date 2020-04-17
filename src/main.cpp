@@ -263,8 +263,11 @@ int main(int argc, char **argv) {
       
 #undef FIND_ALIGNMENTS
       stage_timers.alignments->stop();
-      // note: we don't recalculate insert sizes here because they should be decent from the contigging, and there are more
-      // errors in scaffolding so the insert sizes will be less reliable
+      // always recalculate the insert size because we may need it for resumes of failed runs
+      tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
+                                                       max_expected_ins_size);
+      // insert size should never be larger than this; if it is that signals some error in the assembly 
+      max_expected_ins_size = ins_avg + 8 * ins_stddev;
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
       stage_timers.cgraph->start();
       traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, read_len,
