@@ -144,6 +144,8 @@ int main(int argc, char **argv) {
 
   MemoryTrackerThread memory_tracker;
   memory_tracker.start();
+  SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
+  
   // first merge reads - the results will go in the per_rank directory
   double elapsed_write_io_t = 0;
   stage_timers.merge_reads->start();
