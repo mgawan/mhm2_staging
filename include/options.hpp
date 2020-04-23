@@ -180,7 +180,6 @@ public:
   bool verbose = false;
   int max_kmer_store_mb = 50;
   int max_rpcs_in_flight = 100;
-  bool cache_reads = true;
   bool force_bloom = false;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
@@ -252,9 +251,6 @@ public:
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
-    app.add_flag("--cache-reads", cache_reads,
-                 "Cache reads in memory")
-                 ->default_val(cache_reads ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--force-bloom", force_bloom,
                  "Always use bloom filters")
                  ->default_val(force_bloom ? "true" : "false") ->capture_default_str() ->multi_option_policy();

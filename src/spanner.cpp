@@ -23,7 +23,7 @@ static CtgGraph *_graph = nullptr;
 
 
 // functions for evaluating the gap correction analytically assuming Gaussian insert size distribution
-// this is taken from meraculous bmaToLinks.pl 
+// this is taken from meraculous bmaToLinks.pl
 
 double erf(int x) {
   double absX = (x < 0) ? -x : x;
@@ -255,7 +255,7 @@ static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
 
 
 enum class ProcessPairResult { FAIL_SMALL, FAIL_SELF_LINK, FAIL_EDIST, FAIL_MIN_GAP, SUCCESS };
- 
+
 ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln &aln2, const string &type_status1,
                                const string &type_status2, const string &read_status1, const string &read_status2) {
   auto get_dist = [=](int &d, Aln &aln) -> bool {
@@ -274,7 +274,7 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
   if (!get_dist(d1, aln1)) return ProcessPairResult::FAIL_SMALL;
   if (!get_dist(d2, aln2)) return ProcessPairResult::FAIL_SMALL;
   if (d1 >= end_distance || d2 >= end_distance) return ProcessPairResult::FAIL_EDIST;
-  
+
   int end_separation = insert_avg - (d1 + d2);
   CidPair cids = { .cid1 = aln1.cid, .cid2 = aln2.cid };
   int end1 = aln1.orient == '+' ? 3 : 5;
@@ -296,8 +296,8 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
 }
 
 
-// so the way meraculous spanner seems to work is that it only makes a pair out of the alignments with the shortest rstart. 
-void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int read_len, Alns &alns, CtgGraph *graph) {
+// so the way meraculous spanner seems to work is that it only makes a pair out of the alignments with the shortest rstart.
+void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &alns, CtgGraph *graph) {
   _graph = graph;
   BarrierTimer timer(__FILEFUNC__, false, true);
   IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns spans");
@@ -308,6 +308,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
   int64_t result_counts[(int)ProcessPairResult::SUCCESS + 1] = {0};
   int64_t num_pairs = 0;
   int64_t aln_i = 0;
+  int read_len = 0;
   Aln prev_best_aln = { .read_id = "" };
   string read_status = "", type_status = "", prev_read_status = "", prev_type_status = "";
   while (aln_i < alns.size()) {
@@ -320,6 +321,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
     if (get_best_span_aln(insert_avg, insert_stddev, alns_for_read, best_aln, read_status, type_status, &reject_5_trunc,
                           &reject_3_trunc, &reject_uninf)) {
       if (!prev_best_aln.read_id.empty()) {
+        read_len = best_aln.rlen;
         auto read_id_len = best_aln.read_id.length();
         if (best_aln.read_id.compare(0, read_id_len - 2, prev_best_aln.read_id, 0, read_id_len - 2) == 0) {
           if (best_aln.cid == prev_best_aln.cid) {
@@ -330,7 +332,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
                                     prev_read_status, read_status);
             result_counts[(int)res]++;
           }
-            // there will be no previous one next time 
+            // there will be no previous one next time
             prev_best_aln.read_id = "";
             prev_read_status = "";
             prev_type_status = "";
@@ -346,7 +348,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
   progbar.done();
   barrier();
   t_get_alns.done_all();
-  
+
   auto tot_num_pairs = reduce_one(num_pairs, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs\n");
   SLOG_VERBOSE("Rejected pairs:\n");
@@ -370,7 +372,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, int re
       int clen1 = _graph->get_vertex(edge->cids.cid1)->clen;
       int clen2 = _graph->get_vertex(edge->cids.cid2)->clen;
       if (clen1 >= clen2) swap(clen1, clen2);
-      // it appears that the full complex calculation (taken from meraculous) doesn't actually improve anything 
+      // it appears that the full complex calculation (taken from meraculous) doesn't actually improve anything
       // compared to a simple setting based on the insert average
       edge->gap = estimate_gap_size(mean_offset, kmer_len, read_len, clen1, clen2, insert_avg, insert_stddev);
 //      edge->gap = mean_gap_estimate;

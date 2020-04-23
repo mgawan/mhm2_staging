@@ -10,7 +10,7 @@
 
 #include "contigs.hpp"
 #include "alignments.hpp"
-#include "fastq.hpp"
+#include "packed_reads.hpp"
 #include "kmer_dht.hpp"
 
 
@@ -34,13 +34,13 @@ class ReadsToCtgsDHT {
   size_t get_target_rank(const string &read_id) {
     return std::hash<string>{}(read_id) % rank_n();
   }
-  
+
 public:
-  ReadsToCtgsDHT(int64_t initial_size) 
+  ReadsToCtgsDHT(int64_t initial_size)
     : reads_to_ctgs_map({}) {
     reads_to_ctgs_map->reserve(initial_size);
   }
-  
+
   void add(const string &read_id, int64_t cid, char orient, char side) {
     CtgInfo ctg_info = { .cid = cid, .orient = orient, .side = side };
     rpc(get_target_rank(read_id),
@@ -84,7 +84,7 @@ struct CtgWithReads {
 
 
 class CtgsWithReadsDHT {
-  
+
   using ctgs_map_t = HASH_TABLE<int64_t, CtgWithReads>;
   dist_object<ctgs_map_t> ctgs_map;
   ctgs_map_t::iterator ctgs_map_iter;
@@ -92,7 +92,7 @@ class CtgsWithReadsDHT {
   size_t get_target_rank(int64_t cid) {
     return std::hash<int64_t>{}(cid) % rank_n();
   }
-  
+
 public:
 
   CtgsWithReadsDHT(int64_t num_ctgs)
@@ -120,7 +120,7 @@ public:
           else it->second.reads_right.push_back({read_id, seq, quals});
         }, ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals);
   }
-  
+
   int64_t get_num_ctgs() {
     return reduce_one(ctgs_map->size(), op_fast_add, 0).wait();
   }
@@ -136,7 +136,7 @@ public:
     ctgs_map_iter++;
     return ctg;
   }
-  
+
   CtgWithReads *get_next_local_ctg() {
     if (ctgs_map_iter == ctgs_map->end()) return nullptr;
     auto ctg = &ctgs_map_iter->second;
@@ -172,7 +172,7 @@ struct MerFreqs {
       return 7;
     }
   };
-  
+
   void set_ext(int seq_depth) {
     // set extension similarly to how it is done with localassm in mhm
     MerBase mer_bases[4] = {{.base = 'A', .nvotes_hi_q = hi_q_exts.count_A, .nvotes = low_q_exts.count_A},
@@ -210,7 +210,7 @@ struct MerFreqs {
         if (runner_up_rating < 7) {
           ext = top_rated_base;
         } else {
-          if (mer_bases[2].rating == 7 || mer_bases[0].nvotes == mer_bases[1].nvotes) ext = 'F'; 
+          if (mer_bases[2].rating == 7 || mer_bases[0].nvotes == mer_bases[1].nvotes) ext = 'F';
           else if (mer_bases[0].nvotes > mer_bases[1].nvotes) ext = mer_bases[0].base;
           else if (mer_bases[1].nvotes > mer_bases[0].nvotes) ext = mer_bases[1].base;
         }
@@ -223,28 +223,26 @@ struct MerFreqs {
       }
     }
   }
-  
+
 };
 
 
 using MerMap = HASH_TABLE<string, MerFreqs>;
 
-static void process_reads(int kmer_len, vector<FastqReader*> &fqr_list, ReadsToCtgsDHT &reads_to_ctgs, 
+static void process_reads(int kmer_len, vector<PackedReads*> &packed_reads_list, ReadsToCtgsDHT &reads_to_ctgs,
                           CtgsWithReadsDHT &ctgs_dht) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_reads = 0;
   int64_t num_read_maps_found = 0;
-  for (auto fqr : fqr_list) {
-    fqr->reset();
+  for (auto packed_reads : packed_reads_list) {
+    packed_reads->reset();
     string id, seq, quals;
-    ProgressBar progbar(fqr->my_file_size(), "Processing reads");
+    ProgressBar progbar(packed_reads->get_local_num_reads(), "Processing reads");
     size_t tot_bytes_read = 0;
     while (true) {
       progress();
-      size_t bytes_read = fqr->get_next_fq_record(id, seq, quals);
-      if (!bytes_read) break;
-      tot_bytes_read += bytes_read;
-      progbar.update(tot_bytes_read);
+      if (!packed_reads->get_next_read(id, seq, quals)) break;
+      progbar.update();
       // this happens when we have a placeholder entry because reads merged
       if (kmer_len > seq.length()) continue;
       num_reads++;
@@ -279,7 +277,7 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
     if (runaligned <= cunaligned && runaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::OVERLAPS_CONTIG;
     return AlnStatus::NO_ALN;
   };
-  
+
   // choose the highest scoring aln for this read that is useful
   best_start_status = AlnStatus::NO_ALN;
   best_end_status = AlnStatus::NO_ALN;
@@ -388,7 +386,7 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 }
 
 
-static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset, 
+static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
                        int64_t &excess_reads) {
   int num_reads = 0;
   // split reads into kmers and count frequency of high quality extensions
@@ -422,7 +420,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
   // now set extension choices
   for (auto &elem : mers_ht) {
     elem.second.set_ext(seq_depth);
-  }    
+  }
 }
 
 // return the result of the walk (f, r or x)
@@ -570,15 +568,15 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
                " excess reads\n");
   SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
                " contig sides\n");
-  if (tot_sum_clen) 
-    SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ", 
+  if (tot_sum_clen)
+    SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ",
                  (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
-  if (tot_num_walks) 
+  if (tot_num_walks)
     SLOG_VERBOSE("Average walk length ", tot_sum_ext / tot_num_walks, ", max walk length ", tot_max_walk_len, "\n");
 }
 
 
-void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
+void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
@@ -587,7 +585,7 @@ void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, i
   // extract read id to ctg id mappings from alignments
   process_alns(alns, reads_to_ctgs, insert_avg, insert_stddev);
   // extract read seqs and add to ctgs
-  process_reads(max_kmer_len, fqr_list, reads_to_ctgs, ctgs_dht);
+  process_reads(max_kmer_len, packed_reads_list, reads_to_ctgs, ctgs_dht);
   // clear out the local contigs
   ctgs.clear();
   ctgs.set_capacity(ctgs_dht.get_local_num_ctgs());

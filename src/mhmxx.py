@@ -83,12 +83,12 @@ def is_ll_job():
 
 def get_job_cores_per_node(defaultCores = get_hwd_cores_per_node()):
     """Query the job environment for the number of cores per node to use, if available"""
-    # Only trust this environment variable from slurm, otherwise trust the hardware                                                                                                   
+    # Only trust this environment variable from slurm, otherwise trust the hardware
     ntasks_per_node = os.environ.get('SLURM_NTASKS_PER_NODE')
     if ntasks_per_node:
         return int(ntasks_per_node)
-    # This SLURM variable defaults to all the hyperthreads if not overriden by the sbatch option --ntasks-per-node                                                                    
-    ntasks_per_node = os.environ.get('SLURM_TASKS_PER_NODE') # SLURM_TASKS_PER_NODE=32(x4)                                                                                            
+    # This SLURM variable defaults to all the hyperthreads if not overriden by the sbatch option --ntasks-per-node
+    ntasks_per_node = os.environ.get('SLURM_TASKS_PER_NODE') # SLURM_TASKS_PER_NODE=32(x4)
     if ntasks_per_node:
         if ntasks_per_node.find('(') > 0:
             ntasks_per_node = int(ntasks_per_node[:ntasks_per_node.find('(')])
@@ -218,20 +218,20 @@ def print_err_msgs(err_msgs):
                 f.flush()
                 seen_msgs[clean_msg] = True
 
-    
+
 def main():
     global _orig_sighdlr
     global _proc
     global _output_dir
     global _err_thread
-    
+
     _orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
     argparser = argparse.ArgumentParser(add_help=False)
     argparser.add_argument("--auto-resume", action="store_true", help="Automatically resume after a failure")
     argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
-    
+
     options, unknown_options = argparser.parse_known_args()
 
     if options.auto_resume:
@@ -241,7 +241,7 @@ def main():
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not which(mhmxx_binary_path):
-        die("Cannot find binary mhmxx")
+        die("Cannot find binary mhmxx in ", mhmxx_binary_path)
     cores_per_node = get_hwd_cores_per_node()
     num_nodes = get_job_nodes()
     cmd = ['upcxx-run', '-n']
@@ -253,7 +253,7 @@ def main():
         cmd.extend(['-shared-heap', options.shared_heap])
     cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
     cmd.extend(unknown_options);
-    
+
     print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
 
     err_msgs = []
@@ -269,7 +269,7 @@ def main():
               if not started_exec:
                   print('Started executing at ' + str(datetime.datetime.now()));
                   started_exec = True
-                  
+
               line = line.decode()
               sys.stdout.write(line)
               sys.stdout.flush()
@@ -282,14 +282,14 @@ def main():
                   if _output_dir[-1] != '/':
                       _output_dir += '/'
                   # get rid of any leftover error logs
-                  try: 
+                  try:
                       os.remove(_output_dir + 'err.log')
                   except:
                       pass
-                      
+
               if 'Completed ' in line and 'initialization' not in line:
                   completed_round = True
-                  
+
           _err_thread.join()
           if _proc.returncode not in [0, -15] or not status:
               signame = ''
@@ -338,7 +338,7 @@ def main():
 
 if __name__ == "__main__":
     # remove the .py from this script as the mhmxx wrapper needs to be excecuted for proper environment variable detection
-    sys.argv[0] = os.path.splitext(sys.argv[0])[0] 
+    sys.argv[0] = os.path.splitext(sys.argv[0])[0]
     status = 1
     try:
         status = main()
@@ -346,7 +346,7 @@ if __name__ == "__main__":
         raise
     except:
         e = sys.exc_info()[0]
-        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e); 
+        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e);
         traceback.print_exc(file=sys.stderr)
     finally:
         exit_all(status)

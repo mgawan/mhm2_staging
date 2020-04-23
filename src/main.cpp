@@ -17,6 +17,7 @@ using namespace std;
 #include "upcxx_utils.hpp"
 #include "options.hpp"
 #include "fastq.hpp"
+#include "packed_reads.hpp"
 #include "kmer.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
@@ -30,32 +31,33 @@ ofstream _logstream;
 bool _verbose = false;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
-int merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t);
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<FastqReader*> &fqr_list);
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
+                 vector<PackedReads*> &packed_reads_list, bool checkpoint);
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list);
 template<int MAX_K>
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<FastqReader*> &fqr_list, 
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
                    double &num_kmers_factor);
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
-template<int MAX_K> 
-void find_alignments(unsigned kmer_len, vector<FastqReader*> &fqr_list, int max_store_size, int max_rpcs_in_flight, 
+template<int MAX_K>
+void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
                      Contigs &ctgs, Alns &alns);
-void localassm(int max_kmer_len, int kmer_len, vector<FastqReader*> &fqr_list, int insert_avg, int insert_stddev,
+void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
-void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
-                        vector<FastqReader*> &fqr_list, int break_scaffolds, QualityLevel quality_level, 
+void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
+                        vector<PackedReads*> &packed_reads_list, int break_scaffolds, QualityLevel quality_level,
                         Contigs &ctgs, Alns &alns);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size);
 
 struct StageTimers {
-  IntermittentTimer *merge_reads, *load_cache, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs, 
+  IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs,
     *compute_kmer_depths;
 };
 
 static StageTimers stage_timers = {
-  .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"), 
-  .load_cache = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
+  .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
+  .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
   .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
   .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
   .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
@@ -65,8 +67,8 @@ static StageTimers stage_timers = {
   .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")
 };
 
-template<int MAX_K> 
-void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, Contigs &ctgs, double &num_kmers_factor,
+template<int MAX_K>
+void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_reads_list, Contigs &ctgs, double &num_kmers_factor,
                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
@@ -76,11 +78,11 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
-    int64_t my_num_kmers = estimate_num_kmers(kmer_len, fqr_list);
+    int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
                                          options->force_bloom);
     barrier();
-    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, fqr_list, options->dynamic_min_depth, options->dmin_thres, 
+    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dynamic_min_depth, options->dmin_thres,
                   ctgs, kmer_dht, num_kmers_factor);
     stage_timers.analyze_kmers->stop();
     barrier();
@@ -94,16 +96,16 @@ void contigging(int kmer_len, int prev_kmer_len, vector<FastqReader*> fqr_list, 
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     stage_timers.alignments->start();
-    find_alignments<MAX_K>(kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
+    find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
     stage_timers.alignments->stop();
     barrier();
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
                                                      max_expected_ins_size);
-    // insert size should never be larger than this; if it is that signals some error in the assembly 
+    // insert size should never be larger than this; if it is that signals some error in the assembly
     max_expected_ins_size = ins_avg + 8 * ins_stddev;
     barrier();
     stage_timers.localassm->start();
-    localassm(LASSM_MAX_KMER_LEN, kmer_len, fqr_list, ins_avg, ins_stddev, options->qual_offset, ctgs, alns);
+    localassm(LASSM_MAX_KMER_LEN, kmer_len, packed_reads_list, ins_avg, ins_stddev, options->qual_offset, ctgs, alns);
     stage_timers.localassm->stop();
   }
   barrier();
@@ -127,13 +129,13 @@ int main(int argc, char **argv) {
   if (!options->load(argc, argv)) return 0;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  
-  if (pin_thread(getpid(), local_team().rank_me()) == -1) 
+
+  if (pin_thread(getpid(), local_team().rank_me()) == -1)
     WARN("Could not pin process ", getpid(), " to core ", rank_me());
-  else 
-    SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", 
+  else
+    SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ",
                  local_team().rank_me(), "\n");
-  
+
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
@@ -145,32 +147,33 @@ int main(int argc, char **argv) {
   MemoryTrackerThread memory_tracker;
   memory_tracker.start();
   SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
-  
-  // first merge reads - the results will go in the per_rank directory
-  double elapsed_write_io_t = 0;
-  stage_timers.merge_reads->start();
-  int read_len = merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t);
-  stage_timers.merge_reads->stop();
-  vector<FastqReader*> fqr_list;
+  vector<PackedReads*> packed_reads_list;
   for (auto const &reads_fname : options->reads_fnames) {
-    fqr_list.push_back(new FastqReader(get_merged_reads_fname(reads_fname)));
+    packed_reads_list.push_back(new PackedReads(options->qual_offset, get_merged_reads_fname(reads_fname)));
   }
-  if (options->cache_reads) {
-    stage_timers.load_cache->start();
+  double elapsed_write_io_t = 0;
+  if (!options->restart) {
+    // merge the reads and insert into the packed reads memory cache
+    stage_timers.merge_reads->start();
+    merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint);
+    stage_timers.merge_reads->stop();
+  } else {
+    // since this is a restart, the merged reads should be on disk already
+    stage_timers.cache_reads->start();
     double free_mem = (!rank_me() ? get_free_mem() : 0);
     upcxx::barrier();
-    for (auto fqr : fqr_list) {
-      fqr->load_cache(options->qual_offset);
+    for (auto packed_reads : packed_reads_list) {
+      packed_reads->load_reads();
     }
-    stage_timers.load_cache->stop();
-    SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0", 
+    stage_timers.cache_reads->stop();
+    SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                  KNORM, "\n");
   }
   Contigs ctgs;
   if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
   chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
   SLOG("\n");
-  SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", 
+  SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
        get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
   int max_kmer_len = 0;
   int prev_kmer_len = options->prev_kmer_len;
@@ -186,13 +189,13 @@ int main(int argc, char **argv) {
 //      if (kmer_len == 55 && options->restart) SDIE("another test of auto resume");
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto max_k = (kmer_len / 32 + 1) * 32;
-      
+
 #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, fqr_list, ctgs, num_kmers_factor, max_expected_ins_size, ins_avg, \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, max_expected_ins_size, ins_avg, \
                                ins_stddev, options); \
           break
-      
+
       switch (max_k) {
 
         CONTIG_K(32);
@@ -209,19 +212,19 @@ int main(int argc, char **argv) {
         CONTIG_K(160);
 #endif
           default: DIE("Built for max k = ", MAX_BUILD_KMER, " not k = ", max_k);
-      }      
+      }
 #undef CONTIG_K
-      
+
       if (options->checkpoint) {
         stage_timers.dump_ctgs->start();
         ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
         stage_timers.dump_ctgs->stop();
-      }        
+      }
       SLOG(KBLUE "_________________________", KNORM, "\n");
       ctgs.print_stats(500);
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       SLOG("\n");
-      SLOG(KBLUE, "Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(), 
+      SLOG(KBLUE, "Completed contig round k = ", kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(),
            " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
       barrier();
       prev_kmer_len = kmer_len;
@@ -239,16 +242,16 @@ int main(int argc, char **argv) {
       SLOG("\n");
       Alns alns;
       stage_timers.alignments->start();
-#ifdef DEBUG      
+#ifdef DEBUG
       alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
-#endif      
+#endif
       auto max_k = (scaff_kmer_len / 32 + 1) * 32;
-      
+
 #define FIND_ALIGNMENTS(KMER_LEN) \
         case KMER_LEN: \
-          find_alignments<KMER_LEN>(scaff_kmer_len, fqr_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns); \
+          find_alignments<KMER_LEN>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns); \
           break
-      
+
       switch (max_k) {
 
           FIND_ALIGNMENTS(32);
@@ -268,18 +271,18 @@ int main(int argc, char **argv) {
 
           break;
       }
-      
+
 #undef FIND_ALIGNMENTS
       stage_timers.alignments->stop();
       // always recalculate the insert size because we may need it for resumes of failed runs
       tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
                                                        max_expected_ins_size);
-      // insert size should never be larger than this; if it is that signals some error in the assembly 
+      // insert size should never be larger than this; if it is that signals some error in the assembly
       max_expected_ins_size = ins_avg + 8 * ins_stddev;
       int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
       stage_timers.cgraph->start();
-      traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, read_len,
-                         options->min_ctg_print_len, fqr_list, break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
+      traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
+                         break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
       stage_timers.cgraph->stop();
       if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
         if (options->checkpoint) {
@@ -292,16 +295,16 @@ int main(int argc, char **argv) {
       }
       chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
       SLOG("\n");
-      SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, 
+      SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed,
            loop_t_elapsed.count(), " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)",
            KNORM, "\n");
       barrier();
     }
   }
   auto fin_start_t = chrono::high_resolution_clock::now();
-  for (auto fqr : fqr_list) {
-    delete fqr;
-  }  
+  for (auto packed_reads : packed_reads_list) {
+    delete packed_reads;
+  }
   SLOG(KBLUE "_________________________", KNORM, "\n");
   stage_timers.dump_ctgs->start();
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
@@ -315,8 +318,8 @@ int main(int argc, char **argv) {
 
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
-  SLOG("    ", stage_timers.merge_reads->get_final(), "\n");
-  if (options->cache_reads) SLOG("    ", stage_timers.load_cache->get_final(), "\n");
+  if (!options->restart) SLOG("    ", stage_timers.merge_reads->get_final(), "\n");
+  else SLOG("    ", stage_timers.cache_reads->get_final(), "\n");
   SLOG("    ", stage_timers.analyze_kmers->get_final(), "\n");
   SLOG("    ", stage_timers.dbjg_traversal->get_final(), "\n");
   SLOG("    ", stage_timers.alignments->get_final(), "\n");
