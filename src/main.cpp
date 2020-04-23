@@ -274,7 +274,7 @@ int main(int argc, char **argv) {
 
 #undef FIND_ALIGNMENTS
       stage_timers.alignments->stop();
-      // always recalculate the insert size because we may need it for resumes of failed runs
+      // always recalculate the insert size because we may need it for resumes of Failed runs
       tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
                                                        max_expected_ins_size);
       // insert size should never be larger than this; if it is that signals some error in the assembly

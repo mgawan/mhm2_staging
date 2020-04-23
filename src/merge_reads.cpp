@@ -70,8 +70,10 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
       if (records_processed > 100000) break;
     }
     total_records_processed += records_processed;
-    int64_t bytes_per_record = tot_bytes_read / records_processed;
-    estimated_total_records += fqr.my_file_size() / bytes_per_record;
+    if (records_processed) {
+      int64_t bytes_per_record = tot_bytes_read / records_processed;
+      estimated_total_records += fqr.my_file_size() / bytes_per_record;
+    }
     progbar.done();
     barrier();
     max_read_len = max(fqr.get_max_read_len(), max_read_len);
