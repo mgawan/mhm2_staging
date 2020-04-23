@@ -18,6 +18,7 @@ if [ "$1" == "clean" ]; then
     rm -rf build/*
     # if this isn't removed then the the rebuild will not work
     rm -rf $INSTALL_PATH/cmake
+    exit 0
 else
     cd $rootdir/build
     if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
