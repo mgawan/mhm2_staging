@@ -12,6 +12,8 @@ rootdir=`pwd`
 
 INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/install}
 
+rm -rf $INSTALL_PATH/bin/mhmxx
+
 if [ "$1" == "clean" ]; then
     rm -rf build/*
     # if this isn't removed then the the rebuild will not work
