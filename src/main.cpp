@@ -27,6 +27,8 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
+//#define TEST_AUTO_RESUME
+
 ofstream _logstream;
 bool _verbose = false;
 
@@ -184,15 +186,15 @@ int main(int argc, char **argv) {
   if (options->kmer_lens.size()) {
     max_kmer_len = options->kmer_lens.back();
     for (auto kmer_len : options->kmer_lens) {
-      // uncomment to test auto resume
-//      if (kmer_len == 33 && !options->restart) DIE("testing auto resume");
-//      if (kmer_len == 55 && options->restart) SDIE("another test of auto resume");
+#ifdef TEST_AUTO_RESUME
+//      if (kmer_len == 33 && !options->restart) SDIE("testing auto resume");
+#endif
       auto loop_start_t = chrono::high_resolution_clock::now();
       auto max_k = (kmer_len / 32 + 1) * 32;
 
 #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, max_expected_ins_size, ins_avg, \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, max_expected_ins_size, ins_avg,\
                                ins_stddev, options); \
           break
 
@@ -236,6 +238,9 @@ int main(int argc, char **argv) {
       else max_kmer_len = options->scaff_kmer_lens.front();
     }
     for (auto scaff_kmer_len : options->scaff_kmer_lens) {
+#ifdef TEST_AUTO_RESUME
+      if (scaff_kmer_len == 99 && !options->restart) SDIE("testing auto resume");
+#endif
       auto loop_start_t = chrono::high_resolution_clock::now();
       SLOG(KBLUE, "_________________________", KNORM, "\n");
       SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n");

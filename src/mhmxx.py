@@ -195,7 +195,7 @@ def capture_err(err_msgs):
     global _stop_thread
     for line in iter(_proc.stderr.readline, b''):
         line = line.decode()
-        if 'WARNING' in line:
+        if 'WARNING' in line or 'ERROR' in line:
             sys.stderr.write(line)
             sys.stderr.flush()
         err_msgs.append(line)
@@ -209,7 +209,7 @@ def print_err_msgs(err_msgs):
     print_red("Check " + _output_dir + "err.log for details")
     # keep track of all msg copies so we don't print duplicates
     seen_msgs = {}
-    with open(_output_dir + 'err.log', 'w') as f:
+    with open(_output_dir + 'err.log', 'a') as f:
         for msg in err_msgs:
             clean_msg = msg.strip()
             #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
@@ -256,6 +256,7 @@ def main():
 
     print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
 
+    restating = False
     err_msgs = []
     while True:
         started_exec = False
@@ -267,7 +268,7 @@ def main():
             _err_thread.start()
             for line in iter(_proc.stdout.readline, b''):
                 if not started_exec:
-                    print('Started executing at ' + str(datetime.datetime.now()))
+                    print('Started executing at ' + str(datetime.datetime.now()), 'with PID', _proc.pid)
                     started_exec = True
 
                 line = line.decode()
@@ -281,9 +282,10 @@ def main():
                         _output_dir = _output_dir[:-3]
                     if _output_dir[-1] != '/':
                         _output_dir += '/'
-                    # get rid of any leftover error logs
+                    # get rid of any leftover error logs if not restarting
                     try:
-                        os.remove(_output_dir + 'err.log')
+                        if not restarting:
+                            os.remove(_output_dir + 'err.log')
                     except:
                         pass
 
@@ -299,8 +301,11 @@ def main():
                 err_msgs.append("ERROR: subprocess terminated with return code " + str(-_proc.returncode) + signame)
                 print_err_msgs(err_msgs)
                 if completed_round and options.auto_resume:
-                    print_red('Trying to restart...')
+                    print_red('Trying to restart with output directory ', _output_dir)
+                    restarting = True
                     cmd.append('--restart')
+                    if _output_dir not in cmd:
+                        cmd.extend(['-o', _output_dir])
                 else:
                     if options.auto_resume:
                         print_red("No additional completed round. Could not restart, exiting...")
