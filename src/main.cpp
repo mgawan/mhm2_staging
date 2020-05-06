@@ -171,7 +171,7 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
 }
 
 template <int MAX_K>
-void post_processing(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options) {
+void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Post processing", KNORM, "\n\n");
@@ -195,7 +195,6 @@ void post_processing(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> option
     delete packed_reads;
   }
   packed_reads_list.clear();
-  //alns.dump_alns("final_assembly.alns.gz");
   alns.dump_single_file_alns("final_assembly.alns");
 }
 
@@ -364,30 +363,30 @@ int main(int argc, char **argv) {
   if (options->post_assm_aln) {
     auto max_k = (max_kmer_len / 32 + 1) * 32;
 
-#define POST_PROCESSING(KMER_LEN)                           \
+#define POST_ASSEMBLY(KMER_LEN)                           \
     case KMER_LEN:                                            \
-      post_processing<KMER_LEN>(max_kmer_len, ctgs, options); \
+      post_assembly<KMER_LEN>(max_kmer_len, ctgs, options); \
       break
 
     switch (max_k) {
-      POST_PROCESSING(32);
+      POST_ASSEMBLY(32);
   #if MAX_BUILD_KMER >= 64
-      POST_PROCESSING(64);
+      POST_ASSEMBLY(64);
   #endif
   #if MAX_BUILD_KMER >= 96
-      POST_PROCESSING(96);
+      POST_ASSEMBLY(96);
   #endif
   #if MAX_BUILD_KMER >= 128
-      POST_PROCESSING(128);
+      POST_ASSEMBLY(128);
   #endif
   #if MAX_BUILD_KMER >= 160
-      POST_PROCESSING(160);
+      POST_ASSEMBLY(160);
   #endif
       default:
         DIE("Built for maximum kmer of ", MAX_BUILD_KMER, " not ", max_k);
         break;
     }
-  #undef POST_PROCESSING
+  #undef POST_ASSEMBLY
   }
 
   SLOG(KBLUE "_________________________", KNORM, "\n");
