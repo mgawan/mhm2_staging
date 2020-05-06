@@ -82,17 +82,21 @@ public:
 class PackedReads {
 
   vector<std::unique_ptr<PackedRead>> packed_reads;
+  // this is only used when we need to know the actual name of the original reads
+  vector<string> read_id_idx_to_str;
   string fname;
   int max_read_len;
   int64_t index = 0;
   int qual_offset;
+  bool str_ids;
 
 public:
-  PackedReads(int qual_offset, const string &fname) : qual_offset(qual_offset), fname(fname) {}
+  PackedReads(int qual_offset, const string &fname, bool str_ids=false): qual_offset(qual_offset), fname(fname), str_ids(str_ids) {}
 
   bool get_next_read(string &id, string &seq, string &quals) {
     if (index == packed_reads.size()) return false;
     packed_reads[index]->unpack(id, seq, quals, qual_offset);
+    if (str_ids) id = read_id_idx_to_str[index];
     index++;
     return true;
   }
@@ -115,6 +119,7 @@ public:
 
   void add_read(const string &read_id, const string &seq, const string &quals) {
     packed_reads.push_back(std::make_unique<PackedRead>(read_id, seq, quals, qual_offset));
+    if (str_ids) read_id_idx_to_str.push_back(read_id);
   }
 
   void load_reads() {
@@ -141,6 +146,7 @@ public:
       tot_bytes_read += bytes_read;
       progbar.update(tot_bytes_read);
       packed_reads.push_back(std::make_unique<PackedRead>(id, seq, quals, qual_offset));
+      if (str_ids) read_id_idx_to_str.push_back(id);
     }
     progbar.done();
     upcxx::barrier();
