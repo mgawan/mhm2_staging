@@ -353,6 +353,13 @@ int main(int argc, char **argv) {
   ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
   stage_timers.dump_ctgs->stop();
 
+  SLOG(KBLUE "_________________________", KNORM, "\n");
+  ctgs.print_stats(options->min_ctg_print_len);
+  chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
+  SLOG("\n");
+  SLOG(KBLUE, "Completed finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(),
+       " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+
   // post processing
   if (options->post_assm_aln) {
     auto max_k = (max_kmer_len / 32 + 1) * 32;
@@ -382,13 +389,6 @@ int main(int argc, char **argv) {
     }
   #undef POST_PROCESSING
   }
-
-  SLOG(KBLUE "_________________________", KNORM, "\n");
-  ctgs.print_stats(options->min_ctg_print_len);
-  chrono::duration<double> fin_t_elapsed = chrono::high_resolution_clock::now() - fin_start_t;
-  SLOG("\n");
-  SLOG(KBLUE, "Completed finalization in ", setprecision(2), fixed, fin_t_elapsed.count(), " s at ", get_current_time(),
-       " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
 
   SLOG(KBLUE "_________________________", KNORM, "\n");
   SLOG("Stage timing:\n");
