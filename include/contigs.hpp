@@ -205,8 +205,7 @@ public:
     bytes_written = pwrite(fileno, fasta.c_str(), sz, my_fpos);
     close(fileno);
 
-    if (bytes_written != sz)
-      DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
+    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
     barrier();
     if (rank_me() == 0) {
       string new_fname = fname + ".fasta";

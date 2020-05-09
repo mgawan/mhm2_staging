@@ -48,7 +48,8 @@ void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_read
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
                         vector<PackedReads*> &packed_reads_list, int break_scaffolds, QualityLevel quality_level,
                         Contigs &ctgs, Alns &alns);
-pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size);
+pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
+                                     const string &dump_msa_fname="");
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs,
@@ -160,18 +161,15 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
     SLOG(KBLUE "_________________________", KNORM, "\n");
     ctgs.print_stats(options->min_ctg_print_len);
   }
-  chrono::duration<double> loop_t_elapsed =
-      chrono::high_resolution_clock::now() - loop_start_t;
+  chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
   SLOG("\n");
-  SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ",
-       setprecision(2), fixed, loop_t_elapsed.count(), " s at ",
-       get_current_time(), " (", get_size_str(get_free_mem()),
-       " free memory on node 0)", KNORM, "\n");
+  SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(),
+       " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
   barrier();
 }
 
 template <int MAX_K>
-void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options) {
+void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options, int max_expected_ins_size) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Post processing", KNORM, "\n\n");
@@ -196,6 +194,7 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options)
   }
   packed_reads_list.clear();
   alns.dump_single_file_alns("final_assembly.alns");
+  calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size, "misassembled_ctgs.txt");
 }
 
 int main(int argc, char **argv) {
@@ -365,7 +364,7 @@ int main(int argc, char **argv) {
 
 #define POST_ASSEMBLY(KMER_LEN)                           \
     case KMER_LEN:                                            \
-      post_assembly<KMER_LEN>(max_kmer_len, ctgs, options); \
+      post_assembly<KMER_LEN>(max_kmer_len, ctgs, options, max_expected_ins_size); \
       break
 
     switch (max_k) {
