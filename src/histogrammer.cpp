@@ -23,7 +23,8 @@ using namespace upcxx_utils;
 bool bad_alignment(Aln *aln) {
   if (aln->rstart > KLIGN_UNALIGNED_THRES) return true;
   if (aln->rlen - aln->rstop > KLIGN_UNALIGNED_THRES) return true;
-  if (aln->score1 < aln->rlen - HISTOGRAMMER_BAD_ALN) return true;
+  // with match and mismatch scores of 1 this means at most two errors
+  if (aln->score1 < aln->rlen - 2) return true;
   return false;
 }
 
@@ -53,7 +54,7 @@ int calculate_unmerged_rlen(Alns &alns) {
 }
 
 pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expected_ins_stddev, int max_expected_ins_size,
-                                     const string &dump_msa_fname="") {
+                                     const string &dump_large_alns_fname="") {
   BarrierTimer timer(__FILEFUNC__, false, true);
   auto unmerged_rlen = calculate_unmerged_rlen(alns);
   ProgressBar progbar(alns.size(), "Processing alignments to compute insert size");
@@ -66,7 +67,7 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   int64_t num_small = 0;
   int min_insert_size = 1000000;
   int max_insert_size = 0;
-  vector<string> misassembled_ctgs;
+  vector<string> large_alns;
   vector<int> insert_sizes;
   insert_sizes.reserve(alns.size());
   for (auto &aln : alns) {
@@ -103,14 +104,12 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
             //WARN("large insert size: ", insert_size, " prev: ", prev_aln->clen, " ",
             //     prev_aln->orient, " ", prev_aln->cstart, " ", prev_aln->cstop, " ", prev_cstart, " ", prev_cstop,
             //     " current ", aln.clen, " ", aln.orient, " ", aln.cstart, " ", aln.cstop);
-            if (!dump_msa_fname.empty())
-              misassembled_ctgs.push_back(to_string(prev_aln->cid) + " " + to_string(min(prev_cstart, aln.cstart)) + " " +
-                                          to_string(max(prev_cstop, aln.cstop)));
+            // the metaquast extensive misassembly minimum size is 1000
+            if (!dump_large_alns_fname.empty())
+              large_alns.push_back(to_string(prev_aln->cid) + " " + to_string(prev_aln->clen) + " " +
+                                   to_string(min(prev_cstart, aln.cstart)) + " " + to_string(max(prev_cstop, aln.cstop)));
             num_large++;
           } else if (insert_size < 10) {
-            if (!dump_msa_fname.empty())
-              misassembled_ctgs.push_back(to_string(prev_aln->cid) + " " + to_string(min(prev_cstart, aln.cstart)) + " " +
-                                          to_string(max(prev_cstop, aln.cstop)));
             num_small++;
           } else {
             num_valid_pairs++;
@@ -126,10 +125,10 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   }
   progbar.done();
 
-  if (!dump_msa_fname.empty()) {
-    string out_str = "";
-    for (auto msa_ctg : misassembled_ctgs) {
-      out_str += msa_ctg + "\n";
+  if (!dump_large_alns_fname.empty()) {
+    string out_str = (!upcxx::rank_me() ? "#cid clen aln_start aln_stop\n" : "");
+    for (auto large_alns_ctg : large_alns) {
+      out_str += large_alns_ctg + "\n";
     }
     upcxx::atomic_domain<size_t> ad({upcxx::atomic_op::fetch_add, upcxx::atomic_op::load});
     upcxx::global_ptr<size_t> fpos = nullptr;
@@ -144,22 +143,22 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
     if (!upcxx::rank_me()) {
       fsize = ad.load(fpos, std::memory_order_relaxed).wait();
       // rank 0 creates the file and truncates it to the correct length
-      fileno = open(dump_msa_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-      if (fileno == -1) WARN("Error trying to create file ", dump_msa_fname, ": ", strerror(errno), "\n");
-      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", dump_msa_fname, " to ", fsize, " bytes\n");
+      fileno = open(dump_large_alns_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+      if (fileno == -1) WARN("Error trying to create file ", dump_large_alns_fname, ": ", strerror(errno), "\n");
+      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", dump_large_alns_fname, " to ", fsize, " bytes\n");
     }
     upcxx::barrier();
     ad.destroy();
     // wait until rank 0 has finished setting up the file
-    if (rank_me()) fileno = open(dump_msa_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fileno == -1) WARN("Error trying to open file ", dump_msa_fname, ": ", strerror(errno), "\n");
+    if (rank_me()) fileno = open(dump_large_alns_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fileno == -1) WARN("Error trying to open file ", dump_large_alns_fname, ": ", strerror(errno), "\n");
     auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
     close(fileno);
     if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
     upcxx::barrier();
     auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
     upcxx::barrier();
-    SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", dump_msa_fname, "\n");
+    SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", dump_large_alns_fname, "\n");
   }
 
   auto all_num_overlap_rejected = reduce_one(num_overlap_rejected, op_fast_add, 0).wait();

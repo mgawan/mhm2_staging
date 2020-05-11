@@ -158,7 +158,7 @@ class Options {
       // check to see if mhmxx.log exists. If so, and not restarting, rename it
       if (file_exists("mhmxx.log") && !restart) {
         string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        cerr << KLRED << "WARNING: " << KNORM << output_dir << "mhmxx.log exists: renaming to " << output_dir << new_log_fname
+        cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhmxx.log exists: renaming to " << output_dir << new_log_fname
              << endl;
         if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
       } else if (!file_exists("mhmxx.log") && restart) {

@@ -49,7 +49,7 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         vector<PackedReads*> &packed_reads_list, int break_scaffolds, QualityLevel quality_level,
                         Contigs &ctgs, Alns &alns);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
-                                     const string &dump_msa_fname="");
+                                     const string &dump_large_alns_fname="");
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs,
@@ -194,7 +194,7 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   }
   packed_reads_list.clear();
   alns.dump_single_file_alns("final_assembly.alns");
-  calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size, "misassembled_ctgs.txt");
+  calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size, "large_alns_ctgs.txt");
 }
 
 int main(int argc, char **argv) {

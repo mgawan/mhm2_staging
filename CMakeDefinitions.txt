@@ -27,9 +27,6 @@ add_definitions(-DKLIGN_EXPAND_BASES=5)
 # max number of unaligned bases to allow on the side of an alignment
 add_definitions(-DKLIGN_UNALIGNED_THRES=1)
 
-# max difference allowed between aln score and read length (with match = 1)
-add_definitions(-DHISTOGRAMMER_BAD_ALN=5)
-
 # controls depth matching in cgraph
 add_definitions(-DCGRAPH_DEPTH_DIFF_THRES=0.1)
 add_definitions(-DCGRAPH_MAX_DEPTH_DIFF=15)
