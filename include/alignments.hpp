@@ -15,6 +15,7 @@ struct Aln {
   int rstart, rstop, rlen, cstart, cstop, clen;
   char orient;
   int score1, score2;
+  string sam_string;
 
   // writes out in the format meraligner uses
   string to_string() {
@@ -101,12 +102,13 @@ public:
     upcxx::barrier();
   }
 
-  void dump_single_file_alns(const string fname) {
+  void dump_single_file_alns(const string fname, bool as_sam_format=false) {
     BarrierTimer timer(__FILEFUNC__, false, true);
 
     string out_str = "";
     for (auto aln : alns) {
-      out_str += aln.to_string() + "\n";
+      if (!as_sam_format) out_str += aln.to_string() + "\n";
+      else out_str += aln.sam_string + "\n";
     }
     upcxx::atomic_domain<size_t> ad({upcxx::atomic_op::fetch_add, upcxx::atomic_op::load});
     upcxx::global_ptr<size_t> fpos = nullptr;

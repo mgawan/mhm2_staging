@@ -33,6 +33,9 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
+struct SSWScoring {
+  int match, mismatch, gap_opening, gap_extending, ambiguity;
+};
 
 using cid_t = int64_t;
 
@@ -93,6 +96,33 @@ class KmerCtgDHT {
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
 
+  void set_sam_string(Aln &aln, string read_seq, string cigar) {
+    aln.sam_string = aln.read_id + "\t";
+    if (aln.orient == '-') {
+      aln.sam_string += "16\t";
+      read_seq = revcomp(read_seq);
+      //reverse(read_quals.begin(), read_quals.end());
+    } else {
+      aln.sam_string += "0\t";
+    }
+    aln.sam_string += "Contig" + to_string(aln.cid) + "\t" + to_string(aln.cstart + 1) + "\t";
+    uint32_t mapq;
+    // for perfect match, set to same maximum as used by minimap
+    if (aln.score2 == 0) {
+      mapq = 60;
+    } else {
+      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2)/(double)aln.score1);
+      mapq = (uint32_t) (mapq + 4.99);
+      mapq = mapq < 254 ? mapq : 254;
+    }
+    aln.sam_string += to_string(mapq) + "\t";
+    aln.sam_string += cigar + "\t*\t0\t0\t" + read_seq + "\t*\t";
+    aln.sam_string += "AS:i:" + to_string(aln.score1);
+    // FIXME: optional tags used by minimap
+    // NM:i:<x>   edit distance to the reference
+    // many others used but none are standard
+  }
+
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
                   int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset,
                   int overlap_len, IntermittentTimer &ssw_timer) {
@@ -104,10 +134,11 @@ class KmerCtgDHT {
       ssw_aln.ref_end = read_extra_offset + overlap_len - 1;
       ssw_aln.query_begin = ctg_extra_offset;
       ssw_aln.query_end = ctg_extra_offset + overlap_len - 1;
-      // the mismatch penalty is 3
+      // the match score is 1
       ssw_aln.sw_score = overlap_len;
-      //ssw_aln.sw_score = overlap_len - 3 * hdist;
       ssw_aln.sw_score_next_best = 0;
+      // every position matches
+      ssw_aln.cigar_string = to_string(overlap_len) + "M";
     } else {
       // make sure upcxx progress is done before starting alignment
       discharge();
@@ -134,10 +165,18 @@ class KmerCtgDHT {
             .orient = orient, .score1 = ssw_aln.sw_score,
             .score2 = ssw_aln.sw_score_next_best };
     */
-    aln.read_id = rname; aln.cid = cid;
-    aln.rstart = rstart; aln.rstop = rstop; aln.rlen = rlen;
-    aln.cstart = cstart; aln.cstop = cstop; aln.clen = clen;
-    aln.orient = orient; aln.score1 = ssw_aln.sw_score; aln.score2 = ssw_aln.sw_score_next_best;
+    aln.read_id = rname;
+    aln.cid = cid;
+    aln.rstart = rstart;
+    aln.rstop = rstop;
+    aln.rlen = rlen;
+    aln.cstart = cstart;
+    aln.cstop = cstop;
+    aln.clen = clen;
+    aln.orient = orient;
+    aln.score1 = ssw_aln.sw_score;
+    aln.score2 = ssw_aln.sw_score_next_best;
+    if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
 
 #ifdef DUMP_ALNS
     *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
@@ -150,10 +189,11 @@ public:
   int kmer_len;
 
   // aligner construction: SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns)
+  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, SSWScoring &ssw_scoring, bool compute_cigar)
     : kmer_map({})
     , kmer_store(kmer_map)
-    , ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST, SSW_AMBIGUITY_COST)
+    , ssw_aligner(ssw_scoring.match, ssw_scoring.mismatch, ssw_scoring.gap_opening, ssw_scoring.gap_extending,
+                  ssw_scoring.ambiguity)
     , num_alns(0)
     , num_perfect_alns(0)
     , num_overlaps(0)
@@ -161,7 +201,7 @@ public:
     , ctg_seq_bytes_fetched(0)
     , alns(&alns) {
 
-    ssw_filter.report_cigar = false;
+    ssw_filter.report_cigar = compute_cigar;
     kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
     kmer_store.set_update_func(
       [](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
@@ -560,11 +600,18 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
 
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                     Contigs &ctgs, Alns &alns) {
+                     Contigs &ctgs, Alns &alns, bool compute_cigar=false) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
-  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns);
+  // default for normal alignments in the pipeline, but for final alignments, uses minimap2 defaults
+  SSWScoring ssw_scoring = { .match = SSW_MATCH_SCORE, .mismatch = SSW_MISMATCH_COST, .gap_opening = SSW_GAP_OPENING_COST,
+                             .gap_extending = SSW_GAP_EXTENDING_COST, .ambiguity = SSW_AMBIGUITY_COST };
+  if (compute_cigar) {
+    SSWScoring alt_ssw_scoring = { .match = 2, .mismatch = 4, .gap_opening = 4, .gap_extending = 2, .ambiguity = 1};
+    ssw_scoring = alt_ssw_scoring;
+  }
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, ssw_scoring, compute_cigar);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs);
 #ifdef DEBUG
@@ -579,7 +626,7 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 
 #define FA(KMER_LEN) \
     template \
-    void find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&)
+    void find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, bool)
 
 
 FA(32);

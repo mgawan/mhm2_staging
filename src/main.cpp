@@ -42,7 +42,7 @@ template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                     Contigs &ctgs, Alns &alns);
+                     Contigs &ctgs, Alns &alns, bool compute_cigar=false);
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
@@ -187,13 +187,13 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
+  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, true);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
   }
   packed_reads_list.clear();
-  alns.dump_single_file_alns("final_assembly.alns");
+  alns.dump_single_file_alns("final_assembly.sam", true);
   calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size, "large_alns_ctgs.txt");
 }
 
