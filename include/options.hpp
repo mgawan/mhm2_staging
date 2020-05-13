@@ -230,7 +230,7 @@ public:
                    ->delimiter(',') ->capture_default_str();
     app.add_option("-Q, --quality-offset", qual_offset,
                    "Phred encoding offset")
-                   ->capture_default_str() ->check(CLI::IsMember({33, 64}));
+                   ->capture_default_str() ->check(CLI::IsMember({0, 33, 64}));
     app.add_option("-c, --contigs", ctgs_fname,
                    "File with contigs used for restart");
 //                   ->check(CLI::ExistingFile);
