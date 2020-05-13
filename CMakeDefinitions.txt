@@ -15,9 +15,8 @@ add_definitions(-DCONFIG_USE_COLORS)
 # use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
 
-# max allowed alignments per read (to reduce overhead & imbalance)
+# max allowed alignments per read (to reduce overhead & imbalance) - set to 0 to have no limit
 add_definitions(-DKLIGN_MAX_ALNS_PER_READ=20)
-
 # limit on how many contigs to fetch for a read at a time - this is across all ranks, so a form of buffering
 add_definitions(-DKLIGN_CTG_FETCH_BUF_SIZE=100000)
 # decreasing this value increases the alignment computation time, and it may improve results slightly

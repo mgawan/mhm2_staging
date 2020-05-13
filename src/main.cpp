@@ -196,6 +196,9 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   packed_reads_list.clear();
   alns.dump_single_file_alns("final_assembly.sam", true);
   calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size, "large_alns_ctgs.txt");
+  SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
+       "/final_assembly.sam", KNORM, "\n");
+  SLOG(KBLUE, "_________________________", KNORM, "\n");
 }
 
 int main(int argc, char **argv) {

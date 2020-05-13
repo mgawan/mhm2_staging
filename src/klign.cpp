@@ -432,7 +432,7 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
   auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs();
   if (num_dropped_seed_to_ctgs)
-    SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs, " excessive seed-to-contig mappings (",
+    SLOG_VERBOSE("Dropped ", num_dropped_seed_to_ctgs, " non-unique seed-to-contig mappings (",
                  setprecision(2), fixed, (100.0 * num_dropped_seed_to_ctgs / tot_num_kmers), "%)\n");
 }
 
@@ -489,7 +489,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
             auto read_record = kmer_to_read.read_record;
             int pos_in_read = kmer_to_read.pos_in_read;
             bool read_is_rc = kmer_to_read.is_rc;
-            if (read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
+            if (KLIGN_MAX_ALNS_PER_READ && read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
               // too many mappings for this read, stop adding to it
               num_excess_alns_reads++;
               continue;
@@ -508,10 +508,11 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
   compute_alns_timer.start();
   int num_reads_aligned = 0;
   // create a new list of records with all reads having < KLIGN_MAX_ALNS_PER_READ, i.e. those without excessive mappings
+  // setting KLIGN_MAX_ALNS_PER_READ to zero means don't drop any
   vector<ReadRecord*> good_read_records;
   good_read_records.reserve(read_records.size());
   for (auto read_record : read_records) {
-    if (read_record->aligned_ctgs_map.size() < KLIGN_MAX_ALNS_PER_READ)
+    if (!KLIGN_MAX_ALNS_PER_READ || read_record->aligned_ctgs_map.size() < KLIGN_MAX_ALNS_PER_READ)
       good_read_records.push_back(read_record);
   }
   // compute alignments for each read
@@ -627,10 +628,10 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 #ifdef DEBUG
   //kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, packed_reads_list, compute_cigar ? 1 : KLIGN_SEED_SPACE);
+  do_alignments(kmer_ctg_dht, packed_reads_list, compute_cigar ? 4 : KLIGN_SEED_SPACE);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
-  SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
+  if (alns.get_num_dups()) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
   barrier();
 }
 

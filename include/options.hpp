@@ -158,8 +158,8 @@ class Options {
       // check to see if mhmxx.log exists. If so, and not restarting, rename it
       if (file_exists("mhmxx.log") && !restart) {
         string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhmxx.log exists: renaming to " << output_dir << new_log_fname
-             << endl;
+        cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhmxx.log exists. Renaming to " << output_dir << "/"
+             << new_log_fname << endl;
         if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
       } else if (!file_exists("mhmxx.log") && restart) {
         ostringstream oss;
@@ -298,7 +298,7 @@ public:
       throw std::runtime_error(oss.str());
     }
 
-    if (!upcxx::rank_me() && (!max_kmer_len || ctgs_fname.empty())) {
+    if (!upcxx::rank_me() && post_assm_only && (!max_kmer_len || ctgs_fname.empty())) {
       ostringstream oss;
       oss << KLRED << "For running only post assembly analysis, require --max-kmer_len and --contigs" << KNORM << endl;
       throw std::runtime_error(oss.str());
