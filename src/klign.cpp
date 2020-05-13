@@ -35,6 +35,13 @@ using namespace upcxx_utils;
 
 struct SSWScoring {
   int match, mismatch, gap_opening, gap_extending, ambiguity;
+
+  string to_string() {
+    ostringstream oss;
+    oss << "match " << match << " mismatch " << mismatch << " gap open " << gap_opening << " gap extend " << gap_extending
+        << " ambiguity " << ambiguity;
+    return oss.str();
+  }
 };
 
 using cid_t = int64_t;
@@ -398,7 +405,7 @@ public:
 
 
 template<int MAX_K>
-static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs) {
+static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, int min_ctg_len) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
@@ -406,6 +413,7 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
     progbar.update();
+    if (ctg->seq.length() < min_ctg_len) continue;
     global_ptr<char> seq_gptr = allocate<char>(ctg->seq.length() + 1);
     strcpy(seq_gptr.local(), ctg->seq.c_str());
     CtgLoc ctg_loc = { .cid = ctg->id, .seq_gptr = seq_gptr, .clen = (int)ctg->seq.length() };
@@ -524,8 +532,9 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
 }
 
 template<int MAX_K>
-static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> &packed_reads_list) {
+static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> &packed_reads_list, int seed_space) {
   BarrierTimer timer(__FILEFUNC__, false, true);
+  SLOG_VERBOSE("Using a seed space of ", seed_space, "\n");
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
   int64_t num_reads_aligned = 0, num_excess_alns_reads = 0;
@@ -552,7 +561,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
       bool filled = false;
-      for (int i = 0; i < kmers.size(); i += KLIGN_SEED_SPACE) {
+      for (int i = 0; i < kmers.size(); i += seed_space) {
         Kmer<MAX_K> kmer = kmers[i];
         Kmer<MAX_K> kmer_rc = kmer.revcomp();
         bool is_rc = false;
@@ -600,7 +609,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
 
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                     Contigs &ctgs, Alns &alns, bool compute_cigar=false) {
+                     Contigs &ctgs, Alns &alns, bool compute_cigar=false, int min_ctg_len=0) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
@@ -611,13 +620,14 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
     SSWScoring alt_ssw_scoring = { .match = 2, .mismatch = 4, .gap_opening = 4, .gap_extending = 2, .ambiguity = 1};
     ssw_scoring = alt_ssw_scoring;
   }
+  SLOG_VERBOSE("SSW scoring parameters: ", ssw_scoring.to_string(), "\n");
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, ssw_scoring, compute_cigar);
   barrier();
-  build_alignment_index(kmer_ctg_dht, ctgs);
+  build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
   //kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, packed_reads_list);
+  do_alignments(kmer_ctg_dht, packed_reads_list, compute_cigar ? 1 : KLIGN_SEED_SPACE);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
   SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
@@ -626,7 +636,7 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 
 #define FA(KMER_LEN) \
     template \
-    void find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, bool)
+    void find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, bool, int)
 
 
 FA(32);

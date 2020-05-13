@@ -186,6 +186,7 @@ public:
   int dmin_thres = 2.0;
   bool checkpoint = true;
   bool post_assm_aln = false;
+  bool post_assm_only = false;
   bool show_progress = false;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
@@ -265,6 +266,9 @@ public:
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
+    app.add_flag("--post-assembly-only", post_assm_only,
+                 "Only run post assembly")
+                 ->capture_default_str();
     app.add_flag("--progress", show_progress,
                  "Show progress")
                  ->capture_default_str();
@@ -293,6 +297,13 @@ public:
       oss << KLRED << "Require read names if not restarting" << KNORM << endl;
       throw std::runtime_error(oss.str());
     }
+
+    if (!upcxx::rank_me() && (!max_kmer_len || ctgs_fname.empty())) {
+      ostringstream oss;
+      oss << KLRED << "For running only post assembly analysis, require --max-kmer_len and --contigs" << KNORM << endl;
+      throw std::runtime_error(oss.str());
+    }
+
     upcxx::barrier();
 
     if (!*output_dir_opt) {
