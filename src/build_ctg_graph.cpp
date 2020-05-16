@@ -27,7 +27,7 @@ static CtgGraph *_graph = nullptr;
 static void add_vertices_from_ctgs(Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
-  for (auto ctg : ctgs) {
+  for (auto &ctg : ctgs) {
     Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
     _graph->add_vertex(v, ctg.seq);
     progbar.update();
@@ -99,8 +99,8 @@ static void compute_tnfs(Contigs &ctgs) {
   const size_t nTNF = 136;
   unordered_map<std::string, int> TN_map;
   unordered_set<std::string> TNP_map;
-  // lookup table 0 - 255 of raw 4-mer to tetramer index in TNF  
-  vector<int> TN_lookup; 
+  // lookup table 0 - 255 of raw 4-mer to tetramer index in TNF
+  vector<int> TN_lookup;
   // initialize the TN data structures
   for (size_t i = 0; i < nTNF; ++i) {
     TN_map[TN[i]] = i;
@@ -147,6 +147,28 @@ static void compute_tnfs(Contigs &ctgs) {
             TN_lookup[tn_number] = nTNF; // skip
           }
         }
+      }
+    }
+  }
+
+  for (auto &ctg : ctgs) {
+    vector<double> tnf(nTNF, 0);
+    for (size_t r = 0; r < ctg.seq.length(); ++r) {
+  		char tn[5] = {'\0'};
+		  const char *seq = ctg.seq.c_str();
+      for (size_t i = 0; i < ctg.seq.length() - 3; ++i) {
+        int tn_num = tn_to_number(seq + i);
+        int tn_idx = TN_lookup[tn_num];
+        if (tn_idx < nTNF) ++tnf[tn_idx];
+      }
+      //normalize to unit size (L2 norm)
+      double rsum = 0;
+      for (size_t c = 0; c < tnf.size(); ++c) {
+        rsum += tnf[c] * tnf[c];
+      }
+      rsum = sqrt(rsum);
+      for (size_t c = 0; c < tnf.size(); ++c) {
+        tnf[c] /= rsum;
       }
     }
   }
