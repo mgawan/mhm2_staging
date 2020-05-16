@@ -38,10 +38,13 @@ using upcxx::dist_object;
 
 using namespace upcxx_utils;
 
+#define nTNF 136
+
 struct Contig {
   int64_t id;
   string seq;
   double depth;
+  std::array<double, nTNF> tnf;
 
 #ifdef USE_KMER_DEPTHS
   vector<uint16_t> kmer_depths;
