@@ -329,6 +329,10 @@ public:
 
     init_logger("mhmxx.log", verbose);
 
+#ifdef DEBUG
+    open_dbg("debug");
+#endif
+
     SLOG(KLBLUE, "MHMXX version ", full_version_str, KNORM, "\n");
 
     if (restart) get_restart_options();

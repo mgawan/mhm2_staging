@@ -17,13 +17,6 @@ using std::min;
 #define HASH_TABLE std::unordered_map
 #endif
 
-// this shouldn't really be defined here, but I didn't want yet another header file
-enum class QualityLevel {
-  SINGLE_PATH_ONLY,
-  DEPTH_RESLN_ONLY,
-  ALL
-};
-
 
 inline string revcomp(const string &seq) {
   string seq_rc = "";

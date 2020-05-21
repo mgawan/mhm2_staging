@@ -17,6 +17,8 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
+#define SIZE_TN_LOOKUP 257
+
 void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &alns, CtgGraph *graph);
 void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 
@@ -24,20 +26,122 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 static CtgGraph *_graph = nullptr;
 
 
-static void add_vertices_from_ctgs(Contigs &ctgs) {
+// return A C G T (0-3) or 4 if not a base
+static int base_to_number(const char base) {
+  int num = 0;
+  switch (base) {
+    case ('A'):
+    case ('a'): num = 0; break;
+    case ('C'):
+    case ('c'): num = 1; break;
+    case ('G'):
+    case ('g'): num = 2; break;
+    case ('T'):
+    case ('t'): num = 3; break;
+    default: num = 4;
+  }
+  return num;
+}
+
+// returns 0-255 for any valid tetamer with A C G or T and 256 for an invalid one
+static int tn_to_number(const string &seq, int pos) {
+  int num0 = base_to_number(seq[pos + 0]);
+  int num1 = base_to_number(seq[pos + 1]);
+  int num2 = base_to_number(seq[pos + 2]);
+  int num3 = base_to_number(seq[pos + 3]);
+  if (num0 == 4 || num1 == 4 || num2 == 4 || num3 == 4) return 256;
+  return num0 + 4 * num1 + 16 * num2 + 64 * num3;
+}
+
+static void compute_tnfs(Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__, false, true);
-  ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
-  for (auto ctg : ctgs) {
-    Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
-    _graph->add_vertex(v, ctg.seq);
+  const string TN[] = {"GGTA", "AGCC", "AAAA", "ACAT", "AGTC", "ACGA", "CATA", "CGAA", "AAGT", "CAAA", "CCAG", "GGAC",
+                       "ATTA", "GATC", "CCTC", "CTAA", "ACTA", "AGGC", "GCAA", "CCGC", "CGCC", "AAAC", "ACTC", "ATCC",
+                       "GACC", "GAGA", "ATAG", "ATCA", "CAGA", "AGTA", "ATGA", "AAAT", "TTAA", "TATA", "AGTG", "AGCT",
+                       "CCAC", "GGCC", "ACCC", "GGGA", "GCGC", "ATAC", "CTGA", "TAGA", "ATAT", "GTCA", "CTCC", "ACAA",
+                       "ACCT", "TAAA", "AACG", "CGAG", "AGGG", "ATCG", "ACGC", "TCAA", "CTAC", "CTCA", "GACA", "GGAA",
+                       "CTTC", "GCCC", "CTGC", "TGCA", "GGCA", "CACG", "GAGC", "AACT", "CATG", "AATT", "ACAG", "AGAT",
+                       "ATAA", "CATC", "GCCA", "TCGA", "CACA", "CAAC", "AAGG", "AGCA", "ATGG", "ATTC", "GTGA", "ACCG",
+                       "GATA", "GCTA", "CGTC", "CCCG", "AAGC", "CGTA", "GTAC", "AGGA", "AATG", "CACC", "CAGC", "CGGC",
+                       "ACAC", "CCGG", "CCGA", "CCCC", "TGAA", "AACA", "AGAG", "CCCA", "CGGA", "TACA", "ACCA", "ACGT",
+                       "GAAC", "GTAA", "ATGC", "GTTA", "TCCA", "CAGG", "ACTG", "AAAG", "AAGA", "CAAG", "GCGA", "AACC",
+                       "ACGG", "CCAA", "CTTA", "AGAC", "AGCG", "GAAA", "AATC", "ATTG", "GCAC", "CCTA", "CGAC", "CTAG",
+                       "AGAA", "CGCA", "CGCG", "AATA" };
+  //Palindromic sequences
+  const string TNP[] = {"ACGT", "AGCT", "TCGA", "TGCA", "CATG", "CTAG", "GATC", "GTAC", "ATAT", "TATA", "CGCG", "GCGC", "AATT",
+                        "TTAA", "CCGG", "GGCC" };
+  const char bases[] {'A', 'C', 'G', 'T'};
+  unordered_map<std::string, int> TN_map;
+  unordered_set<std::string> TNP_map;
+  // lookup table 0 - 255 of raw 4-mer to tetramer index in TNF
+  array<int, SIZE_TN_LOOKUP> TN_lookup;
+  // initialize the TN data structures
+  for (size_t i = 0; i < nTNF; ++i) {
+    TN_map[TN[i]] = i;
+  }
+  for (size_t i = 0; i < 16; ++i) {
+    TNP_map.insert(TNP[i]);
+  }
+  TN_lookup[256] = nTNF; // any non-base in the kmer
+  string tnf_seq(4, 0);
+  for (int i0 = 0; i0 < 4; i0++) {
+    tnf_seq[0] = bases[i0];
+    for(int i1 = 0; i1 < 4; i1++) {
+      tnf_seq[1] = bases[i1];
+      for(int i2 = 0; i2 < 4; i2++) {
+        tnf_seq[2] = bases[i2];
+        for(int i3 = 0; i3 < 4; i3++) {
+          tnf_seq[3] = bases[i3];
+          string tn = tnf_seq;
+          int tn_number= tn_to_number(tnf_seq, 0);
+          assert(tn_number <= 255);
+          auto it = TN_map.find(tn);
+          if (it != TN_map.end()) {
+            TN_lookup[tn_number] = it->second;
+            continue;
+          }
+          tn = revcomp(tn);
+          if (TNP_map.find(tn) == TNP_map.end()) { //if it is palindromic, then skip
+            it = TN_map.find(tn);
+            if (it != TN_map.end()) {
+              TN_lookup[tn_number] = it->second;
+            } else {
+              WARN("Unknown TNF ", tn);
+              continue;
+            }
+          } else {
+            TN_lookup[tn_number] = nTNF; // skip
+          }
+        }
+      }
+    }
+  }
+
+  ProgressBar progbar(ctgs.size(), "Computing TNFs for contigs");
+  for (auto &ctg : ctgs) {
+    for (int i = 0; i < nTNF; ++i) {
+      ctg.tnf[i] = 0;
+    }
+    for (size_t i = 0; i < ctg.seq.length() - 3; ++i) {
+      int tn_num = tn_to_number(ctg.seq, i);
+      if (tn_num < 0 || tn_num >= SIZE_TN_LOOKUP) DIE("out of range ", tn_num);
+      int tn_idx = TN_lookup[tn_num];
+      if (tn_idx < nTNF) ++ctg.tnf[tn_idx];
+    }
+    // normalize to unit size (L2 norm)
+    double rsum = 0;
+    for (size_t c = 0; c < ctg.tnf.size(); ++c) {
+      rsum += ctg.tnf[c] * ctg.tnf[c];
+    }
+    rsum = sqrt(rsum);
+    for (size_t c = 0; c < ctg.tnf.size(); ++c) {
+      ctg.tnf[c] /= rsum;
+    }
     progbar.update();
   }
   progbar.done();
   barrier();
-  auto num_vertices = _graph->get_num_vertices();
-  SLOG_VERBOSE("Added ", num_vertices, " vertices\n");
 }
-
 
 static void set_nbs() {
   BarrierTimer timer(__FILEFUNC__, false, true);
@@ -82,9 +186,24 @@ static void set_nbs() {
   barrier();
 }
 
+static void add_vertices_from_ctgs(Contigs &ctgs) {
+  BarrierTimer timer(__FILEFUNC__, false, true);
+  ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
+  for (auto &ctg : ctgs) {
+    Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
+#ifdef TNF_PATH_RESOLUTION
+    v.tnf = ctg.tnf;
+#endif
+    _graph->add_vertex(v, ctg.seq);
+    progbar.update();
+  }
+  progbar.done();
+  barrier();
+  auto num_vertices = _graph->get_num_vertices();
+  SLOG_VERBOSE("Added ", num_vertices, " vertices\n");
+}
 
-string get_consensus_seq(const vector<string> &seqs, int max_len)
-{
+string get_consensus_seq(const vector<string> &seqs, int max_len) {
   static char bases[5] = {'A', 'C', 'G', 'T', 'N'};
   auto base_freqs = new int[max_len][4]();
   for (auto seq : seqs) {
@@ -119,9 +238,7 @@ string get_consensus_seq(const vector<string> &seqs, int max_len)
   return consensus_seq;
 }
 
-
-static string get_splint_edge_seq(int kmer_len, Edge *edge)
-{
+static string get_splint_edge_seq(int kmer_len, Edge *edge) {
   vector<string> seqs;
   // tail and end for checking primer matches
   int gap_size = edge->gap + 2 * (kmer_len - 1);
@@ -149,9 +266,7 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge)
   return get_consensus_seq(seqs, gap_size);
 }
 
-
-static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
-{
+static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail) {
   string ctg_seq = "";
   cid_t cid = (tail ? edge->cids.cid1 : edge->cids.cid2);
   vector<string> seqs;
@@ -494,45 +609,19 @@ static void merge_nbs()
                all_max_orphan_len, ", max depth ", all_max_orphan_depth, "\n");
 }
 
-/*
-void mark_short_aln_edges(int max_kmer_len) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
-  // make sure we don't use an out-of-date edge
-  barrier();
-  _graph->clear_caches();
-  {
-    ProgressBar progbar(_graph->get_local_num_vertices(), "Mark short aln edges");
-    for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
-      for (auto cid_list : { v->end5, v->end3 }) {
-        vector<CidPair> drop_edges = {};
-        bool long_aln_found = false;
-        for (auto i = 0; i < cid_list.size(); i++) {
-          auto edge = _graph->get_edge(v->cid, cid_list[i]);
-          if (edge->aln_len >= max_kmer_len) long_aln_found = true;
-          else drop_edges.push_back(edge->cids);
-        }
-        if (long_aln_found) {
-          for (auto cids : drop_edges) _graph->mark_edge_short_aln(cids);
-        }
-      }
-      progbar.update();
-    }
-    progbar.done();
-  }
-  barrier();
-  int64_t num_edges = _graph->get_num_edges();
-  int64_t num_short = _graph->purge_short_aln_edges();
-  SLOG_VERBOSE("Purged ", perc_str(reduce_one(num_short, op_fast_add, 0).wait(), num_edges), " short aln edges\n");
-}
-*/
-
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads*> &packed_reads_list,
                      Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   _graph = graph;
+#ifdef TNF_PATH_RESOLUTION
+  compute_tnfs(ctgs);
+#endif
   add_vertices_from_ctgs(ctgs);
   get_splints_from_alns(alns, graph);
   get_spans_from_alns(insert_avg, insert_stddev, kmer_len, alns, graph);
+#ifdef TNF_PATH_RESOLUTION
+  _graph->compute_edge_tnfs();
+#endif
   int64_t mismatched = 0, conflicts = 0, empty_spans = 0;
   _graph->purge_error_edges(&mismatched, &conflicts, &empty_spans);
   auto num_edges = _graph->get_num_edges();
