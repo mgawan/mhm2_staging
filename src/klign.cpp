@@ -15,7 +15,7 @@
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
-#include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/three_tier_aggr_store.hpp"
 
 #include "utils.hpp"
 #include "ssw.hpp"
@@ -73,7 +73,7 @@ class KmerCtgDHT {
   using kmer_map_t = dist_object<HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>>;
   kmer_map_t kmer_map;
 
-  FlatAggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
+  ThreeTierAggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
 
 #ifdef DUMP_ALNS
   zstr::ofstream *alns_file;
