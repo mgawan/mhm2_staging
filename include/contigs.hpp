@@ -92,46 +92,6 @@ public:
     return contigs.end();
   }
 
-  /*
-  string dump_contigs(string fname, unsigned kmer_len) {
-    fname += "-" + to_string(kmer_len) + ".fasta.gz";
-    get_rank_path(fname, rank_me());
-    {
-      zstr::ofstream f(fname);
-      ostringstream out_buf;
-      ProgressBar progbar(contigs.size(), "Writing contigs");
-      size_t bytes_written = 0;
-      int64_t i = 0;
-      for (auto it = contigs.begin(); it != contigs.end(); ++it) {
-        auto uutig = it;
-        out_buf << ">Contig" << uutig->id << " " << << uutig->depth << endl;
-        string rc_uutig = revcomp(uutig->seq);
-        if (rc_uutig < uutig->seq) uutig->seq = rc_uutig;
-        // fold output
-        for (int p = 0; p < uutig->seq.length(); p += 50)
-          out_buf << uutig->seq.substr(p, 50) << endl;
-        progbar.update();
-        i++;
-        if (!(i % 1000)) {
-          f << out_buf.str();
-          bytes_written += out_buf.str().length();
-          out_buf = ostringstream();
-        }
-      }
-      if (!out_buf.str().empty()) {
-        f << out_buf.str();
-        bytes_written += out_buf.str().length();
-      }
-      f.close();
-      progbar.done();
-      SLOG("Wrote ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs to ", fname, "\n");
-      write_uncompressed_file_size(fname + ".uncompressedSize", bytes_written);
-    }
-    barrier();
-    return fname;
-  }
-  */
-
   void print_stats(int min_ctg_len) {
     BarrierTimer timer(__FILEFUNC__, false, true);
     int64_t tot_len = 0, max_len = 0;
@@ -245,8 +205,7 @@ public:
     bytes_written = pwrite(fileno, fasta.c_str(), sz, my_fpos);
     close(fileno);
 
-    if (bytes_written != sz)
-      DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
+    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
     barrier();
     if (rank_me() == 0) {
       string new_fname = fname + ".fasta";

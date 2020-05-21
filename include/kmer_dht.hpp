@@ -185,7 +185,7 @@ class KmerDHT {
 
 public:
 
-  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool useHHSS = false)
+  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -207,12 +207,17 @@ public:
     SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ",
                  get_size_str(required_space), " per node, and there is ", get_size_str(get_free_mem()),
                  " available on node0\n");
-    if (get_free_mem() >= required_space) {
-      use_bloom = false;
-      SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
-    } else {
+    if (force_bloom) {
       use_bloom = true;
-      SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
+      SLOG_VERBOSE("Using bloom (--force-bloom set)\n");
+    } else {
+      if (get_free_mem() < required_space ) {
+        use_bloom = true;
+        SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
+      } else {
+        use_bloom = false;
+        SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
+      }
     }
 
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);

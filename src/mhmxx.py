@@ -13,7 +13,8 @@ import argparse
 import threading
 import io
 import string
-#import re
+import datetime
+
 
 SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGKILL', 'SIGUSR1',
             'SIGSEGV', 'SIGUSR2', 'SIGPIPE', 'SIGALRM', 'SIGTERM', 'SIGSTKFLT', 'SIGCHLD', 'SIGCONT', 'SIGSTOP', 'SIGTSTP',
@@ -41,7 +42,7 @@ def get_hwd_cores_per_node():
         hyperthreads = 1
         if platform.system() == 'Darwin':
             for line in os.popen('sysctl -n hw.physicalcpu').readlines():
-                 hyperthreads = cpus / int(line)
+                hyperthreads = cpus / int(line)
         else:
             for line in os.popen('lscpu').readlines():
                 if line.startswith('Thread(s) per core'):
@@ -53,8 +54,8 @@ def get_hwd_cores_per_node():
 def get_job_id():
     """Query the environment for a job"""
     for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'LOAD_STEP_ID']:
-      if key in os.environ:
-        return os.environ.get(key)
+        if key in os.environ:
+            return os.environ.get(key)
     return None
 
 def get_job_name():
@@ -82,12 +83,12 @@ def is_ll_job():
 
 def get_job_cores_per_node(defaultCores = get_hwd_cores_per_node()):
     """Query the job environment for the number of cores per node to use, if available"""
-    # Only trust this environment variable from slurm, otherwise trust the hardware                                                                                                   
+    # Only trust this environment variable from slurm, otherwise trust the hardware
     ntasks_per_node = os.environ.get('SLURM_NTASKS_PER_NODE')
     if ntasks_per_node:
         return int(ntasks_per_node)
-    # This SLURM variable defaults to all the hyperthreads if not overriden by the sbatch option --ntasks-per-node                                                                    
-    ntasks_per_node = os.environ.get('SLURM_TASKS_PER_NODE') # SLURM_TASKS_PER_NODE=32(x4)                                                                                            
+    # This SLURM variable defaults to all the hyperthreads if not overriden by the sbatch option --ntasks-per-node
+    ntasks_per_node = os.environ.get('SLURM_TASKS_PER_NODE') # SLURM_TASKS_PER_NODE=32(x4)
     if ntasks_per_node:
         if ntasks_per_node.find('(') > 0:
             ntasks_per_node = int(ntasks_per_node[:ntasks_per_node.find('(')])
@@ -196,7 +197,7 @@ def capture_err(err_msgs):
     global _stop_thread
     for line in iter(_proc.stderr.readline, b''):
         line = line.decode()
-        if 'WARNING' in line:
+        if 'WARNING' in line or 'ERROR' in line:
             sys.stderr.write(line)
             sys.stderr.flush()
         err_msgs.append(line)
@@ -210,7 +211,7 @@ def print_err_msgs(err_msgs):
     print_red("Check " + _output_dir + "err.log for details")
     # keep track of all msg copies so we don't print duplicates
     seen_msgs = {}
-    with open(_output_dir + 'err.log', 'w') as f:
+    with open(_output_dir + 'err.log', 'a') as f:
         for msg in err_msgs:
             clean_msg = msg.strip()
             #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
@@ -219,20 +220,20 @@ def print_err_msgs(err_msgs):
                 f.flush()
                 seen_msgs[clean_msg] = True
 
-    
+
 def main():
     global _orig_sighdlr
     global _proc
     global _output_dir
     global _err_thread
-    
+
     _orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
     argparser = argparse.ArgumentParser(add_help=False)
     argparser.add_argument("--auto-resume", action="store_true", help="Automatically resume after a failure")
     argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
-    
+
     options, unknown_options = argparser.parse_known_args()
 
     if options.auto_resume:
@@ -242,93 +243,109 @@ def main():
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not which(mhmxx_binary_path):
-        die("Cannot find binary mhmxx from: ", sys.argv[0], " ", mhmxx_binary_path)
+        die("Cannot find binary mhmxx from: ", sys.argv[0], " in ", mhmxx_binary_path)
     cores_per_node = get_hwd_cores_per_node()
     num_nodes = get_job_nodes()
-    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes), '-N', str(num_nodes), '-shared-heap', options.shared_heap, '--', 
-           mhmxx_binary_path];
+    cmd = ['upcxx-run', '-n']
+    if 'GASNET_PSHM_NODES' in os.environ:
+        cmd.extend([os.getenv('GASNET_PSHM_NODES')])
+    else:
+        cmd.extend([str(cores_per_node * num_nodes)])
+    if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
+        cmd.extend(['-shared-heap', options.shared_heap])
+    cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
     cmd.extend(unknown_options)
-    print('Executing:')
-    print(' '.join(cmd))
 
+    print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
+
+    restating = False
     err_msgs = []
     while True:
-      completed_round = False
-      try:
-          _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-          # thread captures the error stream
-          _err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
-          _err_thread.start()
-          for line in iter(_proc.stdout.readline, b''):
-              line = line.decode()
-              sys.stdout.write(line)
-              sys.stdout.flush()
-              if '  output = ' in line:
-                  _output_dir = line.split()[3]
-                  onlyascii = ''.join([s for s in _output_dir if ord(s) < 127 and ord(s) >= 32])
-                  _output_dir = onlyascii;
-                  if _output_dir.endswith('[0m'):
-                      _output_dir = _output_dir[:-3]
-                  if _output_dir[-1] != '/':
-                      _output_dir += '/'
-                  # get rid of any leftover error logs
-                  try: 
-                      os.remove(_output_dir + 'err.log')
-                  except:
-                      pass
-                      
-              if 'Completed ' in line and 'initialization' not in line:
-                  completed_round = True
-                  
-          _err_thread.join()
-          if _proc.returncode not in [0, -15] or not status:
-              signame = ''
-              if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
-                  signame = ' (' + SIGNAMES[-_proc.returncode - 1] + ')'
-              print_red("\nERROR: subprocess terminated with return code ", -_proc.returncode, signame);
-              err_msgs.append("ERROR: subprocess terminated with return code " + str(-_proc.returncode) + signame);
-              print_err_msgs(err_msgs)
-              if completed_round and options.auto_resume:
-                  print_red('Trying to restart...')
-                  cmd.append('--restart')
-              else:
-                  if options.auto_resume:
-                      print_red("No additional completed round. Could not restart, exiting...")
-                  return signal.SIGABRT
-          else:
-              warnings = []
-              for msg in err_msgs:
-                  msg = msg.strip()
-                  if 'WARNING' in msg:
-                      warnings.append(msg)
-                  elif msg != '':
-                      sys.stderr.write(msg + '\n')
-              if len(warnings) > 0:
-                  print('There were', len(warnings), 'warnings:', file=sys.stderr)
-                  for warning in warnings:
-                      sys.stderr.write(warning + '\n')
-              break
-      except:
-          traceback.print_tb(sys.exc_info()[2], limit=100)
-          print_err_msgs(err_msgs)
-          if _proc:
-              try:
-                  print_red("\nTerminating subprocess after exception: ", sys.exc_info(), "\n")
-                  traceback.print_tb(sys.exc_info()[2], limit=100)
-                  _proc.terminate()
-              except OSError:
-                  pass
-              except:
-                  print_red("\nUnexpected error in forced termination of subprocess: ", sys.exc_info())
-                  traceback.print_tb(sys.exc_info()[2], limit=100)
-                  raise
-          raise
+        started_exec = False
+        completed_round = False
+        try:
+            _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # thread captures the error stream
+            _err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
+            _err_thread.start()
+            for line in iter(_proc.stdout.readline, b''):
+                if not started_exec:
+                    print('Started executing at ' + str(datetime.datetime.now()), 'with PID', _proc.pid)
+                    started_exec = True
+
+                line = line.decode()
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                if '  output = ' in line:
+                    _output_dir = line.split()[3]
+                    onlyascii = ''.join([s for s in _output_dir if ord(s) < 127 and ord(s) >= 32])
+                    _output_dir = onlyascii
+                    if _output_dir.endswith('[0m'):
+                        _output_dir = _output_dir[:-3]
+                    if _output_dir[-1] != '/':
+                        _output_dir += '/'
+                    # get rid of any leftover error logs if not restarting
+                    try:
+                        if not restarting:
+                            os.remove(_output_dir + 'err.log')
+                    except:
+                        pass
+
+                if 'Completed ' in line and 'initialization' not in line:
+                    completed_round = True
+
+            _err_thread.join()
+            if _proc.returncode not in [0, -15] or not status:
+                signame = ''
+                if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
+                    signame = ' (' + SIGNAMES[-_proc.returncode - 1] + ')'
+                print_red("\nERROR: subprocess terminated with return code ", -_proc.returncode, signame)
+                err_msgs.append("ERROR: subprocess terminated with return code " + str(-_proc.returncode) + signame)
+                print_err_msgs(err_msgs)
+                if completed_round and options.auto_resume:
+                    print_red('Trying to restart with output directory ', _output_dir)
+                    restarting = True
+                    cmd.append('--restart')
+                    if _output_dir not in cmd:
+                        cmd.extend(['-o', _output_dir])
+                else:
+                    if options.auto_resume:
+                        print_red("No additional completed round. Could not restart, exiting...")
+                    return signal.SIGABRT
+            else:
+                warnings = []
+                for msg in err_msgs:
+                    msg = msg.strip()
+                    if 'WARNING' in msg:
+                        warnings.append(msg)
+                    elif msg != '':
+                        sys.stderr.write(msg + '\n')
+                if len(warnings) > 0:
+                    print('There were', len(warnings), 'warnings:', file=sys.stderr)
+                    for warning in warnings:
+                        sys.stderr.write(warning + '\n')
+                break
+        except:
+            traceback.print_tb(sys.exc_info()[2], limit=100)
+            print_err_msgs(err_msgs)
+            if _proc:
+                try:
+                    print_red("\nTerminating subprocess after exception: ", sys.exc_info(), "\n")
+                    traceback.print_tb(sys.exc_info()[2], limit=100)
+                    _proc.terminate()
+                except OSError:
+                    pass
+                except:
+                    print_red("\nUnexpected error in forced termination of subprocess: ", sys.exc_info())
+                    traceback.print_tb(sys.exc_info()[2], limit=100)
+                    raise
+            raise
 
     return 0
 
 if __name__ == "__main__":
     # remove the .py from this script as the mhmxx wrapper needs to be excecuted for proper environment variable detection
-    sys.argv[0] = os.path.splitext(sys.argv[0])[0] 
+    sys.argv[0] = os.path.splitext(sys.argv[0])[0]
     status = 1
     try:
         status = main()
@@ -336,7 +353,7 @@ if __name__ == "__main__":
         raise
     except:
         e = sys.exc_info()[0]
-        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e); 
+        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e)
         traceback.print_exc(file=sys.stderr)
     finally:
         exit_all(status)

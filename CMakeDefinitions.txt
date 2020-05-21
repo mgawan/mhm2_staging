@@ -15,9 +15,8 @@ add_definitions(-DCONFIG_USE_COLORS)
 # use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
 
-# max allowed alignments per read (to reduce overhead & imbalance)
+# max allowed alignments per read (to reduce overhead & imbalance) - set to 0 to have no limit
 add_definitions(-DKLIGN_MAX_ALNS_PER_READ=20)
-
 # limit on how many contigs to fetch for a read at a time - this is across all ranks, so a form of buffering
 add_definitions(-DKLIGN_CTG_FETCH_BUF_SIZE=100000)
 # decreasing this value increases the alignment computation time, and it may improve results slightly
@@ -36,7 +35,7 @@ add_definitions(-DCGRAPH_MAX_SEARCH_LEVEL=5)
 add_definitions(-DCGRAPH_MAX_QUEUE_SIZE=100)
 # max number of entries in vertex cache or in edge cache
 add_definitions(-DCGRAPH_MAX_CACHE_SIZE=2000000)
-# max allowed degree in contig graph 
+# max allowed degree in contig graph
 add_definitions(-DCGRAPH_MAX_DEGREE=100)
 # threshold multiplier for best supported path over second best
 add_definitions(-DCGRAPH_WALK_SUPPORT_THRES=3)

@@ -27,7 +27,7 @@ or:
 
 `./build.sh Debug`
 
-These will install the binaries by default into the `install/bin` subdirectory in the repository root directory. To set a different install 
+The script will install the binaries by default into the `install/bin` subdirectory in the repository root directory. To set a different install 
 directory, set the environment variable `MHMXX_INSTALL_PATH`, e.g.:
 
 `MHMXX_INSTALL_PATH=$SCRATCH/mhmxx-install ./build.sh Release`
@@ -51,7 +51,7 @@ A typical command line to run is:
 
 `mhmxx.py -r <READS_lib1.fastq>,<READS_lib2.fastq> -i <insert_size_avg:insert_size_stddev>`
 
-This will create a new output directory that contains the results.
+This will create a new output directory that contains the results. Note that mhmxx requires interleaved paired reads.
 
 Run with `-h` to see the various options.
 

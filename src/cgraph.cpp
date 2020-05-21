@@ -1,4 +1,4 @@
-// cgraph 
+// cgraph
 // Steven Hofmeyr, LBNL, Aug 2018
 
 #include <iostream>
@@ -17,7 +17,7 @@
 #include "utils.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
-#include "fastq.hpp"
+#include "packed_reads.hpp"
 
 
 using namespace std;
@@ -25,19 +25,19 @@ using namespace upcxx;
 using namespace upcxx_utils;
 
 
-void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, int read_len,
-                     vector<FastqReader*> &fqr_list, Contigs &ctgs, Alns &alns);
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, QualityLevel quality_level, 
+void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads*> &packed_reads_list,
+                     Contigs &ctgs, Alns &alns);
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, QualityLevel quality_level,
                 Contigs &ctgs);
 
 
-void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int read_len, int min_ctg_print_len,
-                        vector<FastqReader*> &fqr_list, int break_scaff_Ns, QualityLevel quality_level, 
-                        Contigs &ctgs, Alns &alns) {
+void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
+                        vector<PackedReads*> &packed_reads_list, int break_scaff_Ns, QualityLevel quality_level, Contigs &ctgs,
+                        Alns &alns) {
   BarrierTimer timer(__FILEFUNC__, false, true);
-  
+
   CtgGraph graph;
-  build_ctg_graph(&graph, insert_avg, insert_stddev, kmer_len, read_len, fqr_list, ctgs, alns);
+  build_ctg_graph(&graph, insert_avg, insert_stddev, kmer_len, packed_reads_list, ctgs, alns);
   barrier();
   barrier();
   ctgs.clear();

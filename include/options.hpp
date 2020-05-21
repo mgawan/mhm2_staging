@@ -112,14 +112,14 @@ class Options {
       if (restart) {
         if (access(output_dir.c_str(), F_OK) == -1) {
           ostringstream oss;
-          oss << KLRED << "WARNING: " << KNORM << " Output directory " << output_dir << " for restart does not exist" << endl;
+          oss << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir << " for restart does not exist" << endl;
           throw std::runtime_error(oss.str());
         }
       } else {
         if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
           // could not create the directory
           if (errno == EEXIST) {
-            cerr << KLRED << "WARNING: " << KNORM << " Output directory " << output_dir
+            cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
                  << " already exists. May overwrite existing files\n";
           } else {
             ostringstream oss;
@@ -129,10 +129,12 @@ class Options {
           }
         } else {
           // created the directory - now stripe it if possible
-          if (WIFEXITED(std::system("which lfs")) == 0) {
-            string cmd = "lfs setstripe -c -1 " + output_dir + " 2>&1 >/dev/null";
+          auto status = std::system("which lfs 2>&1 > /dev/null");
+          if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            string cmd = "lfs setstripe -c -1 " + output_dir;
             auto status = std::system(cmd.c_str());
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
+            else cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
           }
         }
       }
@@ -156,7 +158,8 @@ class Options {
       // check to see if mhmxx.log exists. If so, and not restarting, rename it
       if (file_exists("mhmxx.log") && !restart) {
         string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-        cerr << KLRED << "WARNING: " << KNORM << " mhmxx.log exists: renaming to " << new_log_fname << endl;
+        cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhmxx.log exists. Renaming to " << output_dir << "/"
+             << new_log_fname << endl;
         if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
       } else if (!file_exists("mhmxx.log") && restart) {
         ostringstream oss;
@@ -179,10 +182,12 @@ public:
   int max_kmer_store_mb = 50;
   int max_rpcs_in_flight = 100;
   bool use_heavy_hitters = false; // only enable when files are localized
-  bool cache_reads = true;
+  bool force_bloom = false;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
+  bool post_assm_aln = false;
+  bool post_assm_only = false;
   bool show_progress = false;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
@@ -226,7 +231,7 @@ public:
                    ->delimiter(',') ->capture_default_str();
     app.add_option("-Q, --quality-offset", qual_offset,
                    "Phred encoding offset")
-                   ->capture_default_str() ->check(CLI::IsMember({33, 64}));
+                   ->capture_default_str() ->check(CLI::IsMember({0, 33, 64}));
     app.add_option("-c, --contigs", ctgs_fname,
                    "File with contigs used for restart");
 //                   ->check(CLI::ExistingFile);
@@ -253,14 +258,20 @@ public:
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
-    app.add_flag("--cache-reads", cache_reads,
-                 "Cache reads in memory")
-                 ->default_val(cache_reads ? "true" : "false") ->capture_default_str() ->multi_option_policy();
+    app.add_flag("--force-bloom", force_bloom,
+                 "Always use bloom filters")
+                 ->default_val(force_bloom ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--checkpoint", checkpoint,
                  "Checkpoint after each contig round")
                  ->default_val(checkpoint ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
+                 ->capture_default_str();
+    app.add_flag("--post-assembly-align", post_assm_aln,
+                 "Align reads to final assembly")
+                 ->capture_default_str();
+    app.add_flag("--post-assembly-only", post_assm_only,
+                 "Only run post assembly")
                  ->capture_default_str();
     app.add_flag("--progress", show_progress,
                  "Show progress")
@@ -290,6 +301,13 @@ public:
       oss << KLRED << "Require read names if not restarting" << KNORM << endl;
       throw std::runtime_error(oss.str());
     }
+
+    if (!upcxx::rank_me() && post_assm_only && (!max_kmer_len || ctgs_fname.empty())) {
+      ostringstream oss;
+      oss << KLRED << "For running only post assembly analysis, require --max-kmer_len and --contigs" << KNORM << endl;
+      throw std::runtime_error(oss.str());
+    }
+
     upcxx::barrier();
 
     if (!*output_dir_opt) {
@@ -308,7 +326,7 @@ public:
 
     // make sure we only use defaults for kmer lens if none of them were set by the user
     if (*kmer_lens_opt && !*scaff_kmer_lens_opt) scaff_kmer_lens = {};
-    if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens_opt = {};
+    if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens = {};
 
     setup_output_dir();
     setup_log_file();
