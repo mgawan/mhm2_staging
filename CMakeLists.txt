@@ -82,7 +82,7 @@ if(NOT UPCXX_UTILS_FOUND)
   add_subdirectory(upcxx-utils)
 
 else()
-  message(STATUS "Found exßisting upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
+  message(STATUS "Found existing upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
   set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${UPCXX_UTILS_DIR}")
   message(STATUS "Appended the UPCXX_UTILS_DIR to the CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 endif()
