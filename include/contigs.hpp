@@ -40,11 +40,14 @@ using namespace upcxx_utils;
 
 #define nTNF 136
 
+using tnf_t = std::array<double, nTNF>;
+
 struct Contig {
   int64_t id;
   string seq;
   double depth;
-  std::array<double, nTNF> tnf;
+  // histogram of teranucleotide frequencies for contig similarity check in cgraph walks
+  tnf_t tnf;
 
 #ifdef USE_KMER_DEPTHS
   vector<uint16_t> kmer_depths;

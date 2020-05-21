@@ -17,6 +17,8 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
+#define SIZE_TN_LOOKUP 257
+
 void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &alns, CtgGraph *graph);
 void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 
@@ -24,62 +26,35 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 static CtgGraph *_graph = nullptr;
 
 
-static void add_vertices_from_ctgs(Contigs &ctgs) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
-  ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
-  for (auto &ctg : ctgs) {
-    Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
-    _graph->add_vertex(v, ctg.seq);
-    progbar.update();
-  }
-  progbar.done();
-  barrier();
-  auto num_vertices = _graph->get_num_vertices();
-  SLOG_VERBOSE("Added ", num_vertices, " vertices\n");
-}
-
 // return A C G T (0-3) or 4 if not a base
 static int base_to_number(const char base) {
   int num = 0;
-  switch(base) {
-    case('A'):
-    case('a'): num = 0; break;
-    case('C'):
-    case('c'): num = 1; break;
-    case('G'):
-    case('g'): num = 2; break;
-    case('T'):
-    case('t'): num = 3; break;
+  switch (base) {
+    case ('A'):
+    case ('a'): num = 0; break;
+    case ('C'):
+    case ('c'): num = 1; break;
+    case ('G'):
+    case ('g'): num = 2; break;
+    case ('T'):
+    case ('t'): num = 3; break;
     default: num = 4;
   }
   return num;
 }
 
 // returns 0-255 for any valid tetamer with A C G or T and 256 for an invalid one
-static int tn_to_number(const char *seq) {
-  int num0 = base_to_number(seq[0]);
-  int num1 = base_to_number(seq[1]);
-  int num2 = base_to_number(seq[2]);
-  int num3 = base_to_number(seq[3]);
+static int tn_to_number(const string &seq, int pos) {
+  int num0 = base_to_number(seq[pos + 0]);
+  int num1 = base_to_number(seq[pos + 1]);
+  int num2 = base_to_number(seq[pos + 2]);
+  int num3 = base_to_number(seq[pos + 3]);
   if (num0 == 4 || num1 == 4 || num2 == 4 || num3 == 4) return 256;
   return num0 + 4 * num1 + 16 * num2 + 64 * num3;
 }
 
-static bool rev_comp_cstr(char* s, int size) {
-  for (int i = 0; i < size; ++i) {
-    if (s[i] == 'A') s[i] = 'T';
-    else if (s[i] == 'T') s[i] = 'A';
-    else if (s[i] == 'C') s[i] = 'G';
-    else if (s[i] == 'G') s[i] = 'C';
-    else return false;
-  }
-  return true;
-}
-
-
 static void compute_tnfs(Contigs &ctgs) {
-  //http://gbe.oxfordjournals.org/content/4/4/501.full
-  //136 Tetranucleotides from TNFDistance = (4^4 - 16) / 2 + 16
+  BarrierTimer timer(__FILEFUNC__, false, true);
   const string TN[] = {"GGTA", "AGCC", "AAAA", "ACAT", "AGTC", "ACGA", "CATA", "CGAA", "AAGT", "CAAA", "CCAG", "GGAC",
                        "ATTA", "GATC", "CCTC", "CTAA", "ACTA", "AGGC", "GCAA", "CCGC", "CGCC", "AAAC", "ACTC", "ATCC",
                        "GACC", "GAGA", "ATAG", "ATCA", "CAGA", "AGTA", "ATGA", "AAAT", "TTAA", "TATA", "AGTG", "AGCT",
@@ -99,7 +74,7 @@ static void compute_tnfs(Contigs &ctgs) {
   unordered_map<std::string, int> TN_map;
   unordered_set<std::string> TNP_map;
   // lookup table 0 - 255 of raw 4-mer to tetramer index in TNF
-  vector<int> TN_lookup;
+  array<int, SIZE_TN_LOOKUP> TN_lookup;
   // initialize the TN data structures
   for (size_t i = 0; i < nTNF; ++i) {
     TN_map[TN[i]] = i;
@@ -107,9 +82,8 @@ static void compute_tnfs(Contigs &ctgs) {
   for (size_t i = 0; i < 16; ++i) {
     TNP_map.insert(TNP[i]);
   }
-  TN_lookup.resize(257);
   TN_lookup[256] = nTNF; // any non-base in the kmer
-  char tnf_seq[5] = {0,0,0,0,0};
+  string tnf_seq(4, 0);
   for (int i0 = 0; i0 < 4; i0++) {
     tnf_seq[0] = bases[i0];
     for(int i1 = 0; i1 < 4; i1++) {
@@ -118,22 +92,15 @@ static void compute_tnfs(Contigs &ctgs) {
         tnf_seq[2] = bases[i2];
         for(int i3 = 0; i3 < 4; i3++) {
           tnf_seq[3] = bases[i3];
-          char tn[5] = {0,0,0,0,0};
-          memcpy(tn, tnf_seq, 4);
-          int tn_number= tn_to_number(tnf_seq);
-          assert(tnNumber <= 255);
+          string tn = tnf_seq;
+          int tn_number= tn_to_number(tnf_seq, 0);
+          assert(tn_number <= 255);
           auto it = TN_map.find(tn);
           if (it != TN_map.end()) {
             TN_lookup[tn_number] = it->second;
             continue;
           }
-
-          //reverse complement
-          reverse(tn, tn + 4);
-          if (!rev_comp_cstr(tn, 4)) {
-            WARN("Unknown nucleotide letter found: ", tn);
-            continue;
-          }
+          tn = revcomp(tn);
           if (TNP_map.find(tn) == TNP_map.end()) { //if it is palindromic, then skip
             it = TN_map.find(tn);
             if (it != TN_map.end()) {
@@ -150,29 +117,30 @@ static void compute_tnfs(Contigs &ctgs) {
     }
   }
 
+  ProgressBar progbar(ctgs.size(), "Computing TNFs for contigs");
   for (auto &ctg : ctgs) {
-    for (int i = 0; i < nTNF; i++) {
+    for (int i = 0; i < nTNF; ++i) {
       ctg.tnf[i] = 0;
     }
-    for (size_t r = 0; r < ctg.seq.length(); ++r) {
-  		char tn[5] = {'\0'};
-		  const char *seq = ctg.seq.c_str();
-      for (size_t i = 0; i < ctg.seq.length() - 3; ++i) {
-        int tn_num = tn_to_number(seq + i);
-        int tn_idx = TN_lookup[tn_num];
-        if (tn_idx < nTNF) ++ctg.tnf[tn_idx];
-      }
-      //normalize to unit size (L2 norm)
-      double rsum = 0;
-      for (size_t c = 0; c < ctg.tnf.size(); ++c) {
-        rsum += ctg.tnf[c] * ctg.tnf[c];
-      }
-      rsum = sqrt(rsum);
-      for (size_t c = 0; c < ctg.tnf.size(); ++c) {
-        ctg.tnf[c] /= rsum;
-      }
+    for (size_t i = 0; i < ctg.seq.length() - 3; ++i) {
+      int tn_num = tn_to_number(ctg.seq, i);
+      if (tn_num < 0 || tn_num >= SIZE_TN_LOOKUP) DIE("out of range ", tn_num);
+      int tn_idx = TN_lookup[tn_num];
+      if (tn_idx < nTNF) ++ctg.tnf[tn_idx];
     }
+    // normalize to unit size (L2 norm)
+    double rsum = 0;
+    for (size_t c = 0; c < ctg.tnf.size(); ++c) {
+      rsum += ctg.tnf[c] * ctg.tnf[c];
+    }
+    rsum = sqrt(rsum);
+    for (size_t c = 0; c < ctg.tnf.size(); ++c) {
+      ctg.tnf[c] /= rsum;
+    }
+    progbar.update();
   }
+  progbar.done();
+  barrier();
 }
 
 static void set_nbs() {
@@ -218,9 +186,24 @@ static void set_nbs() {
   barrier();
 }
 
+static void add_vertices_from_ctgs(Contigs &ctgs) {
+  BarrierTimer timer(__FILEFUNC__, false, true);
+  ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
+  for (auto &ctg : ctgs) {
+    Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
+#ifdef TNF_PATH_RESOLUTION
+    v.tnf = ctg.tnf;
+#endif
+    _graph->add_vertex(v, ctg.seq);
+    progbar.update();
+  }
+  progbar.done();
+  barrier();
+  auto num_vertices = _graph->get_num_vertices();
+  SLOG_VERBOSE("Added ", num_vertices, " vertices\n");
+}
 
-string get_consensus_seq(const vector<string> &seqs, int max_len)
-{
+string get_consensus_seq(const vector<string> &seqs, int max_len) {
   static char bases[5] = {'A', 'C', 'G', 'T', 'N'};
   auto base_freqs = new int[max_len][4]();
   for (auto seq : seqs) {
@@ -255,9 +238,7 @@ string get_consensus_seq(const vector<string> &seqs, int max_len)
   return consensus_seq;
 }
 
-
-static string get_splint_edge_seq(int kmer_len, Edge *edge)
-{
+static string get_splint_edge_seq(int kmer_len, Edge *edge) {
   vector<string> seqs;
   // tail and end for checking primer matches
   int gap_size = edge->gap + 2 * (kmer_len - 1);
@@ -285,9 +266,7 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge)
   return get_consensus_seq(seqs, gap_size);
 }
 
-
-static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail)
-{
+static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail) {
   string ctg_seq = "";
   cid_t cid = (tail ? edge->cids.cid1 : edge->cids.cid2);
   vector<string> seqs;
@@ -634,10 +613,15 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kme
                      Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   _graph = graph;
-  add_vertices_from_ctgs(ctgs);
+#ifdef TNF_PATH_RESOLUTION
   compute_tnfs(ctgs);
+#endif
+  add_vertices_from_ctgs(ctgs);
   get_splints_from_alns(alns, graph);
   get_spans_from_alns(insert_avg, insert_stddev, kmer_len, alns, graph);
+#ifdef TNF_PATH_RESOLUTION
+  _graph->compute_edge_tnfs();
+#endif
   int64_t mismatched = 0, conflicts = 0, empty_spans = 0;
   _graph->purge_error_edges(&mismatched, &conflicts, &empty_spans);
   auto num_edges = _graph->get_num_edges();
