@@ -28,9 +28,6 @@ using namespace upcxx_utils;
 //#define DBG_ADD_KMER DBG
 #define DBG_ADD_KMER(...)
 
-extern ofstream _dbgstream;
-extern ofstream _logstream;
-
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   int64_t num_kmers = 0;

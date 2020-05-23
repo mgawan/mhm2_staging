@@ -203,6 +203,10 @@ public:
       to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
   bool restart = false;
 
+  ~Options() {
+    flush_logger();
+  }
+
   bool load(int argc, char **argv) {
     //MHMXX version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
     string full_version_str = "MHMXX version " + string(MHMXX_VERSION) + "-" + string(MHMXX_BRANCH) + " built on " +

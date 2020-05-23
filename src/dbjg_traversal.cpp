@@ -23,8 +23,6 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
-extern ofstream _dbgstream;
-
 enum class Dirn { LEFT, RIGHT, NONE };
 #define DIRN_STR(d) ((d) == Dirn::LEFT ? "left" : (d) == Dirn::RIGHT ? "right" : "none")
 

@@ -27,7 +27,6 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
-ofstream _logstream;
 bool _verbose = false;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
@@ -419,10 +418,6 @@ int main(int argc, char **argv) {
   #undef POST_ASSEMBLY
   }
 
-#ifdef DEBUG
-  _dbgstream.flush();
-  _dbgstream.close();
-#endif
   barrier();
   upcxx::finalize();
   return 0;
