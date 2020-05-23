@@ -110,35 +110,7 @@ public:
       if (!as_sam_format) out_str += aln.to_string() + "\n";
       else out_str += aln.sam_string + "\n";
     }
-    upcxx::atomic_domain<size_t> ad({upcxx::atomic_op::fetch_add, upcxx::atomic_op::load});
-    upcxx::global_ptr<size_t> fpos = nullptr;
-    if (!upcxx::rank_me()) fpos = upcxx::new_<size_t>(0);
-    fpos = upcxx::broadcast(fpos, 0).wait();
-    auto sz = out_str.length();
-    size_t my_fpos = ad.fetch_add(fpos, sz, std::memory_order_relaxed).wait();
-    // wait until all ranks have updated the global counter
-    upcxx::barrier();
-    int fileno = -1;
-    size_t fsize = 0;
-    if (!upcxx::rank_me()) {
-      fsize = ad.load(fpos, std::memory_order_relaxed).wait();
-      // rank 0 creates the file and truncates it to the correct length
-      fileno = open(fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-      if (fileno == -1) WARN("Error trying to create file ", fname, ": ", strerror(errno), "\n");
-      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", fname, " to ", fsize, " bytes\n");
-    }
-    upcxx::barrier();
-    ad.destroy();
-    // wait until rank 0 has finished setting up the file
-    if (rank_me()) fileno = open(fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fileno == -1) WARN("Error trying to open file ", fname, ": ", strerror(errno), "\n");
-    auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
-    close(fileno);
-    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
-    upcxx::barrier();
-    auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
-    upcxx::barrier();
-    SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname, "\n");
+    dump_single_file(fname, out_str);
   }
 };
 

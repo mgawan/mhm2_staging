@@ -40,7 +40,7 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
   barrier();
   ctgs.clear();
   graph.print_stats(min_ctg_print_len);
-  graph.print_gfa2(graph_fname);
+  if (!graph_fname.empty()) graph.print_gfa2(graph_fname);
   barrier();
   walk_graph(&graph, max_kmer_len, kmer_len, break_scaff_Ns, ctgs);
   barrier();

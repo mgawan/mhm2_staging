@@ -3,8 +3,6 @@
 #include <math.h>
 #include <algorithm>
 #include <stdarg.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <chrono>
 #ifdef __x86_64__
 #include <emmintrin.h>
@@ -134,42 +132,6 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
     }
   }
   return mismatches;
-}
-
-
-static void dump_merged_reads(const string &reads_fname, const string &out_str) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
-  string out_fname = get_merged_reads_fname(reads_fname);
-
-  atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-  global_ptr<size_t> fpos = nullptr;
-  if (!rank_me()) fpos = new_<size_t>(0);
-  fpos = broadcast(fpos, 0).wait();
-  auto sz = out_str.length();
-  size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
-  // wait until all ranks have updated the global counter
-  barrier();
-  int fileno = -1;
-  size_t fsize = 0;
-  if (!rank_me()) {
-    fsize = ad.load(fpos, memory_order_relaxed).wait();
-    // rank 0 creates the file and truncates it to the correct length
-    fileno = open(out_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
-    if (fileno == -1) WARN("Error trying to create file ", out_fname, ": ", strerror(errno), "\n");
-    if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", out_fname, " to ", fsize, " bytes\n");
-  }
-  barrier();
-  ad.destroy();
-  // wait until rank 0 has finished setting up the file
-  if (rank_me()) fileno = open(out_fname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
-  if (fileno == -1) WARN("Error trying to open file ", out_fname, ": ", strerror(errno), "\n");
-  auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
-  close(fileno);
-  if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
-  barrier();
-  auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
-  barrier();
-  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", out_fname, "\n");
 }
 
 
@@ -410,7 +372,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     barrier();
     if (checkpoint) {
       dump_reads_t.start();
-      dump_merged_reads(reads_fname, outputs);
+      dump_single_file(get_merged_reads_fname(reads_fname), outputs);
       dump_reads_t.stop();
     }
     auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();

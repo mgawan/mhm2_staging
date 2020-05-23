@@ -30,8 +30,6 @@ using upcxx::reduce_one;
 using upcxx::op_fast_add;
 using upcxx::op_fast_max;
 using upcxx::barrier;
-using upcxx::atomic_domain;
-using upcxx::atomic_op;
 using upcxx::global_ptr;
 using upcxx::new_;
 using upcxx::dist_object;
@@ -174,7 +172,6 @@ public:
 
   void dump_contigs(const string &fname, int min_ctg_len) {
     BarrierTimer timer(__FILEFUNC__, false, true);
-    string tmpfname = fname + ".tmp"; // make a .tmp file and rename on success
     string fasta = "";
     for (auto it = contigs.begin(); it != contigs.end(); ++it) {
       auto ctg = it;
@@ -185,40 +182,7 @@ public:
       //for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
       fasta += ctg->seq + "\n";
     }
-    auto sz = fasta.size();
-    atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-    global_ptr<size_t> fpos = nullptr;
-    if (!rank_me()) fpos = new_<size_t>(0);
-    fpos = broadcast(fpos, 0).wait();
-    size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
-    // wait until all ranks have updated the global counter
-    barrier();
-    int bytes_written = 0;
-    int fileno = -1;
-    size_t fsize = 0;
-    if (!rank_me()) {
-      fsize = ad.load(fpos, memory_order_relaxed).wait();
-      // rank 0 creates the file and truncates it to the correct length
-      fileno = open(tmpfname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
-      if (fileno == -1) WARN("Error trying to create file ", tmpfname, ": ", strerror(errno), "\n");
-      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", tmpfname, " to ", fsize, " bytes\n");
-    }
-    barrier();
-    ad.destroy();
-    // wait until rank 0 has finished setting up the file
-    if (rank_me()) fileno = open(tmpfname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
-    if (fileno == -1) WARN("Error trying to open file ", tmpfname, ": ", strerror(errno), "\n");
-    bytes_written = pwrite(fileno, fasta.c_str(), sz, my_fpos);
-    close(fileno);
-
-    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
-    barrier();
-    if (rank_me() == 0) {
-      string new_fname = fname + ".fasta";
-      if (rename(tmpfname.c_str(), new_fname.c_str()) != 0)
-        SDIE("Could not rename ", tmpfname, " to ", new_fname);
-      SLOG_VERBOSE("Successfully wrote ", fsize, " bytes to ", new_fname, "\n");
-    }
+    dump_single_file(fname + ".fasta", fasta);
   }
 
   void load_contigs(const string &ctgs_fname) {

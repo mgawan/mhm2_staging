@@ -149,8 +149,17 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   max_expected_ins_size = ins_avg + 8 * ins_stddev;
   int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
   stage_timers.cgraph->start();
+  string gfa_fname = "";
+  if (options->dump_gfa) {
+    for (int i = 0; i < options->scaff_kmer_lens.size(); ++i) {
+      if (scaff_kmer_len == options->scaff_kmer_lens[i]) {
+        gfa_fname = (!i ? "contigs-" + to_string(max_kmer_len) : "scaff-contigs-" + to_string(options->scaff_kmer_lens[i - 1]));
+        break;
+      }
+    }
+  }
   traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, ctgs, alns, "scaff-contigs-" + to_string(scaff_kmer_len));
+                     break_scaff_Ns, ctgs, alns, gfa_fname);
   stage_timers.cgraph->stop();
   if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
     if (options->checkpoint) {

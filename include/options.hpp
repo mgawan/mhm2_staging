@@ -187,6 +187,7 @@ public:
   bool checkpoint = true;
   bool post_assm_aln = false;
   bool post_assm_only = false;
+  bool dump_gfa = false;
   bool show_progress = false;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
@@ -265,6 +266,9 @@ public:
                  ->capture_default_str();
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")
+                 ->capture_default_str();
+    app.add_flag("--write-gfa", dump_gfa,
+                 "Dump scaffolding contig graphs in GFA2 format")
                  ->capture_default_str();
     app.add_flag("--post-assembly-only", post_assm_only,
                  "Only run post assembly")

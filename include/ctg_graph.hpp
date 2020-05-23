@@ -813,35 +813,7 @@ class CtgGraph {
       // add MHM specific tags
       out_str += "\tsp: " + to_string(edge->support) + "\ttp: " + edge_type_str(edge->edge_type) + "\n";
     }
-    string fname = gfa_fname + ".gfa";
-    auto sz = out_str.size();
-    atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-    global_ptr<size_t> fpos = nullptr;
-    if (!rank_me()) fpos = new_<size_t>(0);
-    fpos = broadcast(fpos, 0).wait();
-    size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
-    // wait until all ranks have updated the global counter
-    barrier();
-    int bytes_written = 0;
-    int fileno = -1;
-    size_t fsize = 0;
-    if (!rank_me()) {
-      fsize = ad.load(fpos, memory_order_relaxed).wait();
-      // rank 0 creates the file and truncates it to the correct length
-      fileno = open(fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-      if (fileno == -1) WARN("Error trying to create file ", fname, ": ", strerror(errno), "\n");
-      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", fname, " to ", fsize, " bytes\n");
-    }
-    barrier();
-    ad.destroy();
-    // wait until rank 0 has finished setting up the file
-    if (rank_me()) fileno = open(fname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
-    if (fileno == -1) WARN("Error trying to open file ", fname, ": ", strerror(errno), "\n");
-    bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
-    close(fileno);
-    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
-    barrier();
-    SLOG_VERBOSE("Successfully wrote ", fsize, " bytes to ", fname, "\n");
+    dump_single_file(gfa_fname + ".gfa", out_str);
   }
 };
 
