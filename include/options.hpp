@@ -190,7 +190,8 @@ public:
   bool post_assm_only = false;
   bool show_progress = false;
   bool no_pin = false;
-  bool pin_cpu = false;
+  bool pin_thread = false;
+  bool pin_core = false;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -270,9 +271,14 @@ public:
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
     app.add_flag("--no-pin", no_pin,
-                 "Do not pin ranks to CPU or Socket");
-    app.add_flag("--pin-cpu", pin_cpu,
-                 "Pin ranks to a single CPU instead of to a Socket");
+                 "Do not pin ranks to Cores, CPUs or Sockets")
+                 ->capture_default_str();
+    app.add_flag("--pin-thread", pin_thread,
+                 "Pin ranks to a single logical CPU (hyperthread) instead of to a Socket")
+                 ->capture_default_str();
+    app.add_flag("--pin-core", pin_core,
+                 "Pin ranks to a single core instead of to a Socket")
+                 ->capture_default_str();
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
