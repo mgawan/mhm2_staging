@@ -219,9 +219,17 @@ int main(int argc, char **argv) {
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-  if (pin_thread(getpid(), local_team().rank_me()) == -1) WARN("Could not pin process ", getpid(), " to core ", rank_me());
-  else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
-
+#ifndef DEBUG
+  // pin ranks to a single core in production
+  if (options->pin_cpu) {
+    if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to core ", rank_me());
+    else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
+  } else {
+      if (pin_socket() < 0) SWARN("Could not pin processes to socket(s)\n");
+      else SLOG_VERBOSE("Pinned processes to a single socket\n");
+  }
+#endif
+  
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;

@@ -188,6 +188,7 @@ public:
   bool post_assm_aln = false;
   bool post_assm_only = false;
   bool show_progress = false;
+  bool pin_cpu = false;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -263,6 +264,8 @@ public:
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
+    app.add_flag("--pin-cpu", pin_cpu,
+                 "Pin ranks to a single CPU instead of to a Socket");
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
