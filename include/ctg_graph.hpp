@@ -779,17 +779,21 @@ class CtgGraph {
   }
 #endif
 
-  void print_gfa2(const string &gfa_fname) {
+  void print_gfa2(const string &gfa_fname, int min_ctg_print_len) {
     BarrierTimer timer(__FILEFUNC__, false, true);
     string out_str = "";
     for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
+      if (v->clen < min_ctg_print_len) continue;
       // don't include the sequence, and have a user tag 'd' for depth
       out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tdp: " + to_string(v->depth) + "\n";
     }
     for (auto edge = get_first_local_edge(); edge != nullptr; edge = get_next_local_edge()) {
+      int clen1 = get_vertex_clen(edge->cids.cid1);
+      if (clen1 < min_ctg_print_len) continue;
+      int clen2 = get_vertex_clen(edge->cids.cid2);
+      if (clen2 < min_ctg_print_len) continue;
       auto cid_str = to_string(edge->cids.cid1) + "\t" + (edge->end1 == 5 ? "+" : "-") + "\t" +
                      to_string(edge->cids.cid2) + "\t" + (edge->end2 == 3 ? "+" : "-");
-
       if (edge->gap >= 0) {
         // this is a gap, not an edge, according to the GFA terminology
         out_str += "G\t*\t" + cid_str + "\t" + to_string(edge->gap) + "\t*";
@@ -798,8 +802,6 @@ class CtgGraph {
         // we don't have the actual alignments, but we know that for this to be valid, the alignment must be almost
         // perfect over the tail and front of the two contigs, so we can give the positions based on the gap size
         out_str += "E\t*\t" + cid_str + "\t";
-        int clen1 = get_vertex_clen(edge->cids.cid1);
-        int clen2 = get_vertex_clen(edge->cids.cid2);
         int overlap = -edge->gap;
         // positions are specified *before* revcomp
         int begin_pos1 = (edge->end1 == 5 ? clen1 - overlap : 0);

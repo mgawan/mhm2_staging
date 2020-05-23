@@ -37,11 +37,13 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
   CtgGraph graph;
   build_ctg_graph(&graph, insert_avg, insert_stddev, kmer_len, packed_reads_list, ctgs, alns);
   barrier();
-  barrier();
-  ctgs.clear();
   graph.print_stats(min_ctg_print_len);
-  if (!graph_fname.empty()) graph.print_gfa2(graph_fname);
   barrier();
-  walk_graph(&graph, max_kmer_len, kmer_len, break_scaff_Ns, ctgs);
+  if (!graph_fname.empty()) {
+    graph.print_gfa2(graph_fname, min_ctg_print_len);
+  } else {
+    ctgs.clear();
+    walk_graph(&graph, max_kmer_len, kmer_len, break_scaff_Ns, ctgs);
+  }
   barrier();
 }

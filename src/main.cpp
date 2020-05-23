@@ -127,12 +127,14 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
 }
 
 template <int MAX_K>
-void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
-                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs, int &max_expected_ins_size,
+                 int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
+  int scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
+  bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
   SLOG(KBLUE, "_________________________", KNORM, "\n");
-  SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n");
-  SLOG("\n");
+  if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
+  else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
   Alns alns;
   stage_timers.alignments->start();
 #ifdef DEBUG
@@ -149,19 +151,11 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   max_expected_ins_size = ins_avg + 8 * ins_stddev;
   int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
   stage_timers.cgraph->start();
-  string gfa_fname = "";
-  if (options->dump_gfa) {
-    for (int i = 0; i < options->scaff_kmer_lens.size(); ++i) {
-      if (scaff_kmer_len == options->scaff_kmer_lens[i]) {
-        gfa_fname = (!i ? "contigs-" + to_string(max_kmer_len) : "scaff-contigs-" + to_string(options->scaff_kmer_lens[i - 1]));
-        break;
-      }
-    }
-  }
   traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, ctgs, alns, gfa_fname);
+                     break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
   stage_timers.cgraph->stop();
-  if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
+  if ((!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
+      (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
     if (options->checkpoint) {
       stage_timers.dump_ctgs->start();
       ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
@@ -172,8 +166,9 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   }
   chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
   SLOG("\n");
-  SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(),
-       " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+  SLOG(KBLUE, "Completed ", (gfa_iter ? "GFA output" : "scaffolding"), " round k = ", scaff_kmer_len, " in ", setprecision(2),
+       fixed, loop_t_elapsed.count(), " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)",
+       KNORM, "\n");
   barrier();
 }
 
@@ -313,12 +308,14 @@ int main(int argc, char **argv) {
         if (options->max_kmer_len) max_kmer_len = options->max_kmer_len;
         else max_kmer_len = options->scaff_kmer_lens.front();
       }
-      for (auto scaff_kmer_len : options->scaff_kmer_lens) {
+      if (options->dump_gfa) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
+      for (int i = 0; i < options->scaff_kmer_lens.size(); ++i) {
+        auto scaff_kmer_len = options->scaff_kmer_lens[i];
         auto max_k = (scaff_kmer_len / 32 + 1) * 32;
 
   #define SCAFFOLD_K(KMER_LEN) \
         case KMER_LEN: \
-          scaffolding<KMER_LEN>(scaff_kmer_len, max_kmer_len, packed_reads_list, ctgs, max_expected_ins_size, ins_avg,\
+          scaffolding<KMER_LEN>(i, max_kmer_len, packed_reads_list, ctgs, max_expected_ins_size, ins_avg,\
                                 ins_stddev, options); \
           break
 
