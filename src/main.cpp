@@ -46,7 +46,8 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads*> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns);
+                        vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
+                        const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="");
 
@@ -149,7 +150,7 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
   stage_timers.cgraph->start();
   traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, ctgs, alns);
+                     break_scaff_Ns, ctgs, alns, "scaff-contigs-" + to_string(scaff_kmer_len));
   stage_timers.cgraph->stop();
   if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
     if (options->checkpoint) {

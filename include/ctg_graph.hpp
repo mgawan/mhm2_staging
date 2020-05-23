@@ -694,11 +694,6 @@ class CtgGraph {
       return os.str();
     };
 
-    ofstream graph_stream;
-    if (!graph_fname.empty()) {
-      get_rank_path(graph_fname, rank_me());
-      graph_stream.open(graph_fname);
-    }
     vector<int64_t> depths;
     depths.reserve(get_local_num_vertices());
     vector<int64_t> clens;
@@ -708,7 +703,6 @@ class CtgGraph {
         depths.push_back(round(v->depth));
         clens.push_back(v->clen);
       }
-      if (!graph_fname.empty()) graph_stream << v->cid << "," << v->clen << "," << v->depth << endl;
     }
     vector<int64_t> supports;
     supports.reserve(get_local_num_edges());
@@ -728,11 +722,6 @@ class CtgGraph {
         if (clen1 >= min_ctg_print_len || clen2 >= min_ctg_print_len) {
           supports.push_back(edge->support);
           gaps.push_back(edge->gap);
-        }
-        if (!graph_fname.empty()) {
-          graph_stream << edge->cids.cid1 << "," << edge->cids.cid2 << "," << edge->end1 << "," << edge->end2 << "," << edge->gap
-                       << "," << edge->support << "," << edge->aln_len << "," << edge->aln_score << ","
-                       << edge_type_str(edge->edge_type) << endl;
         }
         progbar.update();
       }
@@ -789,6 +778,71 @@ class CtgGraph {
     SLOG_VERBOSE("  short ctgs: ", perc_str(all_num_short_ctgs, num_edges), "\n");
   }
 #endif
+
+  void print_gfa2(const string &gfa_fname) {
+    BarrierTimer timer(__FILEFUNC__, false, true);
+    string out_str = "";
+    for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
+      // don't include the sequence, and have a user tag 'd' for depth
+      out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tdp: " + to_string(v->depth) + "\n";
+    }
+    for (auto edge = get_first_local_edge(); edge != nullptr; edge = get_next_local_edge()) {
+      auto cid_str = to_string(edge->cids.cid1) + "\t" + (edge->end1 == 5 ? "+" : "-") + "\t" +
+                     to_string(edge->cids.cid2) + "\t" + (edge->end2 == 3 ? "+" : "-");
+
+      if (edge->gap >= 0) {
+        // this is a gap, not an edge, according to the GFA terminology
+        out_str += "G\t*\t" + cid_str + "\t" + to_string(edge->gap) + "\t*";
+      } else {
+        // this is a negative gap - set as an alignment overlap in the GFA output
+        // we don't have the actual alignments, but we know that for this to be valid, the alignment must be almost
+        // perfect over the tail and front of the two contigs, so we can give the positions based on the gap size
+        out_str += "E\t*\t" + cid_str + "\t";
+        int clen1 = get_vertex_clen(edge->cids.cid1);
+        int clen2 = get_vertex_clen(edge->cids.cid2);
+        int overlap = -edge->gap;
+        // positions are specified *before* revcomp
+        int begin_pos1 = (edge->end1 == 5 ? clen1 - overlap : 0);
+        int end_pos1 = (edge->end1 == 5 ? clen1 : overlap);
+        int begin_pos2 = (edge->end1 == 3 ? clen2 - overlap : 0);
+        int end_pos2 = (edge->end1 == 3 ? clen2 : overlap);
+        out_str += to_string(begin_pos1) + "\t" + to_string(end_pos1);
+        if (end_pos1 == clen1) out_str += "$";
+        if (end_pos2 == clen2) out_str += "$";
+      }
+      // add MHM specific tags
+      out_str += "\tsp: " + to_string(edge->support) + "\ttp: " + edge_type_str(edge->edge_type) + "\n";
+    }
+    string fname = gfa_fname + ".gfa";
+    auto sz = out_str.size();
+    atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
+    global_ptr<size_t> fpos = nullptr;
+    if (!rank_me()) fpos = new_<size_t>(0);
+    fpos = broadcast(fpos, 0).wait();
+    size_t my_fpos = ad.fetch_add(fpos, sz, memory_order_relaxed).wait();
+    // wait until all ranks have updated the global counter
+    barrier();
+    int bytes_written = 0;
+    int fileno = -1;
+    size_t fsize = 0;
+    if (!rank_me()) {
+      fsize = ad.load(fpos, memory_order_relaxed).wait();
+      // rank 0 creates the file and truncates it to the correct length
+      fileno = open(fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+      if (fileno == -1) WARN("Error trying to create file ", fname, ": ", strerror(errno), "\n");
+      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", fname, " to ", fsize, " bytes\n");
+    }
+    barrier();
+    ad.destroy();
+    // wait until rank 0 has finished setting up the file
+    if (rank_me()) fileno = open(fname.c_str(), O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+    if (fileno == -1) WARN("Error trying to open file ", fname, ": ", strerror(errno), "\n");
+    bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
+    close(fileno);
+    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
+    barrier();
+    SLOG_VERBOSE("Successfully wrote ", fsize, " bytes to ", fname, "\n");
+  }
 };
 
 #endif

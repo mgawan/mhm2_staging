@@ -30,7 +30,8 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kme
 void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, Contigs &ctgs);
 
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads *> &packed_reads_list, int break_scaff_Ns, Contigs &ctgs, Alns &alns) {
+                        vector<PackedReads *> &packed_reads_list, int break_scaff_Ns, Contigs &ctgs, Alns &alns,
+                        const string &graph_fname) {
   BarrierTimer timer(__FILEFUNC__, false, true);
 
   CtgGraph graph;
@@ -38,8 +39,8 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
   barrier();
   barrier();
   ctgs.clear();
-  string graph_fname;
   graph.print_stats(min_ctg_print_len);
+  graph.print_gfa2(graph_fname);
   barrier();
   walk_graph(&graph, max_kmer_len, kmer_len, break_scaff_Ns, ctgs);
   barrier();
