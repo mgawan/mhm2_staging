@@ -88,7 +88,13 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
       auto prev_read_id = substr_view(prev_aln->read_id, 0, prev_aln->read_id.length() - 2);
       char prev_pair_num = prev_aln->read_id[prev_aln->read_id.length() - 1];
       if (read_id == prev_read_id && prev_aln->cid == aln.cid) {
-        assert(prev_pair_num == '1' && pair_num == '2');
+        if (prev_pair_num != '1' || pair_num != '2') {
+#ifdef DEBUG
+          WARN("pair nums wrong: ", prev_pair_num, " ", pair_num);
+#endif
+          prev_aln = nullptr;
+          continue;
+        }
         if (bad_alignment(prev_aln) || bad_alignment(&aln)) {
           num_overlap_rejected++;
         } else {

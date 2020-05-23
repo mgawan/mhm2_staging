@@ -27,13 +27,10 @@ using namespace upcxx_utils;
 
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads*> &packed_reads_list,
                      Contigs &ctgs, Alns &alns);
-void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, QualityLevel quality_level,
-                Contigs &ctgs);
-
+void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, Contigs &ctgs);
 
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads*> &packed_reads_list, int break_scaff_Ns, QualityLevel quality_level, Contigs &ctgs,
-                        Alns &alns) {
+                        vector<PackedReads *> &packed_reads_list, int break_scaff_Ns, Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__, false, true);
 
   CtgGraph graph;
@@ -44,7 +41,6 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
   string graph_fname;
   graph.print_stats(min_ctg_print_len);
   barrier();
-  walk_graph(&graph, max_kmer_len, kmer_len, break_scaff_Ns, quality_level, ctgs);
+  walk_graph(&graph, max_kmer_len, kmer_len, break_scaff_Ns, ctgs);
   barrier();
 }
-

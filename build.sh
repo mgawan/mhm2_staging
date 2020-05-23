@@ -15,18 +15,22 @@ INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/install}
 rm -rf $INSTALL_PATH/bin/mhmxx
 
 if [ "$1" == "clean" ]; then
-    rm -rf build/*
+    rm -rf .build/*
     # if this isn't removed then the the rebuild will not work
     rm -rf $INSTALL_PATH/cmake
     exit 0
 else
-    cd $rootdir/build
+    mkdir -p $rootdir/.build
+    cd $rootdir/.build
     if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
-        rm -rf build/*
+        rm -rf .build/*
         rm -rf $INSTALL_PATH/cmake
-        cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH 
+        cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
+        #cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH -GNinja
     fi
     make -j install
+    # ninja is about 20% faster on my 80 core server, but is not as widely supported (eg. not on Cori)
+    #ninja -j 0
 fi
 
 if [ -n "$MHMXX_BUILD_ENV" ]; then

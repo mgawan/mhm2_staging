@@ -48,6 +48,10 @@ add_definitions(-DCGRAPH_SPAN_OVERLAP_MISMATCH_THRES=1)
 # another good candidate for errors v ctgy tradeoff
 # For SSW alignments in gap closing: max number of mismatches allowed in the alignment
 add_definitions(-DCGRAPH_MAX_MISMATCHES_THRES=3)
+# Minimum contig length for computing TNF
+add_definitions(-DCGRAPH_MIN_TNF_CLEN=1000)
+# TNF probability threshold to choose one branch over another
+add_definitions(-DCGRAPH_WALK_TNF_THRES=0.75)
 
 # parameters for SSW aligner
 add_definitions(-DSSW_MATCH_SCORE=1)
