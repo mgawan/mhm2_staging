@@ -46,8 +46,7 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads*> &packed_reads_list, int break_scaffolds, QualityLevel quality_level,
-                        Contigs &ctgs, Alns &alns);
+                        vector<PackedReads*> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="");
 
@@ -150,7 +149,7 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
   stage_timers.cgraph->start();
   traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, QualityLevel::ALL, ctgs, alns);
+                     break_scaff_Ns, ctgs, alns);
   stage_timers.cgraph->stop();
   if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
     if (options->checkpoint) {
@@ -205,23 +204,23 @@ int main(int argc, char **argv) {
   upcxx::init();
   auto start_t = chrono::high_resolution_clock::now();
 
-#ifdef DEBUG
-  //time_t curr_t = std::time(nullptr);
-  //string dbg_fname = "debug" + to_string(curr_t) + ".log";
-  string dbg_fname = "debug.log";
-  get_rank_path(dbg_fname, rank_me());
-  _dbgstream.open(dbg_fname);
-#endif
-
   auto init_start_t = chrono::high_resolution_clock::now();
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-  if (pin_thread(getpid(), local_team().rank_me()) == -1) WARN("Could not pin process ", getpid(), " to core ", rank_me());
-  else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
-
+#ifndef DEBUG
+  // pin ranks to a single core in production
+  if (options->pin_cpu) {
+    if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to core ", rank_me());
+    else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
+  } else {
+      if (pin_socket() < 0) SWARN("Could not pin processes to socket(s)\n");
+      else SLOG_VERBOSE("Pinned processes to a single socket\n");
+  }
+#endif
+  
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;

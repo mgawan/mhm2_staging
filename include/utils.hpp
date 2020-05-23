@@ -1,5 +1,9 @@
 #pragma once
 #include <algorithm>
+#include <fstream>
+#include <string>
+#include <cstdlib>
+#include <unistd.h>
 
 #include "upcxx_utils/log.hpp"
 using namespace upcxx_utils;
@@ -16,13 +20,6 @@ using std::min;
 #include <unordered_map>
 #define HASH_TABLE std::unordered_map
 #endif
-
-// this shouldn't really be defined here, but I didn't want yet another header file
-enum class QualityLevel {
-  SINGLE_PATH_ONLY,
-  DEPTH_RESLN_ONLY,
-  ALL
-};
 
 
 inline string revcomp(const string &seq) {
@@ -86,3 +83,46 @@ inline int pin_thread(pid_t pid, int cid) {
   }
   return 0;
 }
+
+inline int pin_socket() {
+    ifstream cpuinfo("/proc/cpuinfo");
+    if(!cpuinfo) {
+        return -1;
+    }
+    std::vector<uint8_t> cpu2socket;
+    int maxsocket = -1;
+    const string id = "physical id";
+    cpu2socket.reserve(256);
+    for( std::string line; getline( cpuinfo, line ); ) {
+        if (line.find(id) != string::npos) {
+            int socket = atoi(line.c_str() + line.find_last_of(' '));
+            cpu2socket.push_back(socket);
+            if(socket > maxsocket) maxsocket = socket;
+        }
+    }
+    if (maxsocket >= 0) {
+        // group local_team ranks by socket (not round robin)
+        int num_cpus = cpu2socket.size();
+        int my_socket = upcxx::local_team().rank_me() * (maxsocket+1) / num_cpus;
+        DBG("Binding to socket ", my_socket, " of ", maxsocket+1, "\n");
+        size_t size = CPU_ALLOC_SIZE(num_cpus);
+        cpu_set_t *cpu_set_p = CPU_ALLOC(num_cpus);
+        if (cpu_set_p == NULL) return -1;
+        CPU_ZERO_S(size, cpu_set_p);
+        for(int i = 0 ; i < cpu2socket.size(); i++) {
+            if (cpu2socket[i] == my_socket) {
+                CPU_SET_S(i, size, cpu_set_p);
+            }
+        }
+        if (sched_setaffinity(getpid(), size, cpu_set_p) == -1) {
+            if (errno == 3) SWARN("%s, pid: %d", strerror(errno), getpid());
+            CPU_FREE(cpu_set_p);
+            return -1;
+        }
+        CPU_FREE(cpu_set_p);
+        return 0;
+    }
+    SWARN("Did not pin to socket\n");
+    return -1;
+}
+

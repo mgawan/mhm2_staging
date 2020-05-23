@@ -197,9 +197,14 @@ def capture_err(err_msgs):
     global _stop_thread
     for line in iter(_proc.stderr.readline, b''):
         line = line.decode()
-        if 'WARNING' in line or 'ERROR' in line:
+        # filter out all but warnings
+        # errors causing crashes will come to light later
+        if 'WARNING' in line:
             sys.stderr.write(line)
             sys.stderr.flush()
+        # FIXME: check for messages about memory failures
+        if 'UPC++ could not allocate' in line:
+            print_red('ERROR: UPC++ memory allocation failure')
         err_msgs.append(line)
         if _stop_thread:
             return
@@ -227,6 +232,7 @@ def main():
     global _output_dir
     global _err_thread
 
+    start_time = time.time()
     _orig_sighdlr = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, handle_interrupt)
 
@@ -256,11 +262,10 @@ def main():
     cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
     cmd.extend(unknown_options)
 
-    print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
-
     restating = False
     err_msgs = []
     while True:
+        print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
         started_exec = False
         completed_round = False
         try:
@@ -305,25 +310,33 @@ def main():
                 if completed_round and options.auto_resume:
                     print_red('Trying to restart with output directory ', _output_dir)
                     restarting = True
+                    err_msgs = []
                     cmd.append('--restart')
-                    if _output_dir not in cmd:
+                    if _output_dir[:-1] not in cmd:
                         cmd.extend(['-o', _output_dir])
+                    time.sleep(5)
                 else:
                     if options.auto_resume:
                         print_red("No additional completed round. Could not restart, exiting...")
                     return signal.SIGABRT
             else:
                 warnings = []
+                errors = []
                 for msg in err_msgs:
                     msg = msg.strip()
                     if 'WARNING' in msg:
                         warnings.append(msg)
                     elif msg != '':
-                        sys.stderr.write(msg + '\n')
+                        errors.append(msg)
                 if len(warnings) > 0:
                     print('There were', len(warnings), 'warnings:', file=sys.stderr)
                     for warning in warnings:
                         sys.stderr.write(warning + '\n')
+                if len(errors) > 0:
+                    print('There were', len(errors), 'errors:', file=sys.stderr)
+                    for err in errors:
+                        sys.stderr.write(err + '\n')
+                print('Overall time taken (including any restarts): %.2f s' % (time.time() - start_time))
                 break
         except:
             traceback.print_tb(sys.exc_info()[2], limit=100)

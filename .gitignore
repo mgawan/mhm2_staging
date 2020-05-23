@@ -1,4 +1,4 @@
-build*
+.build*
 .dir-locals.el
 scripts
 nbproject
