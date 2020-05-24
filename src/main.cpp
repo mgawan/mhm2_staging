@@ -216,11 +216,11 @@ int main(int argc, char **argv) {
     if (options->pin_thread) {
       if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to core ", rank_me());
       else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
-    } else if (options->pin_core) {
-        if (pin_core() < 0) SWARN("Could not pin processes to socket(s)\n");
+    } else if (options->pin_socket) {
+        if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
         else SLOG_VERBOSE("Pinned processes by physical core\n");
     } else {
-        if (pin_socket() < 0) SWARN("Could not pin processes to socket(s)\n");
+        if (pin_core() < 0) SWARN("Could not pin processes by core\n");
         else SLOG_VERBOSE("Pinned processes by socket\n");
     }
   }

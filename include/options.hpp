@@ -190,7 +190,7 @@ public:
   bool show_progress = false;
   bool no_pin = false;
   bool pin_thread = false;
-  bool pin_core = false;
+  bool pin_socket = false;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -270,10 +270,10 @@ public:
                  "Do not pin ranks to Cores, CPUs or Sockets")
                  ->capture_default_str();
     app.add_flag("--pin-thread", pin_thread,
-                 "Pin ranks to a single logical CPU (hyperthread) instead of to a Socket")
+                 "Pin ranks to a single logical CPU (hyperthread) instead of to a Core")
                  ->capture_default_str();
-    app.add_flag("--pin-core", pin_core,
-                 "Pin ranks to a single core instead of to a Socket")
+    app.add_flag("--pin-socket", pin_socket,
+                 "Pin ranks by Socket instead of by Core")
                  ->capture_default_str();
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")
