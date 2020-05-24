@@ -212,20 +212,21 @@ int main(int argc, char **argv) {
 
 //#ifndef DEBUG
   // pin ranks to a single core in production
-  if (!options->no_pin) {
-    if (options->pin_thread) {
-      if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to core ", rank_me());
-      else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
-    } else if (options->pin_socket) {
-        if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
-        else SLOG_VERBOSE("Pinned processes by socket\n");
-    } else {
-        if (pin_core() < 0) SWARN("Could not pin processes by core\n");
-        else SLOG_VERBOSE("Pinned processes by physical core\n");
-    }
+
+  if (options->pin_by == "thread") {
+    if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to logical core ", rank_me());
+    else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
+  } else if (options->pin_by == "socket") {
+    if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
+    else SLOG_VERBOSE("Pinned processes by socket\n");
+  } else if (options->pin_by == "core") {
+    if (pin_core() < 0) SWARN("Could not pin processes by physical core\n");
+    else SLOG_VERBOSE("Pinned processes by physical core\n");
   } else {
+    assert(options->pin_by == "none");
     SLOG_VERBOSE("No process pinning enabled\n");
   }
+  
 //#endif
   
   if (!upcxx::rank_me()) {
