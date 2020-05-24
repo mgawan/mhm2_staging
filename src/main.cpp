@@ -218,11 +218,13 @@ int main(int argc, char **argv) {
       else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
     } else if (options->pin_socket) {
         if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
-        else SLOG_VERBOSE("Pinned processes by physical core\n");
+        else SLOG_VERBOSE("Pinned processes by socket\n");
     } else {
         if (pin_core() < 0) SWARN("Could not pin processes by core\n");
-        else SLOG_VERBOSE("Pinned processes by socket\n");
+        else SLOG_VERBOSE("Pinned processes by physical core\n");
     }
+  } else {
+    SLOG_VERBOSE("No process pinning enabled\n");
   }
 //#endif
   
