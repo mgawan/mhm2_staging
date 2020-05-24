@@ -189,9 +189,7 @@ public:
   bool post_assm_aln = false;
   bool post_assm_only = false;
   bool show_progress = false;
-  bool no_pin = false;
-  bool pin_thread = false;
-  bool pin_socket = false;
+  string pin_by = "core";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -263,6 +261,9 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
+    app.add_option("--pin", pin_by,
+                 "Pin processes by Core, Socket, Hyper-thread) or No pinning")
+                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "none"}));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,
@@ -273,15 +274,6 @@ public:
                  ->default_val(checkpoint ? "true" : "false") ->capture_default_str() ->multi_option_policy();
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
-                 ->capture_default_str();
-    app.add_flag("--no-pin", no_pin,
-                 "Do not pin ranks to Cores, CPUs or Sockets")
-                 ->capture_default_str();
-    app.add_flag("--pin-thread", pin_thread,
-                 "Pin ranks to a single logical CPU (hyperthread) instead of to a Core")
-                 ->capture_default_str();
-    app.add_flag("--pin-socket", pin_socket,
-                 "Pin ranks by Socket instead of by Core")
                  ->capture_default_str();
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")

@@ -48,6 +48,7 @@ def get_hwd_cores_per_node():
                 if line.startswith('Thread(s) per core'):
                     hyperthreads = int(line.split()[3])
         cores = cpus / hyperthreads
+    print("Detected", cores, "cores on this hardware")
     return cores
 
 
@@ -81,9 +82,10 @@ def is_ll_job():
     return os.environ.get('LOAD_STEP_ID') is not None
 
 
-def get_job_cores_per_node(defaultCores = get_hwd_cores_per_node()):
-    """Query the job environment for the number of cores per node to use, if available"""
+def get_slurm_cores_per_node(defaultCores = 0):
     # Only trust this environment variable from slurm, otherwise trust the hardware
+    if defaultCores == 0:
+        defaultCores = get_hwd_cores_per_node()
     ntasks_per_node = os.environ.get('SLURM_NTASKS_PER_NODE')
     if ntasks_per_node:
         return int(ntasks_per_node)
@@ -95,10 +97,10 @@ def get_job_cores_per_node(defaultCores = get_hwd_cores_per_node()):
         else:
             ntasks_per_node = int(ntasks_per_node)
         if ntasks_per_node <= defaultCores:
+            print("Detected slurm job restricts cores to ", ntasks_per_node, " because of SLURM_TASKS_PER_NODE=", os.environ.get('SLURM_TASKS_PER_NODE'))
             return ntasks_per_node
     return defaultCores
-
-
+    
 def get_slurm_job_nodes():
     """Query the SLURM job environment for the number of nodes"""
     nodes = os.environ.get('SLURM_JOB_NUM_NODES')
@@ -143,6 +145,17 @@ def get_job_nodes():
     print("Warning: could not determine the number of nodes in this unsupported scheduler - using 1")
     return 1
 
+def get_job_cores_per_node(defaultCores = 0):
+    """Query the job environment for the number of cores per node to use, if available"""
+    if defaultCores == 0:
+        defaultCores = get_hwd_cores_per_node()
+
+    if 'GASNET_PSHM_NODES' in os.environ:
+        print("Detected procs_per_node from GASNET_PSHM_NODES=",os.getenv('GASNET_PSHM_NODES'))
+        return int(os.getenv('GASNET_PSHM_NODES'))
+    if is_slurm_job():
+        return get_slurm_cores_per_node(defaultCores)
+    return defaultCores
 
 def which(file_name):
     if os.path.exists(file_name) and os.access(file_name, os.X_OK):
@@ -239,6 +252,7 @@ def main():
     argparser = argparse.ArgumentParser(add_help=False)
     argparser.add_argument("--auto-resume", action="store_true", help="Automatically resume after a failure")
     argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
+    argparser.add_argument("--procs-per-node", default=0, help="Processes to spawn per node (default auto-detect cores)")
 
     options, unknown_options = argparser.parse_known_args()
 
@@ -248,15 +262,15 @@ def main():
     check_exec('upcxx-run', '-h', 'UPC++')
     # expect mhmxx to be in same directory as mhmxx.py
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
-    if not which(mhmxx_binary_path):
-        die("Cannot find binary mhmxx from: ", sys.argv[0], " in ", mhmxx_binary_path)
-    cores_per_node = get_hwd_cores_per_node()
+    if not (os.path.exists(mhmxx_binary_path) or which(mhmxx_binary_path)):
+        die("Cannot find binary mhmxx in '", mhmxx_binary_path, "'")
+    
+    cores_per_node = int(options.procs_per_node)
+    if cores_per_node == 0:
+        cores_per_node = get_job_cores_per_node()
     num_nodes = get_job_nodes()
-    cmd = ['upcxx-run', '-n']
-    if 'GASNET_PSHM_NODES' in os.environ:
-        cmd.extend([os.getenv('GASNET_PSHM_NODES')])
-    else:
-        cmd.extend([str(cores_per_node * num_nodes)])
+    
+    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes)]
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
         cmd.extend(['-shared-heap', options.shared_heap])
     cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
