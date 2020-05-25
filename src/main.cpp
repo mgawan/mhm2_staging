@@ -221,6 +221,9 @@ int main(int argc, char **argv) {
   } else if (options->pin_by == "core") {
     if (pin_core() < 0) SWARN("Could not pin processes by physical core\n");
     else SLOG_VERBOSE("Pinned processes by physical core\n");
+  } else if (options->pin_by == "clear") {
+    if (pin_clear() < 0) SWARN("Could not clear pinning of proccesses\n");
+    else SLOG_VERBOSE("Cleared any pinning of processes\n");
   } else {
     assert(options->pin_by == "none");
     SLOG_VERBOSE("No process pinning enabled\n");
