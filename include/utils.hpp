@@ -75,6 +75,19 @@ inline void switch_orient(int &start, int &stop, int &len) {
   stop = len - tmp;
 }
 
+inline int pin_clear() {
+  cpu_set_t cpu_set;
+  CPU_ZERO(&cpu_set);
+  for(int i = 0; i < sizeof(cpu_set_t) * 8; i++) {
+    CPU_SET(i, &cpu_set);
+  }
+  if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
+    if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
+    return -1;
+  }
+  return 0;
+}
+
 inline int pin_thread(pid_t pid, int cid) {
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);

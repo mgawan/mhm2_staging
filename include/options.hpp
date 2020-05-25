@@ -254,8 +254,8 @@ public:
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
     app.add_option("--pin", pin_by,
-                 "Pin processes by Core, Socket, Hyper-thread) or No pinning")
-                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "none"}));
+                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
+                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,
