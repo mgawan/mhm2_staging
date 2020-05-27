@@ -168,13 +168,11 @@ struct Vertex {
   // the tnf distribution for this vertex
   tnf_t tnf;
 #endif
-
   // book-keeping fields for resolving walk conflicts between ranks -
   // choose the walk with the longest scaffold, and if there is a tie, choose the highest rank
   int walk_score;
   int walk_rank;
   int walk_i;
-
   UPCXX_SERIALIZED_FIELDS(cid, clen, depth, visited, seq_gptr, end5, end3, end5_merged, end3_merged,
 #ifdef TNF_PATH_RESOLUTION
                           tnf,
@@ -792,8 +790,8 @@ class CtgGraph {
       if (clen1 < min_ctg_print_len) continue;
       int clen2 = get_vertex_clen(edge->cids.cid2);
       if (clen2 < min_ctg_print_len) continue;
-      auto cid_str = to_string(edge->cids.cid1) + "\t" + (edge->end1 == 5 ? "+" : "-") + "\t" +
-                     to_string(edge->cids.cid2) + "\t" + (edge->end2 == 3 ? "+" : "-");
+      auto cid_str = to_string(edge->cids.cid1) + (edge->end1 == 5 ? "+" : "-") + "\t" +
+                     to_string(edge->cids.cid2) + (edge->end2 == 3 ? "+" : "-");
       if (edge->gap >= 0) {
         // this is a gap, not an edge, according to the GFA terminology
         out_str += "G\t*\t" + cid_str + "\t" + to_string(edge->gap) + "\t*";

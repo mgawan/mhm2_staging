@@ -273,7 +273,7 @@ def main():
             _err_thread.start()
             for line in iter(_proc.stdout.readline, b''):
                 if not started_exec:
-                    print('Started executing at ' + str(datetime.datetime.now()), 'with PID', _proc.pid)
+                    print('Started executing at ' + str(datetime.datetime.now()) + ' with PID ' + str(_proc.pid))
                     started_exec = True
 
                 line = line.decode()

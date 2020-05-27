@@ -610,7 +610,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
 
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                     Contigs &ctgs, Alns &alns, bool compute_cigar=false, int min_ctg_len=0) {
+                     Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0) {
   BarrierTimer timer(__FILEFUNC__, false, true);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
@@ -628,7 +628,7 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 #ifdef DEBUG
   //kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  do_alignments(kmer_ctg_dht, packed_reads_list, compute_cigar ? 4 : KLIGN_SEED_SPACE);
+  do_alignments(kmer_ctg_dht, packed_reads_list, seed_space);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
   if (alns.get_num_dups()) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
@@ -637,7 +637,7 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
 
 #define FA(KMER_LEN) \
     template \
-    void find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, bool, int)
+    void find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, int, bool, int)
 
 
 FA(32);

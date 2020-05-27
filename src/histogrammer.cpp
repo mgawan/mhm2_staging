@@ -172,9 +172,10 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
                " min ", all_min_insert_size, " max ", all_max_insert_size, "\n");
   if (expected_ins_avg) {
     if (abs(insert_avg - expected_ins_avg) > 100)
-      SWARN("Large difference in calculated vs expected insert average sizes (expected ", expected_ins_avg, ")");
+      SWARN("Large difference in calculated (", insert_avg, ") vs expected (", expected_ins_avg, ") insert average sizes");
     if (abs(insert_stddev - expected_ins_stddev) > 100)
-      SWARN("Large difference in calculated vs expected insert std dev (expected ", expected_ins_stddev, ")");
+      SWARN("Large difference in calculated (", insert_stddev, ") vs expected (", expected_ins_stddev,
+            ") insert standard deviation");
     SLOG_VERBOSE("Using specified ", expected_ins_avg, " avg insert size and ", expected_ins_stddev, " stddev\n");
     return {expected_ins_avg, expected_ins_stddev};
   }
