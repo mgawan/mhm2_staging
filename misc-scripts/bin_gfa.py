@@ -148,7 +148,7 @@ def main():
         print('Took %.4f s' % (time.perf_counter() - t))
         print('Writing stats_bins.txt')
         with open('stats_bins.txt', 'w') as f:
-            print('# bin num_bins clen depth aln_depth entropy4k entropy3k entropy2k', file=f)
+            print('bin num_bins clen depth aln_depth entropy3k entropy2k gc_count', file=f)
             for i, bin in enumerate(bins):
                 if bin_counts[i][1] >= opts.cum_len_thres:
                     print(i, bin_counts[i][0], bin_counts[i][1], '%.3f' % bin_counts[i][2], '%.3f' % bin_counts[i][3],
