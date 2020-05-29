@@ -1,5 +1,45 @@
-//mhm - UPC++ version
-//Steven Hofmeyr, LBNL, June 2019
+/*
+ HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
+ through Lawrence Berkeley National Laboratory (subject to receipt of any required
+ approvals from the U.S. Dept. of Energy).  All rights reserved."
+ 
+ Redistribution and use in source and binary forms, with or without modification,
+ are permitted provided that the following conditions are met:
+ 
+ (1) Redistributions of source code must retain the above copyright notice, this
+ list of conditions and the following disclaimer.
+ 
+ (2) Redistributions in binary form must reproduce the above copyright notice,
+ this list of conditions and the following disclaimer in the documentation and/or
+ other materials provided with the distribution.
+ 
+ (3) Neither the name of the University of California, Lawrence Berkeley National
+ Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
+ endorse or promote products derived from this software without specific prior
+ written permission.
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+ EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ DAMAGE.
+ 
+ You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
+ to the features, functionality or performance of the source code ("Enhancements") to
+ anyone; however, if you choose to make your Enhancements available either publicly,
+ or directly to Lawrence Berkeley National Laboratory, without imposing a separate
+ written license agreement for such Enhancements, then you hereby grant the following
+ license: a  non-exclusive, royalty-free perpetual license to install, use, modify,
+ prepare derivative works, incorporate into other computer software, distribute, and
+ sublicense such enhancements or derivative works thereof, in binary and source code
+ form.
+*/
+
 
 #include <iostream>
 #include <fstream>
@@ -41,11 +81,12 @@ template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                     Contigs &ctgs, Alns &alns, bool compute_cigar=false, int min_ctg_len=0);
+                     Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0);
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads*> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns);
+                        vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
+                        const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="");
 
@@ -96,7 +137,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     stage_timers.alignments->start();
-    find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
+    find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, KLIGN_SEED_SPACE);
     stage_timers.alignments->stop();
     barrier();
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
@@ -125,19 +166,23 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
 }
 
 template <int MAX_K>
-void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
-                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs, int &max_expected_ins_size,
+                 int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
+  int scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
+  bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
   SLOG(KBLUE, "_________________________", KNORM, "\n");
-  SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n");
-  SLOG("\n");
+  if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
+  else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
   Alns alns;
   stage_timers.alignments->start();
 #ifdef DEBUG
   alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns);
+  int seed_space = KLIGN_SEED_SPACE;
+  if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
+  find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, seed_space);
   stage_timers.alignments->stop();
   // always recalculate the insert size because we may need it for resumes of
   // Failed runs
@@ -148,9 +193,10 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
   stage_timers.cgraph->start();
   traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, ctgs, alns);
+                     break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
   stage_timers.cgraph->stop();
-  if (scaff_kmer_len != options->scaff_kmer_lens.back()) {
+  if ((!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
+      (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
     if (options->checkpoint) {
       stage_timers.dump_ctgs->start();
       ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
@@ -161,8 +207,9 @@ void scaffolding(int scaff_kmer_len, int max_kmer_len, vector<PackedReads *> pac
   }
   chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
   SLOG("\n");
-  SLOG(KBLUE, "Completed scaffolding round k = ", scaff_kmer_len, " in ", setprecision(2), fixed, loop_t_elapsed.count(),
-       " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+  SLOG(KBLUE, "Completed ", (gfa_iter ? "GFA output" : "scaffolding"), " round k = ", scaff_kmer_len, " in ", setprecision(2),
+       fixed, loop_t_elapsed.count(), " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)",
+       KNORM, "\n");
   barrier();
 }
 
@@ -185,7 +232,7 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, true,
+  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 1, true,
                          options->min_ctg_print_len);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
@@ -193,7 +240,7 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   }
   packed_reads_list.clear();
   alns.dump_single_file_alns("final_assembly.sam", true);
-  calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size, "large_alns_ctgs.txt");
+  calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
   SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
        "/final_assembly.sam", KNORM, "\n");
   SLOG(KBLUE, "_________________________", KNORM, "\n");
@@ -321,12 +368,14 @@ int main(int argc, char **argv) {
         if (options->max_kmer_len) max_kmer_len = options->max_kmer_len;
         else max_kmer_len = options->scaff_kmer_lens.front();
       }
-      for (auto scaff_kmer_len : options->scaff_kmer_lens) {
+      if (options->dump_gfa) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
+      for (int i = 0; i < options->scaff_kmer_lens.size(); ++i) {
+        auto scaff_kmer_len = options->scaff_kmer_lens[i];
         auto max_k = (scaff_kmer_len / 32 + 1) * 32;
 
   #define SCAFFOLD_K(KMER_LEN) \
         case KMER_LEN: \
-          scaffolding<KMER_LEN>(scaff_kmer_len, max_kmer_len, packed_reads_list, ctgs, max_expected_ins_size, ins_avg,\
+          scaffolding<KMER_LEN>(i, max_kmer_len, packed_reads_list, ctgs, max_expected_ins_size, ins_avg,\
                                 ins_stddev, options); \
           break
 

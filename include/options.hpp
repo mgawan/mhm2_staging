@@ -1,5 +1,47 @@
-#ifndef __OPTIONS_H
-#define __OPTIONS_H
+#pragma once
+
+/*
+ HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
+ through Lawrence Berkeley National Laboratory (subject to receipt of any required
+ approvals from the U.S. Dept. of Energy).  All rights reserved."
+ 
+ Redistribution and use in source and binary forms, with or without modification,
+ are permitted provided that the following conditions are met:
+ 
+ (1) Redistributions of source code must retain the above copyright notice, this
+ list of conditions and the following disclaimer.
+ 
+ (2) Redistributions in binary form must reproduce the above copyright notice,
+ this list of conditions and the following disclaimer in the documentation and/or
+ other materials provided with the distribution.
+ 
+ (3) Neither the name of the University of California, Lawrence Berkeley National
+ Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
+ endorse or promote products derived from this software without specific prior
+ written permission.
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+ EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ DAMAGE.
+ 
+ You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
+ to the features, functionality or performance of the source code ("Enhancements") to
+ anyone; however, if you choose to make your Enhancements available either publicly,
+ or directly to Lawrence Berkeley National Laboratory, without imposing a separate
+ written license agreement for such Enhancements, then you hereby grant the following
+ license: a  non-exclusive, royalty-free perpetual license to install, use, modify,
+ prepare derivative works, incorporate into other computer software, distribute, and
+ sublicense such enhancements or derivative works thereof, in binary and source code
+ form.
+*/
+
 
 #include <iostream>
 #include <regex>
@@ -41,7 +83,7 @@ class Options {
     return oss.str();
   }
 
-  bool extract_following_lens(const string &s, vector<unsigned> &lens, int k) {
+  bool extract_previous_lens(vector<unsigned> &lens, int k) {
     for (int i = 0; i < lens.size(); i++) {
       if (lens[i] == k) {
         lens.erase(lens.begin(), lens.begin() + i + 1);
@@ -78,18 +120,24 @@ class Options {
           stage_type = "scaffolding";
           k = scaff_kmer_lens[0];
         } else {
-          if (!extract_following_lens(last_stage, kmer_lens, k))
+          if (!extract_previous_lens(kmer_lens, k))
             SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
           prev_kmer_len = k;
-        }
+		}
         ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-      } else {
+	  } else if (stage_type == "scaffolding") {
         max_kmer_len = kmer_lens.back();
         kmer_lens = {};
-        if (!extract_following_lens(last_stage, scaff_kmer_lens, k))
-            SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
-        if (k == scaff_kmer_lens.front()) ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-        else ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+        if (k == scaff_kmer_lens.front()) {
+		  ctgs_fname = "contigs-" + to_string(k) + ".fasta";
+		} else {
+		  if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
+		  ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+		}
+        if (!extract_previous_lens(scaff_kmer_lens, k))
+		  SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
+      } else {
+		SDIE("Invalid previous stage ", stage_type, " in line '", last_stage, "', could not restart");
       }
       SLOG("\n*** Restarting from previous run at stage ", stage_type, " k = ",
            (stage_type == "contig" ? kmer_lens[0] : scaff_kmer_lens[0]), " ***\n\n");
@@ -188,6 +236,7 @@ public:
   bool checkpoint = true;
   bool post_assm_aln = false;
   bool post_assm_only = false;
+  bool dump_gfa = false;
   bool show_progress = false;
   string pin_by = "core";
   string ctgs_fname;
@@ -277,6 +326,9 @@ public:
                  ->capture_default_str();
     app.add_flag("--post-assembly-align", post_assm_aln,
                  "Align reads to final assembly")
+                 ->capture_default_str();
+    app.add_flag("--write-gfa", dump_gfa,
+                 "Dump scaffolding contig graphs in GFA2 format")
                  ->capture_default_str();
     app.add_flag("--post-assembly-only", post_assm_only,
                  "Only run post assembly")
@@ -378,5 +430,3 @@ public:
   }
 };
 
-
-#endif

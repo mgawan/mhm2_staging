@@ -1,7 +1,43 @@
 /*
- Calculate histogram of insert sizes
- c shofmeyr@lbl.gov
- March 2020
+ HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
+ through Lawrence Berkeley National Laboratory (subject to receipt of any required
+ approvals from the U.S. Dept. of Energy).  All rights reserved."
+ 
+ Redistribution and use in source and binary forms, with or without modification,
+ are permitted provided that the following conditions are met:
+ 
+ (1) Redistributions of source code must retain the above copyright notice, this
+ list of conditions and the following disclaimer.
+ 
+ (2) Redistributions in binary form must reproduce the above copyright notice,
+ this list of conditions and the following disclaimer in the documentation and/or
+ other materials provided with the distribution.
+ 
+ (3) Neither the name of the University of California, Lawrence Berkeley National
+ Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
+ endorse or promote products derived from this software without specific prior
+ written permission.
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+ EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ DAMAGE.
+ 
+ You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
+ to the features, functionality or performance of the source code ("Enhancements") to
+ anyone; however, if you choose to make your Enhancements available either publicly,
+ or directly to Lawrence Berkeley National Laboratory, without imposing a separate
+ written license agreement for such Enhancements, then you hereby grant the following
+ license: a  non-exclusive, royalty-free perpetual license to install, use, modify,
+ prepare derivative works, incorporate into other computer software, distribute, and
+ sublicense such enhancements or derivative works thereof, in binary and source code
+ form.
 */
 
 #include <iostream>
@@ -136,35 +172,7 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
     for (auto large_alns_ctg : large_alns) {
       out_str += large_alns_ctg + "\n";
     }
-    upcxx::atomic_domain<size_t> ad({upcxx::atomic_op::fetch_add, upcxx::atomic_op::load});
-    upcxx::global_ptr<size_t> fpos = nullptr;
-    if (!upcxx::rank_me()) fpos = upcxx::new_<size_t>(0);
-    fpos = upcxx::broadcast(fpos, 0).wait();
-    auto sz = out_str.length();
-    size_t my_fpos = ad.fetch_add(fpos, sz, std::memory_order_relaxed).wait();
-    // wait until all ranks have updated the global counter
-    upcxx::barrier();
-    int fileno = -1;
-    size_t fsize = 0;
-    if (!upcxx::rank_me()) {
-      fsize = ad.load(fpos, std::memory_order_relaxed).wait();
-      // rank 0 creates the file and truncates it to the correct length
-      fileno = open(dump_large_alns_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-      if (fileno == -1) WARN("Error trying to create file ", dump_large_alns_fname, ": ", strerror(errno), "\n");
-      if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", dump_large_alns_fname, " to ", fsize, " bytes\n");
-    }
-    upcxx::barrier();
-    ad.destroy();
-    // wait until rank 0 has finished setting up the file
-    if (rank_me()) fileno = open(dump_large_alns_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fileno == -1) WARN("Error trying to open file ", dump_large_alns_fname, ": ", strerror(errno), "\n");
-    auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
-    close(fileno);
-    if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
-    upcxx::barrier();
-    auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
-    upcxx::barrier();
-    SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", dump_large_alns_fname, "\n");
+    dump_single_file(dump_large_alns_fname, out_str);
   }
 
   auto all_num_overlap_rejected = reduce_one(num_overlap_rejected, op_fast_add, 0).wait();
@@ -200,9 +208,10 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
                " min ", all_min_insert_size, " max ", all_max_insert_size, "\n");
   if (expected_ins_avg) {
     if (abs(insert_avg - expected_ins_avg) > 100)
-      SWARN("Large difference in calculated vs expected insert average sizes (expected ", expected_ins_avg, ")");
+      SWARN("Large difference in calculated (", insert_avg, ") vs expected (", expected_ins_avg, ") insert average sizes");
     if (abs(insert_stddev - expected_ins_stddev) > 100)
-      SWARN("Large difference in calculated vs expected insert std dev (expected ", expected_ins_stddev, ")");
+      SWARN("Large difference in calculated (", insert_stddev, ") vs expected (", expected_ins_stddev,
+            ") insert standard deviation");
     SLOG_VERBOSE("Using specified ", expected_ins_avg, " avg insert size and ", expected_ins_stddev, " stddev\n");
     return {expected_ins_avg, expected_ins_stddev};
   }
