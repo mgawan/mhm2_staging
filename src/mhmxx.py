@@ -57,14 +57,14 @@ def get_job_id():
     for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'LOAD_STEP_ID']:
         if key in os.environ:
             return os.environ.get(key)
-    return None
+    return str(os.getpid());
 
 def get_job_name():
     """Query the env for the name of a job"""
     for key in ['PBS_JOBNAME', 'JOBNAME', 'SLURM_JOB_NAME', 'LSB_JOBNAME', 'JOB_NAME']:
       if key in os.environ:
         return os.environ.get(key)
-    return None
+    return ""
 
 def is_slurm_job():
     return os.environ.get('SLURM_JOB_ID') is not None
@@ -156,6 +156,10 @@ def get_job_cores_per_node(defaultCores = 0):
     if is_slurm_job():
         return get_slurm_cores_per_node(defaultCores)
     return defaultCores
+
+def get_job_desc():
+    return get_job_id() + " (" + get_job_name() + ")"
+
 
 def which(file_name):
     if os.path.exists(file_name) and os.access(file_name, os.X_OK):
@@ -275,6 +279,9 @@ def main():
         cmd.extend(['-shared-heap', options.shared_heap])
     cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
     cmd.extend(unknown_options)
+    
+    print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
+    print("Executed as:" + " ".join(sys.argv))
 
     restating = False
     err_msgs = []
