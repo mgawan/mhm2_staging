@@ -143,9 +143,6 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   int seed_space = KLIGN_SEED_SPACE;
   if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
-
-//  if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) SDIE("test the restart");
-  
   find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, seed_space);
   stage_timers.alignments->stop();
   // always recalculate the insert size because we may need it for resumes of
