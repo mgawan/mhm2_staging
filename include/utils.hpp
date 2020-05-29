@@ -91,24 +91,29 @@ inline void dump_single_file(const string &fname, const string &out_str) {
   size_t my_fpos = ad.fetch_add(fpos, sz, std::memory_order_relaxed).wait();
   // wait until all ranks have updated the global counter
   upcxx::barrier();
+  // write to a temporary file and rename it on completion to ensure that there are no corrupted files should
+  // there be a crash
+  auto tmp_fname = fname + ".tmp";
   int fileno = -1;
   size_t fsize = 0;
   if (!upcxx::rank_me()) {
     fsize = ad.load(fpos, std::memory_order_relaxed).wait();
     // rank 0 creates the file and truncates it to the correct length
-    fileno = open(fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fileno == -1) WARN("Error trying to create file ", fname, ": ", strerror(errno), "\n");
-    if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", fname, " to ", fsize, " bytes\n");
+    fileno = open(tmp_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fileno == -1) WARN("Error trying to create file ", tmp_fname, ": ", strerror(errno), "\n");
+    if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", tmp_fname, " to ", fsize, " bytes\n");
   }
   upcxx::barrier();
   ad.destroy();
   // wait until rank 0 has finished setting up the file
-  if (rank_me()) fileno = open(fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-  if (fileno == -1) WARN("Error trying to open file ", fname, ": ", strerror(errno), "\n");
+  if (rank_me()) fileno = open(tmp_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+  if (fileno == -1) WARN("Error trying to open file ", tmp_fname, ": ", strerror(errno), "\n");
   auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
   close(fileno);
   if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
   upcxx::barrier();
+  if (!upcxx::rank_me() && rename(tmp_fname.c_str(), fname.c_str()) != 0) 
+	DIE("Could not rename temporary file ", tmp_fname, " to ", fname, ", error: ", strerror(errno));
   auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
   SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname, "\n");
 }
