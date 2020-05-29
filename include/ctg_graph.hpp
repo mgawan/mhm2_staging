@@ -1,8 +1,7 @@
+#pragma once
+
 // cgraph
 // Steven Hofmeyr, LBNL, Aug 2018
-
-#ifndef __CTG_GRAPH
-#define __CTG_GRAPH
 
 #include <iostream>
 #include <map>
@@ -817,4 +816,3 @@ class CtgGraph {
   }
 };
 
-#endif

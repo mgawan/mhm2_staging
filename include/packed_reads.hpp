@@ -1,5 +1,4 @@
-#ifndef _PACKED_READS_H
-#define _PACKED_READS_H
+#pragma once
 
 #include <iostream>
 // Not available in gcc <= 7
@@ -158,4 +157,3 @@ public:
 };
 
 
-#endif

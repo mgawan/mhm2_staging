@@ -1,5 +1,4 @@
-#ifndef __KMER_DHT
-#define __KMER_DHT
+#pragma once
 
 #include <limits>
 #include <iostream>
@@ -616,4 +615,3 @@ public:
 
 };
 
-#endif

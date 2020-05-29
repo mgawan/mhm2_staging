@@ -1,5 +1,4 @@
- #ifndef _CONTIGS_HPP
-#define _CONTIGS_HPP
+#pragma once
 
 #include <iostream>
 #include <vector>
@@ -251,4 +250,3 @@ public:
 #endif
 };
 
-#endif

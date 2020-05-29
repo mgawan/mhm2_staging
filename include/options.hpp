@@ -1,5 +1,4 @@
-#ifndef __OPTIONS_H
-#define __OPTIONS_H
+#pragma once
 
 #include <iostream>
 #include <regex>
@@ -370,5 +369,3 @@ public:
   }
 };
 
-
-#endif

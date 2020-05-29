@@ -1,5 +1,4 @@
-#ifndef _ALIGNMENT_HPP
-#define _ALIGNMENT_HPP
+#pragma once
 
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
@@ -114,6 +113,4 @@ public:
   }
 };
 
-
-#endif
 

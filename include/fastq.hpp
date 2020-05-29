@@ -1,5 +1,4 @@
-#ifndef _FASTQ_H
-#define _FASTQ_H
+#pragma once
 
 #include <iostream>
 #include <unistd.h>
@@ -226,4 +225,3 @@ public:
 };
 
 
-#endif

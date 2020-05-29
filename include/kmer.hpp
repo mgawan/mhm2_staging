@@ -1,5 +1,4 @@
-#ifndef _KMER_HPP
-#define _KMER_HPP
+#pragma once
 
 #include <stdio.h>
 #include <stdint.h>
@@ -306,4 +305,3 @@ inline std::ostream& operator<<(std::ostream& out, const Kmer<MAX_K>& k) {
   return out << k.to_string();
 };
 
-#endif
