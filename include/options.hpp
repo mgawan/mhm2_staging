@@ -40,7 +40,7 @@ class Options {
     return oss.str();
   }
 
-  bool extract_following_lens(const string &s, vector<unsigned> &lens, int k) {
+  bool extract_previous_lens(vector<unsigned> &lens, int k) {
     for (int i = 0; i < lens.size(); i++) {
       if (lens[i] == k) {
         lens.erase(lens.begin(), lens.begin() + i + 1);
@@ -77,18 +77,24 @@ class Options {
           stage_type = "scaffolding";
           k = scaff_kmer_lens[0];
         } else {
-          if (!extract_following_lens(last_stage, kmer_lens, k))
+          if (!extract_previous_lens(kmer_lens, k))
             SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
           prev_kmer_len = k;
-        }
+		}
         ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-      } else {
+	  } else if (stage_type == "scaffolding") {
         max_kmer_len = kmer_lens.back();
         kmer_lens = {};
-        if (!extract_following_lens(last_stage, scaff_kmer_lens, k))
-            SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
-        if (k == scaff_kmer_lens.front()) ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-        else ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+        if (k == scaff_kmer_lens.front()) {
+		  ctgs_fname = "contigs-" + to_string(k) + ".fasta";
+		} else {
+		  if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
+		  ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+		}
+        if (!extract_previous_lens(scaff_kmer_lens, k))
+		  SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
+      } else {
+		SDIE("Invalid previous stage ", stage_type, " in line '", last_stage, "', could not restart");
       }
       SLOG("\n*** Restarting from previous run at stage ", stage_type, " k = ",
            (stage_type == "contig" ? kmer_lens[0] : scaff_kmer_lens[0]), " ***\n\n");
