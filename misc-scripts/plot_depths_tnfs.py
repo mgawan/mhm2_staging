@@ -18,9 +18,9 @@ plt.style.use('qpaper')
 fname = sys.argv[1]
 data = pandas.read_csv(fname, delim_whitespace=True)
     
-#bin name refdepth genfrac bin num_bins clen depth aln_depth entropy3k entropy2k gc_count
+#bin1 name refdepth genfrac bin num_bins clen depth aln_depth entropyTNF gc_count A C G T
 aln_depths = list(data['aln_depth'])
-entropy_3nfs = list(data['entropy3k'])
+entropy_TNF = list(data['entropyTNF'])
 gc_counts = list(data['gc_count'])
 
 genome_depths = {}
@@ -43,7 +43,7 @@ for genome in list(data['name']):
     points_colors.append(genome_colors[genome])
 
 
-#plt.scatter(aln_depths, entropy_3nfs, lw=0, marker='.', c=points_colors, cmap='nipy_spectral')
+#plt.scatter(aln_depths, entropy_TNF, lw=0.1, edgecolor='black', marker='.', c=points_colors, cmap='nipy_spectral')
 plt.scatter(aln_depths, gc_counts, lw=0.1, edgecolor='black', marker='.', c=points_colors, cmap='nipy_spectral')
 plt.colorbar(ticks=range(len(genomes))).ax.set_yticklabels(genomes_and_depths, fontsize=3)
 plt.xlabel('Depth')

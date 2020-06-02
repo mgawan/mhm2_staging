@@ -86,8 +86,8 @@ def test_model(model_data, model, genfracs):
         num_ungrouped += val - 1
 
     print(model_name + ', dimensions', len(model_data[0]))
-    for bin in sorted(bins_for_output):
-        print('  %4d %.2f' % (bin[0], bin[1]), bin[2])
+    #for bin in sorted(bins_for_output):
+    #    print('  %4d %.2f' % (bin[0], bin[1]), bin[2])
     print('  found', len(clusters), 'clusters')
     print('  misclassifications:', num_errors, '(%.3f %%)' % (100.0 * num_errors / len(bins)))
     print('  ungrouped:', num_ungrouped, '(%.3f %%)' % (100.0 * num_ungrouped / len(bins)), flush=True)
@@ -104,15 +104,19 @@ fname = sys.argv[1]
 #bin name refdepth genfrac bin num_bins clen depth aln_depth entropy3k entropy2k gc_count
 data = pandas.read_csv(fname, delim_whitespace=True)
 kmer_depths = normalize(data['depth'])
+# weight depths a bit
 aln_depths = normalize(data['aln_depth'], 5)
-#aln_depths = [5.0 * d for d in aln_depths]
-entropy_3nfs = normalize(data['entropy3k'])
-gc_counts = normalize(data['gc_count'])
+entropy_TNFs = normalize(data['entropyTNF'])
+gc_counts = list(data['gc_count'])
+a_counts = list(data['A'])
+c_counts = list(data['C'])
+g_counts = list(data['G'])
+t_counts = list(data['T'])
 
-model_data_3d = list(map(list, zip(aln_depths, gc_counts, entropy_3nfs)))
+model_data_nuc_freqs = list(map(list, zip(aln_depths, a_counts, c_counts, g_counts, t_counts, entropy_TNFs)))
+model_data_3d = list(map(list, zip(aln_depths, gc_counts, entropy_TNFs)))
 # well, it transpires that the entropy is really rather poor
-#model_data_2d = list(map(list, zip(aln_depths, entropy_3nfs)))
-
+#model_data_2d = list(map(list, zip(aln_depths, entropy_TNFs)))
 model_data_2d = list(map(list, zip(aln_depths, gc_counts)))
 
 print('There are', len(set(data['name'])), 'reference genomes')
@@ -140,9 +144,10 @@ print('There are', len(set(data['name'])), 'reference genomes')
 #test_model(model_data_3d, cluster.OPTICS(), data['genfrac'])
 #test_model(model_data_2d, cluster.OPTICS(), data['genfrac'])
 
+#test_model(model_data_nuc_freqs, sklearn.mixture.GaussianMixture(n_components=24, n_init=100), data['genfrac'])
 #test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=24, n_init=100), data['genfrac'])
 #test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=12, n_init=100), data['genfrac'])
-test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=24, n_init=100), data['genfrac'])
+test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100), data['genfrac'])
 #test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=50, n_init=100), data['genfrac'])
 #test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=100, n_init=100), data['genfrac'])
 
