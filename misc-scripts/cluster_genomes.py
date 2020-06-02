@@ -5,12 +5,33 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy
 import sys
+import os
 import sklearn.mixture
 import sklearn.cluster as cluster
 #import sklearn.preprocessing 
 import Bio.SeqIO as SeqIO
+import shutil
+import time
+import glob
+
+import eval_clusters
 
 
+def write_clusters(bins):
+    clusters = {}
+    print('Getting sequences', flush=True)
+    for i, bin in enumerate(bins):
+    #    print(i, bin_idxs[i], bin)
+        if bin not in clusters:
+            clusters[bin] = []
+        for record in SeqIO.parse('bin_' + str(bin_idxs[i]) + '.fasta', "fasta"):
+            clusters[bin].append(record)
+    print('Writing', len(clusters), 'clusters', flush=True)
+    for bin, cluster in clusters.items():
+    #    print(bin, len(cluster))
+        SeqIO.write(cluster, 'cluster_' + str(bin) + '.fasta', 'fasta')
+
+        
 def normalize(xs, max_val=1.0):
     min_x = min(xs)
     max_x = max(xs)
@@ -19,13 +40,17 @@ def normalize(xs, max_val=1.0):
 
 
 def test_model(model_data, model):
+    start_t = time.time()
+    for fname in glob.glob('cluster_*.fasta'):
+        os.remove(fname)
+
     model_name = type(model).__name__
+    print('Running', model_name + ', dimensions', len(model_data[0]), flush=True)
     
     bins = model.fit_predict(model_data)
     clusters = numpy.unique(bins)
 
-    print(model_name + ', dimensions', len(model_data[0]))
-    print('  found', len(clusters), 'clusters')
+    print('Found', len(clusters), 'clusters')
 
     series_x = [[] for i in range(len(clusters))]
     series_y = [[] for i in range(len(clusters))]
@@ -51,8 +76,9 @@ def test_model(model_data, model):
     plt.savefig('fig-clustering-' + model_name + '-' + fname + '.pdf')
     #plt.savefig('fig-clustering-' + fname + '.png', dpi=300)
 
-    return bins
-
+    write_clusters(bins)
+    print('Finished in %.2f s' % (time.time() - start_t))
+    eval_clusters.eval_clusters()
 
 plt.style.use('qpaper')
 fname = sys.argv[1]
@@ -79,48 +105,36 @@ model_data_2d = list(map(list, zip(aln_depths, gc_counts)))
 
 # from https://scikit-learn.org/stable/modules/clustering.html
 
-#test_model(model_data_3d, cluster.KMeans(n_clusters=25))
-#test_model(model_data_2d, cluster.KMeans(n_clusters=25))
+# test_model(model_data_3d, cluster.KMeans(n_clusters=25))
+# test_model(model_data_2d, cluster.KMeans(n_clusters=25))
 
-#test_model(model_data_3d, cluster.AffinityPropagation(damping=0.6))
-#test_model(model_data_2d, cluster.AffinityPropagation(damping=0.6))
+# test_model(model_data_3d, cluster.AffinityPropagation(damping=0.6))
+# test_model(model_data_2d, cluster.AffinityPropagation(damping=0.6))
 
-#test_model(model_data_3d, cluster.MeanShift(bandwidth=0.06))
-#test_model(model_data_2d, cluster.MeanShift(bandwidth=0.04))
+# test_model(model_data_3d, cluster.MeanShift(bandwidth=0.06))
+# test_model(model_data_2d, cluster.MeanShift(bandwidth=0.04))
 
-#test_model(model_data_3d, cluster.SpectralClustering(n_clusters=25))
-#test_model(model_data_2d, cluster.SpectralClustering(n_clusters=25))
+# test_model(model_data_3d, cluster.SpectralClustering(n_clusters=25))
+# test_model(model_data_2d, cluster.SpectralClustering(n_clusters=25))
 
-#test_model(model_data_3d, cluster.AgglomerativeClustering(n_clusters=25))
-#test_model(model_data_2d, cluster.AgglomerativeClustering(n_clusters=25))
+# test_model(model_data_3d, cluster.AgglomerativeClustering(n_clusters=25))
+# test_model(model_data_2d, cluster.AgglomerativeClustering(n_clusters=25))
 
-#test_model(model_data_3d, cluster.DBSCAN(eps=0.1))
-#test_model(model_data_2d, cluster.DBSCAN(eps=0.05))
+# test_model(model_data_3d, cluster.DBSCAN(eps=0.1))
+# test_model(model_data_2d, cluster.DBSCAN(eps=0.05))
 
-#test_model(model_data_3d, cluster.OPTICS())
-#test_model(model_data_2d, cluster.OPTICS())
+# test_model(model_data_3d, cluster.OPTICS())
+# test_model(model_data_2d, cluster.OPTICS())
 
-#test_model(model_data_nuc_freqs, sklearn.mixture.GaussianMixture(n_components=24, n_init=100))
-#test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=24, n_init=100))
-#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=12, n_init=100))
-#bins = test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
-bins = test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
-#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=100, n_init=100))
+# test_model(model_data_3d, cluster.Birch(n_clusters=25, threshold=0.04))
+# test_model(model_data_2d, cluster.Birch(n_clusters=25, threshold=0.03))
 
-#test_model(model_data_3d, cluster.Birch(n_clusters=25, threshold=0.04))
-#test_model(model_data_2d, cluster.Birch(n_clusters=25, threshold=0.03))
+#test_model(model_data_nuc_freqs, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
+test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
+test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=19, n_init=100))
+#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
+#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=50, n_init=100))
 
-clusters = {}
-print('Getting clusters', flush=True)
-for i, bin in enumerate(bins):
-#    print(i, bin_idxs[i], bin)
-    if bin not in clusters:
-        clusters[bin] = []
-    for record in SeqIO.parse('bin_' + str(bin_idxs[i]) + '.fasta', "fasta"):
-        clusters[bin].append(record)
-print('Writing', len(clusters), 'clusters', flush=True)
-for bin, cluster in clusters.items():
-#    print(bin, len(cluster))
-    SeqIO.write(cluster, 'cluster_' + str(bin) + '.fasta', 'fasta')
+
 
     
