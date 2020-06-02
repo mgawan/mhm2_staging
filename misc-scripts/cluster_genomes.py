@@ -8,6 +8,7 @@ import sys
 import sklearn.mixture
 import sklearn.cluster as cluster
 #import sklearn.preprocessing 
+import Bio.SeqIO as SeqIO
 
 
 def normalize(xs, max_val=1.0):
@@ -17,11 +18,14 @@ def normalize(xs, max_val=1.0):
     return [max_val * (x - min_x) / x_range for x in xs]
 
 
-def test_model(model_data, model, genfracs):
+def test_model(model_data, model):
     model_name = type(model).__name__
     
     bins = model.fit_predict(model_data)
     clusters = numpy.unique(bins)
+
+    print(model_name + ', dimensions', len(model_data[0]))
+    print('  found', len(clusters), 'clusters')
 
     series_x = [[] for i in range(len(clusters))]
     series_y = [[] for i in range(len(clusters))]
@@ -47,61 +51,14 @@ def test_model(model_data, model, genfracs):
     plt.savefig('fig-clustering-' + model_name + '-' + fname + '.pdf')
     #plt.savefig('fig-clustering-' + fname + '.png', dpi=300)
 
-    # now compute the accuracy: number of misclassifications, number of failed classifications
-    bin_to_genome = {}
-    for i, bin in enumerate(bins):
-        if not bin in bin_to_genome:
-            bin_to_genome[bin] = []
-        bin_to_genome[bin].append([data['name'][i], data['genfrac'][i]])
+    return bins
 
-    genome_to_bin_counts = {}
-    num_errors = 0
-    genfrac_error = 0
-    coverage = 0
-    bins_for_output = []
-    for k, v in bin_to_genome.items():
-        genomes_in_bin = set([x[0] for x in v])
-        sorted_genfracs = sorted(v, key=lambda x: x[1])
-        genome_to_genfracs = {}
-        for genome, genfrac in sorted_genfracs:
-            if genome not in genome_to_genfracs:
-                genome_to_genfracs[genome] = 0
-            genome_to_genfracs[genome] += genfrac
-        sorted_genome_genfracs = sorted(genome_to_genfracs.items(), key=lambda x: x[1], reverse=True)
-        #print(sorted_genome_genfracs)
-        genfrac = sorted_genome_genfracs[0][1]
-        if len(sorted_genome_genfracs) > 1:
-            genfrac_error += sum([x[1] for x in sorted_genome_genfracs[1:]])
-        coverage += genfrac
-        
-        num_errors += (len(genomes_in_bin) - 1)
-        bins_for_output.append([k, genfrac, str(sorted_genome_genfracs)])
-        for genome in genomes_in_bin:
-             if genome not in genome_to_bin_counts:
-                 genome_to_bin_counts[genome] = 0
-             genome_to_bin_counts[genome] += 1
-
-    num_ungrouped = 0
-    for val in genome_to_bin_counts.values():
-        num_ungrouped += val - 1
-
-    print(model_name + ', dimensions', len(model_data[0]))
-    #for bin in sorted(bins_for_output):
-    #    print('  %4d %.2f' % (bin[0], bin[1]), bin[2])
-    print('  found', len(clusters), 'clusters')
-    print('  misclassifications:', num_errors, '(%.3f %%)' % (100.0 * num_errors / len(bins)))
-    print('  ungrouped:', num_ungrouped, '(%.3f %%)' % (100.0 * num_ungrouped / len(bins)), flush=True)
-    print('  average genome fraction in primary clusters: %.3f %%' % (coverage / len(clusters)))
-    print('  average genome fraction errors: %.3f %%' % (genfrac_error / len(clusters)))
-
-    
 
 plt.style.use('qpaper')
 fname = sys.argv[1]
 
 # contents of file:
-
-#bin name refdepth genfrac bin num_bins clen depth aln_depth entropy3k entropy2k gc_count
+#bin num_bins clen depth aln_depth entropyTNF gc_count A C G T
 data = pandas.read_csv(fname, delim_whitespace=True)
 kmer_depths = normalize(data['depth'])
 # weight depths a bit
@@ -112,6 +69,7 @@ a_counts = list(data['A'])
 c_counts = list(data['C'])
 g_counts = list(data['G'])
 t_counts = list(data['T'])
+bin_idxs = list(data['bin'])
 
 model_data_nuc_freqs = list(map(list, zip(aln_depths, a_counts, c_counts, g_counts, t_counts, entropy_TNFs)))
 model_data_3d = list(map(list, zip(aln_depths, gc_counts, entropy_TNFs)))
@@ -119,37 +77,50 @@ model_data_3d = list(map(list, zip(aln_depths, gc_counts, entropy_TNFs)))
 #model_data_2d = list(map(list, zip(aln_depths, entropy_TNFs)))
 model_data_2d = list(map(list, zip(aln_depths, gc_counts)))
 
-print('There are', len(set(data['name'])), 'reference genomes')
-
 # from https://scikit-learn.org/stable/modules/clustering.html
 
-#test_model(model_data_3d, cluster.KMeans(n_clusters=25), data['genfrac'])
-#test_model(model_data_2d, cluster.KMeans(n_clusters=25), data['genfrac'])
+#test_model(model_data_3d, cluster.KMeans(n_clusters=25))
+#test_model(model_data_2d, cluster.KMeans(n_clusters=25))
 
-#test_model(model_data_3d, cluster.AffinityPropagation(damping=0.6), data['genfrac'])
-#test_model(model_data_2d, cluster.AffinityPropagation(damping=0.6), data['genfrac'])
+#test_model(model_data_3d, cluster.AffinityPropagation(damping=0.6))
+#test_model(model_data_2d, cluster.AffinityPropagation(damping=0.6))
 
-#test_model(model_data_3d, cluster.MeanShift(bandwidth=0.06), data['genfrac'])
-#test_model(model_data_2d, cluster.MeanShift(bandwidth=0.04), data['genfrac'])
+#test_model(model_data_3d, cluster.MeanShift(bandwidth=0.06))
+#test_model(model_data_2d, cluster.MeanShift(bandwidth=0.04))
 
-#test_model(model_data_3d, cluster.SpectralClustering(n_clusters=25), data['genfrac'])
-#test_model(model_data_2d, cluster.SpectralClustering(n_clusters=25), data['genfrac'])
+#test_model(model_data_3d, cluster.SpectralClustering(n_clusters=25))
+#test_model(model_data_2d, cluster.SpectralClustering(n_clusters=25))
 
-#test_model(model_data_3d, cluster.AgglomerativeClustering(n_clusters=25), data['genfrac'])
-#test_model(model_data_2d, cluster.AgglomerativeClustering(n_clusters=25), data['genfrac'])
+#test_model(model_data_3d, cluster.AgglomerativeClustering(n_clusters=25))
+#test_model(model_data_2d, cluster.AgglomerativeClustering(n_clusters=25))
 
-#test_model(model_data_3d, cluster.DBSCAN(eps=0.1), data['genfrac'])
-#test_model(model_data_2d, cluster.DBSCAN(eps=0.05), data['genfrac'])
+#test_model(model_data_3d, cluster.DBSCAN(eps=0.1))
+#test_model(model_data_2d, cluster.DBSCAN(eps=0.05))
 
-#test_model(model_data_3d, cluster.OPTICS(), data['genfrac'])
-#test_model(model_data_2d, cluster.OPTICS(), data['genfrac'])
+#test_model(model_data_3d, cluster.OPTICS())
+#test_model(model_data_2d, cluster.OPTICS())
 
-#test_model(model_data_nuc_freqs, sklearn.mixture.GaussianMixture(n_components=24, n_init=100), data['genfrac'])
-#test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=24, n_init=100), data['genfrac'])
-#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=12, n_init=100), data['genfrac'])
-test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100), data['genfrac'])
-#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=50, n_init=100), data['genfrac'])
-#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=100, n_init=100), data['genfrac'])
+#test_model(model_data_nuc_freqs, sklearn.mixture.GaussianMixture(n_components=24, n_init=100))
+#test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=24, n_init=100))
+#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=12, n_init=100))
+#bins = test_model(model_data_3d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
+bins = test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=25, n_init=100))
+#test_model(model_data_2d, sklearn.mixture.GaussianMixture(n_components=100, n_init=100))
 
-#test_model(model_data_3d, cluster.Birch(n_clusters=25, threshold=0.04), data['genfrac'])
-#test_model(model_data_2d, cluster.Birch(n_clusters=25, threshold=0.03), data['genfrac'])
+#test_model(model_data_3d, cluster.Birch(n_clusters=25, threshold=0.04))
+#test_model(model_data_2d, cluster.Birch(n_clusters=25, threshold=0.03))
+
+clusters = {}
+print('Getting clusters', flush=True)
+for i, bin in enumerate(bins):
+#    print(i, bin_idxs[i], bin)
+    if bin not in clusters:
+        clusters[bin] = []
+    for record in SeqIO.parse('bin_' + str(bin_idxs[i]) + '.fasta', "fasta"):
+        clusters[bin].append(record)
+print('Writing', len(clusters), 'clusters', flush=True)
+for bin, cluster in clusters.items():
+#    print(bin, len(cluster))
+    SeqIO.write(cluster, 'cluster_' + str(bin) + '.fasta', 'fasta')
+
+    
