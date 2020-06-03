@@ -137,6 +137,10 @@ public:
   static void set_k(unsigned int k) {
     Kmer::k = k;
   }
+  
+  static unsigned int get_k() {
+    return Kmer::k;
+  }
 
   static void get_kmers(int kmer_len, std::string seq, std::vector<Kmer> &kmers) {
     // only need rank 0 to check

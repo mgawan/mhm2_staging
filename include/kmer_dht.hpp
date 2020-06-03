@@ -48,6 +48,7 @@
 #include <fstream>
 #include <chrono>
 #include <stdarg.h>
+#include <algorithm>
 #include <upcxx/upcxx.hpp>
 
 #include "upcxx_utils/progress_bar.hpp"
@@ -220,13 +221,14 @@ class KmerDHT {
   int64_t initial_kmer_dht_reservation;
   int64_t my_num_kmers;
   int64_t bloom1_cardinality;
+  double estimated_error_rate;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
   bool use_bloom;
 
 public:
 
-  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
+  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, double error_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -236,25 +238,32 @@ public:
     , initial_kmer_dht_reservation(0)
     , my_num_kmers(my_num_kmers)
     , max_rpcs_in_flight(max_rpcs_in_flight)
-    , bloom1_cardinality(0) {
+    , bloom1_cardinality(0)
+    , estimated_error_rate(0.0) {
 
     // main purpose of the timer here is to track memory usage
     BarrierTimer timer(__FILEFUNC__, false, true);
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
-    auto my_adjusted_num_kmers = my_num_kmers * num_kmers_factor;
-    double required_space = 2.0 * my_adjusted_num_kmers * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
-    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ",
-                 get_size_str(required_space), " per node, and there is ", get_size_str(get_free_mem()),
-                 " available on node0\n");
+    double adjustment_factor = num_kmers_factor + error_factor;
+    // adjustment estimate should not exceed 85% of the raw count
+    if (adjustment_factor > 0.85) adjustment_factor = 0.85;
+    auto my_adjusted_num_kmers = my_num_kmers * adjustment_factor;
+    double required_space = estimate_hashtable_memory(my_adjusted_num_kmers, sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+    auto free_mem = get_free_mem();
+    auto lowest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_min).wait();
+    auto highest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_max).wait();
+    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " and error factor of ", error_factor, " require ",
+                 get_size_str(required_space), " per node (", my_adjusted_num_kmers, " kmers per rank), and there is ", get_size_str(lowest_free_mem),
+                 " to ", get_size_str(highest_free_mem), " available on the nodes\n");
     if (force_bloom) {
       use_bloom = true;
       SLOG_VERBOSE("Using bloom (--force-bloom set)\n");
     } else {
-      if (get_free_mem() < required_space ) {
+      if (lowest_free_mem * 0.80 < required_space ) {
         use_bloom = true;
-        SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
+        SLOG_VERBOSE("Insufficient memory available: enabling bloom filters assuming 80% of free mem is available for hashtables\n");
       } else {
         use_bloom = false;
         SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
@@ -466,13 +475,17 @@ public:
   }
 
   double get_num_kmers_factor() {
-    if (use_bloom) return (double)bloom_filter1->estimate_num_items() / my_num_kmers * 1.5;
+    if (use_bloom && bloom_filter1->is_initialized()) return (double)bloom_filter1->estimate_num_items() / my_num_kmers * 1.5;
     // add in some slop so as not to get too close to the resize threshold
     return (double)kmers->size() / my_num_kmers * 1.5;
   }
 
   int64_t get_local_num_kmers(void) {
     return kmers->size();
+  }
+  
+  double get_estimated_error_rate() {
+      return estimated_error_rate;
   }
 
   upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) {
@@ -585,6 +598,8 @@ public:
     auto all_num_purged = reduce_one(num_purged, op_fast_add, 0).wait();
     SLOG_VERBOSE("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers below frequency threshold of ",
                  threshold, "\n");
+    estimated_error_rate = 1.0 - pow( 1.0 - (double)all_num_purged / (double)num_prior_kmers, 1.0 / (double)Kmer<MAX_K>::get_k());
+    SLOG_VERBOSE("Estimated per-base error rate from purge: ", estimated_error_rate, "\n");
   }
 
   /*

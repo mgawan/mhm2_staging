@@ -69,6 +69,23 @@ using std::min;
 #define HASH_TABLE std::unordered_map
 #endif
 
+inline size_t estimate_hashtable_memory(size_t num_elements, size_t element_size) {
+    // get the hashtable load factor
+    HASH_TABLE<char,char> tmp;
+    double max_load_factor = tmp.max_load_factor();
+    
+    // get the next power of two
+    --num_elements;
+    num_elements |= num_elements >> 1;
+    num_elements |= num_elements >> 2;
+    num_elements |= num_elements >> 4;
+    num_elements |= num_elements >> 8;
+    num_elements |= num_elements >> 16;
+    num_elements |= num_elements >> 32;
+    ++num_elements;
+
+    return (num_elements / max_load_factor + 1) * element_size;
+}
 
 inline string revcomp(const string &seq) {
   string seq_rc = "";

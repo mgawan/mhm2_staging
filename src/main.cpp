@@ -50,6 +50,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <cmath>
 #include <upcxx/upcxx.hpp>
 
 using namespace std;
@@ -76,7 +77,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
 template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                   double &num_kmers_factor);
+                   double &num_kmers_factor, double &error_rate);
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>
@@ -109,22 +110,26 @@ static StageTimers stage_timers = {
 
 template<int MAX_K>
 void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_reads_list, Contigs &ctgs, double &num_kmers_factor,
-                int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+                double &error_rate, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
   SLOG("\n");
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   {
+    
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
-    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight, 
+    int delta_k = kmer_len > prev_kmer_len ? kmer_len - prev_kmer_len : kmer_len;
+    double error_factor = 1.0 - pow(1.0 - error_rate, (double) delta_k);
+    SLOG_VERBOSE("Calculated error_factor from estimated_error_rate=", error_rate, ", delta_k=", delta_k, ": ", error_factor, "\n");
+    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, error_factor, max_kmer_store, options->max_rpcs_in_flight, 
                                          options->force_bloom, options->use_heavy_hitters);
     barrier();
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dynamic_min_depth, options->dmin_thres,
-                  ctgs, kmer_dht, num_kmers_factor);
+                  ctgs, kmer_dht, num_kmers_factor, error_rate);
     stage_timers.analyze_kmers->stop();
     barrier();
     stage_timers.dbjg_traversal->start();
@@ -323,7 +328,8 @@ int main(int argc, char **argv) {
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
         get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
-    double num_kmers_factor = 1.0 / 3;
+    double num_kmers_factor = 1.0 / 3.0; // initial estimate assumes average 3x coverage
+    double error_rate = 0.02; // initial estimate of 2% of the bases are not accurate
     int ins_avg = 0;
     int ins_stddev = 0;
 
@@ -335,7 +341,7 @@ int main(int argc, char **argv) {
 
   #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, max_expected_ins_size, \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, error_rate, max_expected_ins_size, \
                                ins_avg, ins_stddev, options); \
           break
 

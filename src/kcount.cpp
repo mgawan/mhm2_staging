@@ -273,7 +273,7 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
 template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                   double &num_kmers_factor) {
+                   double &num_kmers_factor, double &error_rate) {
   BarrierTimer timer(__FILEFUNC__, false, true);
 
   _dynamic_min_depth = dynamic_min_depth;
@@ -293,6 +293,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
   kmer_dht->print_load_factor();
   barrier();
   kmer_dht->purge_kmers(2);
+  error_rate = kmer_dht->get_estimated_error_rate(); // count estimates are now much closer to reality
   int64_t new_count = kmer_dht->get_num_kmers();
   SLOG_VERBOSE("After purge of kmers < 2, there are ", new_count, " unique kmers\n");
   barrier();
@@ -315,7 +316,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 #define AK(KMER_LEN) \
   template \
   void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<PackedReads*>&, double, int, Contigs&, \
-                               dist_object<KmerDHT<KMER_LEN> >&, double&)
+                               dist_object<KmerDHT<KMER_LEN> >&, double&, double&)
 
 AK(32);
 #if MAX_BUILD_KMER >= 64
