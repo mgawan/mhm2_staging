@@ -141,7 +141,7 @@ def main():
         t = time.perf_counter()
         for i, ith_bin_records in enumerate(bin_records):
             if bin_counts[i][1] >= opts.cum_len_thres:
-                SeqIO.write(ith_bin_records, 'bin_' + str(i) + '.fasta', 'fasta')
+                SeqIO.write(ith_bin_records, 'bin_' + str(num_bins_written) + '.fasta', 'fasta')
                 num_bins_written += 1
                 # compute the TNF
                 entropiesTNF[i], gc_content[i], nuc_freqs[i] = get_kmer_distr_entropy(ith_bin_records, 4)
