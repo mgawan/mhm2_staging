@@ -12,7 +12,7 @@ import argparse
 
 def eval_clusters(fname_prefix, run_metaquast):
     start_t = time.time()
-    num_clusters = len(glob.glob(fname_prefix + '_*.fasta'))
+    num_clusters = len(glob.glob(fname_prefix + '_[0-9]*.fasta'))
 
     print('Found', num_clusters, 'clusters', file=sys.stderr)
 
