@@ -14,7 +14,7 @@ def normalize(xs):
     return [(x - min_x) / x_range for x in xs]
 
 
-def plot_clusters(cluster_stats_fname, mapped_refs_fname, refs_depths_fname):
+def plot_clusters(cluster_stats_fname, mapped_refs_fname, refs_depths_fname, output_fname):
     plt.style.use('qpaper')
 
     cluster_data = pandas.read_csv(cluster_stats_fname, delim_whitespace=True)
@@ -64,7 +64,8 @@ def plot_clusters(cluster_stats_fname, mapped_refs_fname, refs_depths_fname):
     plt.ylabel('GC count')
     #plt.xlim([min(depths), 12.5])
     plt.tight_layout()
-    plt.savefig('fig-clusters.pdf')
+    print('Saving plot to', output_fname)
+    plt.savefig(output_fname, dpi=300)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Plot clusters')
@@ -74,5 +75,7 @@ if __name__ == "__main__":
                         help='File containing references mapped to clusters - from eval_clusters.py (eg bin-eval.txt)')
     parser.add_argument('-d', dest='refs_depths_fname',
                         help='File containing references with original depths (eg arctic-samples-depths.txt')
+    parser.add_argument('-o', dest='output_fname', required=True,
+                        help='File with the output plot')
     opts = parser.parse_args()
-    plot_clusters(opts.cluster_stats_fname, opts.mapped_refs_fname, opts.refs_depths_fname)
+    plot_clusters(opts.cluster_stats_fname, opts.mapped_refs_fname, opts.refs_depths_fname, opts.output_fname)
