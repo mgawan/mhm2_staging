@@ -153,13 +153,15 @@ def main():
         print('Writing stats_bins.txt')
         with open('stats_bins.txt', 'w') as f:
             print('bin num_bins clen depth aln_depth entropyTNF gc_count A C G T', file=f)
+            num_lines_written = 0
             for i, bin in enumerate(bins):
                 if bin_counts[i][1] >= opts.cum_len_thres:
-                    print(i, bin_counts[i][0], bin_counts[i][1], '%.3f' % bin_counts[i][2], '%.3f' % bin_counts[i][3],
+                    print(num_lines_written, bin_counts[i][0], bin_counts[i][1], '%.3f' % bin_counts[i][2], '%.3f' % bin_counts[i][3],
                           '%.4f' % entropiesTNF[i], '%.4f' % gc_content[i], end=' ', file=f)
                     for nuc_freq in nuc_freqs[i]:
                         print('%.4f' % nuc_freq, end=' ', file=f)
                     print('', file=f)
+                    num_lines_written += 1
                 for cid in bin:
                     cid_to_bin[cid] = i
         

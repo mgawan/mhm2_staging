@@ -7,25 +7,32 @@ import pandas
 import subprocess
 import glob
 import time
+import argparse
 
 
-def eval_clusters(fname_prefix):
+def eval_clusters(fname_prefix, run_metaquast):
     start_t = time.time()
     num_clusters = len(glob.glob(fname_prefix + '_*.fasta'))
 
     print('Found', num_clusters, 'clusters', file=sys.stderr)
-    print('Running metaquast', file=sys.stderr)
-    pids = []
-    for i in range(num_clusters):
-        mq_output = 'mq-cluster_' + str(i)
-        shutil.rmtree(mq_output, ignore_errors=True)
-        pids.append(subprocess.Popen(['metaquast.py', '--rna-finding', '--no-icarus', '--fragmented', '-t', '80', '-o', mq_output,
-                                      '--fast', '-r', '/scratch2/shofmeyr/cami-data/mar_ref/arctic_samples/source_genomes/',
-                                      fname_prefix + '_' + str(i) + '.fasta'], stdout=subprocess.DEVNULL))
-    for pid in pids:
-        pid.wait()
 
+    if run_metaquast:
+        print('Running metaquast', file=sys.stderr)
+        pids = []
+        for i in range(num_clusters):
+            mq_output = 'mq-' + fname_prefix + '_' + str(i)
+            shutil.rmtree(mq_output, ignore_errors=True)
+            pids.append(subprocess.Popen(['metaquast.py', '--rna-finding', '--no-icarus', '--fragmented', '-t', '80', '-o', mq_output,
+                                          '--fast', '-r', '/scratch2/shofmeyr/cami-data/mar_ref/arctic_samples/source_genomes/',
+                                          fname_prefix + '_' + str(i) + '.fasta'], stdout=subprocess.DEVNULL))
 
+        tenperc = len(pids) / 10
+        for i, pid in enumerate(pids):
+            if tenperc > 0 and i % tenperc == 0:
+                print(i, end=' ')
+            pid.wait()
+        print('Metaquast done')
+    
     bin_to_genomes = {}
     num_genomes = 0
     # extract genome fractions from mq results
@@ -34,7 +41,7 @@ def eval_clusters(fname_prefix):
         data = pandas.read_csv(fname, delim_whitespace=True)
         genomes = list(data['Assemblies'])
         num_genomes = len(genomes)
-        genfracs = list(data['cluster_' + str(i)])
+        genfracs = list(data[fname_prefix + '_' + str(i)])
         for j, genfrac in enumerate(genfracs):
             if genfrac != '-':
                 if i not in bin_to_genomes:
@@ -90,9 +97,15 @@ def eval_clusters(fname_prefix):
     coverage = 0.0
     for genome, genfrac in primary_genomes.items():
         coverage += genfrac
-        
-    for result in sorted(all_results, key=lambda x: x[1], reverse=True):
-        print(result[0], result[1], '%.2f' % result[2], result[3])
+
+    print('Writing quality information to', fname_prefix + '-eval.txt')
+    with open(fname_prefix + '-eval.txt', 'w') as f:
+        print('bin\tgenfrac\tgenfrac_err\trefs_list', file=f)
+        for result in sorted(all_results, key=lambda x: x[0]):
+            print(result[0], result[1], '%.2f' % result[2], sep='\t', end='\t', file=f)
+            for genome in result[3]:
+                print(genome[0], genome[1], end=' ', file=f)
+            print('', file=f)
         
     print('Number of pure clusters:', num_pure, '( %.2f %%)' % (float(num_pure) / len(bin_to_genomes)))
     print('Quality of clusters:')
@@ -104,5 +117,9 @@ def eval_clusters(fname_prefix):
     print('Evaluation took %.3f s' % (time.time() - start_t))
 
 if __name__ == "__main__":
-    fname_prefix = sys.argv[1]
-    eval_clusters(fname_prefix)
+    parser = argparse.ArgumentParser(description='Evaluate clusters (with metaquast)')
+    parser.add_argument('-f', dest='fasta_fname_prefix', required=True, help='prefix for files containing fasta, e.g. bin or cluster')
+    parser.add_argument('--skip-metaquast', dest='skip_metaquast', default=False, action='store_true', help='Don\'t run metaquast')
+    opts = parser.parse_args()
+    print(opts)
+    eval_clusters(opts.fasta_fname_prefix, not opts.skip_metaquast)
