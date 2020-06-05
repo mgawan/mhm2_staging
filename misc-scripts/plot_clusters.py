@@ -7,7 +7,6 @@ import sys
 import argparse
 import matplotlib
 
-
 def normalize(xs, min_x, max_x, min_val=0.0, max_val=1.0):
     x_range = max_x - min_x
     return [(float(x) - min_x) / x_range * (max_val - min_val) + min_val for x in xs]
@@ -15,6 +14,11 @@ def normalize(xs, min_x, max_x, min_val=0.0, max_val=1.0):
 
 def plot_clusters(opts):
     plt.style.use('qpaper')
+    matplotlib.rcParams['axes.labelsize'] = 3
+    matplotlib.rcParams['xtick.labelsize'] = 2.5
+    matplotlib.rcParams['ytick.labelsize'] = 2.5
+    matplotlib.rcParams['grid.linewidth'] = 0.2
+#    matplotlib.rcParams['figure.figsize'] = [3.5, 4]
 
     cluster_data = pandas.read_csv(opts.cluster_stats_fname, delim_whitespace=True)
     cluster_data.sort_values('bin')
@@ -71,7 +75,7 @@ def plot_clusters(opts):
     plt.scatter(aln_depths, gc_counts, clens, lw=0.05, edgecolor='black', marker='.', c=points_colors, cmap='nipy_spectral',
                 alpha=0.7)
     if opts.mapped_refs_fname != '' and opts.refs_depths_fname != '':
-        plt.colorbar(ticks=range(len(genomes_depths_strs))).ax.set_yticklabels(genomes_depths_strs, fontsize=3)
+        plt.colorbar(ticks=range(len(genomes_depths_strs)), shrink=0.5).ax.set_yticklabels(genomes_depths_strs, fontsize=2)
 
     if other_cluster_data is not None:
         other_aln_depths = other_cluster_data['aln_depth']

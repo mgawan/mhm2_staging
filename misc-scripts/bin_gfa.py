@@ -50,6 +50,7 @@ def get_bins(method, g):
         cms = method(g)
         bins = [list(s) for s in cms]
     print('  Took %.4f s' % (time.perf_counter() - t))
+    bins = [[node] for node in g.nodes()]
     return bins
 
 
