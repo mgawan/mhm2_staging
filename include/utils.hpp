@@ -74,8 +74,11 @@ inline string revcomp(const string &seq) {
       case 'G': seq_rc += 'C'; break;
       case 'T': seq_rc += 'A'; break;
       case 'N': seq_rc += 'N'; break;
+      case 'U': case 'R': case 'Y': case 'K': case 'M': case 'S': case 'W': case 'B': case 'D': case 'H': case 'V':
+        seq_rc += 'N';
+        break;
       default:
-        DIE("Illegal char in revcomp of '", seq, "'\n");
+        DIE("Illegal char '", seq[i], "' in revcomp of '", seq, "'");
     }
   }
   return seq_rc;
@@ -89,7 +92,10 @@ inline char comp_nucleotide(char ch) {
       case 'T': return 'A';
       case 'N': return 'N';
       case '0': return '0';
-      default: DIE("Illegal char in comp nucleotide of '", ch, "'\n");
+      case 'U': case 'R': case 'Y': case 'K': case 'M': case 'S': case 'W': case 'B': case 'D': case 'H': case 'V':
+        return 'N';
+      default:
+        DIE("Illegal char '", ch, "' in comp nucleotide");
   }
   return 0;
 }
