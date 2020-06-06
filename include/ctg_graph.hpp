@@ -193,6 +193,8 @@ struct Vertex {
   cid_t cid;
   int clen;
   double depth;
+  // track depth from alignments
+  double aln_depth;
   // set to true if visited in previous round
   bool visited;
   upcxx::global_ptr<char> seq_gptr;
@@ -212,7 +214,7 @@ struct Vertex {
   int walk_score;
   int walk_rank;
   int walk_i;
-  UPCXX_SERIALIZED_FIELDS(cid, clen, depth, visited, seq_gptr, end5, end3, end5_merged, end3_merged,
+  UPCXX_SERIALIZED_FIELDS(cid, clen, depth, aln_depth, visited, seq_gptr, end5, end3, end5_merged, end3_merged,
 #ifdef TNF_PATH_RESOLUTION
                           tnf,
 #endif
@@ -420,6 +422,35 @@ class CtgGraph {
                    }
                  }
                }, vertices, cid, walk_score, walk_i, upcxx::rank_me()).wait();
+  }
+
+  void update_vertex_aln_depth(cid_t cid, int aln_len) {
+    upcxx::rpc(get_vertex_target_rank(cid),
+               [](vertex_map_t &vertices, cid_t cid, int aln_len) {
+                 const auto it = vertices->find(cid);
+                 if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
+                 auto v = &it->second;
+                 v->aln_depth += aln_len;
+               }, vertices, cid, aln_len).wait();
+  }
+
+  void normalize_vertex_aln_depths(int k) {
+    string out_str = "";
+    for (auto it = vertices->begin(); it != vertices->end(); ++it) {
+      auto v = &it->second;
+      v->aln_depth /= v->clen;
+      if (v->aln_depth < 2) v->aln_depth = 2;
+      out_str += to_string(v->cid) + " " + to_string(v->clen) + " " + to_string(v->depth) + " " + to_string(v->aln_depth) + "\n";
+      // This makes the contiguity a lot worse, somehow. eg on arcticsynth, N50 drops from 86k to 28k. ugh.
+      // the idea here is that the aln depth is better for longer contigs, whereas the kmer depth is better for shorter
+      // Nah - doesn't work well. Why is the aln depth so poor, even though the kmer depth seems very low?
+      //double scale_factor;
+      //if (v->clen < 500) scale_factor = 0;
+      //else scale_factor = min((double)v->clen - 500, 1000.0) / 1000;
+      //v->depth = v->aln_depth * scale_factor + v->depth * (1.0 - scale_factor);
+    }
+    upcxx::barrier();
+    dump_single_file("ctg-aln-depths-" + to_string(k) + ".txt", out_str);
   }
 
   Vertex *get_first_local_vertex() {
@@ -821,8 +852,9 @@ class CtgGraph {
     string out_str = "";
     for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
       if (v->clen < min_ctg_print_len) continue;
-      // don't include the sequence, and have a user tag 'd' for depth
-      out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tdp: " + to_string(v->depth) + "\n";
+      // don't include the sequence, and have a user tag 'kd' for kmer depth, and 'ad' for alignment depth
+      out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tkd: " + to_string(v->depth) +
+                 " ad: " + to_string(v->aln_depth) + "\n";
     }
     for (auto edge = get_first_local_edge(); edge != nullptr; edge = get_next_local_edge()) {
       int clen1 = get_vertex_clen(edge->cids.cid1);
