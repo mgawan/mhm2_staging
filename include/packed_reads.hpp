@@ -97,6 +97,10 @@ public:
         case 'G': packed_read[i] = 2; break;
         case 'T': packed_read[i] = 3; break;
         case 'N': packed_read[i] = 4; break;
+        case 'U': case 'R': case 'Y': case 'K': case 'M': case 'S': case 'W': case 'B': case 'D': case 'H': case 'V':
+          packed_read[i] = 4; break;
+        default:
+          DIE("Illegal char in comp nucleotide of '", seq[i], "'\n");
       }
       packed_read[i] |= ((unsigned char)std::min(quals[i] - qual_offset, 31) << 3);
     }
