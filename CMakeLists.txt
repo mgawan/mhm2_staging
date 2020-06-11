@@ -130,5 +130,8 @@ message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 # include mateidavid's zstr c++ library
 include_directories("zstr/src")
 
+# FIXME SUMMIT
+add_definitions(-DNO_WARN_X86_INTRINSICS)
+
 add_subdirectory(src)
 
