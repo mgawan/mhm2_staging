@@ -70,41 +70,55 @@ def print_red(*args):
     print("\033[91m", *args, sep='',  end='', file=sys.stderr)
     print("\033[00m", file=sys.stderr)
 
-def get_hwd_cores_per_node():
+_defaultCores = None
+def get_hdw_cores_per_node():
     """Query the hardware for physical cores"""
+    global _defaultCores
+    if _defaultCores is not None:
+        return _defaultCores
     try:
         import psutil
         cores = psutil.cpu_count(logical=False)
+        print("Found cpus from psutil:", cores)
     except (NameError, ImportError):
+        print("Could not get cpus from psutil")
+        pass
+    # always trust lscpu, not psutil
+    # NOTE some versions of psutil has bugs and comes up with the *WRONG* physical cores 
+    if True:
         import platform
-        import multiprocessing
         cpus = multiprocessing.cpu_count()
         hyperthreads = 1
         if platform.system() == 'Darwin':
             for line in os.popen('sysctl -n hw.physicalcpu').readlines():
-                hyperthreads = cpus / int(line)
+                 hyperthreads = cpus / int(line) 
+            print("Found %d cpus and %d hyperthreads from sysctl" % (cpus, hyperthreads))
         else:
             for line in os.popen('lscpu').readlines():
                 if line.startswith('Thread(s) per core'):
                     hyperthreads = int(line.split()[3])
-        cores = cpus / hyperthreads
-    print("Detected", cores, "cores on this hardware")
+            print("Found %d cpus and %d hyperthreads from lscpu" % (cpus, hyperthreads))
+        cores = int(cpus / hyperthreads)
+    _defaultCores = cores
     return cores
 
 
 def get_job_id():
     """Query the environment for a job"""
-    for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'LOAD_STEP_ID']:
-        if key in os.environ:
-            return os.environ.get(key)
-    return str(os.getpid());
+    for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'COBALT_JOBID', 'LOAD_STEP_ID', 'LBS_JOBID']:
+      if key in os.environ:
+        return os.environ.get(key)
+    return None
 
 def get_job_name():
     """Query the env for the name of a job"""
-    for key in ['PBS_JOBNAME', 'JOBNAME', 'SLURM_JOB_NAME', 'LSB_JOBNAME', 'JOB_NAME']:
+    for key in ['PBS_JOBNAME', 'JOBNAME', 'SLURM_JOB_NAME', 'LSB_JOBNAME', 'JOB_NAME', 'LSB_JOBNAME']:
       if key in os.environ:
         return os.environ.get(key)
-    return ""
+    return None
+
+def is_cobalt_job():
+    return os.environ.get('COBALT_JOBID') is not None
 
 def is_slurm_job():
     return os.environ.get('SLURM_JOB_ID') is not None
@@ -125,9 +139,10 @@ def is_ll_job():
 def get_slurm_cores_per_node(defaultCores = 0):
     # Only trust this environment variable from slurm, otherwise trust the hardware
     if defaultCores == 0:
-        defaultCores = get_hwd_cores_per_node()
+        defaultCores = get_hdw_cores_per_node()
     ntasks_per_node = os.environ.get('SLURM_NTASKS_PER_NODE')
     if ntasks_per_node:
+        print("Found tasks per node from SLURM_NTASKS_PER_NODE=", ntasks_per_node)
         return int(ntasks_per_node)
     # This SLURM variable defaults to all the hyperthreads if not overriden by the sbatch option --ntasks-per-node
     ntasks_per_node = os.environ.get('SLURM_TASKS_PER_NODE') # SLURM_TASKS_PER_NODE=32(x4)
@@ -139,8 +154,38 @@ def get_slurm_cores_per_node(defaultCores = 0):
         if ntasks_per_node <= defaultCores:
             print("Detected slurm job restricts cores to ", ntasks_per_node, " because of SLURM_TASKS_PER_NODE=", os.environ.get('SLURM_TASKS_PER_NODE'))
             return ntasks_per_node
+        print("Using default cores of ", defaultCores, ". Ignoring tasks per node ", ntasks_per_node, " from SLURM_TASKS_PER_NODE=", os.environ.get('SLURM_TASKS_PER_NODE'))
     return defaultCores
+
+def get_cobalt_cores_per_node():
+    ntasks_per_node = os.environ.get('COBALT_PARTCORES')
+    return int(ntasks_per_node)
     
+def get_lsb_cores_per_node():
+    # LSB_MCPU_HOSTS=batch2 1 h22n07 42 h22n08 42 
+    lsb_mcpu = os.environ.get('LSB_MCPU_HOSTS')
+    host_core = lsb_mcpu.split()
+    return int(host_core[-1])
+
+
+def get_job_cores_per_node(defaultCores = 0):
+    """Query the job environment for the number of cores per node to use, if available"""
+    if default_cores == 0:
+        default_cores = get_hdw_cores_per_node()
+    if 'GASNET_PSHM_NODES' in os.environ:
+        print("Detected procs_per_node from GASNET_PSHM_NODES=",os.getenv('GASNET_PSHM_NODES'))
+        return int(os.getenv('GASNET_PSHM_NODES'))
+    if is_slurm_job():
+        ntasks_per_node = get_slurm_cores_per_node(defaultCores)
+    if is_lsb_job():
+        ntasks_per_node = get_lsb_cores_per_node()
+    if is_cobalt_job():
+        ntasks_per_node = get_cobalt_cores_per_node()
+    if ntasks_per_node is not None:
+        return ntasks_per_node
+    return defaultCores
+
+
 def get_slurm_job_nodes():
     """Query the SLURM job environment for the number of nodes"""
     nodes = os.environ.get('SLURM_JOB_NUM_NODES')
@@ -151,6 +196,14 @@ def get_slurm_job_nodes():
     print("Warning: could not determine the number of nodes in this SLURM job (%d). Only using 1" % (get_job_id()))
     return 1
 
+def get_lsb_job_nodes():
+    """Query the LFS job environment for the number of nodes"""
+    # LSB_MCPU_HOSTS=batch2 1 h22n07 42 h22n08 42 
+    nodes = os.environ.get('LSB_MCPU_HOSTS')
+    if nodes:
+        return int( (len(nodes.split()) - 2) / 2)
+    message("Warning: could not determine the number of nodes in this LSF job (%s). Only using 1" % (get_job_id()))
+    return 1
 
 def get_pbs_job_nodes():
     """Query the PBS job environment for the number of nodes"""
@@ -164,7 +217,6 @@ def get_pbs_job_nodes():
     print("Warning: could not determine the number of nodes in this PBS job (%d). Only using 1" % (get_job_id()))
     return 1
 
-
 def get_ge_job_nodes():
     """Query the Grid Engine job environment for the number of nodes"""
     nodes = os.environ.get("NHOSTS")
@@ -173,29 +225,28 @@ def get_ge_job_nodes():
     print("Warning: could not determine the number of nodes in this SGE job (%d). Only using 1" % (get_job_id()))
     return 1
 
+def get_cobalt_job_nodes():
+    """Query the COBALT job environment for the number of nodes"""
+    nodes = os.environ.get("COBALT_JOBSIZE")
+    if nodes is not None:
+        return int(nodes)
+    message("Warning: could not determine the number of nodes in this COBALT job (%s). Only using 1" % (get_job_id()))
+    return 1
 
 def get_job_nodes():
     """Query the job environment for the number of nodes"""
     if is_slurm_job():
         return get_slurm_job_nodes()
+    if is_lsb_job():
+        return get_lsb_job_nodes()
     if is_pbs_job():
         return get_pbs_job_nodes()
     if is_ge_job():
         return get_ge_job_nodes()
-    print("Warning: could not determine the number of nodes in this unsupported scheduler - using 1")
+    if is_cobalt_job():
+        return get_cobalt_job_nodes()
+    message("Warning: could not determine the number of nodes in this unsupported scheduler job (%s). Only using 1" % (get_job_id()))
     return 1
-
-def get_job_cores_per_node(defaultCores = 0):
-    """Query the job environment for the number of cores per node to use, if available"""
-    if defaultCores == 0:
-        defaultCores = get_hwd_cores_per_node()
-
-    if 'GASNET_PSHM_NODES' in os.environ:
-        print("Detected procs_per_node from GASNET_PSHM_NODES=",os.getenv('GASNET_PSHM_NODES'))
-        return int(os.getenv('GASNET_PSHM_NODES'))
-    if is_slurm_job():
-        return get_slurm_cores_per_node(defaultCores)
-    return defaultCores
 
 def get_job_desc():
     return get_job_id() + " (" + get_job_name() + ")"
