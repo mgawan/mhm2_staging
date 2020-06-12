@@ -94,6 +94,24 @@ if(NOT APPLE)
     add_definitions(-D_XOPEN_SOURCE=700)
 endif()
 
+find_package(CpuArch
+    REQUIRED
+    COMPONENTS         
+    OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f altivec vsx )
+
+foreach(_ARCH ${CpuArch_FEATURES})
+   check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
+   if (HAVE_C_OPT_${_ARCH})
+     message(STATUS "Compiling C with -m${_ARCH} option")
+     string(APPEND CMAKE_C_FLAGS " -m${_ARCH}")
+   endif()
+   check_cxx_compiler_flag(-m${_ARCH} HAVE_CXX_OPT_${_ARCH})
+   if (HAVE_CXX_OPT_${_ARCH})
+     message(STATUS "Compiling CXX with -m${_ARCH} option")
+     string(APPEND CMAKE_CXX_FLAGS " -m${_ARCH}")
+   endif()
+endforeach()
+
 include(CMakeDefinitions.txt)
 
 # verify submodules
