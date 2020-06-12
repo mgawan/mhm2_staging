@@ -54,6 +54,7 @@ import threading
 import io
 import string
 import datetime
+import multiprocessing
 
 
 SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGKILL', 'SIGUSR1',
@@ -108,14 +109,14 @@ def get_job_id():
     for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'COBALT_JOBID', 'LOAD_STEP_ID', 'LBS_JOBID']:
       if key in os.environ:
         return os.environ.get(key)
-    return None
+    return str(os.getpid())
 
 def get_job_name():
     """Query the env for the name of a job"""
     for key in ['PBS_JOBNAME', 'JOBNAME', 'SLURM_JOB_NAME', 'LSB_JOBNAME', 'JOB_NAME', 'LSB_JOBNAME']:
       if key in os.environ:
         return os.environ.get(key)
-    return None
+    return ""
 
 def is_cobalt_job():
     return os.environ.get('COBALT_JOBID') is not None
@@ -170,11 +171,12 @@ def get_lsb_cores_per_node():
 
 def get_job_cores_per_node(defaultCores = 0):
     """Query the job environment for the number of cores per node to use, if available"""
-    if default_cores == 0:
-        default_cores = get_hdw_cores_per_node()
+    if defaultCores == 0:
+        defaultCores = get_hdw_cores_per_node()
     if 'GASNET_PSHM_NODES' in os.environ:
         print("Detected procs_per_node from GASNET_PSHM_NODES=",os.getenv('GASNET_PSHM_NODES'))
         return int(os.getenv('GASNET_PSHM_NODES'))
+    ntasks_per_node = None
     if is_slurm_job():
         ntasks_per_node = get_slurm_cores_per_node(defaultCores)
     if is_lsb_job():
@@ -202,7 +204,7 @@ def get_lsb_job_nodes():
     nodes = os.environ.get('LSB_MCPU_HOSTS')
     if nodes:
         return int( (len(nodes.split()) - 2) / 2)
-    message("Warning: could not determine the number of nodes in this LSF job (%s). Only using 1" % (get_job_id()))
+    print("Warning: could not determine the number of nodes in this LSF job (%s). Only using 1" % (get_job_id()))
     return 1
 
 def get_pbs_job_nodes():
@@ -230,7 +232,7 @@ def get_cobalt_job_nodes():
     nodes = os.environ.get("COBALT_JOBSIZE")
     if nodes is not None:
         return int(nodes)
-    message("Warning: could not determine the number of nodes in this COBALT job (%s). Only using 1" % (get_job_id()))
+    print("Warning: could not determine the number of nodes in this COBALT job (%s). Only using 1" % (get_job_id()))
     return 1
 
 def get_job_nodes():
@@ -245,7 +247,7 @@ def get_job_nodes():
         return get_ge_job_nodes()
     if is_cobalt_job():
         return get_cobalt_job_nodes()
-    message("Warning: could not determine the number of nodes in this unsupported scheduler job (%s). Only using 1" % (get_job_id()))
+    print("Warning: could not determine the number of nodes in this unsupported scheduler job (%s). Only using 1" % (get_job_id()))
     return 1
 
 def get_job_desc():
