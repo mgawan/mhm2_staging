@@ -375,6 +375,8 @@ def main():
     
     print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
     print("Executed as:" + " ".join(sys.argv))
+    print("Setting GASNET_COLL_SCRATCH_SIZE=4M")
+    runenv = dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M")
 
     restating = False
     err_msgs = []
@@ -383,7 +385,7 @@ def main():
         started_exec = False
         completed_round = False
         try:
-            _proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            _proc = subprocess.Popen(cmd, env=runenv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             # thread captures the error stream
             _err_thread = threading.Thread(target=capture_err, args=(err_msgs,))
             _err_thread.start()
