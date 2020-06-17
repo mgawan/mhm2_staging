@@ -121,6 +121,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
+    my_num_kmers = upcxx::reduce_all(my_num_kmers, upcxx::op_max).wait();
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
                                          options->force_bloom);
     barrier();

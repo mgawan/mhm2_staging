@@ -100,7 +100,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
 
   SLOG_VERBOSE("Processed ", perc_str(all_num_reads, all_tot_num_reads), " reads, and estimated a maximum of ",
                all_num_kmers * all_tot_num_reads / all_num_reads, " kmers\n");
-  return num_kmers * tot_num_reads / num_reads;
+  return num_reads > 0 ? num_kmers * tot_num_reads / num_reads : 0;
 }
 
 template<int MAX_K>
