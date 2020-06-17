@@ -275,7 +275,7 @@ int main(int argc, char **argv) {
   int max_kmer_len = 0;
   int max_expected_ins_size = 0;
   if (!options->post_assm_only) {
-    MemoryTrackerThread memory_tracker;
+    MemoryTrackerThread memory_tracker("memory_tracker.log");
     memory_tracker.start();
     SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
     vector<PackedReads*> packed_reads_list;
