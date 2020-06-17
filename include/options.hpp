@@ -379,7 +379,11 @@ public:
     setup_output_dir();
     setup_log_file();
 
-    init_logger("mhmxx.log", verbose);
+    if (upcxx::local_team().rank_me() == 0) {
+        // open 1 log per node
+        // rank0 has mhmxx.log in rundir, all others have logs in per_thread
+        init_logger("mhmxx.log", verbose, rank_me());
+    }
 
 #ifdef DEBUG
     open_dbg("debug");
@@ -415,6 +419,17 @@ public:
     }
     upcxx::barrier();
     return true;
+  }
+  
+  virtual ~Options() {
+      cleanup();
+  }
+  void cleanup() {
+      // cleanup and close loggers that Options opened in load
+      close_logger();
+#ifdef DEBUG
+      close_dbg();
+#endif
   }
 };
 
