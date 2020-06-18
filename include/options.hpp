@@ -237,6 +237,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
+  string pin_by = "core";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -301,6 +302,9 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
+    app.add_option("--pin", pin_by,
+                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
+                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,

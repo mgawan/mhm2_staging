@@ -186,8 +186,7 @@ def get_job_cores_per_node(defaultCores = 0):
     if ntasks_per_node is not None:
         return ntasks_per_node
     return defaultCores
-
-
+    
 def get_slurm_job_nodes():
     """Query the SLURM job environment for the number of nodes"""
     nodes = os.environ.get('SLURM_JOB_NUM_NODES')
@@ -486,4 +485,3 @@ if __name__ == "__main__":
         traceback.print_exc(file=sys.stderr)
     finally:
         exit_all(status)
-
