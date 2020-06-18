@@ -81,7 +81,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
+//#include <math.h> This breaks gcc 9.1 on summit with altivec build for some reason
 #include <assert.h>
 
 #include "ssw_core.hpp"
