@@ -19,6 +19,10 @@
 #ifndef _H_VECLIB_TYPES
 #define _H_VECLIB_TYPES
 
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+
 /******************************************************************************/
 
 /** Control Macros **/
@@ -376,5 +380,9 @@ union {
 /******************************************************* Permute ******************************************************/
 
 #define _MM_SHUFFLE(a, b, c, d) ((intlit8)(a * 64 + b * 16 + c * 4 + d))
+
+#ifdef __cplusplus
+}
+#endif  // __cplusplus
 
 #endif

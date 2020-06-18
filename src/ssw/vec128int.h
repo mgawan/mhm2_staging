@@ -22,6 +22,10 @@
 #include <altivec.h>
 #include "veclib_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+
 /******************************************************** Load ********************************************************/
 
 /* Load 128-bits of integer data, aligned */
@@ -1776,4 +1780,9 @@ VECLIB_INLINE __m128i vec_Cast2dpto4sw(__m128d from)
 
     return newFrom.as_m128i;
 }
+
+#ifdef __cplusplus
+}
+#endif  // __cplusplus
+
 #endif
