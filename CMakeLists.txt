@@ -97,7 +97,9 @@ endif()
 find_package(CpuArch
     REQUIRED
     COMPONENTS         
-    OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f altivec vsx )
+    OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
+
+LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
 
 foreach(_ARCH ${CpuArch_FEATURES})
    check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
@@ -139,7 +141,7 @@ if(NOT UPCXX_UTILS_FOUND)
   add_subdirectory(upcxx-utils)
 
 else()
-  message(STATUS "Found exßisting upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
+  message(STATUS "Found existing upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
   set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${UPCXX_UTILS_DIR}")
   message(STATUS "Appended the UPCXX_UTILS_DIR to the CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 endif()
