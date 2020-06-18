@@ -458,7 +458,7 @@ int main(int argc, char **argv) {
 
 #ifdef DEBUG
   _dbgstream.flush();
-  _dbgstream.close();
+  while(close_dbg());
 #endif
   barrier();
   upcxx::finalize();
