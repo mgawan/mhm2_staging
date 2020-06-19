@@ -147,6 +147,12 @@ else()
 endif()
 message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 
+message(STATUS "finding UPCXX for MHMxx build")
+find_package(UPCXX 2019.9.0.1 REQUIRED)
+if(NOT UPCXX_FOUND)
+  message(FATAL_ERROR "UPCXX is required to build and it should have been found in the upcxx-utils submodule under src")
+endif()
+
 # include mateidavid's zstr c++ library
 include_directories("zstr/src")
 
