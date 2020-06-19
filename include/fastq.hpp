@@ -47,6 +47,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
+#include <memory>
 #include <upcxx/upcxx.hpp>
 
 #include "upcxx_utils/log.hpp"
@@ -55,6 +56,7 @@
 
 using std::string;
 using std::to_string;
+using std::shared_ptr;
 
 using upcxx::rank_me;
 using upcxx::rank_n;
@@ -74,11 +76,13 @@ class FastqReader {
   int max_read_len;
   char buf[BUF_SIZE + 1];
   int qual_offset;
+  shared_ptr<FastqReader> fqr2;
+  bool first_file;
 
   IntermittentTimer io_t;
   inline static double overall_io_t = 0;
 
-  void rtrim(string &s) {
+  static void rtrim(string &s) {
     auto pos = s.length() - 1;
     while (pos >= 0 && std::isspace(static_cast<unsigned char>(s[pos]))) pos--;
     s.resize(pos + 1);
@@ -123,7 +127,7 @@ class FastqReader {
         if ((len < end_pos + 7) || header[end_pos + 2] != ':' || header[end_pos + 4] != ':' || header[end_pos + 6] != ':' ||
             (header[end_pos + 1] != '1' && header[end_pos + 1] != '2')) {
           // unknown pairing format
-          //WARN("unknown format ", header, " end pos ", end_pos, "\n");
+          SWARN("unknown format ", header, " end pos ", end_pos, "\n");
           return false;
         }
         // @pair 1:Y:.:.: or @pair 2:Y:.:.:
@@ -147,53 +151,94 @@ class FastqReader {
       return ftell(f);
     }
 
+    char last_pair = '\0', this_pair = '\1';
+    int64_t last_tell = ftell(f);
     for (int i = 0; ; i++) {
+      int64_t this_tell = ftell(f);
       if (!fgets(buf, BUF_SIZE, f)) {
         io_t.stop();
         return ftell(f);
       }
-      // keep reading new lines until we find a valid header ending in 2 for the second of the pair
+
       if (buf[0] == '@') {
         string header(buf);
         rtrim(header);
         if (!get_fq_name(header)) continue;
-        // need this to be the second of the pair
-        if (header[header.length() - 1] == '2') {
-          // now read another three lines, but check that the third line is a + separator
-          bool record_found = true;
-          for (int j = 0; j < 3; j++) {
-            if (!fgets(buf, BUF_SIZE, f)) DIE("Missing record info at pos ", ftell(f));
-            if (j == 1 && strncmp(buf, "+", strlen(buf) - 1) != 0) {
-              //DIE("muddled fastq, header ", header, " buf '", buf, "' len ", strlen(buf));
-              // this is not a correct boundary for a fastq record - move on
+                  
+        // now read another three lines, but check that the third line is a + separator
+        int64_t test_tell = ftell(f);
+        bool record_found = true;
+        for (int j = 0; j < 3; j++) {
+          if (!fgets(buf, BUF_SIZE, f)) DIE("Missing record info at pos ", ftell(f));
+          if (j == 0 && buf[0] == '@') {
+              // previous was quality line, this next line is the header line.
               record_found = false;
               break;
-            }
           }
-          if (record_found) break;
+          if (j == 1 && buf[0] != '+') {
+            //DIE("muddled fastq, header ", header, " buf '", buf, "' len ", strlen(buf));
+            // this is not a correct boundary for a fastq record - move on
+            record_found = false;
+            break;
+          }
         }
+        if (record_found) {
+            // good
+            i+=3;
+        } else {
+            // rewind and test next line as a potential header
+            DBG("Did not find proper pair, rewinding\n");
+            if (fseek(f, test_tell, SEEK_SET) != 0) DIE("Could not fseek in ", fname, " to ", offset, ": ", strerror(errno));
+        }
+  
+        // need this to be the second of the pair
+        this_pair = header[header.length() - 1];
+        DBG("Found possible pair ", (char) this_pair, ", header: ", header, "\n");
+        if (last_pair == this_pair) {
+            // one of two split files or a merged file without pairs
+            DBG("Same pair, so keep the first\n");
+            break;
+        } else if (last_pair == '1' && this_pair == '2') {
+            // proper pair
+            DBG("Found proper pair 1&2\n");
+            break;
+        }
+        
+        // did not find valid new start of (possibly paired) record
+        last_tell = this_tell;
+        last_pair = this_pair;
       }
       if (i > 20) DIE("Could not find a valid line in the fastq file ", fname, ", last line: ", buf);
     }
     io_t.stop();
-    return ftell(f);
+    DBG("Found record at ", last_tell, " after offset ", offset, "\n");
+    return last_tell;
   }
 
 public:
 
-  FastqReader(const string &fname)
-    : fname(fname)
+  FastqReader(const string &_fname)
+    : fname(_fname)
     , f(nullptr)
     , max_read_len(0)
+    , fqr2(nullptr)
+    , first_file(true)
     , io_t("fastq IO for " + fname) {
+    string fname2;
+    size_t pos;
+    if ((pos = fname.find(':')) != string::npos) {
+        // colon separating a pair into two files
+        fname2 = fname.substr(pos+1);
+        fname = fname.substr(0,pos);
+    }
     // only one rank gets the file size, to prevent many hits on metadata
     if (!rank_me()) file_size = get_file_size(fname);
     file_size = upcxx::broadcast(file_size, 0).wait();
     f = fopen(fname.c_str(), "r");
     if (!f) {
-      if (!upcxx::rank_me()) DIE("Could not open file ", fname, ": ", strerror(errno));
-      upcxx::barrier();
+      SDIE("Could not open file ", fname, ": ", strerror(errno));
     }
+
     // just a part of the file is read by this thread
     int64_t read_block = INT_CEIL(file_size, rank_n());
     start_read = read_block * rank_me();
@@ -206,6 +251,12 @@ public:
     posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
     SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
     DBG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), "\n");
+        
+    if (!fname2.empty()) {
+        // this second reader is generally hidden from the user
+        LOG("Opening second FastqReader with ", fname2, "\n");
+        fqr2 = make_shared<FastqReader>(fname2);
+    }
   }
 
   ~FastqReader() {
@@ -219,10 +270,19 @@ public:
   }
 
   size_t my_file_size() {
-    return end_read - start_read;
+    return end_read - start_read + (fqr2 ? fqr2->my_file_size() : 0);
   }
 
   size_t get_next_fq_record(string &id, string &seq, string &quals) {
+    if (fqr2) {
+        // return a single interleaved file
+        if (first_file) {
+            first_file = false;
+        } else {
+            first_file = true;
+            return fqr2->get_next_fq_record(id, seq, quals);
+        }
+    }
     if (feof(f) || ftell(f) >= end_read) return 0;
     io_t.start();
     size_t bytes_read = 0;
@@ -244,7 +304,6 @@ public:
     if (!get_fq_name(id))
       DIE("Invalid FASTQ in ", fname, ": incorrect name format '", id, "'");
     // get rid of spaces
-    // FIXME: this should be hexify
     replace_spaces(id);
     if (seq.length() != quals.length())
       DIE("Invalid FASTQ in ", fname, ": sequence length ", seq.length(), " != ", quals.length(), " quals length\n",
@@ -255,7 +314,7 @@ public:
   }
 
   int get_max_read_len() {
-    return max_read_len;
+    return max(max_read_len, fqr2 ? fqr2->get_max_read_len() : 0);
   }
 
   double static get_io_time() {
@@ -264,6 +323,7 @@ public:
 
   void reset() {
     if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
+    if (fqr2) fqr2->reset();
   }
 
 };

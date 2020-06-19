@@ -116,8 +116,12 @@ inline int hamming_dist(string_view s1, string_view s2, bool require_equal_len=t
   return d;
 }
 
-static string get_merged_reads_fname(const string &reads_fname) {
+static string get_merged_reads_fname(string reads_fname) {
   // always relative to the current working directory
+  if (reads_fname.find(':')) {
+      // remove the first pair, if it exists
+      reads_fname = reads_fname.substr(reads_fname.find(':'));
+  }
   return upcxx_utils::remove_file_ext(get_basename(reads_fname)) + "-merged.fastq";
 }
 

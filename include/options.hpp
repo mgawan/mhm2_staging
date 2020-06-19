@@ -221,6 +221,7 @@ class Options {
 public:
 
   vector<string> reads_fnames;
+  vector<string> paired_fnames;
   vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
   int max_kmer_len = 0;
   int prev_kmer_len = 0;
@@ -255,7 +256,10 @@ public:
         string(MHMXX_BUILD_DATE);
     CLI::App app(full_version_str);
     app.add_option("-r, --reads", reads_fnames,
-                   "Files containing merged and unmerged reads in FASTQ format (comma separated)")
+                   "Files containing merged and unmerged reads in FASTQ format (comma separated).")
+                   ->delimiter(',') ->check(CLI::ExistingFile);
+    app.add_option("-p, --paired-reads", paired_fnames,
+                   "Pairs of files for the same insert in FASTQ format (comma separated).")
                    ->delimiter(',') ->check(CLI::ExistingFile);
     /*
                    ->check([](const string &s) {
@@ -339,6 +343,16 @@ public:
     } catch(const CLI::ParseError &e) {
       if (upcxx::rank_me() == 0) app.exit(e);
       return false;
+    }
+    
+    if (!paired_fnames.empty()) {
+        // convert pairs to colon ':' separated single files for FastqReader to process
+        if (paired_fnames.size() % 2 != 0) SDIE("Did not get pairs of files in -p: ", paired_fnames.size());
+        while (paired_fnames.size() >= 2) {
+            reads_fnames.push_back(paired_fnames[0] + ":" + paired_fnames[1]);
+            paired_fnames.erase(paired_fnames.begin());
+            paired_fnames.erase(paired_fnames.begin());
+        }
     }
 
     // we can get restart incorrectly set in the config file from restarted runs
