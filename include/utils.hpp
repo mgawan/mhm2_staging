@@ -118,7 +118,7 @@ inline int hamming_dist(string_view s1, string_view s2, bool require_equal_len=t
 
 static string get_merged_reads_fname(string reads_fname) {
   // always relative to the current working directory
-  if (reads_fname.find(':')) {
+  if (reads_fname.find(':') != string::npos) {
       // remove the first pair, if it exists
       reads_fname = reads_fname.substr(reads_fname.find(':'));
   }
