@@ -139,11 +139,11 @@ if(NOT UPCXX_UTILS_FOUND)
   message(STATUS "Did not find an installation of upcxx_utils, including submodule in src/upcxx_utils")
   include_directories(upcxx-utils/include)
   add_subdirectory(upcxx-utils)
+  set(UPCXX_UTILS_FOUND TRUE)
+  set(UPCXX_UTILS_DIR upcxx-utils)
 
 else()
   message(STATUS "Found existing upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
-  set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${UPCXX_UTILS_DIR}")
-  message(STATUS "Appended the UPCXX_UTILS_DIR to the CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 endif()
 message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 
