@@ -2,22 +2,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -28,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -651,26 +651,6 @@ static void merge_nbs()
                all_max_orphan_len, ", max depth ", all_max_orphan_depth, "\n");
 }
 
-void compute_aln_depths(Alns &alns, CtgGraph *graph, int kmer_len) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
-  for (auto &aln : alns) {
-    // convert to coords for use here
-    auto cstart = aln.cstart;
-    auto cstop = aln.cstop;
-    if (aln.orient == '-') {
-      int tmp = cstart;
-      cstart = aln.clen - cstop;
-      cstop = aln.clen - tmp;
-    }
-    int unaligned_left = min(aln.rstart, cstart);
-    int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - cstop);
-    if (unaligned_left <= KLIGN_UNALIGNED_THRES && unaligned_right <= KLIGN_UNALIGNED_THRES)
-      graph->update_vertex_aln_depth(aln.cid, aln.rstop - aln.rstart);
-  }
-  barrier();
-  graph->normalize_vertex_aln_depths(kmer_len);
-}
-
 void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads*> &packed_reads_list,
                      Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__, false, true);
@@ -696,5 +676,4 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kme
   //mark_short_aln_edges(max_kmer_len);
   parse_reads(kmer_len, packed_reads_list);
   merge_nbs();
-  compute_aln_depths(alns, graph, kmer_len);
 }

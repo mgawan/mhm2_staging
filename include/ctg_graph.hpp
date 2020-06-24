@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -56,7 +56,6 @@
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/flat_aggr_store.hpp"
 #include "upcxx_utils/timers.hpp"
-
 
 #include "utils.hpp"
 
@@ -422,35 +421,6 @@ class CtgGraph {
                    }
                  }
                }, vertices, cid, walk_score, walk_i, upcxx::rank_me()).wait();
-  }
-
-  void update_vertex_aln_depth(cid_t cid, int aln_len) {
-    upcxx::rpc(get_vertex_target_rank(cid),
-               [](vertex_map_t &vertices, cid_t cid, int aln_len) {
-                 const auto it = vertices->find(cid);
-                 if (it == vertices->end()) DIE("could not fetch vertex ", cid, "\n");
-                 auto v = &it->second;
-                 v->aln_depth += aln_len;
-               }, vertices, cid, aln_len).wait();
-  }
-
-  void normalize_vertex_aln_depths(int k) {
-    string out_str = "";
-    for (auto it = vertices->begin(); it != vertices->end(); ++it) {
-      auto v = &it->second;
-      v->aln_depth /= v->clen;
-      if (v->aln_depth < 2) v->aln_depth = 2;
-      out_str += to_string(v->cid) + " " + to_string(v->clen) + " " + to_string(v->depth) + " " + to_string(v->aln_depth) + "\n";
-      // This makes the contiguity a lot worse, somehow. eg on arcticsynth, N50 drops from 86k to 28k. ugh.
-      // the idea here is that the aln depth is better for longer contigs, whereas the kmer depth is better for shorter
-      // Nah - doesn't work well. Why is the aln depth so poor, even though the kmer depth seems very low?
-      //double scale_factor;
-      //if (v->clen < 500) scale_factor = 0;
-      //else scale_factor = min((double)v->clen - 500, 1000.0) / 1000;
-      //v->depth = v->aln_depth * scale_factor + v->depth * (1.0 - scale_factor);
-    }
-    upcxx::barrier();
-    dump_single_file("ctg-aln-depths-" + to_string(k) + ".txt", out_str);
   }
 
   Vertex *get_first_local_vertex() {
