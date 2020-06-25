@@ -235,7 +235,7 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 1, true,
+  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
                          options->min_ctg_print_len);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
@@ -436,7 +436,7 @@ int main(int argc, char **argv) {
   if (options->post_assm_aln || options->post_assm_only) {
     if (options->post_assm_only) {
       if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
-      if (!max_kmer_len) max_kmer_len = options->max_kmer_len;
+      if (!max_kmer_len) max_kmer_len = 33;
     }
     auto max_k = (max_kmer_len / 32 + 1) * 32;
 
