@@ -159,7 +159,7 @@ class CtgsDepths {
 void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len) {
   BarrierTimer timer(__FILEFUNC__);
   CtgsDepths ctgs_depths;
-  SLOG_VERBOSE("Loading contigs\n");
+  SLOG_VERBOSE("Processing contigs\n");
   for (auto &ctg : ctgs) {
     int clen = ctg.seq.length();
     if (clen < min_ctg_len) continue;
@@ -185,7 +185,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
     int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - cstop);
     if (unaligned_left <= KLIGN_UNALIGNED_THRES && unaligned_right <= KLIGN_UNALIGNED_THRES) {
       // as per MetaBAT analysis, ignore the 75 bases at either end because they are likely to be in error
-      ctgs_depths.update_ctg_aln_depth(aln.cid, std::max(aln.cstart, 75), std::min(aln.cstop, aln.clen - 75));
+      ctgs_depths.update_ctg_aln_depth(aln.cid, std::max(aln.cstart, EDGE_BASE_LEN), std::min(aln.cstop, aln.clen - EDGE_BASE_LEN));
     }
     upcxx::progress();
   }
