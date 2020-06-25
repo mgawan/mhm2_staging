@@ -261,7 +261,13 @@ int main(int argc, char **argv) {
   if (!options->load(argc, argv)) return 0;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-
+/*
+  ostringstream oss;
+  for (int i = 0; i <= rank_me(); i++) oss << "rank " << rank_me() << " is dumping " << i << "\n";
+  dump_single_file("test_dump.txt", oss.str());
+  upcxx::finalize();
+  return 0;
+*/
   if (pin_thread(getpid(), local_team().rank_me()) == -1) WARN("Could not pin process ", getpid(), " to core ", rank_me());
   else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
 
