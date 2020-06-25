@@ -137,8 +137,8 @@ inline int pin_thread(pid_t pid, int cid) {
 // FIXME: this is copied from upcxx-utils, DistributedIO branch. It's temporary until Rob finishes his distributed IO implementation
 
 template <typename T, typename BinaryOp>
-future<> reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op, const upcxx::team &team = upcxx::world(),
-                            bool return_final_to_first = false) {
+future<> tmp_reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op, const upcxx::team &team = upcxx::world(),
+                                bool return_final_to_first = false) {
   if (team.from_world(rank_me(), upcxx::rank_n()) == upcxx::rank_n())
     throw std::runtime_error("reduce_prefix called outside of given team");  // not of this team
   DBG("reduce_prefix(src=", src, ", dst=", dst, ", count=", count, ", team.rank_n()=", team.rank_n(),
@@ -224,7 +224,7 @@ inline void dump_single_file(const string &fname, const string &out_str) {
   size_t offsets[2];
   auto sz = out_str.length();
   offsets[0] = sz;
-  reduce_prefix_ring(offsets, offsets + 1, 1, upcxx::op_fast_add).wait();
+  tmp_reduce_prefix_ring(offsets, offsets + 1, 1, upcxx::op_fast_add).wait();
   // the offset is actually the end of this rank's block
   auto my_fpos = offsets[1] - sz;
   upcxx::barrier();
