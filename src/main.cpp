@@ -90,7 +90,7 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="");
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len);
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths);
 
 
 struct StageTimers {
@@ -188,6 +188,7 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
   find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, seed_space);
   stage_timers.alignments->stop();
   // always recalculate the insert size because we may need it for resumes of
+  compute_aln_depths("scaff-contigs-" + to_string(scaff_kmer_len), ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
   // Failed runs
   tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
   // insert size should never be larger than this; if it is that signals some
@@ -217,7 +218,7 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
 }
 
 template <int MAX_K>
-void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options, int max_expected_ins_size) {
+void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int max_expected_ins_size) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Post processing", KNORM, "\n\n");
@@ -235,15 +236,16 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
+  find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
                          options->min_ctg_print_len);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
   }
   packed_reads_list.clear();
-  alns.dump_single_file_alns("final_assembly.sam", true);
-  compute_aln_depths("final_assembly_depths.txt", ctgs, alns, max_kmer_len, options->min_ctg_print_len);
+  // FIXME: this should be uncommented
+  //alns.dump_single_file_alns("final_assembly.sam", true);
+  compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->use_kmer_depths);
   calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
   SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
        "/final_assembly.sam", KNORM, "\n");
@@ -261,13 +263,6 @@ int main(int argc, char **argv) {
   if (!options->load(argc, argv)) return 0;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-/*
-  ostringstream oss;
-  for (int i = 0; i <= rank_me(); i++) oss << "rank " << rank_me() << " is dumping " << i << "\n";
-  dump_single_file("test_dump.txt", oss.str());
-  upcxx::finalize();
-  return 0;
-*/
   if (pin_thread(getpid(), local_team().rank_me()) == -1) WARN("Could not pin process ", getpid(), " to core ", rank_me());
   else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
 
@@ -434,15 +429,13 @@ int main(int argc, char **argv) {
   }
   // post processing
   if (options->post_assm_aln || options->post_assm_only) {
-    if (options->post_assm_only) {
-      if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
-      if (!max_kmer_len) max_kmer_len = 33;
-    }
-    auto max_k = (max_kmer_len / 32 + 1) * 32;
+    int kmer_len = 33;
+    if (options->post_assm_only && !options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
+    auto max_k = (kmer_len / 32 + 1) * 32;
 
 #define POST_ASSEMBLY(KMER_LEN)                           \
     case KMER_LEN:                                            \
-      post_assembly<KMER_LEN>(max_kmer_len, ctgs, options, max_expected_ins_size); \
+      post_assembly<KMER_LEN>(kmer_len, ctgs, options, max_expected_ins_size); \
       break
 
     switch (max_k) {

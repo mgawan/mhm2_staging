@@ -64,35 +64,10 @@ bool bad_alignment(Aln *aln) {
   return false;
 }
 
-int calculate_unmerged_rlen(Alns &alns) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
-  // get the unmerged read length - most common read length
-  HASH_TABLE<int, int64_t> rlens;
-  int64_t sum_rlens = 0;
-  for (auto &aln : alns) {
-    rlens[aln.rlen]++;
-    sum_rlens += aln.rlen;
-  }
-  auto all_sum_rlens = upcxx::reduce_all(sum_rlens, op_fast_add).wait();
-  auto all_nalns = upcxx::reduce_all(alns.size(), op_fast_add).wait();
-  auto avg_rlen = all_sum_rlens / all_nalns;
-  int most_common_rlen = avg_rlen;
-  int64_t max_count = 0;
-  for (auto &rlen : rlens) {
-    if (rlen.second > max_count) {
-      max_count = rlen.second;
-      most_common_rlen = rlen.first;
-    }
-  }
-  SLOG_VERBOSE("Computed unmerged read length as ", most_common_rlen, " with a count of ", max_count, " and average of ",
-               avg_rlen, "\n");
-  return most_common_rlen;
-}
-
 pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expected_ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="") {
   BarrierTimer timer(__FILEFUNC__, false, true);
-  auto unmerged_rlen = calculate_unmerged_rlen(alns);
+  auto unmerged_rlen = alns.calculate_unmerged_rlen();
   ProgressBar progbar(alns.size(), "Processing alignments to compute insert size");
   Aln *prev_aln = nullptr;
   int64_t prev_cid = -1;

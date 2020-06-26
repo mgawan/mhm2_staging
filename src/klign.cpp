@@ -139,6 +139,8 @@ class KmerCtgDHT {
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
 
+  SSWScoring ssw_scoring;
+
   void set_sam_string(Aln &aln, string read_seq, string cigar) {
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
@@ -219,6 +221,8 @@ class KmerCtgDHT {
     aln.orient = orient;
     aln.score1 = ssw_aln.sw_score;
     aln.score2 = ssw_aln.sw_score_next_best;
+    // this is sort of percent identity
+    aln.identity = 100 * aln.score1 / ssw_scoring.match / aln.rlen;
     if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
 
 #ifdef DUMP_ALNS
@@ -244,6 +248,7 @@ public:
     , ctg_seq_bytes_fetched(0)
     , alns(&alns) {
 
+    this->ssw_scoring = ssw_scoring;
     ssw_filter.report_cigar = compute_cigar;
     kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
     kmer_store.set_update_func(

@@ -233,6 +233,7 @@ public:
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
+  bool use_kmer_depths = false;
   bool post_assm_aln = false;
   bool post_assm_only = false;
   bool dump_gfa = false;
@@ -309,6 +310,9 @@ public:
     app.add_flag("--checkpoint", checkpoint,
                  "Checkpoint after each contig round")
                  ->default_val(checkpoint ? "true" : "false") ->capture_default_str() ->multi_option_policy();
+    app.add_flag("--use-kmer-depths", use_kmer_depths,
+                 "Use kmer depths for scaffolding decisions instead of alignment depths (the default)")
+                 ->capture_default_str();
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
