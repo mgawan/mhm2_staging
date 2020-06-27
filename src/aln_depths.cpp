@@ -188,10 +188,12 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
     // 85% here (our alns differ somewhat because of different seed lengths, etc) .
     // In practice, when using aln depths for scaffolding, this tends to reduce msa without any benefits so we only use it in the
     // final round, i.e. if min_ctg_len > 0
+    /*
     if (min_ctg_len && aln.identity < 85) {
       num_bad_alns++;
       continue;
     }
+    */
     // convert to coords for use here
     auto cstart = aln.cstart;
     auto cstop = aln.cstop;

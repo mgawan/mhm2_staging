@@ -243,14 +243,16 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
     delete packed_reads;
   }
   packed_reads_list.clear();
-  // FIXME: this should be uncommented
-  //alns.dump_single_file_alns("final_assembly.sam", true);
-  compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->use_kmer_depths);
   calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
-  SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
-       "/final_assembly.sam", KNORM, "\n");
-  SLOG(KBLUE, "Contig depths (abundances) can be found at ", options->output_dir,
-       "/final_assembly_depths.txt", KNORM, "\n");
+  if (options->post_assm_aln) {
+    alns.dump_single_file_alns("final_assembly.sam", true);
+    SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
+         "/final_assembly.sam", KNORM, "\n");
+  }
+  if (options->post_assm_abundances) {
+    compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->use_kmer_depths);
+    SLOG(KBLUE, "Contig depths (abundances) can be found at ", options->output_dir, "/final_assembly_depths.txt", KNORM, "\n");
+  }
   SLOG(KBLUE, "_________________________", KNORM, "\n");
 }
 
@@ -425,10 +427,10 @@ int main(int argc, char **argv) {
     memory_tracker.stop();
     chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
     SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
-        " for MHMXX version ", MHMXX_VERSION, "\n");
+        " for ", MHMXX_VERSION, "\n");
   }
   // post processing
-  if (options->post_assm_aln || options->post_assm_only) {
+  if (options->post_assm_aln || options->post_assm_only || options->post_assm_abundances) {
     int kmer_len = 33;
     if (options->post_assm_only && !options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
     auto max_k = (kmer_len / 32 + 1) * 32;

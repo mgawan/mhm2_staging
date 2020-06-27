@@ -235,6 +235,7 @@ public:
   bool checkpoint = true;
   bool use_kmer_depths = false;
   bool post_assm_aln = false;
+  bool post_assm_abundances = false;
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
@@ -316,13 +317,16 @@ public:
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
-    app.add_flag("--post-assembly-align", post_assm_aln,
+    app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
+                 ->capture_default_str();
+    app.add_flag("--post-asm-abd", post_assm_abundances,
+                 "Compute and output abundances for final assembly (used by MetaBAT)")
                  ->capture_default_str();
     app.add_flag("--write-gfa", dump_gfa,
                  "Dump scaffolding contig graphs in GFA2 format")
                  ->capture_default_str();
-    app.add_flag("--post-assembly-only", post_assm_only,
+    app.add_flag("--post-asm-only", post_assm_only,
                  "Only run post assembly")
                  ->capture_default_str();
     app.add_flag("--progress", show_progress,
@@ -390,7 +394,7 @@ public:
     open_dbg("debug");
 #endif
 
-    SLOG(KLBLUE, "MHMXX version ", full_version_str, KNORM, "\n");
+    SLOG(KLBLUE, full_version_str, KNORM, "\n");
 
     if (restart) get_restart_options();
 
