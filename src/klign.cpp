@@ -152,17 +152,20 @@ class KmerCtgDHT {
     }
     aln.sam_string += "Contig" + to_string(aln.cid) + "\t" + to_string(aln.cstart + 1) + "\t";
     uint32_t mapq;
-    // for perfect match, set to same maximum as used by minimap
+    // for perfect match, set to same maximum as used by minimap or bwa
     if (aln.score2 == 0) {
       mapq = 60;
     } else {
-      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2)/(double)aln.score1);
+      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2) / (double)aln.score1);
       mapq = (uint32_t) (mapq + 4.99);
       mapq = mapq < 254 ? mapq : 254;
     }
     aln.sam_string += to_string(mapq) + "\t";
-    aln.sam_string += cigar + "\t*\t0\t0\t" + read_seq + "\t*\t";
-    aln.sam_string += "AS:i:" + to_string(aln.score1);
+    //aln.sam_string += cigar + "\t*\t0\t0\t" + read_seq + "\t*\t";
+    // don't add either the sequence or qualities as this will really bloat out the SAM. Those data can be obtained from the
+    // original reads file.
+    aln.sam_string += cigar + "\t*\t0\t0\t*\t*\t";
+    aln.sam_string += "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches);
     // FIXME: optional tags used by minimap
     // NM:i:<x>   edit distance to the reference
     // many others used but none are standard
@@ -183,7 +186,10 @@ class KmerCtgDHT {
       ssw_aln.sw_score = overlap_len;
       ssw_aln.sw_score_next_best = 0;
       // every position matches
+      ssw_aln.mismatches = 0;
       ssw_aln.cigar_string = to_string(overlap_len) + "M";
+      int clip = rseq.length() - overlap_len;
+      if (clip > 0) ssw_aln.cigar_string += to_string(clip) + "S";
     } else {
       // make sure upcxx progress is done before starting alignment
       discharge();
@@ -221,6 +227,7 @@ class KmerCtgDHT {
     aln.orient = orient;
     aln.score1 = ssw_aln.sw_score;
     aln.score2 = ssw_aln.sw_score_next_best;
+    aln.mismatches = ssw_aln.mismatches;
     // this is sort of percent identity
     aln.identity = 100 * aln.score1 / ssw_scoring.match / aln.rlen;
     if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);

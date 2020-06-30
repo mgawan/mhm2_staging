@@ -57,6 +57,7 @@ struct Aln {
   char orient;
   int score1, score2;
   int identity;
+  int mismatches;
   string sam_string;
 
   // writes out in the format meraligner uses
