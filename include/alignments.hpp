@@ -44,9 +44,15 @@
 
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
+
+#include "version.h"
+
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "zstr.hpp"
+
+#include "contigs.hpp"
+
 
 using namespace upcxx_utils;
 
@@ -145,10 +151,23 @@ public:
     upcxx::barrier();
   }
 
-  void dump_single_file_alns(const string fname, bool as_sam_format=false) {
+  void dump_single_file_alns(const string fname, bool as_sam_format=false, Contigs *ctgs=nullptr) {
     BarrierTimer timer(__FILEFUNC__, false, true);
 
     string out_str = "";
+
+    // FIXME: first, all ranks must dump contig info to the file, for every contig:
+    // @SQ	SN:Contig0	LN:887
+
+    string sq_str = "";
+    for (auto &ctg : *ctgs) {
+      sq_str += "@SQ\tSN:Contig" + to_string(ctg.id) + "\tLN:" + to_string(ctg.seq.length()) + "\n";
+    }
+    dump_single_file(fname + ".sq", sq_str);
+    if (!upcxx::rank_me()) {
+      // program information
+      out_str += "@PG\tID:MHM2\tPN:MHM2\tVN:" + string(MHMXX_VERSION) + "\n";
+    }
     for (auto aln : alns) {
       if (!as_sam_format) out_str += aln.to_string() + "\n";
       else out_str += aln.sam_string + "\n";

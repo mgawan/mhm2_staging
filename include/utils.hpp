@@ -219,7 +219,7 @@ future<> tmp_reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op
   return ret_fut;
 };
 
-inline void dump_single_file(const string &fname, const string &out_str) {
+inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
   BarrierTimer timer(__FILEFUNC__);
   size_t offsets[2];
   auto sz = out_str.length();

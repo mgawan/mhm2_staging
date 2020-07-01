@@ -141,6 +141,33 @@ class KmerCtgDHT {
 
   SSWScoring ssw_scoring;
 
+  int get_cigar_length(const string &cigar) {
+    // check that cigar string length is the same as the sequence, but only if the sequence is included
+    int base_count = 0;
+    string num = "";
+    for (char c : cigar) {
+      switch (c) {
+        case 'M':
+        case 'S':
+        case '=':
+        case 'X':
+        case 'I':
+          base_count += stoi(num);
+          num = "";
+          break;
+        case 'D':
+          //base_count -= stoi(num);
+          num = "";
+          break;
+        default:
+          if (!isdigit(c)) DIE("Invalid char detected in cigar: '", c, "'");
+          num += c;
+          break;
+      }
+    }
+    return base_count;
+  }
+
   void set_sam_string(Aln &aln, string read_seq, string cigar) {
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
@@ -161,14 +188,22 @@ class KmerCtgDHT {
       mapq = mapq < 254 ? mapq : 254;
     }
     aln.sam_string += to_string(mapq) + "\t";
-    //aln.sam_string += cigar + "\t*\t0\t0\t" + read_seq + "\t*\t";
-    // don't add either the sequence or qualities as this will really bloat out the SAM. Those data can be obtained from the
-    // original reads file.
+    //aln.sam_string += cigar + "\t*\t0\t0\t" + read_subseq + "\t*\t";
+    // Don't output either the read sequence or quals - that causes the SAM file to bloat up hugely, and that info is already
+    // available in the read files
     aln.sam_string += cigar + "\t*\t0\t0\t*\t*\t";
     aln.sam_string += "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches);
-    // FIXME: optional tags used by minimap
-    // NM:i:<x>   edit distance to the reference
-    // many others used but none are standard
+    // for debugging
+    //aln.sam_string += " rstart " + to_string(aln.rstart) + " rstop " + to_string(aln.rstop) + " cstop " + to_string(aln.cstop) +
+    //                  " clen " + to_string(aln.clen) + " alnlen " + to_string(aln.rstop - aln.rstart);
+    /*
+#ifdef DEBUG
+    // only used if we actually include the read seq and quals in the SAM, which we don't
+    int base_count = get_cigar_length(cigar);
+    if (base_count != read_seq.length())
+      DIE("number of bases in cigar != aln rlen, ", base_count, " != ", read_subseq.length(), "\nsam string ", aln.sam_string);
+#endif
+    */
   }
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
@@ -182,14 +217,12 @@ class KmerCtgDHT {
       ssw_aln.ref_end = read_extra_offset + overlap_len - 1;
       ssw_aln.query_begin = ctg_extra_offset;
       ssw_aln.query_end = ctg_extra_offset + overlap_len - 1;
-      // the match score is 1
-      ssw_aln.sw_score = overlap_len;
+      // every position is a perfect match
+      ssw_aln.sw_score = overlap_len * ssw_scoring.match;
       ssw_aln.sw_score_next_best = 0;
       // every position matches
       ssw_aln.mismatches = 0;
       ssw_aln.cigar_string = to_string(overlap_len) + "M";
-      int clip = rseq.length() - overlap_len;
-      if (clip > 0) ssw_aln.cigar_string += to_string(clip) + "S";
     } else {
       // make sure upcxx progress is done before starting alignment
       discharge();
@@ -207,15 +240,6 @@ class KmerCtgDHT {
 
     if (orient == '-') switch_orient(rstart, rstop, rlen);
 
-    // for some reason, on Cori icc this causes an internal compiler error:
-    // internal error: assertion failed at: "shared/cfe/edgcpfe/overload.c", line 9538
-    /*
-    aln = { .read_id = rname, .cid = cid,
-            .rstart = rstart, .rstop = rstop, .rlen = rlen,
-            .cstart = cstart, .cstop = cstop, .clen = clen,
-            .orient = orient, .score1 = ssw_aln.sw_score,
-            .score2 = ssw_aln.sw_score_next_best };
-    */
     aln.read_id = rname;
     aln.cid = cid;
     aln.rstart = rstart;
