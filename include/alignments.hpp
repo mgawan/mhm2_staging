@@ -163,7 +163,8 @@ public:
     for (auto &ctg : *ctgs) {
       sq_str += "@SQ\tSN:Contig" + to_string(ctg.id) + "\tLN:" + to_string(ctg.seq.length()) + "\n";
     }
-    dump_single_file(fname + ".sq", sq_str);
+    //dump_single_file(fname + ".sq", sq_str);
+    dump_single_file(fname, sq_str);
     if (!upcxx::rank_me()) {
       // program information
       out_str += "@PG\tID:MHM2\tPN:MHM2\tVN:" + string(MHMXX_VERSION) + "\n";
@@ -172,7 +173,8 @@ public:
       if (!as_sam_format) out_str += aln.to_string() + "\n";
       else out_str += aln.sam_string + "\n";
     }
-    dump_single_file(fname, out_str);
+    dump_single_file(fname, out_str, /*append*/true);
+    //dump_single_file(fname + ".noseq", out_str);
   }
 
   int calculate_unmerged_rlen() {
