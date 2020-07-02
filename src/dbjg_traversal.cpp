@@ -517,7 +517,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
   }
   barrier();
 #ifdef DEBUG
-  ProgressBar progbar(frag_elems.size(), "Checking kmers in uutigs");
+  ProgressBar progbar(my_uutigs.size(), "Checking kmers in uutigs");
   for (auto uutig : my_uutigs) {
     progbar.update();
     if (!check_kmers(uutig.seq, kmer_dht, kmer_len)) DIE("kmer not found in uutig");
