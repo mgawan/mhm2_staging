@@ -72,8 +72,6 @@ using upcxx::reduce_one;
 using upcxx::op_fast_add;
 using upcxx::op_fast_max;
 using upcxx::barrier;
-using upcxx::global_ptr;
-using upcxx::new_;
 using upcxx::dist_object;
 
 using namespace upcxx_utils;
