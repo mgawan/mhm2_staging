@@ -414,6 +414,7 @@ public:
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     Alns read_alns;
+    future<> fchain = make_future();
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -451,20 +452,24 @@ public:
       rstart = 0;
 
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
-      string ctg_subseq;
       // fetch only the substring
       char *seq_buf = new char[ctg_aln_len + 1];
       // FIXME: make this rget async to overlap with align_read
-      fetch_ctg_seqs_timer.start();
-      rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
-      fetch_ctg_seqs_timer.stop();
-      ctg_subseq = string(seq_buf, ctg_aln_len);
-      delete[] seq_buf;
-      ctg_seq_bytes_fetched += ctg_aln_len;
-      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
-                 ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
+      //fetch_ctg_seqs_timer.start();
+      //auto fetch_ctg_seqs_t = std::chrono::high_resolution_clock::now();
+      auto fut = rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len)
+          .then([=, &read_alns, &ssw_timer, &seq_buf]() {
+            // fetch_ctg_seqs_timer.stop();
+            string ctg_subseq = string(seq_buf, ctg_aln_len);
+            delete[] seq_buf;
+            ctg_seq_bytes_fetched += ctg_aln_len;
+            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
+                       ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
+          });
+      fchain = when_all(fchain, fut);
       num_alns++;
     }
+    fchain.wait();
     // sort the alns from best score to worst - this could be used in spanner later
     sort(read_alns.begin(), read_alns.end(),
          [](const auto &elem1, const auto &elem2) {
