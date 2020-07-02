@@ -454,6 +454,7 @@ public:
       string ctg_subseq;
       // fetch only the substring
       char *seq_buf = new char[ctg_aln_len + 1];
+      // FIXME: make this rget async to overlap with align_read
       fetch_ctg_seqs_timer.start();
       rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
       fetch_ctg_seqs_timer.stop();
@@ -538,15 +539,13 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     auto kmer = elem.first;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
-  //size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
   get_ctgs_timer.start();
   future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
     progress();
-    //min_kmers = min(min_kmers, kmer_lists[i].size());
-    //max_kmers = max(max_kmers, kmer_lists[i].size());
-    //num_kmers += kmer_lists[i].size();
+    // skip targets that have no ctgs - this should reduce communication at scale
+    if (kmer_lists[i].empty()) continue;
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
       [&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated ctg location
