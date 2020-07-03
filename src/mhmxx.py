@@ -322,7 +322,7 @@ def capture_err(err_msgs):
 def print_err_msgs(err_msgs):
     global _output_dir
     err_msgs.append('==============================================')
-    print_red("Check " + _output_dir + "err.log for details")
+    print_red("Check " + os.getcwd() + "/" + _output_dir + "err.log for details")
     # keep track of all msg copies so we don't print duplicates
     seen_msgs = {}
     with open(_output_dir + 'err.log', 'a') as f:

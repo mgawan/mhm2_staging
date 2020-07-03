@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -45,6 +45,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <algorithm>
 #include <fstream>
 #include <string>
@@ -54,6 +55,8 @@
 #include <algorithm>
 
 #include "upcxx_utils/log.hpp"
+#include "upcxx_utils/timers.hpp"
+
 using namespace upcxx_utils;
 
 using std::string;
@@ -155,40 +158,132 @@ inline int pin_thread(pid_t pid, int cid) {
   return 0;
 }
 
-inline void dump_single_file(const string &fname, const string &out_str) {
-  upcxx::atomic_domain<size_t> ad({upcxx::atomic_op::fetch_add, upcxx::atomic_op::load});
-  upcxx::global_ptr<size_t> fpos = nullptr;
-  if (!upcxx::rank_me()) fpos = upcxx::new_<size_t>(0);
-  fpos = upcxx::broadcast(fpos, 0).wait();
-  auto sz = out_str.length();
-  size_t my_fpos = ad.fetch_add(fpos, sz, std::memory_order_relaxed).wait();
-  // wait until all ranks have updated the global counter
-  upcxx::barrier();
+// FIXME: this is copied from upcxx-utils, DistributedIO branch. It's temporary until Rob finishes his distributed IO implementation
+
+template <typename T, typename BinaryOp>
+future<> tmp_reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op, const upcxx::team &team = upcxx::world(),
+                                bool return_final_to_first = false) {
+  if (team.from_world(rank_me(), upcxx::rank_n()) == upcxx::rank_n())
+    throw std::runtime_error("reduce_prefix called outside of given team");  // not of this team
+  DBG("reduce_prefix(src=", src, ", dst=", dst, ", count=", count, ", team.rank_n()=", team.rank_n(),
+      ", return_final_to_first=", return_final_to_first, "\n");
+  using ShPromise = std::shared_ptr<upcxx::promise<>>;
+  using Data = std::tuple<const T *, T *, size_t, ShPromise>;
+  using DistData = upcxx::dist_object<Data>;
+  using ShDistData = std::shared_ptr<DistData>;
+
+  ShPromise my_prom = std::make_shared<upcxx::promise<>>();
+  upcxx::future<> ret_fut = my_prom->get_future();
+
+  if (team.rank_me() == 0) {
+    // first is special case of copy without op
+    for (size_t i = 0; i < count; i++) dst[i] = src[i];
+
+    if (return_final_to_first) {
+      // make ready for the rpc but do not fulfill my_prom yet
+      ret_fut = upcxx::make_future();
+    } else {
+      // make ready
+      my_prom->fulfill_anonymous(1);
+    }
+
+    // special case
+    if (team.rank_n() == 1) {
+      if (return_final_to_first) my_prom->fulfill_anonymous(1);
+      return ret_fut;
+    }
+  }
+
+  // create a distributed object holding the data and promise
+  ShDistData sh_dist_data = std::make_shared<DistData>(std::make_tuple(src, dst, count, my_prom), team);
+  upcxx::intrank_t next_rank = team.rank_me() + 1;
+  if (return_final_to_first || next_rank != team.rank_n()) {
+    // send rpc to the next rank when my prefix is ready
+    ret_fut = ret_fut.then([next_rank, dst, count, sh_dist_data, &op, &team]() -> future<> {
+      //DBG("mydst is ready:", dst, ", next_rank=", next_rank, "\n");
+      upcxx::rpc_ff(
+          team, next_rank % team.rank_n(),
+          [&op](DistData &dist_data, upcxx::view<T> prev_prefix, bool just_copy) {
+            DBG("Got here: count=", prev_prefix.size(), ", just_copy=", just_copy, "\n");
+            const T *mysrc;
+            T *mydst;
+            size_t mycount;
+            std::shared_ptr<upcxx::promise<>> myprom;
+            std::tie(mysrc, mydst, mycount, myprom) = *dist_data;
+            assert(mycount == prev_prefix.size());
+            if (just_copy) {
+              for (size_t i = 0; i < mycount; i++) {
+                mydst[i] = prev_prefix[i];
+              }
+            } else {
+              for (size_t i = 0; i < mycount; i++) {
+                mydst[i] = op(prev_prefix[i], mysrc[i]);
+              }
+            }
+            myprom->fulfill_anonymous(1);  // mydst is ready
+          },
+          *sh_dist_data, upcxx::make_view(dst, dst + count), next_rank == team.rank_n());
+      return upcxx::make_future();
+    });
+  } else {
+    // keep the scope of the DistData object until ready
+    ret_fut = ret_fut.then([sh_dist_data]() {
+      /* noop */
+    });
+  }
+
+  if (team.rank_me() == 0 && return_final_to_first) {
+    // wait on my_prom to be fulfilled by an rpc from the last rank of the team
+    // and keep the scope of the DistData object until ready
+    ret_fut = my_prom->get_future().then([sh_dist_data]() {
+      /* noop */
+    });
+  }
+
+  return ret_fut;
+};
+
+inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
+  BarrierTimer timer(__FILEFUNC__);
   // write to a temporary file and rename it on completion to ensure that there are no corrupted files should
   // there be a crash
   auto tmp_fname = fname + ".tmp";
-  int fileno = -1;
-  size_t fsize = 0;
-  if (!upcxx::rank_me()) {
-    fsize = ad.load(fpos, std::memory_order_relaxed).wait();
-    // rank 0 creates the file and truncates it to the correct length
-    fileno = open(tmp_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fileno == -1) WARN("Error trying to create file ", tmp_fname, ": ", strerror(errno), "\n");
-    if (ftruncate(fileno, fsize) == -1) WARN("Could not truncate ", tmp_fname, " to ", fsize, " bytes\n");
+  if (append && !upcxx::rank_me()) {
+    // rename file to be appended to to temporary
+    if (rename(fname.c_str(), tmp_fname.c_str()) != 0) DIE("Could not rename ", fname, " to temporary: ", strerror(errno));
   }
   upcxx::barrier();
-  ad.destroy();
-  // wait until rank 0 has finished setting up the file
-  if (rank_me()) fileno = open(tmp_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-  if (fileno == -1) WARN("Error trying to open file ", tmp_fname, ": ", strerror(errno), "\n");
+  size_t offsets[2];
+  auto sz = out_str.length();
+  size_t append_file_size = (append && !upcxx::rank_me() ? get_file_size(tmp_fname) : 0);
+  offsets[0] = (sz + append_file_size);
+  tmp_reduce_prefix_ring(offsets, offsets + 1, 1, upcxx::op_fast_add).wait();
+  // the offset is actually the start of this rank's block
+  auto my_fpos = offsets[1] - sz;
+  upcxx::barrier();
+  //WARN("rank ", upcxx::rank_me(), " writing ", sz, " bytes to file ", tmp_fname, " at position ", my_fpos);
+  int fileno = -1;
+  size_t fsize = 0;
+  // last rank creates the file and truncates it to the correct length (only last rank knows the correct total size)
+  if (upcxx::rank_me() == upcxx::rank_n() - 1) {
+    // rename previous file to tmp file
+    fileno = open(tmp_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fileno == -1) DIE("Could not open file ", tmp_fname, ": ", strerror(errno));
+    if (ftruncate(fileno, my_fpos + sz) == -1) WARN("Could not truncate ", tmp_fname, " to ", my_fpos + sz, " bytes");
+  }
+  upcxx::barrier();
+  // wait until rank n-1 has finished setting up the file
+  if (rank_me() != rank_n() - 1) fileno = open(tmp_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+  if (fileno == -1) DIE("Could not open file ", tmp_fname, ": ", strerror(errno));
   auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
   close(fileno);
-  if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written, "\n");
+  if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written);
   upcxx::barrier();
-  if (!upcxx::rank_me() && rename(tmp_fname.c_str(), fname.c_str()) != 0) 
+  if (!upcxx::rank_me() && rename(tmp_fname.c_str(), fname.c_str()) != 0)
 	DIE("Could not rename temporary file ", tmp_fname, " to ", fname, ", error: ", strerror(errno));
   auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
-  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname, "\n");
+  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname);
+  upcxx::barrier();
 }
 
 using cpu_set_size_t = std::pair<cpu_set_t *, size_t>;

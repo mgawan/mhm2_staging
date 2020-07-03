@@ -2,22 +2,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -28,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -139,6 +139,35 @@ class KmerCtgDHT {
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
 
+  SSWScoring ssw_scoring;
+
+  int get_cigar_length(const string &cigar) {
+    // check that cigar string length is the same as the sequence, but only if the sequence is included
+    int base_count = 0;
+    string num = "";
+    for (char c : cigar) {
+      switch (c) {
+        case 'M':
+        case 'S':
+        case '=':
+        case 'X':
+        case 'I':
+          base_count += stoi(num);
+          num = "";
+          break;
+        case 'D':
+          //base_count -= stoi(num);
+          num = "";
+          break;
+        default:
+          if (!isdigit(c)) DIE("Invalid char detected in cigar: '", c, "'");
+          num += c;
+          break;
+      }
+    }
+    return base_count;
+  }
+
   void set_sam_string(Aln &aln, string read_seq, string cigar) {
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
@@ -150,20 +179,31 @@ class KmerCtgDHT {
     }
     aln.sam_string += "Contig" + to_string(aln.cid) + "\t" + to_string(aln.cstart + 1) + "\t";
     uint32_t mapq;
-    // for perfect match, set to same maximum as used by minimap
+    // for perfect match, set to same maximum as used by minimap or bwa
     if (aln.score2 == 0) {
       mapq = 60;
     } else {
-      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2)/(double)aln.score1);
+      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2) / (double)aln.score1);
       mapq = (uint32_t) (mapq + 4.99);
       mapq = mapq < 254 ? mapq : 254;
     }
     aln.sam_string += to_string(mapq) + "\t";
-    aln.sam_string += cigar + "\t*\t0\t0\t" + read_seq + "\t*\t";
-    aln.sam_string += "AS:i:" + to_string(aln.score1);
-    // FIXME: optional tags used by minimap
-    // NM:i:<x>   edit distance to the reference
-    // many others used but none are standard
+    //aln.sam_string += cigar + "\t*\t0\t0\t" + read_subseq + "\t*\t";
+    // Don't output either the read sequence or quals - that causes the SAM file to bloat up hugely, and that info is already
+    // available in the read files
+    aln.sam_string += cigar + "\t*\t0\t0\t*\t*\t";
+    aln.sam_string += "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches);
+    // for debugging
+    //aln.sam_string += " rstart " + to_string(aln.rstart) + " rstop " + to_string(aln.rstop) + " cstop " + to_string(aln.cstop) +
+    //                  " clen " + to_string(aln.clen) + " alnlen " + to_string(aln.rstop - aln.rstart);
+    /*
+#ifdef DEBUG
+    // only used if we actually include the read seq and quals in the SAM, which we don't
+    int base_count = get_cigar_length(cigar);
+    if (base_count != read_seq.length())
+      DIE("number of bases in cigar != aln rlen, ", base_count, " != ", read_subseq.length(), "\nsam string ", aln.sam_string);
+#endif
+    */
   }
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
@@ -177,10 +217,11 @@ class KmerCtgDHT {
       ssw_aln.ref_end = read_extra_offset + overlap_len - 1;
       ssw_aln.query_begin = ctg_extra_offset;
       ssw_aln.query_end = ctg_extra_offset + overlap_len - 1;
-      // the match score is 1
-      ssw_aln.sw_score = overlap_len;
+      // every position is a perfect match
+      ssw_aln.sw_score = overlap_len * ssw_scoring.match;
       ssw_aln.sw_score_next_best = 0;
       // every position matches
+      ssw_aln.mismatches = 0;
       ssw_aln.cigar_string = to_string(overlap_len) + "M";
     } else {
       // make sure upcxx progress is done before starting alignment
@@ -199,15 +240,6 @@ class KmerCtgDHT {
 
     if (orient == '-') switch_orient(rstart, rstop, rlen);
 
-    // for some reason, on Cori icc this causes an internal compiler error:
-    // internal error: assertion failed at: "shared/cfe/edgcpfe/overload.c", line 9538
-    /*
-    aln = { .read_id = rname, .cid = cid,
-            .rstart = rstart, .rstop = rstop, .rlen = rlen,
-            .cstart = cstart, .cstop = cstop, .clen = clen,
-            .orient = orient, .score1 = ssw_aln.sw_score,
-            .score2 = ssw_aln.sw_score_next_best };
-    */
     aln.read_id = rname;
     aln.cid = cid;
     aln.rstart = rstart;
@@ -219,6 +251,9 @@ class KmerCtgDHT {
     aln.orient = orient;
     aln.score1 = ssw_aln.sw_score;
     aln.score2 = ssw_aln.sw_score_next_best;
+    aln.mismatches = ssw_aln.mismatches;
+    // this is sort of percent identity
+    aln.identity = 100 * aln.score1 / ssw_scoring.match / aln.rlen;
     if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
 
 #ifdef DUMP_ALNS
@@ -244,6 +279,7 @@ public:
     , ctg_seq_bytes_fetched(0)
     , alns(&alns) {
 
+    this->ssw_scoring = ssw_scoring;
     ssw_filter.report_cigar = compute_cigar;
     kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
     kmer_store.set_update_func(
@@ -650,6 +686,7 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
   BarrierTimer timer(__FILEFUNC__, false, true);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
+  SLOG_VERBOSE("Aligning with seed size of ", kmer_len, "\n");
   // default for normal alignments in the pipeline, but for final alignments, uses minimap2 defaults
   SSWScoring ssw_scoring = { .match = SSW_MATCH_SCORE, .mismatch = SSW_MISMATCH_COST, .gap_opening = SSW_GAP_OPENING_COST,
                              .gap_extending = SSW_GAP_EXTENDING_COST, .ambiguity = SSW_AMBIGUITY_COST };

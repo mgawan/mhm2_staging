@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -44,9 +44,15 @@
 
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
+
+#include "version.h"
+
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "zstr.hpp"
+
+#include "contigs.hpp"
+
 
 using namespace upcxx_utils;
 
@@ -56,6 +62,8 @@ struct Aln {
   int rstart, rstop, rlen, cstart, cstop, clen;
   char orient;
   int score1, score2;
+  int identity;
+  int mismatches;
   string sam_string;
 
   // writes out in the format meraligner uses
@@ -143,15 +151,55 @@ public:
     upcxx::barrier();
   }
 
-  void dump_single_file_alns(const string fname, bool as_sam_format=false) {
+  void dump_single_file_alns(const string fname, bool as_sam_format=false, Contigs *ctgs=nullptr) {
     BarrierTimer timer(__FILEFUNC__, false, true);
 
     string out_str = "";
+
+    // FIXME: first, all ranks must dump contig info to the file, for every contig:
+    // @SQ	SN:Contig0	LN:887
+
+    string sq_str = "";
+    for (auto &ctg : *ctgs) {
+      sq_str += "@SQ\tSN:Contig" + to_string(ctg.id) + "\tLN:" + to_string(ctg.seq.length()) + "\n";
+    }
+    //dump_single_file(fname + ".sq", sq_str);
+    dump_single_file(fname, sq_str);
+    if (!upcxx::rank_me()) {
+      // program information
+      out_str += "@PG\tID:MHM2\tPN:MHM2\tVN:" + string(MHMXX_VERSION) + "\n";
+    }
     for (auto aln : alns) {
       if (!as_sam_format) out_str += aln.to_string() + "\n";
       else out_str += aln.sam_string + "\n";
     }
-    dump_single_file(fname, out_str);
+    dump_single_file(fname, out_str, /*append*/true);
+    //dump_single_file(fname + ".noseq", out_str);
+  }
+
+  int calculate_unmerged_rlen() {
+    BarrierTimer timer(__FILEFUNC__, false, true);
+    // get the unmerged read length - most common read length
+    HASH_TABLE<int, int64_t> rlens;
+    int64_t sum_rlens = 0;
+    for (auto &aln : alns) {
+      rlens[aln.rlen]++;
+      sum_rlens += aln.rlen;
+    }
+    auto all_sum_rlens = upcxx::reduce_all(sum_rlens, op_fast_add).wait();
+    auto all_nalns = upcxx::reduce_all(alns.size(), op_fast_add).wait();
+    auto avg_rlen = all_sum_rlens / all_nalns;
+    int most_common_rlen = avg_rlen;
+    int64_t max_count = 0;
+    for (auto &rlen : rlens) {
+      if (rlen.second > max_count) {
+        max_count = rlen.second;
+        most_common_rlen = rlen.first;
+      }
+    }
+    SLOG_VERBOSE("Computed unmerged read length as ", most_common_rlen, " with a count of ", max_count, " and average of ",
+                 avg_rlen, "\n");
+    return most_common_rlen;
   }
 };
 

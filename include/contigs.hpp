@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -257,10 +257,12 @@ public:
     int64_t stop_rank = rank_me() + 1;
     auto start_offset = get_file_offset_for_rank(ctgs_file, start_rank, ctg_prefix);
     auto stop_offset = get_file_offset_for_rank(ctgs_file, stop_rank, ctg_prefix);
-    ProgressBar progbar(stop_offset - start_offset, "Parsing contigs");
-    ctgs_file.seekg(start_offset);
     int64_t tot_len = 0;
+    ProgressBar progbar(stop_offset - start_offset, "Parsing contigs");
+    // these can be equal if the contigs are very long and there are many ranks so this one doesn't get even a full contig
+    ctgs_file.seekg(start_offset);
     while (!ctgs_file.eof()) {
+      if (ctgs_file.tellg() >= stop_offset) break;
       getline(ctgs_file, cname);
       if (cname == "") break;
       getline(ctgs_file, seq);
@@ -273,9 +275,8 @@ public:
       int64_t id = strtol(cname.c_str() + 7, &endptr, 10);
       // depth is the last field in the cname
       double depth = strtod(endptr, NULL);
-      Contig contig = { .id = id, .seq = seq, .depth = depth };
+      Contig contig = {.id = id, .seq = seq, .depth = depth};
       add_contig(contig);
-      if (ctgs_file.tellg() >= stop_offset) break;
     }
     progbar.done();
     barrier();
