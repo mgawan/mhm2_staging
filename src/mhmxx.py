@@ -338,14 +338,16 @@ def main():
                     completed_round = True
 
             _err_thread.join()
+            if _proc.returncode < 0:
+                _proc.returncode *= -1
             if _proc.returncode > 128:
                 _proc.returncode -= 128
-            if _proc.returncode not in [0, -15] or not status:
+            if _proc.returncode not in [0, 15] or not status:
                 signame = ''
-                if -_proc.returncode <= len(SIGNAMES) and _proc.returncode < 0:
-                    signame = ' (' + SIGNAMES[-_proc.returncode - 1] + ')'
-                print_red("\nERROR: subprocess terminated with return code ", -_proc.returncode, signame)
-                err_msgs.append("ERROR: subprocess terminated with return code " + str(-_proc.returncode) + signame)
+                if _proc.returncode <= len(SIGNAMES) and _proc.returncode > 0:
+                    signame = ' (' + SIGNAMES[_proc.returncode - 1] + ')'
+                print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame)
+                err_msgs.append("ERROR: subprocess terminated with return code " + str(_proc.returncode) + signame)
                 print_err_msgs(err_msgs)
                 if completed_round and options.auto_resume:
                     print_red('Trying to restart with output directory ', _output_dir)
