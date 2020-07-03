@@ -90,7 +90,7 @@ Cori:validation:
     - cd $SCRATCH
     - inst=${INSTALL_PREFIX}-knl
     - echo "Testing builds on KNL - $inst"
-    - #salloc --job-name="CI-mhmxx-${CI_COMMIT_SHA}" --account=m2865 -C knl --nodes=1  --qos=interactive --time=25:00 /bin/bash -c "echo TODO"
+#    - salloc --job-name="CI-mhmxx-${CI_COMMIT_SHA}" --account=m2865 -C knl --nodes=1  --qos=interactive --time=25:00 /bin/bash -c "echo TODO"
     - echo "Completed"
 
 Cori:accuracy:
@@ -117,13 +117,13 @@ Cori:accuracy:
     - module list
     - cd $SCRATCH
     - echo "Testing accuracy"
-    - #knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHA}" --account=m2865 -C knl --nodes=2  --qos=debug --time=20:00 --wrap="echo TODO"
-    - #echo "Waiting for knl job $knl_job"
-    - #date
-    - #while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
-    - #sacct=$(sacct -j $knl_job)
-    - #echo "$sacct"
-    - #wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
+#    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHA}" --account=m2865 -C knl --nodes=2  --qos=debug --time=20:00 --wrap="echo TODO"
+#    - echo "Waiting for knl job $knl_job"
+#    - date
+#    - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
+#    - sacct=$(sacct -j $knl_job)
+#    - echo "$sacct"
+#    - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
 
 
 #
