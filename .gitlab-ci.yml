@@ -160,7 +160,7 @@ HULK:build:
     - echo "Checking for cmake, Berkeley UPC and UPC++"
     - which cmake && cmake --version
     - echo "Checking or building upcxx"
-    - which upcxx || ./upcxx_utils/contrib/install_upcxx.sh $CI_INSTALL
+    - which upcxx || ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL
     - upcxx --version
     - echo "Building all flavors"
     - mkdir -p ${SCRATCH}/runs
