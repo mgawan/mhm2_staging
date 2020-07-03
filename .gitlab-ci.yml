@@ -56,7 +56,7 @@ Cori:build:
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
     - make -j 8 install
     - echo "Loading Haswell modules for upcxx GNU"
-    - source .env-knl/gnu.sh
+    - source .env-cori-haswell/gnu.sh
     - module list
     - export MHMXX_BUILD=${BUILD_PREFIX}-haswell
     - mkdir -p ${MHMXX_BUILD}
