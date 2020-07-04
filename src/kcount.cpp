@@ -72,7 +72,7 @@ extern ofstream _dbgstream;
 extern ofstream _logstream;
 
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_reads = 0;
   int64_t tot_num_reads = 0;
@@ -106,7 +106,7 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
 template<int MAX_K>
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                         dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
   // and Q = -10 log10(P)
@@ -199,7 +199,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*>
 // count ctg kmers if using bloom
 template<int MAX_K>
 static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
   vector<Kmer<MAX_K>> kmers;
@@ -229,7 +229,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
 
 template<int MAX_K>
 static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
 #ifdef USE_KMER_DEPTH
@@ -278,7 +278,7 @@ template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
                    double &num_kmers_factor) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
 
   _dynamic_min_depth = dynamic_min_depth;
   _dmin_thres = dmin_thres;

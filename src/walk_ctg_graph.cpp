@@ -150,7 +150,7 @@ static bool is_overlap_mismatch(int dist, int overlap) {
 
 
 static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs &ctgs) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   // match, mismatch, gap opening, gap extending, ambiguious
   StripedSmithWaterman::Aligner ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST,
                                             SSW_AMBIGUITY_COST);
@@ -661,7 +661,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, vector<pair<cid_t, 
 }
 
 static vector<pair<cid_t, int32_t>> sort_ctgs(int min_ctg_len) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   vector<pair<cid_t, int32_t> > sorted_ctgs;
   for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
     // don't start on a contig that has already been used
@@ -710,7 +710,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
   // This is repeated until there are no more walks found.
   _graph = graph;
 
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   vector<Walk> walks;
   WalkStats walk_stats = {0};
   int64_t num_rounds = 0;

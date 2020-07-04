@@ -716,7 +716,7 @@ class CtgGraph {
   }
 
   void print_stats(int min_ctg_print_len, string graph_fname="") {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     auto get_avg_min_max = [](vector<int64_t> &vals) -> string {
       int64_t total = (!vals.size() ? 0 : std::accumulate(vals.begin(), vals.end(), 0));
       int64_t max_val = (!vals.size() ? 0 : *std::max_element(vals.begin(), vals.end()));
@@ -818,7 +818,7 @@ class CtgGraph {
 #endif
 
   void print_gfa2(const string &gfa_fname, int min_ctg_print_len) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     string out_str = "";
     for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
       if (v->clen < min_ctg_print_len) continue;

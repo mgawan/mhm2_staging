@@ -137,7 +137,7 @@ public:
   }
 
   void print_stats(int min_ctg_len) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     int64_t tot_len = 0, max_len = 0;
     double tot_depth = 0;
     vector<pair<int, int64_t>> length_sums({ {1, 0}, {5, 0}, {10, 0}, {25, 0}, {50, 0}});
@@ -211,7 +211,7 @@ public:
   }
 
   void dump_contigs(const string &fname, int min_ctg_len) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     string fasta = "";
     for (auto it = contigs.begin(); it != contigs.end(); ++it) {
       auto ctg = it;
@@ -243,7 +243,7 @@ public:
       return f.tellg();
     };
 
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     contigs.clear();
     string line;
     string ctg_prefix = ">Contig";
