@@ -98,10 +98,10 @@ class CtgsDepths {
   }
 
   void update_ctg_aln_depth(int64_t cid, int aln_start, int aln_stop, int aln_merge_start, int aln_merge_stop) {
+    if (aln_start >= aln_stop) return;
     upcxx::rpc(
         get_target_rank(cid),
         [](ctgs_depths_map_t &ctgs_depths, int64_t cid, int aln_start, int aln_stop, int aln_merge_start, int aln_merge_stop) {
-          assert(aln_start < aln_stop);
           const auto it = ctgs_depths->find(cid);
           if (it == ctgs_depths->end()) DIE("could not fetch vertex ", cid, "\n");
           auto ctg = &it->second;

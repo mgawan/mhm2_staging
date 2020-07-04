@@ -414,6 +414,9 @@ public:
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     Alns read_alns;
+#ifdef CHAIN_RGET
+    future<> fchain = make_future();
+#endif
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -451,19 +454,35 @@ public:
       rstart = 0;
 
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
-      string ctg_subseq;
       // fetch only the substring
       char *seq_buf = new char[ctg_aln_len + 1];
+#ifdef CHAIN_RGET
+      // FIXME: this doesn't work at scale on Cori - uses too much memory?
+      auto fut = rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len)
+          .then([=, &read_alns, &ssw_timer, &seq_buf]() {
+            // fetch_ctg_seqs_timer.stop();
+            string ctg_subseq = string(seq_buf, ctg_aln_len);
+            delete[] seq_buf;
+            ctg_seq_bytes_fetched += ctg_aln_len;
+            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
+                       ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
+          });
+      fchain = when_all(fchain, fut);
+#else
       fetch_ctg_seqs_timer.start();
       rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
       fetch_ctg_seqs_timer.stop();
-      ctg_subseq = string(seq_buf, ctg_aln_len);
+      string ctg_subseq = string(seq_buf, ctg_aln_len);
       delete[] seq_buf;
       ctg_seq_bytes_fetched += ctg_aln_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
                  ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
+#endif
       num_alns++;
     }
+#ifdef CHAIN_RGET
+    fchain.wait();
+#endif
     // sort the alns from best score to worst - this could be used in spanner later
     sort(read_alns.begin(), read_alns.end(),
          [](const auto &elem1, const auto &elem2) {
@@ -538,15 +557,13 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     auto kmer = elem.first;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
-  //size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
   get_ctgs_timer.start();
   future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
     progress();
-    //min_kmers = min(min_kmers, kmer_lists[i].size());
-    //max_kmers = max(max_kmers, kmer_lists[i].size());
-    //num_kmers += kmer_lists[i].size();
+    // skip targets that have no ctgs - this should reduce communication at scale
+    if (kmer_lists[i].empty()) continue;
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
       [&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated ctg location

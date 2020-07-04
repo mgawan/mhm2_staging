@@ -388,7 +388,7 @@ public:
     setup_output_dir();
     setup_log_file();
 
-    init_logger("mhmxx.log", verbose);
+    init_logger("mhmxx.log", verbose, false);
 
 #ifdef DEBUG
     open_dbg("debug");
