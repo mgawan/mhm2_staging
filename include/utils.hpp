@@ -259,6 +259,6 @@ inline void dump_single_file(const string &fname, const string &out_str, bool ap
   if (!upcxx::rank_me() && rename(tmp_fname.c_str(), fname.c_str()) != 0)
 	DIE("Could not rename temporary file ", tmp_fname, " to ", fname, ", error: ", strerror(errno));
   auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
-  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname);
+  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname, "\n");
   upcxx::barrier();
 }
