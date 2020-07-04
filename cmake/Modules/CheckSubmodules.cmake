@@ -33,13 +33,14 @@ if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
            endif()
         endforeach()
         foreach(tmp ${UPDATE_SUBMODULES})
-          message("Executing git submodule update for ${tmp}")
-          execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive ${tmp}
-                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                          RESULT_VARIABLE GIT_SUBMOD_RESULT)
-          if(NOT GIT_SUBMOD_RESULT EQUAL "0")
-              message(WARNING "'git submodule update --init --recursive ${tmp}' failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
-          endif()
+          set(SUBMODULE_WARNINGS "${SUBMODULE_WARNINGS}git submodule not up to date: ${tmp}\n")
+          # message("Executing git submodule update for ${tmp}")
+          # execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive ${tmp}
+          #                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          #                 RESULT_VARIABLE GIT_SUBMOD_RESULT)
+          # if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+          #     message(WARNING "'git submodule update --init --recursive ${tmp}' failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
+          # endif()
         endforeach()
     endif()
 endif()
