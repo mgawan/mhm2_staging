@@ -387,8 +387,8 @@ public:
 
     setup_output_dir();
     setup_log_file();
-
-    init_logger("mhmxx.log", verbose, false);
+    // rank 0 logs to file in main out directory, others log to per_thread files
+    init_logger("mhmxx.log", verbose, upcxx::rank_me() == 0 ? false : true);
 
 #ifdef DEBUG
     open_dbg("debug");

@@ -258,9 +258,10 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
 
 int main(int argc, char **argv) {
   upcxx::init();
+  // we wish to have all ranks start at the same time to determine actual timing
+  barrier();
   auto start_t = chrono::high_resolution_clock::now();
-
-  auto init_start_t = chrono::high_resolution_clock::now();
+  auto init_start_t = start_t;
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
