@@ -239,6 +239,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
+  string pin = "core";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -317,6 +318,9 @@ public:
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
+    app.add_flag("--pin", pin,
+                 "Pin processes to hyperthreads, cores or sockets")
+                 ->capture_default_str()->check(CLI::IsMember({"none", "thread", "core", "socket"}));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
@@ -370,7 +374,7 @@ public:
     if (!*output_dir_opt) {
       string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
       output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
-          to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+                   to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
       output_dir_opt->default_val(output_dir);
     }
 
@@ -387,7 +391,7 @@ public:
 
     setup_output_dir();
     setup_log_file();
-    
+
     barrier();
     auto logger_t = chrono::high_resolution_clock::now();
     // rank 0 logs to file in main out directory, others log to per_thread files
@@ -396,7 +400,7 @@ public:
     barrier();
     chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
     SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
-    
+
 #ifdef DEBUG
     open_dbg("debug");
 #endif
