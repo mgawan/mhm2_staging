@@ -387,9 +387,16 @@ public:
 
     setup_output_dir();
     setup_log_file();
+    
+    barrier();
+    auto logger_t = chrono::high_resolution_clock::now();
     // rank 0 logs to file in main out directory, others log to per_thread files
-    init_logger("mhmxx.log", verbose, upcxx::rank_me() == 0 ? false : true);
-
+    //init_logger("mhmxx.log", verbose, upcxx::rank_me() == 0 ? false : true);
+    if (!upcxx::rank_me()) init_logger("mhmxx.log", verbose, false);
+    barrier();
+    chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
+    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
+    
 #ifdef DEBUG
     open_dbg("debug");
 #endif

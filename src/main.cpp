@@ -268,7 +268,7 @@ int main(int argc, char **argv) {
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   if (pin_thread(getpid(), local_team().rank_me()) == -1) WARN("Could not pin process ", getpid(), " to core ", rank_me());
   else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to core ", local_team().rank_me(), "\n");
-
+  
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
