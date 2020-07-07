@@ -415,23 +415,17 @@ public:
 
     setup_output_dir();
     setup_log_file();
-
-<<<<<<< HEAD
+    
+    auto logger_t = chrono::high_resolution_clock::now();
     if (upcxx::local_team().rank_me() == 0) {
         // open 1 log per node
         // rank0 has mhmxx.log in rundir, all others have logs in per_thread
         init_logger("mhmxx.log", verbose, rank_me());
     }
-=======
-    barrier();
-    auto logger_t = chrono::high_resolution_clock::now();
-    // rank 0 logs to file in main out directory, others log to per_thread files
-    //init_logger("mhmxx.log", verbose, upcxx::rank_me() == 0 ? false : true);
-    if (!upcxx::rank_me()) init_logger("mhmxx.log", verbose, false);
+    
     barrier();
     chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
-    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
->>>>>>> master
+    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");    
 
 #ifdef DEBUG
     open_dbg("debug");
