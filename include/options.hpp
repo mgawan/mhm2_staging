@@ -183,9 +183,19 @@ class Options {
             auto status = std::system(cmd.c_str());
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
             else cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
+                  
+            // ensure per_thread dir exists and has stripe 1
+            string per_thread = output_dir + "/per_thread";
+            mkdir(per_thread.c_str(), S_IRWXU); // ignore any errors
+            cmd = "lfs setstripe -c 1 " + per_thread;
+            status = std::system(cmd.c_str());
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the per_thread output directory\n";
+            else cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
+            mkdir((per_thread+"/00000000").c_str(), S_IRWXU);
           }
         }
       }
+      
     }
     upcxx::barrier();
     // after we change to the output directory, relative paths will be incorrect, so we need to fix them
