@@ -183,7 +183,7 @@ class Options {
             auto status = std::system(cmd.c_str());
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
             else cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
-                  
+
             // ensure per_thread dir exists and has stripe 1
             string per_thread = output_dir + "/per_thread";
             mkdir(per_thread.c_str(), S_IRWXU); // ignore any errors
@@ -195,7 +195,7 @@ class Options {
           }
         }
       }
-      
+
     }
     upcxx::barrier();
     // after we change to the output directory, relative paths will be incorrect, so we need to fix them
@@ -250,7 +250,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
-  string pin = "core";
+  string pin_by = "core";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -332,7 +332,7 @@ public:
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
-    app.add_flag("--pin", pin,
+    app.add_flag("--pin", pin_by,
                  "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
                  ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     app.add_flag("--post-asm-align", post_assm_aln,
@@ -362,7 +362,7 @@ public:
       if (upcxx::rank_me() == 0) app.exit(e);
       return false;
     }
-    
+
     if (!paired_fnames.empty()) {
         // convert pairs to colon ':' separated single files for FastqReader to process
         if (paired_fnames.size() % 2 != 0) SDIE("Did not get pairs of files in -p: ", paired_fnames.size());
@@ -415,17 +415,17 @@ public:
 
     setup_output_dir();
     setup_log_file();
-    
+
     auto logger_t = chrono::high_resolution_clock::now();
     if (upcxx::local_team().rank_me() == 0) {
         // open 1 log per node
         // rank0 has mhmxx.log in rundir, all others have logs in per_thread
         init_logger("mhmxx.log", verbose, rank_me());
     }
-    
+
     barrier();
     chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
-    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");    
+    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
 
 #ifdef DEBUG
     open_dbg("debug");
@@ -462,7 +462,7 @@ public:
     upcxx::barrier();
     return true;
   }
-  
+
   virtual ~Options() {
       cleanup();
   }
