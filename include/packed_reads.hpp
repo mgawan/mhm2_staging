@@ -169,7 +169,7 @@ public:
   }
 
   void load_reads() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     // first estimate the number of records
     size_t tot_bytes_read = 0;
     int64_t num_records = 0;

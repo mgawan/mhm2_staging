@@ -152,7 +152,7 @@ public:
   }
 
   void dump_single_file_alns(const string fname, bool as_sam_format=false, Contigs *ctgs=nullptr) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
 
     string out_str = "";
 
@@ -178,7 +178,7 @@ public:
   }
 
   int calculate_unmerged_rlen() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     // get the unmerged read length - most common read length
     HASH_TABLE<int, int64_t> rlens;
     int64_t sum_rlens = 0;

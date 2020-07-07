@@ -87,7 +87,7 @@ static const double Q2Perror[] = {
 
 static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) {
   // estimate reads in this rank's section of all the files
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
@@ -180,7 +180,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
                  vector<PackedReads*> &packed_reads_list, bool checkpoint) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
 
   int64_t num_ambiguous = 0;
   int64_t num_merged = 0;

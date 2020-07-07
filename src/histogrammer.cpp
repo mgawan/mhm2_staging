@@ -66,7 +66,7 @@ bool bad_alignment(Aln *aln) {
 
 pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expected_ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="") {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   auto unmerged_rlen = alns.calculate_unmerged_rlen();
   ProgressBar progbar(alns.size(), "Processing alignments to compute insert size");
   Aln *prev_aln = nullptr;

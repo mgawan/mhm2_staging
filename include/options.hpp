@@ -250,7 +250,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
-  string pin_by = "core";
+  string pin = "core";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -318,9 +318,6 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
-    app.add_option("--pin", pin_by,
-                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
-                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,
@@ -335,6 +332,9 @@ public:
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
+    app.add_flag("--pin", pin,
+                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
+                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
@@ -398,7 +398,7 @@ public:
     if (!*output_dir_opt) {
       string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
       output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
-          to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+                   to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
       output_dir_opt->default_val(output_dir);
     }
 
@@ -416,11 +416,22 @@ public:
     setup_output_dir();
     setup_log_file();
 
+<<<<<<< HEAD
     if (upcxx::local_team().rank_me() == 0) {
         // open 1 log per node
         // rank0 has mhmxx.log in rundir, all others have logs in per_thread
         init_logger("mhmxx.log", verbose, rank_me());
     }
+=======
+    barrier();
+    auto logger_t = chrono::high_resolution_clock::now();
+    // rank 0 logs to file in main out directory, others log to per_thread files
+    //init_logger("mhmxx.log", verbose, upcxx::rank_me() == 0 ? false : true);
+    if (!upcxx::rank_me()) init_logger("mhmxx.log", verbose, false);
+    barrier();
+    chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
+    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
+>>>>>>> master
 
 #ifdef DEBUG
     open_dbg("debug");
