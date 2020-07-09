@@ -60,10 +60,8 @@
 #include "alignments.hpp"
 #include "packed_reads.hpp"
 
-//#define DUMP_ALNS
-#ifdef DUMP_ALNS
-#include "zstr.hpp"
-#endif
+
+//#define CHAIN_RGET
 
 using namespace std;
 using namespace upcxx;
@@ -124,9 +122,6 @@ class KmerCtgDHT {
 
   FlatAggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
 
-#ifdef DUMP_ALNS
-  zstr::ofstream *alns_file;
-#endif
   int64_t num_alns;
   int64_t num_perfect_alns;
   int64_t num_overlaps;
@@ -138,8 +133,15 @@ class KmerCtgDHT {
   // default aligner and filter
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
-
   SSWScoring ssw_scoring;
+
+  vector<Aln> gpu_alns;
+  vector<string> ref_seqs;
+  vector<string> query_seqs;
+
+  int64_t max_clen, min_clen;
+  int64_t max_rlen, min_rlen;
+
 
   int get_cigar_length(const string &cigar) {
     // check that cigar string length is the same as the sequence, but only if the sequence is included
@@ -209,57 +211,57 @@ class KmerCtgDHT {
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
                   int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset,
                   int overlap_len, IntermittentTimer &ssw_timer) {
-    Aln aln;
     StripedSmithWaterman::Alignment ssw_aln;
     if (cseq.compare(ctg_extra_offset, overlap_len, rseq, read_extra_offset, overlap_len) == 0) {
       num_perfect_alns++;
-      ssw_aln.ref_begin = read_extra_offset;
-      ssw_aln.ref_end = read_extra_offset + overlap_len - 1;
-      ssw_aln.query_begin = ctg_extra_offset;
-      ssw_aln.query_end = ctg_extra_offset + overlap_len - 1;
-      // every position is a perfect match
-      ssw_aln.sw_score = overlap_len * ssw_scoring.match;
-      ssw_aln.sw_score_next_best = 0;
-      // every position matches
-      ssw_aln.mismatches = 0;
-      ssw_aln.cigar_string = to_string(overlap_len) + "M";
+      rstart += read_extra_offset;
+      int rstop = rstart + overlap_len;
+      cstart += ctg_extra_offset;
+      int cstop = cstart + overlap_len;
+      if (orient == '-') switch_orient(rstart, rstop, rlen);
+      int score1 = overlap_len * ssw_scoring.match;
+      int identity = 100 * score1 / ssw_scoring.match / rlen;
+      Aln aln = {rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, score1, 0, identity, 0};
+      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, to_string(overlap_len) + "M");
+      read_alns.add_aln(aln);
     } else {
+/*
+      max_clen = max((int64_t)cseq.size(), max_clen);
+      min_clen = min((int64_t)cseq.size(), min_clen);
+      max_rlen = max((int64_t)rseq.size(), max_rlen);
+      min_rlen = min((int64_t)rseq.size(), min_rlen);
+      int64_t num_alns = gpu_alns_vec.size() + 1;
+      unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
+      int64_t tot_mem_est = max_clen * num_alns + max_rlen * num_alns + num_alns * sizeof(short) * 4;
+
+      // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
+      // this is also the way it's done in meraligner
+      gpu_alns.push_back({rname, ctg_loc.cid, rstart, 0, rlen, cstart, 0, clen, orient});
+      ref_seqs.push_back(cseq);
+      query_seqs.push_back(rseq);
+
+      if (tot_mem_est >= gpu_mem_avail) {
+        kernel_align_block();
+
+      }
+*/
       // make sure upcxx progress is done before starting alignment
       discharge();
       ssw_timer.start();
-      // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
-      // this is also the way it's done in meraligner
       ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
       ssw_timer.stop();
+
+      int rstop = rstart + ssw_aln.ref_end + 1;
+      rstart = rstart + ssw_aln.ref_begin;
+      int cstop = cstart + ssw_aln.query_end + 1;
+      cstart = cstart + ssw_aln.query_begin;
+      if (orient == '-') switch_orient(rstart, rstop, rlen);
+
+      Aln aln = {rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, ssw_aln.sw_score, ssw_aln.sw_score_next_best,
+                 ssw_aln.mismatches, 100 * ssw_aln.sw_score / ssw_scoring.match / rlen};
+      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+      read_alns.add_aln(aln);
     }
-
-    int rstop = rstart + ssw_aln.ref_end + 1;
-    rstart = rstart + ssw_aln.ref_begin;
-    int cstop = cstart + ssw_aln.query_end + 1;
-    cstart = cstart + ssw_aln.query_begin;
-
-    if (orient == '-') switch_orient(rstart, rstop, rlen);
-
-    aln.read_id = rname;
-    aln.cid = cid;
-    aln.rstart = rstart;
-    aln.rstop = rstop;
-    aln.rlen = rlen;
-    aln.cstart = cstart;
-    aln.cstop = cstop;
-    aln.clen = clen;
-    aln.orient = orient;
-    aln.score1 = ssw_aln.sw_score;
-    aln.score2 = ssw_aln.sw_score_next_best;
-    aln.mismatches = ssw_aln.mismatches;
-    // this is sort of percent identity
-    aln.identity = 100 * aln.score1 / ssw_scoring.match / aln.rlen;
-    if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
-
-#ifdef DUMP_ALNS
-    *alns_file << "MERALIGNER\t" << aln.to_string() << endl;
-#endif
-    read_alns.add_aln(aln);
   }
 
 public:
@@ -277,7 +279,10 @@ public:
     , num_overlaps(0)
     , kmer_len(kmer_len)
     , ctg_seq_bytes_fetched(0)
-    , alns(&alns) {
+    , alns(&alns)
+    , gpu_alns({})
+    , ref_seqs({})
+    , query_seqs({}) {
 
     this->ssw_scoring = ssw_scoring;
     ssw_filter.report_cigar = compute_cigar;
@@ -294,12 +299,6 @@ public:
           _num_dropped_seed_to_ctgs++;
         }
       });
-
-#ifdef DUMP_ALNS
-    string dump_fname = "klign-" + to_string(kmer_len) + ".alns.gz";
-    get_rank_path(dump_fname, rank_me());
-    alns_file = new zstr::ofstream(dump_fname);
-#endif
   }
 
   void clear() {
@@ -311,10 +310,6 @@ public:
 
   ~KmerCtgDHT() {
     clear();
-#ifdef DUMP_ALNS
-    alns_file->close();
-    delete alns_file;
-#endif
   }
 
   intrank_t get_target_rank(Kmer<MAX_K> &kmer) {
@@ -459,7 +454,7 @@ public:
 #ifdef CHAIN_RGET
       // FIXME: this doesn't work at scale on Cori - uses too much memory?
       auto fut = rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len)
-          .then([=, &read_alns, &ssw_timer, &seq_buf]() {
+          .then([=, &read_alns, &ssw_timer]() {
             // fetch_ctg_seqs_timer.stop();
             string ctg_subseq = string(seq_buf, ctg_aln_len);
             delete[] seq_buf;

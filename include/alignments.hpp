@@ -92,7 +92,8 @@ public:
   }
 
   void add_aln(Aln &aln) {
-    // check for duplicate alns first - do this backwards because only the most recent entries could be for this read
+#ifdef DEBUG
+    // check for duplicate alns to this read - do this backwards because only the most recent entries could be for this read
     for (auto it = alns.rbegin(); it != alns.rend(); ++it) {
       // we have no more entries for this read
       if (it->read_id != aln.read_id) break;
@@ -102,6 +103,7 @@ public:
         return;
       }
     }
+#endif
     alns.push_back(aln);
   }
 
