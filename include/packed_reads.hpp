@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -97,6 +97,10 @@ public:
         case 'G': packed_read[i] = 2; break;
         case 'T': packed_read[i] = 3; break;
         case 'N': packed_read[i] = 4; break;
+        case 'U': case 'R': case 'Y': case 'K': case 'M': case 'S': case 'W': case 'B': case 'D': case 'H': case 'V':
+          packed_read[i] = 4; break;
+        default:
+          DIE("Illegal char in comp nucleotide of '", seq[i], "'\n");
       }
       packed_read[i] |= ((unsigned char)std::min(quals[i] - qual_offset, 31) << 3);
     }
@@ -165,7 +169,7 @@ public:
   }
 
   void load_reads() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     // first estimate the number of records
     size_t tot_bytes_read = 0;
     int64_t num_records = 0;
@@ -180,7 +184,7 @@ public:
     int64_t estimated_records = fqr.my_file_size() / bytes_per_record;
     packed_reads.reserve(estimated_records);
     fqr.reset();
-    ProgressBar progbar(fqr.my_file_size(), "Loading merged reads from " + fname + " " + get_size_str(fqr.my_file_size()));
+    ProgressBar progbar(fqr.my_file_size(), "Loading reads from " + fname + " " + get_size_str(fqr.my_file_size()));
     tot_bytes_read = 0;
     while (true) {
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);

@@ -2,22 +2,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -28,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -68,7 +68,7 @@ using namespace upcxx_utils;
 #define DBG_ADD_KMER(...)
 
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_reads = 0;
   int64_t tot_num_reads = 0;
@@ -95,14 +95,14 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
   auto all_num_kmers = reduce_all(num_kmers, op_fast_add).wait();
 
   SLOG_VERBOSE("Processed ", perc_str(all_num_reads, all_tot_num_reads), " reads, and estimated a maximum of ",
-               all_num_kmers * all_tot_num_reads / all_num_reads, " kmers\n");
-  return num_kmers * tot_num_reads / num_reads;
+               all_num_kmers * (all_tot_num_reads / all_num_reads), " kmers\n");
+  return num_reads > 0 ? num_kmers * tot_num_reads / num_reads : 0;
 }
 
 template<int MAX_K>
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                         dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
   // and Q = -10 log10(P)
@@ -195,7 +195,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*>
 // count ctg kmers if using bloom
 template<int MAX_K>
 static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
   vector<Kmer<MAX_K>> kmers;
@@ -225,7 +225,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
 
 template<int MAX_K>
 static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
 #ifdef USE_KMER_DEPTH
@@ -275,7 +275,6 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
                    double &num_kmers_factor, double &error_rate) {
   BarrierTimer timer(__FILEFUNC__, false, true);
-
   _dynamic_min_depth = dynamic_min_depth;
   _dmin_thres = dmin_thres;
 

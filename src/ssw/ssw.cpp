@@ -153,6 +153,8 @@ namespace {
       char op = cigar_int_to_op(al->cigar[i]);
       uint32_t length = cigar_int_to_len(al->cigar[i]);
       if (op == 'M') {
+        /*
+        // This appears to be broken - this should just be a sequence of M's, not a bunch of X's and ='s.
         for (uint32_t j = 0; j < length; ++j) {
           if (*ref != *query) {
             ++mismatch_length;
@@ -179,6 +181,12 @@ namespace {
           ++ref;
           ++query;
         }
+        */
+        query += length;
+        ref += length;
+        CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
+        new_cigar.push_back(al->cigar[i]);
+        new_cigar_string << length << 'M';
       } else if (op == 'I') {
         query += length;
         mismatch_length += length;
@@ -293,10 +301,10 @@ namespace StripedSmithWaterman {
     gap_opening_penalty_ = aligner.gap_opening_penalty_;
     gap_extending_penalty_ = aligner.gap_extending_penalty_;
     ambiguity_penalty_ = aligner.ambiguity_penalty_;
-    
+
     translated_reference_ = nullptr;
     reference_length_ = 0;
-    
+
     score_matrix_size_ = aligner.score_matrix_size_;
     score_matrix_ = new int8_t[score_matrix_size_ * score_matrix_size_];
     memcpy(score_matrix_, aligner.score_matrix_, sizeof(int8_t) * score_matrix_size_ * score_matrix_size_);

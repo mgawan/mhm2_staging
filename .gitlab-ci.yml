@@ -1,0 +1,236 @@
+variables:
+  GIT_STRATEGY: fetch
+  REGISTRY: registry.gitlab.com
+  APPLICATION: mhmxx
+  TEST_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:latest
+  RELEASE_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:$CI_BUILD_REF_NAME
+
+
+stages:
+  - build
+  - validation
+  - accuracy
+
+#
+# cori
+#
+
+Cori:build:
+  stage: build
+  tags:
+    - Cori
+  script:
+    - set -e
+    - set -x
+    - git submodule init
+    - git submodule sync
+    - git submodule update
+    - uname -a
+    - pwd
+    - date
+    - echo "Establishing variables"
+    - export MHMXX_SOURCE=$(pwd)
+    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
+    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHA}
+    - export INSTALL_PREFIX=${SCRATCH}/install
+    - export BUILD_PREFIX=${SCRATCH}/build
+    - export RUN_PREFIX=${SCRATCH}/runs
+    - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
+    - mkdir -p ${BASE}
+    - rm -rf ${SCRATCH}
+    - echo "Cleaning out old installs"
+    - find ${BASE} -maxdepth 1  -name 'mhmxx-*'  -mtime +4 -type d -exec rm -rf '{}' ';' || /bin/true
+    - mkdir -p ${SCRATCH} ${RUN_PREFIX}
+    - lmstat -a -c $INTEL_LICENSE_FILE || /bin/true
+    - echo "Loading KNL modules for upcxx on cori GNU"
+    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - module list
+    - export MHMXX_BUILD=${BUILD_PREFIX}-knl-dbg
+    - mkdir -p ${MHMXX_BUILD}
+    - cd $MHMXX_BUILD
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
+    - make -j 8 install
+    - export MHMXX_BUILD=${BUILD_PREFIX}-knl
+    - mkdir -p ${MHMXX_BUILD}
+    - cd $MHMXX_BUILD
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
+    - make -j 8 install
+    - echo "Loading Haswell modules for upcxx GNU"
+    - source ${MHMXX_SOURCE}/.env-cori-haswell/gnu.sh
+    - module list
+    - export MHMXX_BUILD=${BUILD_PREFIX}-haswell
+    - mkdir -p ${MHMXX_BUILD}
+    - cd $MHMXX_BUILD
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
+    - make -j 8 install
+    - echo "Done building"
+
+Cori:validation:
+  stage: validation
+  tags:
+    - Cori
+  script:
+    - set -e
+    - set -x
+    - uname -a
+    - pwd
+    - date
+    - export GASNET_BACKTRACE=1
+    - echo "Establishing variables"
+    - export MHMXX_SOURCE=$(pwd)
+    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
+    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHA}
+    - export INSTALL_PREFIX=${SCRATCH}/install
+    - export BUILD_PREFIX=${SCRATCH}/build
+    - export RUN_PREFIX=${SCRATCH}/runs
+    - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
+    - echo "Loading KNL modules for upcxx on cori"
+    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - module list
+    - cd $SCRATCH
+    - inst=${INSTALL_PREFIX}-knl
+    - echo "Testing builds on KNL - $inst"
+#    - salloc --job-name="CI-mhmxx-${CI_COMMIT_SHA}" --account=m2865 -C knl --nodes=1  --qos=interactive --time=25:00 /bin/bash -c "echo TODO"
+    - echo "Completed"
+
+Cori:accuracy:
+  stage: accuracy
+  tags:
+    - Cori
+  script:
+    - set -e
+    - set -x
+    - uname -a
+    - pwd
+    - date
+    - export GASNET_BACKTRACE=1
+    - echo "Establishing variables"
+    - export MHMXX_SOURCE=$(pwd)
+    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
+    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHA}
+    - export INSTALL_PREFIX=${SCRATCH}/install
+    - export BUILD_PREFIX=${SCRATCH}/build
+    - export RUN_PREFIX=${SCRATCH}/runs
+    - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
+    - echo "Loading KNL modules for upcxx on cori"
+    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - module list
+    - cd $SCRATCH
+    - echo "Testing accuracy"
+#    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHA}" --account=m2865 -C knl --nodes=2  --qos=debug --time=20:00 --wrap="echo TODO"
+#    - echo "Waiting for knl job $knl_job"
+#    - date
+#    - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
+#    - sacct=$(sacct -j $knl_job)
+#    - echo "$sacct"
+#    - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
+
+
+#
+# hulk
+#
+
+HULK:build:
+  stage: build
+  tags:
+    - HULK
+  script:
+    - set -e
+    - set -x
+    - git submodule init
+    - git submodule sync
+    - git submodule update
+    - BASE=/work/gitlab-ci
+    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-2020.03
+    - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
+    - export HIPMER_DATA=${BASE}/scratch/
+    - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
+    - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
+    - rm -rf ${SCRATCH}
+    - mkdir -p ${SCRATCH}
+    - export MHMXX_SOURCE=$(pwd)
+    - env
+    - uname -a
+    - pwd
+    - find . -type d -ls
+    - date
+    - echo "Purging any old tests"
+    - ls -td ${BASE}/scratch/mhmxx-inst-* | tail -n +8 | xargs  rm -rf '{}' ';' || /bin/true
+    - df -h
+    - echo "Checking for cmake, Berkeley UPC and UPC++"
+    - which cmake && cmake --version
+    - echo "Checking or building upcxx"
+    - which upcxx || ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL
+    - upcxx --version
+    - echo "Building all flavors"
+    - mkdir -p ${SCRATCH}/runs
+    - export GASNET_BACKTRACE=1
+    - export INSTALL_PREFIX=${SCRATCH}
+    - echo "Building debug"
+    - rm -rf $SCRATCH/build
+    - mkdir -p $SCRATCH/build
+    - cd $SCRATCH/build
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
+    - make -j 8 
+    - make install
+    - make clean
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
+    - make -j 8
+    - make install
+    - make clean
+    - cd -
+    - rm -rf $SCRATCH/build
+    - echo "Completed"
+
+    
+
+HULK:validation:
+  stage: validation
+  tags:
+    - HULK
+  script:
+    - set -e
+    - set -x
+    - BASE=/work/gitlab-ci
+    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-2020.03
+    - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
+    - export HIPMER_DATA=${BASE}/scratch/
+    - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
+    - echo "Validating all tests under BASE=$BASE and SCRATCH=$SCRATCH"
+    - env
+    - df -h
+    - uname -a
+    - pwd
+    - date
+    - upcxx --version
+    - inst=${SCRATCH}/mhmxx-dbg/bin
+    - echo "Completed"
+
+HULK:accuracy:
+  stage: accuracy
+  tags:
+    - HULK
+  script:
+    - set -e
+    - set -x
+    - git submodule init
+    - git submodule sync
+    - git submodule update
+    - BASE=/work/gitlab-ci
+    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-2020.03
+    - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
+    - export HIPMER_DATA=${BASE}/scratch/
+    - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
+    - echo "Running accuracy tests under BASE=$BASE and SCRATCH=$SCRATCH"
+    - env
+    - df -h
+    - uname -a
+    - pwd
+    - date
+    - upcxx --version
+    - inst=${SCRATCH}/mhmxx-dbg/bin
+    - echo "Completed"
+
+after_script:
+  - echo "Done"
+

@@ -2,22 +2,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -28,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -70,15 +70,15 @@ struct AlnStats {
   void print() {
     int64_t tot_nalns = reduce_one(nalns, op_fast_add, 0).wait();
     SLOG_VERBOSE(setprecision(2), fixed, "Processed ", tot_nalns, " alignments:\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    unaligned:          ", 
+    SLOG_VERBOSE(setprecision(2), fixed, "    unaligned:          ",
                  perc_str(reduce_one(unaligned, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    containments:       ", 
+    SLOG_VERBOSE(setprecision(2), fixed, "    containments:       ",
                  perc_str(reduce_one(containments, op_fast_add, 0).wait(), tot_nalns), "\n");
     SLOG_VERBOSE(setprecision(2), fixed, "    short alns:         ",
                  perc_str(reduce_one(short_alns, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    circular:           ", 
+    SLOG_VERBOSE(setprecision(2), fixed, "    circular:           ",
                  perc_str(reduce_one(circular, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    bad overlaps:       ", 
+    SLOG_VERBOSE(setprecision(2), fixed, "    bad overlaps:       ",
                  perc_str(reduce_one(bad_overlaps, op_fast_add, 0).wait(), tot_nalns), "\n");
   }
 };
@@ -127,10 +127,10 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
     if (ctg1.start >= ctg2.start && ctg1.stop <= ctg2.stop) return true;
     else return false;
   };
-  
+
   AlnCoords ctg1 = get_aln_coords(aln1);
   AlnCoords ctg2 = get_aln_coords(aln2);
-  
+
   if (is_contained(ctg1, ctg2) || is_contained(ctg2, ctg1)) {
     stats.containments++;
     return false;
@@ -185,7 +185,7 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
 
 
 void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   _graph = graph;
   AlnStats stats = {0};
   IntermittentTimer t_get_alns(__FILENAME__ + string(":") + "get alns splints");

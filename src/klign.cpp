@@ -2,22 +2,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -28,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -139,6 +139,35 @@ class KmerCtgDHT {
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
 
+  SSWScoring ssw_scoring;
+
+  int get_cigar_length(const string &cigar) {
+    // check that cigar string length is the same as the sequence, but only if the sequence is included
+    int base_count = 0;
+    string num = "";
+    for (char c : cigar) {
+      switch (c) {
+        case 'M':
+        case 'S':
+        case '=':
+        case 'X':
+        case 'I':
+          base_count += stoi(num);
+          num = "";
+          break;
+        case 'D':
+          //base_count -= stoi(num);
+          num = "";
+          break;
+        default:
+          if (!isdigit(c)) DIE("Invalid char detected in cigar: '", c, "'");
+          num += c;
+          break;
+      }
+    }
+    return base_count;
+  }
+
   void set_sam_string(Aln &aln, string read_seq, string cigar) {
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
@@ -150,20 +179,31 @@ class KmerCtgDHT {
     }
     aln.sam_string += "Contig" + to_string(aln.cid) + "\t" + to_string(aln.cstart + 1) + "\t";
     uint32_t mapq;
-    // for perfect match, set to same maximum as used by minimap
+    // for perfect match, set to same maximum as used by minimap or bwa
     if (aln.score2 == 0) {
       mapq = 60;
     } else {
-      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2)/(double)aln.score1);
+      mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2) / (double)aln.score1);
       mapq = (uint32_t) (mapq + 4.99);
       mapq = mapq < 254 ? mapq : 254;
     }
     aln.sam_string += to_string(mapq) + "\t";
-    aln.sam_string += cigar + "\t*\t0\t0\t" + read_seq + "\t*\t";
-    aln.sam_string += "AS:i:" + to_string(aln.score1);
-    // FIXME: optional tags used by minimap
-    // NM:i:<x>   edit distance to the reference
-    // many others used but none are standard
+    //aln.sam_string += cigar + "\t*\t0\t0\t" + read_subseq + "\t*\t";
+    // Don't output either the read sequence or quals - that causes the SAM file to bloat up hugely, and that info is already
+    // available in the read files
+    aln.sam_string += cigar + "\t*\t0\t0\t*\t*\t";
+    aln.sam_string += "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches);
+    // for debugging
+    //aln.sam_string += " rstart " + to_string(aln.rstart) + " rstop " + to_string(aln.rstop) + " cstop " + to_string(aln.cstop) +
+    //                  " clen " + to_string(aln.clen) + " alnlen " + to_string(aln.rstop - aln.rstart);
+    /*
+#ifdef DEBUG
+    // only used if we actually include the read seq and quals in the SAM, which we don't
+    int base_count = get_cigar_length(cigar);
+    if (base_count != read_seq.length())
+      DIE("number of bases in cigar != aln rlen, ", base_count, " != ", read_subseq.length(), "\nsam string ", aln.sam_string);
+#endif
+    */
   }
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
@@ -177,10 +217,11 @@ class KmerCtgDHT {
       ssw_aln.ref_end = read_extra_offset + overlap_len - 1;
       ssw_aln.query_begin = ctg_extra_offset;
       ssw_aln.query_end = ctg_extra_offset + overlap_len - 1;
-      // the match score is 1
-      ssw_aln.sw_score = overlap_len;
+      // every position is a perfect match
+      ssw_aln.sw_score = overlap_len * ssw_scoring.match;
       ssw_aln.sw_score_next_best = 0;
       // every position matches
+      ssw_aln.mismatches = 0;
       ssw_aln.cigar_string = to_string(overlap_len) + "M";
     } else {
       // make sure upcxx progress is done before starting alignment
@@ -199,15 +240,6 @@ class KmerCtgDHT {
 
     if (orient == '-') switch_orient(rstart, rstop, rlen);
 
-    // for some reason, on Cori icc this causes an internal compiler error:
-    // internal error: assertion failed at: "shared/cfe/edgcpfe/overload.c", line 9538
-    /*
-    aln = { .read_id = rname, .cid = cid,
-            .rstart = rstart, .rstop = rstop, .rlen = rlen,
-            .cstart = cstart, .cstop = cstop, .clen = clen,
-            .orient = orient, .score1 = ssw_aln.sw_score,
-            .score2 = ssw_aln.sw_score_next_best };
-    */
     aln.read_id = rname;
     aln.cid = cid;
     aln.rstart = rstart;
@@ -219,6 +251,9 @@ class KmerCtgDHT {
     aln.orient = orient;
     aln.score1 = ssw_aln.sw_score;
     aln.score2 = ssw_aln.sw_score_next_best;
+    aln.mismatches = ssw_aln.mismatches;
+    // this is sort of percent identity
+    aln.identity = 100 * aln.score1 / ssw_scoring.match / aln.rlen;
     if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
 
 #ifdef DUMP_ALNS
@@ -244,6 +279,7 @@ public:
     , ctg_seq_bytes_fetched(0)
     , alns(&alns) {
 
+    this->ssw_scoring = ssw_scoring;
     ssw_filter.report_cigar = compute_cigar;
     kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
     kmer_store.set_update_func(
@@ -326,7 +362,7 @@ public:
   }
 
   void flush_add_kmers() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     kmer_store.flush_updates();
   }
 
@@ -348,7 +384,7 @@ public:
 
 #ifdef DEBUG
   void dump_ctg_kmers() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
@@ -378,6 +414,9 @@ public:
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     Alns read_alns;
+#ifdef CHAIN_RGET
+    future<> fchain = make_future();
+#endif
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -415,19 +454,35 @@ public:
       rstart = 0;
 
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
-      string ctg_subseq;
       // fetch only the substring
       char *seq_buf = new char[ctg_aln_len + 1];
+#ifdef CHAIN_RGET
+      // FIXME: this doesn't work at scale on Cori - uses too much memory?
+      auto fut = rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len)
+          .then([=, &read_alns, &ssw_timer, &seq_buf]() {
+            // fetch_ctg_seqs_timer.stop();
+            string ctg_subseq = string(seq_buf, ctg_aln_len);
+            delete[] seq_buf;
+            ctg_seq_bytes_fetched += ctg_aln_len;
+            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
+                       ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
+          });
+      fchain = when_all(fchain, fut);
+#else
       fetch_ctg_seqs_timer.start();
       rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
       fetch_ctg_seqs_timer.stop();
-      ctg_subseq = string(seq_buf, ctg_aln_len);
+      string ctg_subseq = string(seq_buf, ctg_aln_len);
       delete[] seq_buf;
       ctg_seq_bytes_fetched += ctg_aln_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
                  ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
+#endif
       num_alns++;
     }
+#ifdef CHAIN_RGET
+    fchain.wait();
+#endif
     // sort the alns from best score to worst - this could be used in spanner later
     sort(read_alns.begin(), read_alns.end(),
          [](const auto &elem1, const auto &elem2) {
@@ -442,7 +497,7 @@ public:
 
 template<int MAX_K>
 static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, int min_ctg_len) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
   vector<Kmer<MAX_K>> kmers;
@@ -502,15 +557,13 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     auto kmer = elem.first;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
-  //size_t min_kmers = 10000000, max_kmers = 0, num_kmers = 0;
   get_ctgs_timer.start();
   future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
     progress();
-    //min_kmers = min(min_kmers, kmer_lists[i].size());
-    //max_kmers = max(max_kmers, kmer_lists[i].size());
-    //num_kmers += kmer_lists[i].size();
+    // skip targets that have no ctgs - this should reduce communication at scale
+    if (kmer_lists[i].empty()) continue;
     auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
       [&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated ctg location
@@ -570,7 +623,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
 
 template<int MAX_K>
 static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> &packed_reads_list, int seed_space) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   SLOG_VERBOSE("Using a seed space of ", seed_space, "\n");
   int64_t tot_num_kmers = 0;
   int64_t num_reads = 0;
@@ -647,9 +700,10 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
 template<int MAX_K>
 void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
                      Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0) {
-  BarrierTimer timer(__FILEFUNC__, false, true);
+  BarrierTimer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
+  SLOG_VERBOSE("Aligning with seed size of ", kmer_len, "\n");
   // default for normal alignments in the pipeline, but for final alignments, uses minimap2 defaults
   SSWScoring ssw_scoring = { .match = SSW_MATCH_SCORE, .mismatch = SSW_MISMATCH_COST, .gap_opening = SSW_GAP_OPENING_COST,
                              .gap_extending = SSW_GAP_EXTENDING_COST, .ambiguity = SSW_AMBIGUITY_COST };
@@ -667,7 +721,8 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
   do_alignments(kmer_ctg_dht, packed_reads_list, seed_space);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
-  if (alns.get_num_dups()) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
+  auto num_dups = alns.get_num_dups();
+  if (num_dups) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(num_dups, num_alns), "\n");
   barrier();
 }
 

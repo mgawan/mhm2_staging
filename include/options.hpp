@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -183,9 +183,19 @@ class Options {
             auto status = std::system(cmd.c_str());
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the output directory\n";
             else cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
+
+            // ensure per_thread dir exists and has stripe 1
+            string per_thread = output_dir + "/per_thread";
+            mkdir(per_thread.c_str(), S_IRWXU); // ignore any errors
+            cmd = "lfs setstripe -c 1 " + per_thread;
+            status = std::system(cmd.c_str());
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the per_thread output directory\n";
+            else cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
+            mkdir((per_thread+"/00000000").c_str(), S_IRWXU);
           }
         }
       }
+
     }
     upcxx::barrier();
     // after we change to the output directory, relative paths will be incorrect, so we need to fix them
@@ -221,6 +231,7 @@ class Options {
 public:
 
   vector<string> reads_fnames;
+  vector<string> paired_fnames;
   vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
   int max_kmer_len = 0;
   int prev_kmer_len = 0;
@@ -234,7 +245,9 @@ public:
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
+  bool use_kmer_depths = false;
   bool post_assm_aln = false;
+  bool post_assm_abundances = false;
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
@@ -260,7 +273,10 @@ public:
         string(MHMXX_BUILD_DATE);
     CLI::App app(full_version_str);
     app.add_option("-r, --reads", reads_fnames,
-                   "Files containing merged and unmerged reads in FASTQ format (comma separated)")
+                   "Files containing merged and unmerged reads in FASTQ format (comma separated).")
+                   ->delimiter(',') ->check(CLI::ExistingFile);
+    app.add_option("-p, --paired-reads", paired_fnames,
+                   "Pairs of files for the same insert in FASTQ format (comma separated).")
                    ->delimiter(',') ->check(CLI::ExistingFile);
     /*
                    ->check([](const string &s) {
@@ -310,9 +326,6 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
-    app.add_option("--pin", pin_by,
-                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
-                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,
@@ -321,16 +334,25 @@ public:
     app.add_flag("--checkpoint", checkpoint,
                  "Checkpoint after each contig round")
                  ->default_val(checkpoint ? "true" : "false") ->capture_default_str() ->multi_option_policy();
+    app.add_flag("--use-kmer-depths", use_kmer_depths,
+                 "Use kmer depths for scaffolding decisions instead of alignment depths (the default)")
+                 ->capture_default_str();
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
-    app.add_flag("--post-assembly-align", post_assm_aln,
+    app.add_flag("--pin", pin_by,
+                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
+                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
+    app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
+                 ->capture_default_str();
+    app.add_flag("--post-asm-abd", post_assm_abundances,
+                 "Compute and output abundances for final assembly (used by MetaBAT)")
                  ->capture_default_str();
     app.add_flag("--write-gfa", dump_gfa,
                  "Dump scaffolding contig graphs in GFA2 format")
                  ->capture_default_str();
-    app.add_flag("--post-assembly-only", post_assm_only,
+    app.add_flag("--post-asm-only", post_assm_only,
                  "Only run post assembly")
                  ->capture_default_str();
     app.add_flag("--progress", show_progress,
@@ -349,6 +371,16 @@ public:
       return false;
     }
 
+    if (!paired_fnames.empty()) {
+        // convert pairs to colon ':' separated single files for FastqReader to process
+        if (paired_fnames.size() % 2 != 0) SDIE("Did not get pairs of files in -p: ", paired_fnames.size());
+        while (paired_fnames.size() >= 2) {
+            reads_fnames.push_back(paired_fnames[0] + ":" + paired_fnames[1]);
+            paired_fnames.erase(paired_fnames.begin());
+            paired_fnames.erase(paired_fnames.begin());
+        }
+    }
+
     // we can get restart incorrectly set in the config file from restarted runs
     if (*cfg_opt) {
       restart = false;
@@ -362,9 +394,10 @@ public:
       throw std::runtime_error(oss.str());
     }
 
-    if (!upcxx::rank_me() && post_assm_only && (!max_kmer_len || ctgs_fname.empty())) {
+    if (!upcxx::rank_me() && post_assm_only && ctgs_fname.empty()) {
       ostringstream oss;
-      oss << KLRED << "For running only post assembly analysis, require --max-kmer_len and --contigs" << KNORM << endl;
+      oss << KLRED << "For running only post assembly analysis, require --contigs (e.g. pass final_assembly.fasta)" << KNORM
+          << endl;
       throw std::runtime_error(oss.str());
     }
 
@@ -373,7 +406,7 @@ public:
     if (!*output_dir_opt) {
       string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
       output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
-          to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+                   to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
       output_dir_opt->default_val(output_dir);
     }
 
@@ -391,13 +424,22 @@ public:
     setup_output_dir();
     setup_log_file();
 
-    init_logger("mhmxx.log", verbose);
+    auto logger_t = chrono::high_resolution_clock::now();
+    if (upcxx::local_team().rank_me() == 0) {
+        // open 1 log per node
+        // rank0 has mhmxx.log in rundir, all others have logs in per_thread
+        init_logger("mhmxx.log", verbose, rank_me());
+    }
+
+    barrier();
+    chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
+    SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
 
 #ifdef DEBUG
     open_dbg("debug");
 #endif
 
-    SLOG(KLBLUE, "MHMXX version ", full_version_str, KNORM, "\n");
+    SLOG(KLBLUE, full_version_str, KNORM, "\n");
 
     if (restart) get_restart_options();
 
@@ -427,6 +469,17 @@ public:
     }
     upcxx::barrier();
     return true;
+  }
+
+  virtual ~Options() {
+      cleanup();
+  }
+  void cleanup() {
+      // cleanup and close loggers that Options opened in load
+      close_logger();
+#ifdef DEBUG
+      close_dbg();
+#endif
   }
 };
 

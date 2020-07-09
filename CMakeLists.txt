@@ -94,6 +94,26 @@ if(NOT APPLE)
     add_definitions(-D_XOPEN_SOURCE=700)
 endif()
 
+find_package(CpuArch
+    REQUIRED
+    COMPONENTS         
+    OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
+
+LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
+
+foreach(_ARCH ${CpuArch_FEATURES})
+   check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
+   if (HAVE_C_OPT_${_ARCH})
+     message(STATUS "Compiling C with -m${_ARCH} option")
+     string(APPEND CMAKE_C_FLAGS " -m${_ARCH}")
+   endif()
+   check_cxx_compiler_flag(-m${_ARCH} HAVE_CXX_OPT_${_ARCH})
+   if (HAVE_CXX_OPT_${_ARCH})
+     message(STATUS "Compiling CXX with -m${_ARCH} option")
+     string(APPEND CMAKE_CXX_FLAGS " -m${_ARCH}")
+   endif()
+endforeach()
+
 # include all definitions (will be applied to upcxx-utils too)
 include(CMakeDefinitions.txt)
 
@@ -106,7 +126,8 @@ include_directories(include)
 GET_GIT_VERSION(MHMXX)
 
 # add upcxx-utils
-if (NOT UPCXX_UTILS_SUBMODULE) 
+if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/upcxx-utils/CMakeLists.txt")
+  message("Did not find upcxx-utils/CMakeLists.txt")
   if (DEFINED ENV{UPCXX_UTILS_DIR} AND EXISTS $ENV{UPCXX_UTILS_DIR})
     set(CMAKE_MODULE_PATH "$ENV{UPCXX_UTILS_DIR}/cmake;${CMAKE_MODULE_PATH}")
     message(STATUS "Using externally provided upcxx-utils installation: $ENV{UPCXX_UTILS_DIR}")
@@ -115,21 +136,31 @@ if (NOT UPCXX_UTILS_SUBMODULE)
     message(STATUS "No external upcxx-utils package provided")
     message(STATUS "CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
   endif()
-  find_package(UPCXX_UTILS 0.3.0 QUIET)
+  find_package(UPCXX_UTILS 0.3.0 REQUIRED)
 else()
-  message(STATUS "Skipping discovery of upcxx-utils as we are building the submodule")
+  message(STATUS "Using upcxx-utils submodule in source tree")
+  set(UPCXX_UTILS_AS_SUBMODULE TRUE)
 endif()
-if(NOT UPCXX_UTILS_FOUND)
+
+if(UPCXX_UTILS_AS_SUBMODULE OR NOT UPCXX_UTILS_FOUND)
+
   message(STATUS "Did not find an installation of upcxx_utils, including submodule in src/upcxx_utils")
   include_directories(upcxx-utils/include)
   add_subdirectory(upcxx-utils)
-  option(UPCXX_UTILS_SUBMODULE "use the submodule of upcxx_utils, not the install" ON)
+  set(UPCXX_UTILS_FOUND TRUE)
+  set(UPCXX_UTILS_DIR upcxx-utils)
+  add_dependencies(MHMXX_VERSION UPCXX_UTILS_VERSION)
+
 else()
   message(STATUS "Found existing upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
-  set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${UPCXX_UTILS_DIR}")
-  message(STATUS "Appended the UPCXX_UTILS_DIR to the CMAKE_MODULE_PATH: ${CMAKE_MODULE_PATH}")
 endif()
 message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
+
+message(STATUS "finding UPCXX for MHMxx build")
+find_package(UPCXX 2020.3 REQUIRED)
+if(NOT UPCXX_FOUND)
+  message(FATAL_ERROR "UPCXX is required to build and it should have been found in the upcxx-utils submodule under src")
+endif()
 
 # include mateidavid's zstr c++ library
 include_directories("zstr/src")

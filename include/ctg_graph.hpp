@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -55,7 +55,6 @@
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
-
 
 #include "utils.hpp"
 
@@ -192,6 +191,8 @@ struct Vertex {
   cid_t cid;
   int clen;
   double depth;
+  // track depth from alignments
+  double aln_depth;
   // set to true if visited in previous round
   bool visited;
   upcxx::global_ptr<char> seq_gptr;
@@ -211,7 +212,7 @@ struct Vertex {
   int walk_score;
   int walk_rank;
   int walk_i;
-  UPCXX_SERIALIZED_FIELDS(cid, clen, depth, visited, seq_gptr, end5, end3, end5_merged, end3_merged,
+  UPCXX_SERIALIZED_FIELDS(cid, clen, depth, aln_depth, visited, seq_gptr, end5, end3, end5_merged, end3_merged,
 #ifdef TNF_PATH_RESOLUTION
                           tnf,
 #endif
@@ -714,7 +715,7 @@ class CtgGraph {
   }
 
   void print_stats(int min_ctg_print_len, string graph_fname="") {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     auto get_avg_min_max = [](vector<int64_t> &vals) -> string {
       int64_t total = (!vals.size() ? 0 : std::accumulate(vals.begin(), vals.end(), 0));
       int64_t max_val = (!vals.size() ? 0 : *std::max_element(vals.begin(), vals.end()));
@@ -816,12 +817,13 @@ class CtgGraph {
 #endif
 
   void print_gfa2(const string &gfa_fname, int min_ctg_print_len) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     string out_str = "";
     for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
       if (v->clen < min_ctg_print_len) continue;
-      // don't include the sequence, and have a user tag 'd' for depth
-      out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tdp: " + to_string(v->depth) + "\n";
+      // don't include the sequence, and have a user tag 'kd' for kmer depth, and 'ad' for alignment depth
+      out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tkd: " + to_string(v->depth) +
+                 " ad: " + to_string(v->aln_depth) + "\n";
     }
     for (auto edge = get_first_local_edge(); edge != nullptr; edge = get_next_local_edge()) {
       int clen1 = get_vertex_clen(edge->cids.cid1);

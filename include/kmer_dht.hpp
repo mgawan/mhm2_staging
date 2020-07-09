@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -89,8 +89,6 @@ using upcxx::op_fast_add;
 using upcxx::op_fast_max;
 using upcxx::progress;
 using upcxx::global_ptr;
-using upcxx::new_array;
-using upcxx::delete_array;
 
 using namespace upcxx_utils;
 
@@ -242,7 +240,7 @@ public:
     , estimated_error_rate(0.0) {
 
     // main purpose of the timer here is to track memory usage
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
@@ -272,6 +270,7 @@ public:
 
     if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
     else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
+
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
@@ -548,7 +547,7 @@ public:
   }
 
   void reserve_space_and_clear_bloom1() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     // at this point we're done with generating the bloom filters, so we can drop the first bloom filter and
     // allocate the kmer hash table
 
@@ -577,13 +576,13 @@ public:
   }
 
   void flush_updates() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) kmer_store_bloom.flush_updates();
     else kmer_store.flush_updates();
   }
 
   void purge_kmers(int threshold) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     auto num_prior_kmers = get_num_kmers();
     int64_t num_purged = 0;
     for (auto it = kmers->begin(); it != kmers->end(); ) {
@@ -604,7 +603,7 @@ public:
 
   /*
   void purge_fx_kmers() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     auto num_prior_kmers = get_num_kmers();
     int64_t num_purged = 0;
     for (auto it = kmers->begin(); it != kmers->end(); ) {
@@ -622,7 +621,7 @@ public:
   */
 
   void compute_kmer_exts() {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     for (auto &elem : *kmers) {
       auto kmer_counts = &elem.second;
       kmer_counts->left = kmer_counts->get_left_ext();
@@ -635,7 +634,7 @@ public:
   // where L is left extension and R is right extension, one char, either X, F or A, C, G, T
   // where N is the count of the kmer frequency
   void dump_kmers(int k) {
-    BarrierTimer timer(__FILEFUNC__, false, true);
+    BarrierTimer timer(__FILEFUNC__);
     string dump_fname = "kmers-" + to_string(k) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);

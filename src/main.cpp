@@ -2,22 +2,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -28,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -90,6 +90,8 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname="");
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths);
+
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs,
@@ -122,6 +124,8 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
+    // use the max among all ranks
+    my_num_kmers = upcxx::reduce_all(my_num_kmers, upcxx::op_max).wait();
     int delta_k = kmer_len > prev_kmer_len ? kmer_len - prev_kmer_len : kmer_len;
     double error_factor = 1.0 - pow(1.0 - error_rate, (double) delta_k);
     SLOG_VERBOSE("Calculated error_factor from estimated_error_rate=", error_rate, ", delta_k=", delta_k, ": ", error_factor, "\n");
@@ -145,6 +149,9 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, KLIGN_SEED_SPACE);
     stage_timers.alignments->stop();
     barrier();
+#ifdef DEBUG
+    alns.dump_alns("ctg-" + to_string(kmer_len) + ".alns.gz");
+#endif
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
                                                      max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some error in the assembly
@@ -190,6 +197,7 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
   find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, seed_space);
   stage_timers.alignments->stop();
   // always recalculate the insert size because we may need it for resumes of
+  compute_aln_depths("scaff-contigs-" + to_string(scaff_kmer_len), ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
   // Failed runs
   tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
   // insert size should never be larger than this; if it is that signals some
@@ -219,7 +227,7 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
 }
 
 template <int MAX_K>
-void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options, int max_expected_ins_size) {
+void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int max_expected_ins_size) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Post processing", KNORM, "\n\n");
@@ -237,31 +245,38 @@ void post_assembly(int max_kmer_len, Contigs &ctgs, shared_ptr<Options> options,
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(max_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 1, true,
+  find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
                          options->min_ctg_print_len);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
   }
   packed_reads_list.clear();
-  alns.dump_single_file_alns("final_assembly.sam", true);
   calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
-  SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
-       "/final_assembly.sam", KNORM, "\n");
+  if (options->post_assm_aln) {
+    alns.dump_single_file_alns("final_assembly.sam", true, &ctgs);
+    SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
+         "/final_assembly.sam", KNORM, "\n");
+  }
+  if (options->post_assm_abundances) {
+    compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->use_kmer_depths);
+    SLOG(KBLUE, "Contig depths (abundances) can be found at ", options->output_dir, "/final_assembly_depths.txt", KNORM, "\n");
+  }
   SLOG(KBLUE, "_________________________", KNORM, "\n");
 }
 
 int main(int argc, char **argv) {
   upcxx::init();
+  // we wish to have all ranks start at the same time to determine actual timing
+  barrier();
   auto start_t = chrono::high_resolution_clock::now();
-
-  auto init_start_t = chrono::high_resolution_clock::now();
+  auto init_start_t = start_t;
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return 0;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-//#ifndef DEBUG
+#ifndef DEBUG
   // pin ranks to a single core in production
 
   if (options->pin_by == "thread") {
@@ -280,9 +295,9 @@ int main(int argc, char **argv) {
     assert(options->pin_by == "none");
     SLOG_VERBOSE("No process pinning enabled\n");
   }
-  
-//#endif
-  
+
+#endif
+
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
@@ -297,7 +312,7 @@ int main(int argc, char **argv) {
   int max_kmer_len = 0;
   int max_expected_ins_size = 0;
   if (!options->post_assm_only) {
-    MemoryTrackerThread memory_tracker;
+    MemoryTrackerThread memory_tracker("memory_tracker.log");
     memory_tracker.start();
     SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
     vector<PackedReads*> packed_reads_list;
@@ -443,19 +458,17 @@ int main(int argc, char **argv) {
     memory_tracker.stop();
     chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - start_t;
     SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(),
-        " for MHMXX version ", MHMXX_VERSION, "\n");
+        " for ", MHMXX_VERSION, "\n");
   }
   // post processing
-  if (options->post_assm_aln || options->post_assm_only) {
-    if (options->post_assm_only) {
-      if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
-      if (!max_kmer_len) max_kmer_len = options->max_kmer_len;
-    }
-    auto max_k = (max_kmer_len / 32 + 1) * 32;
+  if (options->post_assm_aln || options->post_assm_only || options->post_assm_abundances) {
+    int kmer_len = 33;
+    if (options->post_assm_only && !options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
+    auto max_k = (kmer_len / 32 + 1) * 32;
 
 #define POST_ASSEMBLY(KMER_LEN)                           \
     case KMER_LEN:                                            \
-      post_assembly<KMER_LEN>(max_kmer_len, ctgs, options, max_expected_ins_size); \
+      post_assembly<KMER_LEN>(kmer_len, ctgs, options, max_expected_ins_size); \
       break
 
     switch (max_k) {
@@ -478,6 +491,11 @@ int main(int argc, char **argv) {
     }
   #undef POST_ASSEMBLY
   }
+
+#ifdef DEBUG
+  _dbgstream.flush();
+  while(close_dbg());
+#endif
 
   barrier();
   upcxx::finalize();
