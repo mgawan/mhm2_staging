@@ -144,6 +144,9 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, KLIGN_SEED_SPACE);
     stage_timers.alignments->stop();
     barrier();
+#ifdef DEBUG
+    alns.dump_alns("ctg-" + to_string(kmer_len) + ".alns.gz");
+#endif
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
                                                      max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some error in the assembly
@@ -287,9 +290,9 @@ int main(int argc, char **argv) {
     assert(options->pin_by == "none");
     SLOG_VERBOSE("No process pinning enabled\n");
   }
-  
+
 #endif
-  
+
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
