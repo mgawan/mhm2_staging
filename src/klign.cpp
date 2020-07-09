@@ -237,11 +237,11 @@ class KmerCtgDHT {
       ref_seqs.push_back(cseq);
       query_seqs.push_back(rseq);
 
-      if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
-        DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
-            " alignments\n");
+      //if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
+      //  DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+      //      " alignments\n");
         kernel_align_block(ssw_timer);
-      }
+      //}
     }
   }
 
@@ -474,25 +474,7 @@ public:
   }
 
   void sort_alns() {
-    string rname = "";
-    int64_t start_ri = 0;
-    for (int64_t i = 0; i < alns->size(); i++) {
-      Aln &aln = alns->get_aln(i);
-      if (rname.empty()) {
-        rname = aln.read_id;
-        start_ri = i;
-        continue;
-      }
-      if (rname != aln.read_id) {
-        // sort the alns for the read from best score to worst - this is needed in later stages
-        sort(alns->begin() + start_ri, alns->begin() + i - 1,
-            [](const auto &elem1, const auto &elem2) {
-              return elem1.score1 > elem2.score1;
-            });
-        rname = aln.read_id;
-        start_ri = i;
-      }
-    }
+    alns->sort_alns();
   }
 };
 
