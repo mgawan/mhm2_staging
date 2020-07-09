@@ -229,7 +229,7 @@ class KmerCtgDHT {
       min_rlen = min((int64_t)rseq.size(), min_rlen);
       int64_t num_alns = gpu_alns.size() + 1;
       unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
-      int64_t tot_mem_est = max_clen * num_alns + max_rlen * num_alns + num_alns * sizeof(short) * 4;
+      int64_t tot_mem_est = num_alns * (max_clen + max_rlen + sizeof(short) * 4);
 
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
@@ -237,7 +237,7 @@ class KmerCtgDHT {
       ref_seqs.push_back(cseq);
       query_seqs.push_back(rseq);
 
-      if (tot_mem_est >= gpu_mem_avail) {
+      if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
             " alignments\n");
         kernel_align_block(ssw_timer);
@@ -471,17 +471,28 @@ public:
                  read_extra_offset, overlap_len, ssw_timer);
       num_alns++;
     }
-    /*
-    // FIXME: the alns need to be sorted for the read!
-    // sort the alns from best score to worst - this could be used in spanner later
-    sort(read_alns.begin(), read_alns.end(),
-         [](const auto &elem1, const auto &elem2) {
-           return elem1.score1 > elem2.score1;
-         });
-    for (int i = 0; i < read_alns.size(); i++) {
-      alns->add_aln(read_alns.get_aln(i));
+  }
+
+  void sort_alns() {
+    string rname = "";
+    int64_t start_ri = 0;
+    for (int64_t i = 0; i < alns->size(); i++) {
+      Aln &aln = alns->get_aln(i);
+      if (rname.empty()) {
+        rname = aln.read_id;
+        start_ri = i;
+        continue;
+      }
+      if (rname != aln.read_id) {
+        // sort the alns for the read from best score to worst - this is needed in later stages
+        sort(alns->begin() + start_ri, alns->begin() + i - 1,
+            [](const auto &elem1, const auto &elem2) {
+              return elem1.score1 > elem2.score1;
+            });
+        rname = aln.read_id;
+        start_ri = i;
+      }
     }
-    */
   }
 };
 
@@ -665,8 +676,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
                                        fetch_ctg_seqs_timer, ssw_timer, num_excess_alns_reads);
     // make sure to do any outstanding kernel block alignments
     kmer_ctg_dht.kernel_align_block(ssw_timer);
-    // FIXME: go through all alns and sort those for a single read from highest to lowest score - this could be needed later
-    // - in spanner?
+    kmer_ctg_dht.sort_alns();
     progbar.done();
     barrier();
   }
@@ -716,7 +726,8 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
   do_alignments(kmer_ctg_dht, packed_reads_list, seed_space);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
-  if (alns.get_num_dups()) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
+  auto num_dups = alns.get_num_dups();
+  if (num_dups) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(num_dups, num_alns), "\n");
   barrier();
 }
 
