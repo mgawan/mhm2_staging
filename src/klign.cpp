@@ -61,7 +61,6 @@
 #include "packed_reads.hpp"
 
 
-//#define CHAIN_RGET
 
 using namespace std;
 using namespace upcxx;
@@ -141,7 +140,7 @@ class KmerCtgDHT {
 
   int64_t max_clen, min_clen;
   int64_t max_rlen, min_rlen;
-
+  size_t gpu_mem_avail;
 
   int get_cigar_length(const string &cigar) {
     // check that cigar string length is the same as the sequence, but only if the sequence is included
@@ -208,10 +207,9 @@ class KmerCtgDHT {
     */
   }
 
-  void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen,
-                  int cstart, int clen, char orient, Alns &read_alns, int ctg_extra_offset, int read_extra_offset,
-                  int overlap_len, IntermittentTimer &ssw_timer) {
-    StripedSmithWaterman::Alignment ssw_aln;
+  void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen, int cstart,
+                  int clen, char orient, int ctg_extra_offset, int read_extra_offset, int overlap_len,
+                  IntermittentTimer &ssw_timer) {
     if (cseq.compare(ctg_extra_offset, overlap_len, rseq, read_extra_offset, overlap_len) == 0) {
       num_perfect_alns++;
       rstart += read_extra_offset;
@@ -223,44 +221,27 @@ class KmerCtgDHT {
       int identity = 100 * score1 / ssw_scoring.match / rlen;
       Aln aln = {rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, score1, 0, identity, 0};
       if (ssw_filter.report_cigar) set_sam_string(aln, rseq, to_string(overlap_len) + "M");
-      read_alns.add_aln(aln);
+      alns->add_aln(aln);
     } else {
-/*
       max_clen = max((int64_t)cseq.size(), max_clen);
       min_clen = min((int64_t)cseq.size(), min_clen);
       max_rlen = max((int64_t)rseq.size(), max_rlen);
       min_rlen = min((int64_t)rseq.size(), min_rlen);
-      int64_t num_alns = gpu_alns_vec.size() + 1;
+      int64_t num_alns = gpu_alns.size() + 1;
       unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
       int64_t tot_mem_est = max_clen * num_alns + max_rlen * num_alns + num_alns * sizeof(short) * 4;
 
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
-      gpu_alns.push_back({rname, ctg_loc.cid, rstart, 0, rlen, cstart, 0, clen, orient});
+      gpu_alns.push_back({rname, cid, rstart, 0, rlen, cstart, 0, clen, orient});
       ref_seqs.push_back(cseq);
       query_seqs.push_back(rseq);
 
       if (tot_mem_est >= gpu_mem_avail) {
-        kernel_align_block();
-
+        DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+            " alignments\n");
+        kernel_align_block(ssw_timer);
       }
-*/
-      // make sure upcxx progress is done before starting alignment
-      discharge();
-      ssw_timer.start();
-      ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
-      ssw_timer.stop();
-
-      int rstop = rstart + ssw_aln.ref_end + 1;
-      rstart = rstart + ssw_aln.ref_begin;
-      int cstop = cstart + ssw_aln.query_end + 1;
-      cstart = cstart + ssw_aln.query_begin;
-      if (orient == '-') switch_orient(rstart, rstop, rlen);
-
-      Aln aln = {rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, ssw_aln.sw_score, ssw_aln.sw_score_next_best,
-                 ssw_aln.mismatches, 100 * ssw_aln.sw_score / ssw_scoring.match / rlen};
-      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
-      read_alns.add_aln(aln);
     }
   }
 
@@ -299,6 +280,8 @@ public:
           _num_dropped_seed_to_ctgs++;
         }
       });
+    // FIXME: this is either obtained from the GPU itself, or we use some placeholder for the CPU-only code
+    gpu_mem_avail = 32*1024;
   }
 
   void clear() {
@@ -361,6 +344,37 @@ public:
     kmer_store.flush_updates();
   }
 
+  void kernel_align_block(IntermittentTimer &ssw_timer) {
+    StripedSmithWaterman::Alignment ssw_aln;
+    for (int i = 0; i < gpu_alns.size(); i++) {
+      Aln &aln = gpu_alns[i];
+      string &cseq = ref_seqs[i];
+      string &rseq = query_seqs[i];
+      // make sure upcxx progress is done before starting alignment
+      discharge();
+      ssw_timer.start();
+      ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
+      ssw_timer.stop();
+
+      aln.rstop = aln.rstart + ssw_aln.ref_end + 1;
+      aln.rstart += ssw_aln.ref_begin;
+      aln.cstop = aln.cstart + ssw_aln.query_end + 1;
+      aln.cstart += ssw_aln.query_begin;
+      if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
+      aln.score1 = ssw_aln.sw_score;
+      aln.score2 = ssw_aln.sw_score_next_best;
+      aln.mismatches = ssw_aln.mismatches;
+      aln.identity = 100 * ssw_aln.sw_score / ssw_scoring.match / aln.rlen;
+      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+      alns->add_aln(aln);
+    }
+    gpu_alns.clear();
+    ref_seqs.clear();
+    query_seqs.clear();
+    max_clen = 0;
+    max_rlen = 0;
+  }
+
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
     return rpc(target_rank,
                [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
@@ -408,10 +422,6 @@ public:
                              IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &ssw_timer) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
-    Alns read_alns;
-#ifdef CHAIN_RGET
-    future<> fchain = make_future();
-#endif
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -451,33 +461,18 @@ public:
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
       // fetch only the substring
       char *seq_buf = new char[ctg_aln_len + 1];
-#ifdef CHAIN_RGET
-      // FIXME: this doesn't work at scale on Cori - uses too much memory?
-      auto fut = rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len)
-          .then([=, &read_alns, &ssw_timer]() {
-            // fetch_ctg_seqs_timer.stop();
-            string ctg_subseq = string(seq_buf, ctg_aln_len);
-            delete[] seq_buf;
-            ctg_seq_bytes_fetched += ctg_aln_len;
-            align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
-                       ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
-          });
-      fchain = when_all(fchain, fut);
-#else
       fetch_ctg_seqs_timer.start();
       rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
       fetch_ctg_seqs_timer.stop();
       string ctg_subseq = string(seq_buf, ctg_aln_len);
       delete[] seq_buf;
       ctg_seq_bytes_fetched += ctg_aln_len;
-      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, read_alns,
-                 ctg_extra_offset, read_extra_offset, overlap_len, ssw_timer);
-#endif
+      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, ctg_extra_offset,
+                 read_extra_offset, overlap_len, ssw_timer);
       num_alns++;
     }
-#ifdef CHAIN_RGET
-    fchain.wait();
-#endif
+    /*
+    // FIXME: the alns need to be sorted for the read!
     // sort the alns from best score to worst - this could be used in spanner later
     sort(read_alns.begin(), read_alns.end(),
          [](const auto &elem1, const auto &elem2) {
@@ -486,6 +481,7 @@ public:
     for (int i = 0; i < read_alns.size(); i++) {
       alns->add_aln(read_alns.get_aln(i));
     }
+    */
   }
 };
 
@@ -667,6 +663,10 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
     if (read_records.size())
       num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
                                        fetch_ctg_seqs_timer, ssw_timer, num_excess_alns_reads);
+    // make sure to do any outstanding kernel block alignments
+    kmer_ctg_dht.kernel_align_block(ssw_timer);
+    // FIXME: go through all alns and sort those for a single read from highest to lowest score - this could be needed later
+    // - in spanner?
     progbar.done();
     barrier();
   }
