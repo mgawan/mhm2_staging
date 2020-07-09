@@ -721,7 +721,8 @@ void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list,
   do_alignments(kmer_ctg_dht, packed_reads_list, seed_space);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
-  if (alns.get_num_dups()) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(alns.get_num_dups(), num_alns), "\n");
+  auto num_dups = alns.get_num_dups();
+  if (num_dups) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(num_dups, num_alns), "\n");
   barrier();
 }
 
