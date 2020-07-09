@@ -252,9 +252,9 @@ inline int pin_core() {
     return pin_mask(get_cpu_mask(false));
 }
 
-inline void dump_single_file(const string &fname, const string &out_str) {
+inline void dump_single_file(const string &fname, const string &out_str, bool append = false) {
     auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
-    upcxx_utils::ofstream of(fname);
+    upcxx_utils::dist_ofstream of(fname, world(), append);
     of << out_str;
     of.close();
     SLOG_VERBOSE("Successfully wrote ", get_size_str(fut_tot_bytes_written.wait()), " bytes to ", fname, "\n");

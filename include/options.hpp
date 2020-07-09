@@ -264,7 +264,16 @@ public:
   bool restart = false;
 
   ~Options() {
-    flush_logger();
+      flush_logger();
+      cleanup();
+  }
+
+  void cleanup() {
+      // cleanup and close loggers that Options opened in load
+      close_logger();
+#ifdef DEBUG
+      close_dbg();
+#endif
   }
 
   bool load(int argc, char **argv) {
@@ -471,15 +480,5 @@ public:
     return true;
   }
 
-  virtual ~Options() {
-      cleanup();
-  }
-  void cleanup() {
-      // cleanup and close loggers that Options opened in load
-      close_logger();
-#ifdef DEBUG
-      close_dbg();
-#endif
-  }
 };
 
