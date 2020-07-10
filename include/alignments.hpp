@@ -99,7 +99,6 @@ public:
       if (it->read_id != aln.read_id) break;
       // now check for equality
       if (it->rstart == aln.rstart && it->rstop == aln.rstop && it->cstart == aln.cstart && it->cstop == aln.cstop) {
-        WARN("Duplicate found ", aln.to_string());
         num_dups++;
         return;
       }
@@ -206,12 +205,15 @@ public:
   }
 
   void sort_alns() {
-    return;
     BarrierTimer timer(__FILEFUNC__);
     // sort the alns by name and then for the read from best score to worst - this is needed in later stages
     std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
-      if (elem1.read_id != elem2.read_id) return elem1.read_id > elem2.read_id;
-      return elem1.score1 > elem2.score1;
+      if (elem1.read_id == elem2.read_id) return elem1.score1 > elem2.score1;
+      if (elem1.read_id.length() == elem2.read_id.length()) {
+        auto rlen = elem1.read_id.length();
+        if (elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2) == 0) return (elem1.read_id[rlen - 1] == '1');
+      }
+      return elem1.read_id > elem2.read_id;
     });
   }
 };

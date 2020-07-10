@@ -237,11 +237,11 @@ class KmerCtgDHT {
       ref_seqs.push_back(cseq);
       query_seqs.push_back(rseq);
 
-      //if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
-      //  DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
-      //      " alignments\n");
+      if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
+        DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+            " alignments\n");
         kernel_align_block(ssw_timer);
-      //}
+      }
     }
   }
 
