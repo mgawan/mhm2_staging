@@ -105,9 +105,8 @@ struct KmerCtgLoc {
 // global variables to avoid passing dist objs to rpcs
 static int64_t _num_dropped_seed_to_ctgs = 0;
 
-template<int MAX_K>
+template <int MAX_K>
 class KmerCtgDHT {
-
   struct KmerAndCtgLoc {
     Kmer<MAX_K> kmer;
     CtgLoc ctg_loc;
@@ -119,7 +118,7 @@ class KmerCtgDHT {
   using kmer_map_t = dist_object<HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>>;
   kmer_map_t kmer_map;
 
-  FlatAggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
+  FlatAggrStore<KmerAndCtgLoc, kmer_map_t &> kmer_store;
 
   int64_t num_alns;
   int64_t num_perfect_alns;
@@ -140,7 +139,7 @@ class KmerCtgDHT {
 
   int64_t max_clen, min_clen;
   int64_t max_rlen, min_rlen;
-  size_t gpu_mem_avail;
+  size_t gpu_mem_avail = 0;
 
   int get_cigar_length(const string &cigar) {
     // check that cigar string length is the same as the sequence, but only if the sequence is included
@@ -157,7 +156,7 @@ class KmerCtgDHT {
           num = "";
           break;
         case 'D':
-          //base_count -= stoi(num);
+          // base_count -= stoi(num);
           num = "";
           break;
         default:
@@ -174,7 +173,7 @@ class KmerCtgDHT {
     if (aln.orient == '-') {
       aln.sam_string += "16\t";
       read_seq = revcomp(read_seq);
-      //reverse(read_quals.begin(), read_quals.end());
+      // reverse(read_quals.begin(), read_quals.end());
     } else {
       aln.sam_string += "0\t";
     }
@@ -185,17 +184,17 @@ class KmerCtgDHT {
       mapq = 60;
     } else {
       mapq = -4.343 * log(1 - (double)abs(aln.score1 - aln.score2) / (double)aln.score1);
-      mapq = (uint32_t) (mapq + 4.99);
+      mapq = (uint32_t)(mapq + 4.99);
       mapq = mapq < 254 ? mapq : 254;
     }
     aln.sam_string += to_string(mapq) + "\t";
-    //aln.sam_string += cigar + "\t*\t0\t0\t" + read_subseq + "\t*\t";
+    // aln.sam_string += cigar + "\t*\t0\t0\t" + read_subseq + "\t*\t";
     // Don't output either the read sequence or quals - that causes the SAM file to bloat up hugely, and that info is already
     // available in the read files
     aln.sam_string += cigar + "\t*\t0\t0\t*\t*\t";
     aln.sam_string += "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches);
     // for debugging
-    //aln.sam_string += " rstart " + to_string(aln.rstart) + " rstop " + to_string(aln.rstop) + " cstop " + to_string(aln.cstop) +
+    // aln.sam_string += " rstart " + to_string(aln.rstart) + " rstop " + to_string(aln.rstop) + " cstop " + to_string(aln.cstop) +
     //                  " clen " + to_string(aln.clen) + " alnlen " + to_string(aln.rstop - aln.rstart);
     /*
 #ifdef DEBUG
@@ -245,106 +244,7 @@ class KmerCtgDHT {
     }
   }
 
-public:
-
-  int kmer_len;
-
-  // aligner construction: SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, SSWScoring &ssw_scoring, bool compute_cigar)
-    : kmer_map({})
-    , kmer_store(kmer_map)
-    , ssw_aligner(ssw_scoring.match, ssw_scoring.mismatch, ssw_scoring.gap_opening, ssw_scoring.gap_extending,
-                  ssw_scoring.ambiguity)
-    , num_alns(0)
-    , num_perfect_alns(0)
-    , num_overlaps(0)
-    , kmer_len(kmer_len)
-    , ctg_seq_bytes_fetched(0)
-    , alns(&alns)
-    , gpu_alns({})
-    , ref_seqs({})
-    , query_seqs({}) {
-
-    this->ssw_scoring = ssw_scoring;
-    ssw_filter.report_cigar = compute_cigar;
-    kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
-    kmer_store.set_update_func(
-      [](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
-        CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
-        const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
-        if (it == kmer_map->end()) {
-          kmer_map->insert({kmer_and_ctg_loc.kmer, {false, ctg_loc}});
-        } else {
-          // in this case, we have a conflict, i.e. the kmer maps to multiple contigs
-          it->second.first = true;
-          _num_dropped_seed_to_ctgs++;
-        }
-      });
-    // FIXME: this is either obtained from the GPU itself, or we use some placeholder for the CPU-only code
-    gpu_mem_avail = 32*1024;
-  }
-
-  void clear() {
-    for (auto it = kmer_map->begin(); it != kmer_map->end(); ) {
-      it = kmer_map->erase(it);
-    }
-    kmer_store.clear();
-  }
-
-  ~KmerCtgDHT() {
-    clear();
-  }
-
-  intrank_t get_target_rank(Kmer<MAX_K> &kmer) {
-    return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
-  }
-
-  int64_t get_num_kmers(bool all = false) {
-    if (!all) return reduce_one(kmer_map->size(), op_fast_add, 0).wait();
-    else return reduce_all(kmer_map->size(), op_fast_add).wait();
-  }
-
-  int64_t get_num_perfect_alns(bool all = false) {
-    if (!all) return reduce_one(num_perfect_alns, op_fast_add, 0).wait();
-    else return reduce_all(num_perfect_alns, op_fast_add).wait();
-  }
-
-  int64_t get_num_alns(bool all = false) {
-    if (!all) return reduce_one(num_alns, op_fast_add, 0).wait();
-    else return reduce_all(num_alns, op_fast_add).wait();
-  }
-
-  int64_t get_num_overlaps(bool all = false) {
-    if (!all) return reduce_one(num_overlaps, op_fast_add, 0).wait();
-    else return reduce_all(num_overlaps, op_fast_add).wait();
-  }
-
-  int64_t get_num_dropped_seed_to_ctgs(bool all = false) {
-    if (!all) return reduce_one(_num_dropped_seed_to_ctgs, op_fast_add, 0).wait();
-    else return reduce_all(_num_dropped_seed_to_ctgs, op_fast_add).wait();
-  }
-
-  int64_t get_ctg_seq_bytes_fetched() {
-    return reduce_one(ctg_seq_bytes_fetched, op_fast_add, 0).wait();
-  }
-
-  void add_kmer(Kmer<MAX_K> kmer, CtgLoc &ctg_loc) {
-    Kmer<MAX_K> kmer_rc = kmer.revcomp();
-    ctg_loc.is_rc = false;
-    if (kmer_rc < kmer) {
-      kmer = kmer_rc;
-      ctg_loc.is_rc = true;
-    }
-    KmerAndCtgLoc kmer_and_ctg_loc = { kmer, ctg_loc };
-    kmer_store.update(get_target_rank(kmer), kmer_and_ctg_loc);
-  }
-
-  void flush_add_kmers() {
-    BarrierTimer timer(__FILEFUNC__);
-    kmer_store.flush_updates();
-  }
-
-  void kernel_align_block(IntermittentTimer &ssw_timer) {
+  void ssw_align_block(IntermittentTimer &ssw_timer) {
     StripedSmithWaterman::Alignment ssw_aln;
     for (int i = 0; i < gpu_alns.size(); i++) {
       Aln &aln = gpu_alns[i];
@@ -368,6 +268,107 @@ public:
       if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
       alns->add_aln(aln);
     }
+  }
+
+ public:
+  int kmer_len;
+
+  // aligner construction: SSW internal defaults are 2 2 3 1
+  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, SSWScoring &ssw_scoring, bool compute_cigar)
+      : kmer_map({})
+      , kmer_store(kmer_map)
+      , ssw_aligner(ssw_scoring.match, ssw_scoring.mismatch, ssw_scoring.gap_opening, ssw_scoring.gap_extending,
+                    ssw_scoring.ambiguity)
+      , num_alns(0)
+      , num_perfect_alns(0)
+      , num_overlaps(0)
+      , kmer_len(kmer_len)
+      , ctg_seq_bytes_fetched(0)
+      , alns(&alns)
+      , gpu_alns({})
+      , ref_seqs({})
+      , query_seqs({}) {
+    this->ssw_scoring = ssw_scoring;
+    ssw_filter.report_cigar = compute_cigar;
+    kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
+    kmer_store.set_update_func([](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
+      CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
+      const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
+      if (it == kmer_map->end()) {
+        kmer_map->insert({kmer_and_ctg_loc.kmer, {false, ctg_loc}});
+      } else {
+        // in this case, we have a conflict, i.e. the kmer maps to multiple contigs
+        it->second.first = true;
+        _num_dropped_seed_to_ctgs++;
+      }
+    });
+#ifdef ENABLE_GPUS
+    gpu_mem_avail = get_avail_gpu_mem(local_team().rank_n());
+#else
+    // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
+    gpu_mem_avail = 32 * 1024;
+#endif
+  }
+
+  void clear() {
+    for (auto it = kmer_map->begin(); it != kmer_map->end();) {
+      it = kmer_map->erase(it);
+    }
+    kmer_store.clear();
+  }
+
+  ~KmerCtgDHT() { clear(); }
+
+  intrank_t get_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
+
+  int64_t get_num_kmers(bool all = false) {
+    if (!all) return reduce_one(kmer_map->size(), op_fast_add, 0).wait();
+    return reduce_all(kmer_map->size(), op_fast_add).wait();
+  }
+
+  int64_t get_num_perfect_alns(bool all = false) {
+    if (!all) return reduce_one(num_perfect_alns, op_fast_add, 0).wait();
+    return reduce_all(num_perfect_alns, op_fast_add).wait();
+  }
+
+  int64_t get_num_alns(bool all = false) {
+    if (!all) return reduce_one(num_alns, op_fast_add, 0).wait();
+    return reduce_all(num_alns, op_fast_add).wait();
+  }
+
+  int64_t get_num_overlaps(bool all = false) {
+    if (!all) return reduce_one(num_overlaps, op_fast_add, 0).wait();
+    return reduce_all(num_overlaps, op_fast_add).wait();
+  }
+
+  int64_t get_num_dropped_seed_to_ctgs(bool all = false) {
+    if (!all) return reduce_one(_num_dropped_seed_to_ctgs, op_fast_add, 0).wait();
+    return reduce_all(_num_dropped_seed_to_ctgs, op_fast_add).wait();
+  }
+
+  int64_t get_ctg_seq_bytes_fetched() { return reduce_one(ctg_seq_bytes_fetched, op_fast_add, 0).wait(); }
+
+  void add_kmer(Kmer<MAX_K> kmer, CtgLoc &ctg_loc) {
+    Kmer<MAX_K> kmer_rc = kmer.revcomp();
+    ctg_loc.is_rc = false;
+    if (kmer_rc < kmer) {
+      kmer = kmer_rc;
+      ctg_loc.is_rc = true;
+    }
+    KmerAndCtgLoc kmer_and_ctg_loc = {kmer, ctg_loc};
+    kmer_store.update(get_target_rank(kmer), kmer_and_ctg_loc);
+  }
+
+  void flush_add_kmers() {
+    BarrierTimer timer(__FILEFUNC__);
+    kmer_store.flush_updates();
+  }
+
+  void kernel_align_block(IntermittentTimer &ssw_timer) {
+#ifdef ENABLE_GPUS
+#else
+    ssw_align_block(ssw_timer);
+#endif
     gpu_alns.clear();
     ref_seqs.clear();
     query_seqs.clear();
@@ -376,19 +377,21 @@ public:
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
-    return rpc(target_rank,
-               [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
-                 vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
-                 for (auto &kmer : kmers) {
-                   const auto it = kmer_map->find(kmer);
-                   if (it == kmer_map->end()) continue;
-                   // skip conflicts
-                   if (it->second.first) continue;
-                   // now add it
-                   kmer_ctg_locs.push_back({kmer, it->second.second});
-                 }
-                 return kmer_ctg_locs;
-               }, kmers, kmer_map);
+    return rpc(
+        target_rank,
+        [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
+          vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
+          for (auto &kmer : kmers) {
+            const auto it = kmer_map->find(kmer);
+            if (it == kmer_map->end()) continue;
+            // skip conflicts
+            if (it->second.first) continue;
+            // now add it
+            kmer_ctg_locs.push_back({kmer, it->second.second});
+          }
+          return kmer_ctg_locs;
+        },
+        kmers, kmer_map);
   }
 
 #ifdef DEBUG
@@ -473,11 +476,8 @@ public:
     }
   }
 
-  void sort_alns() {
-    alns->sort_alns();
-  }
+  void sort_alns() { alns->sort_alns(); }
 };
-
 
 template<int MAX_K>
 static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, int min_ctg_len) {
