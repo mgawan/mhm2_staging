@@ -142,7 +142,7 @@ public:
     return Kmer::k;
   }
 
-  static void get_kmers(int kmer_len, std::string seq, std::vector<Kmer> &kmers) {
+  static void get_kmers(unsigned kmer_len, std::string seq, std::vector<Kmer> &kmers) {
     // only need rank 0 to check
     assert(Kmer::k > 0);
     assert(kmer_len == Kmer::k);

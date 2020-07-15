@@ -452,7 +452,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
         it = mers_ht.find(mer);
       }
       int ext_pos = start + mer_len;
-      assert(ext_pos < read_seq.seq.length());
+      assert(ext_pos < (int) read_seq.seq.length());
       char ext = read_seq.seq[ext_pos];
       if (ext == 'N') continue;
       int qual = read_seq.quals[ext_pos] - qual_offset;
