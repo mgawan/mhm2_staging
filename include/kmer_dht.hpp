@@ -215,9 +215,9 @@ class KmerDHT {
   ThreeTierAggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
   ThreeTierAggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
   int64_t max_kmer_store_bytes;
-  int max_rpcs_in_flight;
   int64_t initial_kmer_dht_reservation;
   int64_t my_num_kmers;
+  int max_rpcs_in_flight;
   int64_t bloom1_cardinality;
   double estimated_error_rate;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;

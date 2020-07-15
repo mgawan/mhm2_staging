@@ -71,9 +71,9 @@ struct CtgBaseDepths {
 
 class CtgsDepths {
  private:
-  int edge_base_len;
   using ctgs_depths_map_t = upcxx::dist_object<HASH_TABLE<int64_t, CtgBaseDepths>>;
   ctgs_depths_map_t ctgs_depths;
+  int edge_base_len;
   HASH_TABLE<int64_t, CtgBaseDepths>::iterator ctgs_depths_iter;
 
   size_t get_target_rank(int64_t cid) {
@@ -142,13 +142,13 @@ class CtgsDepths {
                  if (it == ctgs_depths->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto ctg_base_depths = &it->second;
                  double avg_depth = 0;
-                 for (int i = edge_base_len; i < ctg_base_depths->base_counts.size() - edge_base_len; i++) {
+                 for (int i = edge_base_len; i < (int) ctg_base_depths->base_counts.size() - edge_base_len; i++) {
                    avg_depth += ctg_base_depths->base_counts[i];
                  }
                  size_t clen = ctg_base_depths->base_counts.size() - 2 * edge_base_len;
                  avg_depth /= clen;
                  double sum_sqs = 0;
-                 for (int i = edge_base_len; i < ctg_base_depths->base_counts.size() - edge_base_len; i++) {
+                 for (int i = edge_base_len; i < (int) ctg_base_depths->base_counts.size() - edge_base_len; i++) {
                    sum_sqs += pow((double)ctg_base_depths->base_counts[i] - avg_depth, 2.0);
                  }
                  double var_depth = sum_sqs / clen;
@@ -237,7 +237,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   // FIXME: the depths need to be in the same order as the contigs in the final_assembly.fasta file. This is an inefficient
   // way of ensuring that
   for (auto &ctg : ctgs) {
-    if (ctg.seq.length() < min_ctg_len) continue;
+    if ((int) ctg.seq.length() < min_ctg_len) continue;
     auto [avg_depth, var_depth] = ctgs_depths.get_depth(ctg.id);
     ostringstream oss;
     oss << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth << "\n";

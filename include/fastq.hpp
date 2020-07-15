@@ -68,18 +68,18 @@ using namespace upcxx_utils;
 
 
 class FastqReader {
+  string fname;
   FILE *f;
   off_t file_size;
   int64_t start_read;
   int64_t end_read;
-  string fname;
-  int max_read_len;
+  unsigned max_read_len;
   char buf[BUF_SIZE + 1];
   int qual_offset;
   shared_ptr<FastqReader> fqr2;
   bool first_file;
-
   IntermittentTimer io_t;
+  
   inline static double overall_io_t = 0;
 
   static void rtrim(string &s) {
@@ -99,8 +99,8 @@ class FastqReader {
     //header = std::regex_replace(header, std::regex("\\s+$"), std::string(""));
     rtrim(header);
     // convert if new illumina 2 format  or HudsonAlpha format
-    int len = header.length();
-    if (header[len - 2] != '/') {
+    unsigned len = header.length();
+    if (len >= 3 && header[len - 2] != '/') {
       if (header[len - 2] == 'R') {
         // HudsonAlpha format  (@pair-R1,  @pair-R2)
         // replace with @pair/1 or @pair/2 */
@@ -314,7 +314,7 @@ public:
   }
 
   int get_max_read_len() {
-    return max(max_read_len, fqr2 ? fqr2->get_max_read_len() : 0);
+    return max(max_read_len, fqr2 ? fqr2->get_max_read_len() : 0u);
   }
 
   double static get_io_time() {

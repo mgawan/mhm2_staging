@@ -90,7 +90,7 @@ public:
     // set next five bits to represent quality (from 0 to 32). This doesn't cover the full quality range (only up to 32)
     // but it's all we need since once quality is greater than the qual_thres (20), we treat the base as high quality
     packed_read = new unsigned char [seq.length()];
-    for (int i = 0; i < seq.length(); i++) {
+    for (unsigned i = 0; i < seq.length(); i++) {
       switch (seq[i]) {
         case 'A': packed_read[i] = 0; break;
         case 'C': packed_read[i] = 1; break;
@@ -130,14 +130,18 @@ class PackedReads {
   vector<std::unique_ptr<PackedRead>> packed_reads;
   // this is only used when we need to know the actual name of the original reads
   vector<string> read_id_idx_to_str;
+  unsigned max_read_len;
+  uint64_t index = 0;
+  unsigned qual_offset;
   string fname;
-  int max_read_len;
-  int64_t index = 0;
-  int qual_offset;
   bool str_ids;
 
 public:
-  PackedReads(int qual_offset, const string &fname, bool str_ids=false): qual_offset(qual_offset), fname(fname), str_ids(str_ids) {}
+  PackedReads(int qual_offset, const string &fname, bool str_ids=false)
+          : qual_offset(qual_offset)
+          , fname(fname)
+          , str_ids(str_ids) 
+          {}
 
   bool get_next_read(string &id, string &seq, string &quals) {
     if (index == packed_reads.size()) return false;

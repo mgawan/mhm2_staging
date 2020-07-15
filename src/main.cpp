@@ -111,7 +111,7 @@ static StageTimers stage_timers = {
 };
 
 template<int MAX_K>
-void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_reads_list, Contigs &ctgs, double &num_kmers_factor,
+void contigging(unsigned kmer_len, unsigned prev_kmer_len, vector<PackedReads*> packed_reads_list, Contigs &ctgs, double &num_kmers_factor,
                 double &error_rate, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
@@ -178,10 +178,10 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
 }
 
 template <int MAX_K>
-void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs, int &max_expected_ins_size,
+void scaffolding(unsigned scaff_i, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs, int &max_expected_ins_size,
                  int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
-  int scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
+  unsigned scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
   bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
@@ -342,7 +342,7 @@ int main(int argc, char **argv) {
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
         get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
-    int prev_kmer_len = options->prev_kmer_len;
+    unsigned prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3.0; // initial estimate assumes average 3x coverage
     double error_rate = 0.02; // initial estimate of 2% of the bases are not accurate
     int ins_avg = 0;
@@ -390,7 +390,7 @@ int main(int argc, char **argv) {
         else max_kmer_len = options->scaff_kmer_lens.front();
       }
       if (options->dump_gfa) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
-      for (int i = 0; i < options->scaff_kmer_lens.size(); ++i) {
+      for (unsigned i = 0; i < options->scaff_kmer_lens.size(); ++i) {
         auto scaff_kmer_len = options->scaff_kmer_lens[i];
         auto max_k = (scaff_kmer_len / 32 + 1) * 32;
 

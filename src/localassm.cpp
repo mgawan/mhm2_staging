@@ -272,7 +272,7 @@ struct MerFreqs {
 
 using MerMap = HASH_TABLE<string, MerFreqs>;
 
-static void process_reads(int kmer_len, vector<PackedReads*> &packed_reads_list, ReadsToCtgsDHT &reads_to_ctgs,
+static void process_reads(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, ReadsToCtgsDHT &reads_to_ctgs,
                           CtgsWithReadsDHT &ctgs_dht) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_reads = 0;
@@ -327,7 +327,7 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
   string start_read_id = "";
   int best_aln_score = 0;
   best_aln.read_id = "";
-  for (; i < alns.size(); i++) {
+  for (; i < (int64_t) alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
@@ -373,7 +373,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
   int64_t aln_i = 0;
   AlnStatus start_status, end_status;
   ProgressBar progbar(alns.size(), "Getting read-to-contig mappings from alignments");
-  while (aln_i < alns.size()) {
+  while (aln_i < (int64_t) alns.size()) {
     progress();
     Aln aln;
     t_get_alns.start();
@@ -440,7 +440,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
       break;
     }
     progress();
-    if (mer_len >= read_seq.seq.length()) continue;
+    if (mer_len >= (int) read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
       // skip mers that contain Ns
@@ -526,7 +526,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
     char walk_result = walk_mers(mers_ht, mer, walk, mer_len, walk_len_limit);
     walk_mers_timer.stop();
     int walk_len = walk.length();
-    if (walk_len > longest_walk.length()) longest_walk = walk;
+    if (walk_len > (int) longest_walk.length()) longest_walk = walk;
     if (walk_result == 'X') {
       term_counts[0]++;
       // walk reaches a dead-end, downshift, unless we were upshifting
@@ -537,7 +537,7 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
       else term_counts[2]++;
       // otherwise walk must end with a fork or repeat, so upshift
       if (shift == -LASSM_SHIFT_SIZE) break;
-      if (mer_len > seq.length()) break;
+      if (mer_len > (int) seq.length()) break;
       shift = LASSM_SHIFT_SIZE;
     }
   }

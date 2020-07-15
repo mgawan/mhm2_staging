@@ -356,7 +356,7 @@ class CtgGraph {
 
   shared_ptr<Vertex> get_vertex(cid_t cid) {
     size_t target_rank = get_vertex_target_rank(cid);
-    if (target_rank == upcxx::rank_me()) {
+    if (target_rank == (size_t) upcxx::rank_me()) {
       upcxx::progress();
       const auto it = vertices->find(cid);
       if (it == vertices->end()) return nullptr;
@@ -494,7 +494,7 @@ class CtgGraph {
     CidPair cids = { .cid1 = cid1, .cid2 = cid2 };
     if (cid1 < cid2) std::swap(cids.cid1, cids.cid2);
     size_t target_rank = get_edge_target_rank(cids);
-    if (target_rank == upcxx::rank_me()) {
+    if (target_rank == (size_t) upcxx::rank_me()) {
       upcxx::progress();
       const auto it = edges->find(cids);
       if (it == edges->end()) return nullptr;

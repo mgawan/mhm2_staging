@@ -242,7 +242,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
       // use start_i to offset inequal lengths which can be very different but still overlap near the end.  250 vs 178..
       int16_t len = (rc_seq2.length() < seq1.length()) ? rc_seq2.length() : seq1.length();
-      int16_t start_i = ((len == seq1.length()) ? 0 : seq1.length() - len);
+      int16_t start_i = ((len == (int16_t) seq1.length()) ? 0 : seq1.length() - len);
       int16_t found_i = -1;
       int16_t best_i = -1;
       int16_t best_mm = len;

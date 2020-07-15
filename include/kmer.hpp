@@ -158,7 +158,7 @@ public:
     memset(buf, 0, bufsize * 8);
     const char *s = seq.c_str();
     // calculate binary along entire sequence
-    for (int i = 0; i < seq.size(); ++i) {
+    for (unsigned i = 0; i < seq.size(); ++i) {
       int j = i % 32;
       int l = i / 32;
       assert(*s != '\0');
@@ -187,7 +187,7 @@ public:
         }
       }
       // enumerate the kmers in the phase
-      for (int i = shift; i < kmers.size(); i += 4) {
+      for (unsigned i = shift; i < kmers.size(); i += 4) {
         int byteOffset = i / 4;
         assert(byteOffset + N_LONGS * 8 <= bufsize * 8);
         for (int l = 0; l < N_LONGS; l++) {

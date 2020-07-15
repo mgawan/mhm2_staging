@@ -78,17 +78,22 @@ inline size_t estimate_hashtable_memory(size_t num_elements, size_t element_size
     HASH_TABLE<char,char> tmp;
     double max_load_factor = tmp.max_load_factor();
     
+    // apply the load factor
+    size_t expanded_num_elements = num_elements / max_load_factor + 1;
+    
     // get the next power of two
-    --num_elements;
-    num_elements |= num_elements >> 1;
-    num_elements |= num_elements >> 2;
-    num_elements |= num_elements >> 4;
-    num_elements |= num_elements >> 8;
-    num_elements |= num_elements >> 16;
-    num_elements |= num_elements >> 32;
-    ++num_elements;
+    --expanded_num_elements;
+    expanded_num_elements |= expanded_num_elements >> 1;
+    expanded_num_elements |= expanded_num_elements >> 2;
+    expanded_num_elements |= expanded_num_elements >> 4;
+    expanded_num_elements |= expanded_num_elements >> 8;
+    expanded_num_elements |= expanded_num_elements >> 16;
+    expanded_num_elements |= expanded_num_elements >> 32;
+    ++expanded_num_elements;
 
-    return (num_elements / max_load_factor + 1) * element_size;
+    size_t num_buckets = expanded_num_elements * max_load_factor; 
+    
+    return expanded_num_elements * element_size + num_buckets * 8;
 }
 
 inline string revcomp(const string &seq) {
@@ -155,7 +160,7 @@ inline void switch_orient(int &start, int &stop, int &len) {
 inline int pin_clear() {
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
-  for (int i = 0; i < sizeof(cpu_set_t) * 8; i++) {
+  for (unsigned i = 0; i < sizeof(cpu_set_t) * 8; i++) {
     CPU_SET(i, &cpu_set);
   }
   if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
@@ -221,7 +226,7 @@ inline cpu_set_size_t get_cpu_mask(bool bySocket = true) {
   cpu_set_t *cpu_set_p = CPU_ALLOC(num_cpus);
   if (cpu_set_p == NULL) return ret;
   CPU_ZERO_S(size, cpu_set_p);
-  for (int i = 0; i < cpu2socket.size(); i++) {
+  for (unsigned i = 0; i < cpu2socket.size(); i++) {
     if ((bySocket ? cpu2socket[i] : cpu2core[i]) == (bySocket ? sockets[my_id] : cores[my_id])) {
       CPU_SET_S(i, size, cpu_set_p);
     }

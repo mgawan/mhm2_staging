@@ -60,7 +60,7 @@ get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
 link_directories(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
 message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -Wno-catch-value")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)

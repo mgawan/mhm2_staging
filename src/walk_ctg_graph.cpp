@@ -161,7 +161,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
     shared_ptr<Vertex> prev_v(nullptr);
     Contig ctg = {0};
     ctg.depth = walk.depth;
-    for (int i = 0; i < walk.vertices.size(); i++) {
+    for (size_t i = 0; i < walk.vertices.size(); i++) {
       bool break_scaffold = false;
       bool break_for_Ns = false;
       auto v = _graph->get_vertex(walk.vertices[i].first);
@@ -225,15 +225,15 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
           if (!break_scaffold) ctg.seq += gap_seq + seq;
         } else if (edge->gap < 0) {
           int gap_excess = -edge->gap;
-          if (gap_excess > ctg.seq.size() || gap_excess > seq.size()) gap_excess = min(ctg.seq.size(), seq.size()) - 5;
+          if (gap_excess > (int) ctg.seq.size() || gap_excess > (int) seq.size()) gap_excess = min(ctg.seq.size(), seq.size()) - 5;
           // FIXME: this should be a full SSW alignment check to deal with indels
           if (ctg.seq.compare(ctg.seq.length() - gap_excess, gap_excess, seq, 0, gap_excess) == 0) {
             DBG_WALK("perfect neg overlap ", gap_excess, "\n");
             ctg.seq += tail(seq, seq.size() - gap_excess);
           } else {
             int max_overlap = max(gap_excess + 20, max_kmer_len + 2);
-            if (max_overlap > ctg.seq.size()) max_overlap = ctg.seq.size();
-            if (max_overlap > seq.size()) max_overlap = seq.size();
+            if (max_overlap > (int) ctg.seq.size()) max_overlap = ctg.seq.size();
+            if (max_overlap > (int) seq.size()) max_overlap = seq.size();
             StripedSmithWaterman::Alignment ssw_aln;
             // make sure upcxx progress is done before starting alignment
             discharge();
@@ -428,7 +428,7 @@ static vector<shared_ptr<Vertex>> search_for_next_nbs(int max_kmer_len, int kmer
   HASH_TABLE<cid_t, int> candidates;
   bool bulge = false;
   // candidate first search from each of the neighbors (branches)
-  for (int i = 0; i < nb_vertices.size(); i++) {
+  for (size_t i = 0; i < nb_vertices.size(); i++) {
     auto nb = nb_vertices[i];
     auto edge = nb_edges[i];
     cid_t candidate = -1;
@@ -556,7 +556,7 @@ static vector<Walk> do_walks(int max_kmer_len, int kmer_len, vector<pair<cid_t, 
   };
 
   auto get_start_vertex = [&](vector<pair<cid_t, int32_t> > &sorted_ctgs, int64_t *ctg_pos) -> shared_ptr<Vertex> {
-    while (*ctg_pos < sorted_ctgs.size()) {
+    while (*ctg_pos < (int64_t) sorted_ctgs.size()) {
       auto v = _graph->get_local_vertex(sorted_ctgs[*ctg_pos].first);
       (*ctg_pos)++;
       if (!v->visited) return v;
@@ -737,7 +737,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
         v->walk_score = 0;
       }
       barrier();
-      for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
+      for (size_t walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
         auto walk = &tmp_walks[walk_i];
         // resolve conflict in favor of longest walk - this marks the walk the vertex belongs to
         for (auto &w : walk->vertices) _graph->update_vertex_walk(w.first, walk->len, walk_i);
@@ -747,7 +747,7 @@ void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff
       barrier();
       int num_walks_added = 0;
       // now drop all walks where any vertex's rank does not match this rank
-      for (int walk_i = 0; walk_i < tmp_walks.size(); walk_i++) {
+      for (int walk_i = 0; walk_i < (int) tmp_walks.size(); walk_i++) {
         auto walk = &tmp_walks[walk_i];
         bool add_walk = true;
         for (auto &w : walk->vertices) {

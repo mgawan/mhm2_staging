@@ -151,7 +151,7 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*>
       size_t found_N_pos = seq.find_first_of('N');
       if (found_N_pos == string::npos) found_N_pos = seq.length();
       else num_Ns++;
-      for (int i = 1; i < kmers.size() - 1; i++) {
+      for (int i = 1; i < (int) kmers.size() - 1; i++) {
         // skip kmers that contain an N
         if (i + kmer_len > found_N_pos) {
           i = found_N_pos; // skip
@@ -207,7 +207,7 @@ static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDH
       Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
-      for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
+      for (int i = 1; i < (int) (ctg->seq.length() - kmer_len); i++) {
         kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], 1);
       }
       num_kmers += kmers.size();
@@ -242,7 +242,7 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
       Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
-      for (int i = 1; i < ctg->seq.length() - kmer_len; i++) {
+      for (int i = 1; i < (int) (ctg->seq.length() - kmer_len); i++) {
         uint16_t depth = ctg->depth;
 #ifdef USE_KMER_DEPTHS
         uint16_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);

@@ -72,7 +72,7 @@ struct FragElem {
   global_ptr<FragElem> left_gptr, right_gptr;
   bool left_is_rc, right_is_rc;
   global_ptr<char> frag_seq;
-  int frag_len;
+  unsigned frag_len;
   int64_t sum_depths;
   bool visited;
 

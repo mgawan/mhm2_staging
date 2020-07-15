@@ -133,13 +133,13 @@ class KmerCtgDHT {
 
   int64_t ctg_seq_bytes_fetched;
 
-  Alns *alns;
-
   // default aligner and filter
   StripedSmithWaterman::Aligner ssw_aligner;
   StripedSmithWaterman::Filter ssw_filter;
 
   SSWScoring ssw_scoring;
+
+  Alns *alns;
 
   int get_cigar_length(const string &cigar) {
     // check that cigar string length is the same as the sequence, but only if the sequence is included
@@ -264,20 +264,21 @@ class KmerCtgDHT {
 
 public:
 
-  int kmer_len;
+  unsigned kmer_len;
 
   // aligner construction: SSW internal defaults are 2 2 3 1
   KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, SSWScoring &ssw_scoring, bool compute_cigar)
     : kmer_map({})
     , kmer_store(kmer_map)
-    , ssw_aligner(ssw_scoring.match, ssw_scoring.mismatch, ssw_scoring.gap_opening, ssw_scoring.gap_extending,
-                  ssw_scoring.ambiguity)
     , num_alns(0)
     , num_perfect_alns(0)
     , num_overlaps(0)
-    , kmer_len(kmer_len)
     , ctg_seq_bytes_fetched(0)
-    , alns(&alns) {
+    , ssw_aligner(ssw_scoring.match, ssw_scoring.mismatch, ssw_scoring.gap_opening, ssw_scoring.gap_extending,
+                  ssw_scoring.ambiguity)
+    , alns(&alns)
+    , kmer_len(kmer_len)
+    {
 
     this->ssw_scoring = ssw_scoring;
     ssw_filter.report_cigar = compute_cigar;
@@ -488,7 +489,7 @@ public:
          [](const auto &elem1, const auto &elem2) {
            return elem1.score1 > elem2.score1;
          });
-    for (int i = 0; i < read_alns.size(); i++) {
+    for (size_t i = 0; i < read_alns.size(); i++) {
       alns->add_aln(read_alns.get_aln(i));
     }
   }
@@ -496,7 +497,7 @@ public:
 
 
 template<int MAX_K>
-static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, int min_ctg_len) {
+static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, unsigned min_ctg_len) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
@@ -510,7 +511,7 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
     CtgLoc ctg_loc = { .cid = ctg->id, .seq_gptr = seq_gptr, .clen = (int)ctg->seq.length() };
     Kmer<MAX_K>::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq, kmers);
     num_kmers += kmers.size();
-    for (int i = 0; i < kmers.size(); i++) {
+    for (unsigned i = 0; i < kmers.size(); i++) {
       ctg_loc.pos_in_ctg = i;
       kmer_ctg_dht.add_kmer(kmers[i], ctg_loc);
       progress();
@@ -651,7 +652,7 @@ static void do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> 
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
       bool filled = false;
-      for (int i = 0; i < kmers.size(); i += seed_space) {
+      for (int i = 0; i < (int) kmers.size(); i += seed_space) {
         Kmer<MAX_K> kmer = kmers[i];
         Kmer<MAX_K> kmer_rc = kmer.revcomp();
         bool is_rc = false;
