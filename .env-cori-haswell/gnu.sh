@@ -1,4 +1,6 @@
+module load craype
 module rm upcxx
+module rm upcxx-gpu
 module rm PrgEnv-cray
 module rm PrgEnv-intel
 module load PrgEnv-gnu
