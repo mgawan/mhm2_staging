@@ -1,5 +1,4 @@
-#ifndef ALIGNMENTS_HPP
-#define ALIGNMENTS_HPP
+#pragma once
 
 class gpu_alignments{
     public:
@@ -15,5 +14,3 @@ class gpu_alignments{
     ~gpu_alignments();
 };
 
-
-#endif
