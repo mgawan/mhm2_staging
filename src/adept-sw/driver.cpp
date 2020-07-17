@@ -86,7 +86,7 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
         short* alAbeg = alignments->ref_begin + my_cpu_id * alignmentsPerDevice;
         short* alBbeg = alignments->query_begin + my_cpu_id * alignmentsPerDevice;
         short* alAend = alignments->ref_end + my_cpu_id * alignmentsPerDevice;
-        short* alBend = alignments->query_begin + my_cpu_id * alignmentsPerDevice;  // memory on CPU for copying the results
+        short* alBend = alignments->query_end + my_cpu_id * alignmentsPerDevice;  // memory on CPU for copying the results
         short* top_scores_cpu = alignments->top_scores + my_cpu_id * alignmentsPerDevice;
         unsigned* offsetA_h;// = new unsigned[stringsPerIt + leftOvers];
         cudaMallocHost(&offsetA_h, sizeof(int)*(stringsPerIt + leftOvers));

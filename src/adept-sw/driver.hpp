@@ -1,6 +1,4 @@
-#ifndef DRIVER_HPP
-#define DRIVER_HPP
-
+#pragma once
 
 #include <chrono>
 #include <cmath>
@@ -40,4 +38,4 @@ verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g
 }
 
 long long int gpuMemAvail(int totRanks);
-#endif
+

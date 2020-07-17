@@ -1,7 +1,9 @@
-#ifndef UTILS_HPP
-#define UTILS_HPP
+#pragma once
+
+//#include <cuda_runtime_api.h>
+
 #include "driver.hpp"
-#include "alignments.hpp"
+#include "gpu_alns.hpp"
 #define cudaErrchk(ans)                                                                  \
 {                                                                                    \
     gpuAssert((ans), __FILE__, __LINE__);                                            \
@@ -24,4 +26,3 @@ void asynch_mem_copies_htd(gpu_alignments* gpu_data, unsigned* offsetA_h, unsign
 int get_new_min_length(short* alAend, short* alBend, int blocksLaunched);
 void asynch_mem_copies_dth_mid(gpu_alignments* gpu_data, short* alAend, short* alBend, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda);
 void asynch_mem_copies_dth(gpu_alignments* gpu_data, short* alAbeg, short* alBbeg, short* top_scores_cpu, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda);
-#endif

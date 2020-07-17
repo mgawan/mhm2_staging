@@ -42,6 +42,7 @@
 # refer to the root source directory of the project as ${MHMXX_SOURCE_DIR} and
 # to the root binary directory of the project as ${MHMXX_BINARY_DIR}
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+#project(MHMxx LANGUAGE C CXX CUDA)
 project(MHMxx)
 #----------------------------------------------------------------------------------------#
 #   project specification
@@ -161,8 +162,15 @@ if(NOT UPCXX_FOUND)
   message(FATAL_ERROR "UPCXX is required to build and it should have been found in the upcxx-utils submodule under src")
 endif()
 
+include(CheckLanguage)
+check_language(CUDA)
+if (CMAKE_CUDA_COMPILER)
+  enable_language(CUDA)
+endif()
+
+
 # include mateidavid's zstr c++ library
-include_directories("zstr/src")
+#include_directories("zstr/src")
 
 add_subdirectory(src)
 
