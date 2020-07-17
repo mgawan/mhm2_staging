@@ -141,7 +141,7 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
 
             auto start_cpu = NOW;
 
-            for(int i = 0; i < sequencesA.size(); i++)
+            for(int i = 0; i < (int)sequencesA.size(); i++)
             {
                 running_sum +=sequencesA[i].size();
                 offsetA_h[i] = running_sum;//sequencesA[i].size();
@@ -153,7 +153,7 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
             unsigned totalLengthA = half_length_A + offsetA_h[sequencesA.size() - 1];
 
             running_sum = 0;
-            for(int i = 0; i < sequencesB.size(); i++)
+            for(int i = 0; i < (int)sequencesB.size(); i++)
             {
                 running_sum +=sequencesB[i].size();
                 offsetB_h[i] = running_sum; //sequencesB[i].size();
@@ -171,7 +171,7 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
             unsigned offsetSumA = 0;
             unsigned offsetSumB = 0;
 
-            for(int i = 0; i < sequencesA.size(); i++)
+            for(int i = 0; i < (int)sequencesA.size(); i++)
             {
                 char* seqptrA = strA + offsetSumA;
                 memcpy(seqptrA, sequencesA[i].c_str(), sequencesA[i].size());
@@ -370,7 +370,7 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
 
             auto start_cpu = NOW;
 
-            for(int i = 0; i < sequencesA.size(); i++)
+            for(int i = 0; i < (int)sequencesA.size(); i++)
             {
                 running_sum +=sequencesA[i].size();
                 offsetA_h[i] = running_sum;//sequencesA[i].size();
@@ -382,7 +382,7 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
             unsigned totalLengthA = half_length_A + offsetA_h[sequencesA.size() - 1];
 
             running_sum = 0;
-            for(int i = 0; i < sequencesB.size(); i++)
+            for(int i = 0; i < (int)sequencesB.size(); i++)
             {
                 running_sum +=sequencesB[i].size();
                 offsetB_h[i] = running_sum; //sequencesB[i].size();
@@ -400,7 +400,7 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
             unsigned offsetSumA = 0;
             unsigned offsetSumB = 0;
 
-            for(int i = 0; i < sequencesA.size(); i++)
+            for(int i = 0; i < (int)sequencesA.size(); i++)
             {
                 char* seqptrA = strA + offsetSumA;
                 memcpy(seqptrA, sequencesA[i].c_str(), sequencesA[i].size());
