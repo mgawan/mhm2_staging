@@ -263,6 +263,6 @@ inline void dump_single_file(const string &fname, const string &out_str, bool ap
     of << out_str;
     of.close();
     SLOG_VERBOSE("Successfully wrote ", get_size_str(fut_tot_bytes_written.wait()), " bytes to ", fname, "\n");
-    assert(of.get_last_known_tellp() == fut_tot_bytes_written.wait());
+    assert(rank_me() || of.get_last_known_tellp() == fut_tot_bytes_written.wait());
 }
 
