@@ -304,6 +304,7 @@ class KmerCtgDHT {
     });
 #ifdef ENABLE_GPUS
     gpu_mem_avail = get_avail_gpu_mem(local_team().rank_n());
+    SLOG("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
 #else
     // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
     gpu_mem_avail = 32 * 1024;
@@ -366,6 +367,8 @@ class KmerCtgDHT {
 
   void kernel_align_block(IntermittentTimer &ssw_timer) {
 #ifdef ENABLE_GPUS
+    // FIXME: call the GPU routine
+    ssw_align_block(ssw_timer);
 #else
     ssw_align_block(ssw_timer);
 #endif
