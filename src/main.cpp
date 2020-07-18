@@ -456,7 +456,7 @@ int main(int argc, char **argv) {
     SLOG("    ", stage_timers.analyze_kmers->get_final(), "\n");
     SLOG("    ", stage_timers.dbjg_traversal->get_final(), "\n");
     SLOG("    ", stage_timers.alignments->get_final(), "\n");
-    SLOG("    ", stage_timers.kernel_alns->get_final(), "\n");
+    SLOG("      -> ", stage_timers.kernel_alns->get_final(), "\n");
     SLOG("    ", stage_timers.localassm->get_final(), "\n");
     SLOG("    ", stage_timers.cgraph->get_final(), "\n");
     SLOG("    FASTQ total read time: ", FastqReader::get_io_time(), "\n");

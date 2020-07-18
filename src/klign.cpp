@@ -134,9 +134,9 @@ class KmerCtgDHT {
   StripedSmithWaterman::Filter ssw_filter;
   SSWScoring ssw_scoring;
 
-  vector<Aln> gpu_alns;
-  vector<string> ref_seqs;
-  vector<string> query_seqs;
+  vector<Aln> kernel_alns;
+  vector<string> ctg_seqs;
+  vector<string> read_seqs;
 
   int64_t max_clen = 0;
   int64_t max_rlen = 0;
@@ -225,20 +225,20 @@ class KmerCtgDHT {
     } else {
       max_clen = max((int64_t)cseq.size(), max_clen);
       max_rlen = max((int64_t)rseq.size(), max_rlen);
-      int64_t num_alns = gpu_alns.size() + 1;
+      int64_t num_alns = kernel_alns.size() + 1;
       unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
       int64_t tot_mem_est = num_alns * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
 
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
-      gpu_alns.push_back({rname, cid, rstart, 0, rlen, cstart, 0, clen, orient});
-      ref_seqs.push_back(cseq);
-      query_seqs.push_back(rseq);
+      kernel_alns.push_back({rname, cid, rstart, 0, rlen, cstart, 0, clen, orient});
+      ctg_seqs.push_back(cseq);
+      read_seqs.push_back(rseq);
 
-      if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
-        DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+      if (tot_mem_est >= gpu_mem_avail && kernel_alns.size()) {
+        DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
-        SLOG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+        SLOG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
              " alignments\n");
         kernel_align_block(aln_kernel_timer);
       }
@@ -247,13 +247,14 @@ class KmerCtgDHT {
 
   void ssw_align_block(IntermittentTimer &aln_kernel_timer) {
     StripedSmithWaterman::Alignment ssw_aln;
-    for (int i = 0; i < gpu_alns.size(); i++) {
-      Aln &aln = gpu_alns[i];
-      string &cseq = ref_seqs[i];
-      string &rseq = query_seqs[i];
+    for (int i = 0; i < kernel_alns.size(); i++) {
+      Aln &aln = kernel_alns[i];
+      string &cseq = ctg_seqs[i];
+      string &rseq = read_seqs[i];
       // make sure upcxx progress is done before starting alignment
       discharge();
       aln_kernel_timer.start();
+      // align query, ref, reflen
       ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
       aln_kernel_timer.stop();
 
@@ -277,15 +278,16 @@ class KmerCtgDHT {
                       (short)ssw_scoring.gap_extending};
     discharge();
     aln_kernel_timer.start();
-    gpu_bsw_driver::kernel_driver_dna(query_seqs, ref_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail, rank_me());
+    // align query_seqs, ref_seqs, max_query_size, max_ref_size
+    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail, rank_me());
     aln_kernel_timer.stop();
     
-    for (int i = 0; i < gpu_alns.size(); i++) {
-      Aln &aln = gpu_alns[i];
-      aln.rstop = aln.rstart + sw_results.ref_end[i] + 1;
-      aln.rstart += sw_results.ref_begin[i];
-      aln.cstop = aln.cstart + sw_results.query_end[i] + 1;
-      aln.cstart += sw_results.query_begin[i];
+    for (int i = 0; i < kernel_alns.size(); i++) {
+      Aln &aln = kernel_alns[i];
+      aln.rstop = aln.rstart + sw_results.query_end[i] + 1;
+      aln.rstart += sw_results.query_begin[i];
+      aln.cstop = aln.cstart + sw_results.ref_end[i] + 1;
+      aln.cstart += sw_results.ref_begin[i];
       if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
       aln.score1 = sw_results.top_scores[i];
       // FIXME: needs to be set to the second best
@@ -315,9 +317,9 @@ class KmerCtgDHT {
       , kmer_len(kmer_len)
       , ctg_seq_bytes_fetched(0)
       , alns(&alns)
-      , gpu_alns({})
-      , ref_seqs({})
-      , query_seqs({}) {
+      , kernel_alns({})
+      , ctg_seqs({})
+      , read_seqs({}) {
     this->ssw_scoring = ssw_scoring;
     ssw_filter.report_cigar = compute_cigar;
     kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
@@ -398,17 +400,17 @@ class KmerCtgDHT {
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
-    //int64_t tot_mem_est = gpu_alns.size() * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
+    //int64_t tot_mem_est = kernel_alns.size() * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
     //SLOG("outstanding alignments: tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ",
-    //gpu_alns.size(), " alignments\n");
-    //gpu_align_block(aln_kernel_timer);
-    ssw_align_block(aln_kernel_timer);
+    //kernel_alns.size(), " alignments\n");
+    gpu_align_block(aln_kernel_timer);
+    //ssw_align_block(aln_kernel_timer);
 #else
     ssw_align_block(aln_kernel_timer);
 #endif
-    gpu_alns.clear();
-    ref_seqs.clear();
-    query_seqs.clear();
+    kernel_alns.clear();
+    ctg_seqs.clear();
+    read_seqs.clear();
     max_clen = 0;
     max_rlen = 0;
   }
@@ -722,7 +724,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
   get_ctgs_timer.done_all();
   fetch_ctg_seqs_timer.done_all();
   compute_alns_timer.done_all();
-  double aln_kernel_secs = aln_kernel_timer.get_interval();
+  double aln_kernel_secs = aln_kernel_timer.get_elapsed();
   aln_kernel_timer.done_all();
   return aln_kernel_secs;
 }
@@ -754,6 +756,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
   auto num_dups = alns.get_num_dups();
   if (num_dups) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(num_dups, num_alns), "\n");
   barrier();
+  alns.dump_alns("alns-" + to_string(kmer_len) + ".txt.gz");
   return kernel_elapsed;
 }
 
