@@ -138,8 +138,8 @@ class KmerCtgDHT {
   vector<string> ref_seqs;
   vector<string> query_seqs;
 
-  int64_t max_clen, min_clen;
-  int64_t max_rlen, min_rlen;
+  int64_t max_clen = 0;
+  int64_t max_rlen = 0;
   size_t gpu_mem_avail = 0;
 
   int get_cigar_length(const string &cigar) {
@@ -224,9 +224,7 @@ class KmerCtgDHT {
       alns->add_aln(aln);
     } else {
       max_clen = max((int64_t)cseq.size(), max_clen);
-      min_clen = min((int64_t)cseq.size(), min_clen);
       max_rlen = max((int64_t)rseq.size(), max_rlen);
-      min_rlen = min((int64_t)rseq.size(), min_rlen);
       int64_t num_alns = gpu_alns.size() + 1;
       unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
       int64_t tot_mem_est = num_alns * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
@@ -240,8 +238,8 @@ class KmerCtgDHT {
       if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
             " alignments\n");
-        //WARN("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
-        //     " alignments\n");
+        SLOG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+             " alignments\n");
         kernel_align_block(ssw_timer);
       }
     }
@@ -400,8 +398,9 @@ class KmerCtgDHT {
 
   void kernel_align_block(IntermittentTimer &ssw_timer) {
 #ifdef ENABLE_GPUS
-    // FIXME: call the GPU routine
-    //ssw_align_block(ssw_timer);
+    //int64_t tot_mem_est = gpu_alns.size() * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
+    //SLOG("outstanding alignments: tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ",
+    //     gpu_alns.size(), " alignments\n");
     gpu_align_block(ssw_timer);
 #else
     ssw_align_block(ssw_timer);
