@@ -10,8 +10,6 @@
 
 #define NOW std::chrono::high_resolution_clock::now()
 
-
-
 namespace gpu_bsw_driver{
 
 // for storing the alignment results
@@ -35,9 +33,9 @@ kernel_driver_aa(std::vector<std::string> reads, std::vector<std::string> contig
 void
 verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g_alAend,
                  short* g_alBend);
-}
 
 size_t get_tot_gpu_mem();
 size_t get_avail_gpu_mem_per_rank(int totRanks);
 int get_num_node_gpus();
 
+}

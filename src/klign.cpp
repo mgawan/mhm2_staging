@@ -229,7 +229,7 @@ class KmerCtgDHT {
       min_rlen = min((int64_t)rseq.size(), min_rlen);
       int64_t num_alns = gpu_alns.size() + 1;
       unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
-      int64_t tot_mem_est = num_alns * (max_clen + max_rlen + sizeof(short) * 4);
+      int64_t tot_mem_est = num_alns * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
 
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
@@ -240,6 +240,8 @@ class KmerCtgDHT {
       if (tot_mem_est >= gpu_mem_avail && gpu_alns.size()) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
             " alignments\n");
+        //WARN("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", gpu_alns.size(),
+        //     " alignments\n");
         kernel_align_block(ssw_timer);
       }
     }
@@ -269,6 +271,35 @@ class KmerCtgDHT {
       if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
       alns->add_aln(aln);
     }
+  }
+
+  void gpu_align_block(IntermittentTimer &ssw_timer) {
+    gpu_bsw_driver::alignment_results sw_results;
+    short scores[] = {(short)ssw_scoring.match, (short)ssw_scoring.mismatch, (short)ssw_scoring.gap_opening,
+                      (short)ssw_scoring.gap_extending};
+    discharge();
+    ssw_timer.start();
+    gpu_bsw_driver::kernel_driver_dna(query_seqs, ref_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail, rank_me());
+    ssw_timer.start();
+    
+    for (int i = 0; i < gpu_alns.size(); i++) {
+      Aln &aln = gpu_alns[i];
+      aln.rstop = aln.rstart + sw_results.ref_end[i] + 1;
+      aln.rstart += sw_results.ref_begin[i];
+      aln.cstop = aln.cstart + sw_results.query_end[i] + 1;
+      aln.cstart += sw_results.query_begin[i];
+      if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
+      aln.score1 = sw_results.top_scores[i];
+      // FIXME: needs to be set to the second best
+      aln.score2 = 0;
+      // FIXME: need to get the mismatches
+      aln.mismatches = 0;//ssw_aln.mismatches;
+      aln.identity = 100 * aln.score1 / ssw_scoring.match / aln.rlen;
+      // FIXME: need to get cigar
+      //if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+      alns->add_aln(aln);
+    }
+    gpu_bsw_driver::free_alignments(&sw_results);
   }
 
  public:
@@ -304,9 +335,9 @@ class KmerCtgDHT {
       }
     });
 #ifdef ENABLE_GPUS
-    gpu_mem_avail = get_avail_gpu_mem_per_rank(local_team().rank_n());
+    gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
     if (!gpu_mem_avail) SDIE("No GPU memory available! Something went wrong...");
-    SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), " ", gpu_mem_avail, "\n");
+    SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
 #else
     // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
     gpu_mem_avail = 32 * 1024;
@@ -370,7 +401,8 @@ class KmerCtgDHT {
   void kernel_align_block(IntermittentTimer &ssw_timer) {
 #ifdef ENABLE_GPUS
     // FIXME: call the GPU routine
-    ssw_align_block(ssw_timer);
+    //ssw_align_block(ssw_timer);
+    gpu_align_block(ssw_timer);
 #else
     ssw_align_block(ssw_timer);
 #endif

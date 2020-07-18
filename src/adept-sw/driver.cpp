@@ -10,7 +10,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/scan.h>
 
-size_t get_avail_gpu_mem_per_rank(int totRanks) {
+size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks) {
   int deviceCount = 0;
   cudaErrchk(cudaGetDeviceCount(&deviceCount));
   int ranksPerDevice = totRanks / deviceCount;
@@ -19,7 +19,7 @@ size_t get_avail_gpu_mem_per_rank(int totRanks) {
   return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
 }
 
-size_t get_tot_gpu_mem() {
+size_t gpu_bsw_driver::get_tot_gpu_mem() {
   int deviceCount = 0;
   cudaErrchk(cudaGetDeviceCount(&deviceCount));
   cudaDeviceProp prop;
@@ -27,7 +27,7 @@ size_t get_tot_gpu_mem() {
   return prop.totalGlobalMem;
 }
 
-int get_num_node_gpus() {
+int gpu_bsw_driver::get_num_node_gpus() {
   int deviceCount = 0;
   cudaErrchk(cudaGetDeviceCount(&deviceCount));
   return deviceCount;
