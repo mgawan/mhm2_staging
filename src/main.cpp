@@ -63,6 +63,10 @@ using namespace std;
 #include "alignments.hpp"
 #include "kmer_dht.hpp"
 
+#ifdef ENABLE_GPUS
+#include "adept-sw/driver.hpp"
+#endif
+
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
@@ -301,6 +305,8 @@ int main(int argc, char **argv) {
     }
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
+    if (ENABLE_GPUS)
+      SLOG("Using ", get_num_node_gpus(), " GPUs on node 0, with ", get_size_str(get_tot_gpu_mem()), " available memory\n");
   }
 
   Contigs ctgs;

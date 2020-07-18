@@ -64,12 +64,16 @@ endforeach()
 
 add_definitions(-DALL_DEFNS=\"${all_defs}\")
 
+if(ENABLE_CUDA)
+    add_definitions(-DENABLE_GPUS)
+endif()
+
 # include ssw library
 include_directories("ssw")
 add_subdirectory(ssw)
 
-include_directories("adept-sw")
 if(ENABLE_CUDA)
+    include_directories("adept-sw")
     add_subdirectory(adept-sw)
 endif()
 
@@ -77,7 +81,9 @@ add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp
     walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp aln_depths.cpp)
 
+
 if(ENABLE_CUDA)
+    set_property(TARGET mhmxx PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     target_link_libraries(mhmxx
         Threads::Threads
         SSW_LIBRARY
@@ -86,6 +92,7 @@ if(ENABLE_CUDA)
         ${UPCXX_UTILS_LIBRARIES}
         MHMXX_VERSION_LIB
         ADEPT_SW_LIBRARY)
+    install(TARGETS ADEPT_SW_LIBRARY LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 else()
     target_link_libraries(mhmxx
         Threads::Threads
@@ -98,4 +105,3 @@ endif()
 
 install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
-install(TARGETS mhmxx EXPORT ADEPT_SW_LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)

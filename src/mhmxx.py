@@ -54,7 +54,7 @@ import threading
 import io
 import string
 import multiprocessing
-
+import collections
 
 SIGNAMES = ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGKILL', 'SIGUSR1',
             'SIGSEGV', 'SIGUSR2', 'SIGPIPE', 'SIGALRM', 'SIGTERM', 'SIGSTKFLT', 'SIGCHLD', 'SIGCONT', 'SIGSTOP', 'SIGTSTP',
@@ -308,8 +308,9 @@ def capture_err(err_msgs):
         # filter out all but warnings
         # errors causing crashes will come to light later
         if 'WARNING' in line:
-            sys.stderr.write(line)
-            sys.stderr.flush()
+            if 'GASNet was configured without multi-rail support' not in line:
+                sys.stderr.write(line)
+                sys.stderr.flush()
         # FIXME: check for messages about memory failures
         if 'UPC++ could not allocate' in line:
             print_red('ERROR: UPC++ memory allocation failure')
@@ -375,6 +376,16 @@ def main():
     print("Executed as:" + " ".join(sys.argv))
     print("Setting GASNET_COLL_SCRATCH_SIZE=4M")
     runenv = dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M")
+
+    mhmxx_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
+    if not (os.path.exists(mhmxx_lib_path)):
+        die("Cannot find mhmxx lib install in '", mhmxx_lib_path, "'")
+
+    if which('nvcc'):
+        # FIXME: this ugly hack is because we need to load a shared library on Cori GPU nodes,
+        # which can't be done with the craype environment. Not needed anywhere else :(
+        runenv['LD_LIBRARY_PATH'] = mhmxx_lib_path + ':/usr/lib64/slurmpmi/'
+        print('Setting LD_LIBRARY_PATH=' + runenv['LD_LIBRARY_PATH'])
 
     restating = False
     err_msgs = []
@@ -459,7 +470,7 @@ def main():
                         errors.append(msg)
                 if len(warnings) > 0:
                     print('There were', len(warnings), 'warnings:', file=sys.stderr)
-                    for warning in warnings:
+                    for warning in list(collections.OrderedDict.fromkeys(warnings)):
                         sys.stderr.write(warning + '\n')
                 if len(errors) > 0:
                     print('There were', len(errors), 'errors:', file=sys.stderr)

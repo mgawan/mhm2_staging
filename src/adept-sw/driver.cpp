@@ -5,29 +5,41 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/scan.h>
 
-long long int gpuMemAvail(int totRanks){
-  int deviceCount;
-  cudaGetDeviceCount(&deviceCount);
-  int ranksPerDevice = totRanks/deviceCount;
+size_t get_avail_gpu_mem_per_rank(int totRanks) {
+  int deviceCount = 0;
+  cudaErrchk(cudaGetDeviceCount(&deviceCount));
+  int ranksPerDevice = totRanks / deviceCount;
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
+  return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
+}
 
-  long long int memAvail = (prop.totalGlobalMem*0.8)/ranksPerDevice;
+size_t get_tot_gpu_mem() {
+  int deviceCount = 0;
+  cudaErrchk(cudaGetDeviceCount(&deviceCount));
+  cudaDeviceProp prop;
+  cudaErrchk(cudaGetDeviceProperties(&prop, 0));
+  return prop.totalGlobalMem;
+}
 
-  return memAvail;
+int get_num_node_gpus() {
+  int deviceCount = 0;
+  cudaErrchk(cudaGetDeviceCount(&deviceCount));
+  return deviceCount;
 }
 
 
 void gpu_bsw_driver::free_alignments(gpu_bsw_driver::alignment_results *alignments){
-       cudaErrchk(cudaFreeHost(alignments->ref_begin));
-       cudaErrchk(cudaFreeHost(alignments->ref_end));
-       cudaErrchk(cudaFreeHost(alignments->query_begin));
-       cudaErrchk(cudaFreeHost(alignments->query_end));
-       cudaErrchk(cudaFreeHost(alignments->top_scores));
+  cudaErrchk(cudaFreeHost(alignments->ref_begin));
+  cudaErrchk(cudaFreeHost(alignments->ref_end));
+  cudaErrchk(cudaFreeHost(alignments->query_begin));
+  cudaErrchk(cudaFreeHost(alignments->query_end));
+  cudaErrchk(cudaFreeHost(alignments->top_scores));
 }
 
 void

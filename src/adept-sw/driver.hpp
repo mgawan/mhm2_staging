@@ -37,5 +37,7 @@ verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g
                  short* g_alBend);
 }
 
-long long int gpuMemAvail(int totRanks);
+size_t get_tot_gpu_mem();
+size_t get_avail_gpu_mem_per_rank(int totRanks);
+int get_num_node_gpus();
 
