@@ -62,7 +62,6 @@ add_definitions(-DKLIGN_CTG_FETCH_BUF_SIZE=1000000)
 # decreasing this value increases the alignment computation time, and it may improve results slightly
 add_definitions(-DKLIGN_SEED_SPACE=8)
 # how many bases to add on either end of longest sequence when aligning a substring
-#add_definitions(-DKLIGN_EXPAND_BASES=5)
 add_definitions(-DKLIGN_EXPAND_BASES=0)
 # max number of unaligned bases to allow on the side of an alignment
 add_definitions(-DKLIGN_UNALIGNED_THRES=1)

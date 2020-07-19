@@ -10,18 +10,21 @@
 #include <thrust/host_vector.h>
 #include <thrust/scan.h>
 
-size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks) {
+static int get_device_count(int totRanks) {
   int deviceCount = 0;
   cudaErrchk(cudaGetDeviceCount(&deviceCount));
-  int ranksPerDevice = totRanks / deviceCount;
+  if (deviceCount > totRanks) return totRanks;
+  return deviceCount;
+}
+
+size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks) {
+  int ranksPerDevice = totRanks / get_device_count(totRanks);
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
   return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
 }
 
 size_t gpu_bsw_driver::get_tot_gpu_mem() {
-  int deviceCount = 0;
-  cudaErrchk(cudaGetDeviceCount(&deviceCount));
   cudaDeviceProp prop;
   cudaErrchk(cudaGetDeviceProperties(&prop, 0));
   return prop.totalGlobalMem;
@@ -43,9 +46,9 @@ void gpu_bsw_driver::free_alignments(gpu_bsw_driver::alignment_results *alignmen
 }
 
 void
-gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize, gpu_bsw_driver::alignment_results *alignments, short scores[4],  long long int maxMemAvail, unsigned my_upc_rank)
+gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize, gpu_bsw_driver::alignment_results *alignments, short scores[4],  long long int maxMemAvail, unsigned my_upc_rank, unsigned totRanks)
 {
-    short matchScore = scores[0], misMatchScore = scores[1], startGap = scores[2], extendGap = scores[3];
+  short matchScore = scores[0], misMatchScore = scores[1], startGap = scores[2], extendGap = scores[3];
     // unsigned maxContigSize = getMaxLength(contigs); // getting these from calls in klign main
     // unsigned maxReadSize = getMaxLength(reads);
     unsigned totalAlignments = contigs.size(); // assuming that read and contig vectors are same length
@@ -72,8 +75,7 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
     #pragma omp parallel
     {
       float total_time_cpu = 0;
-      int device_count;
-       cudaGetDeviceCount(&device_count);
+      int device_count = get_device_count(totRanks);
       int my_cpu_id = omp_get_thread_num();
       int my_gpu_id = my_upc_rank%device_count;// + my_cpu_id;
       cudaSetDevice(my_gpu_id);

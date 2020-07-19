@@ -245,6 +245,7 @@ class KmerCtgDHT {
     }
   }
 
+#define DO_SSW
   void ssw_align_block(IntermittentTimer &aln_kernel_timer) {
     StripedSmithWaterman::Alignment ssw_aln;
     for (int i = 0; i < kernel_alns.size(); i++) {
@@ -263,6 +264,7 @@ class KmerCtgDHT {
       aln.cstop = aln.cstart + ssw_aln.query_end + 1;
       aln.cstart += ssw_aln.query_begin;
       if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
+
       aln.score1 = ssw_aln.sw_score;
       aln.score2 = ssw_aln.sw_score_next_best;
       aln.mismatches = ssw_aln.mismatches;
@@ -279,14 +281,15 @@ class KmerCtgDHT {
     discharge();
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail, rank_me());
+    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail,
+                                      rank_me(), local_team().rank_n());
     aln_kernel_timer.stop();
     
     for (int i = 0; i < kernel_alns.size(); i++) {
       Aln &aln = kernel_alns[i];
-      aln.rstop = aln.rstart + sw_results.query_end[i] + 1;
+      aln.rstop = aln.rstart + sw_results.query_end[i];
       aln.rstart += sw_results.query_begin[i];
-      aln.cstop = aln.cstart + sw_results.ref_end[i] + 1;
+      aln.cstop = aln.cstart + sw_results.ref_end[i];
       aln.cstart += sw_results.ref_begin[i];
       if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
       aln.score1 = sw_results.top_scores[i];
@@ -400,11 +403,11 @@ class KmerCtgDHT {
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
-    //int64_t tot_mem_est = kernel_alns.size() * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
-    //SLOG("outstanding alignments: tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ",
-    //kernel_alns.size(), " alignments\n");
+#ifdef DO_SSW
+    ssw_align_block(aln_kernel_timer);
+#else
     gpu_align_block(aln_kernel_timer);
-    //ssw_align_block(aln_kernel_timer);
+#endif
 #else
     ssw_align_block(aln_kernel_timer);
 #endif
@@ -499,8 +502,8 @@ class KmerCtgDHT {
       int read_aln_len = rlen;
       int read_extra_offset = rstart;
       rstart = 0;
-
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
+      
       // fetch only the substring
       char *seq_buf = new char[ctg_aln_len + 1];
       fetch_ctg_seqs_timer.start();
