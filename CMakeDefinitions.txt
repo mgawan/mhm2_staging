@@ -86,24 +86,24 @@ add_definitions(-DCGRAPH_GAP_CLOSING_OVERLAP_MISMATCH_THRES=1)
 # FIXME: should this be a parameter??
 add_definitions(-DCGRAPH_SPAN_OVERLAP_MISMATCH_THRES=1)
 # another good candidate for errors v ctgy tradeoff
-# For SSW alignments in gap closing: max number of mismatches allowed in the alignment
+# For alignments in gap closing: max number of mismatches allowed in the alignment
 add_definitions(-DCGRAPH_MAX_MISMATCHES_THRES=3)
 # Minimum contig length for computing TNF
 add_definitions(-DCGRAPH_MIN_TNF_CLEN=1000)
 # TNF probability threshold to choose one branch over another
 add_definitions(-DCGRAPH_WALK_TNF_THRES=0.75)
 
-# parameters for SSW aligner
-add_definitions(-DSSW_MATCH_SCORE=1)
-add_definitions(-DSSW_MISMATCH_COST=1)
-add_definitions(-DSSW_GAP_OPENING_COST=1)
-add_definitions(-DSSW_GAP_EXTENDING_COST=1)
-add_definitions(-DSSW_AMBIGUITY_COST=1)
+# parameters for aligner
+add_definitions(-DALN_MATCH_SCORE=1)
+add_definitions(-DALN_MISMATCH_COST=1)
+add_definitions(-DALN_GAP_OPENING_COST=1)
+add_definitions(-DALN_GAP_EXTENDING_COST=1)
+add_definitions(-DALN_AMBIGUITY_COST=1)
 # previous defaults
-#add_definitions(-DSSW_MISMATCH_COST=3)
-#add_definitions(-DSSW_GAP_OPENING_COST=5)
-#add_definitions(-DSSW_GAP_EXTENDING_COST=2)
-#add_definitions(-DSSW_AMBIGUITY_COST=2)
+# add_definitions(-DALN_MISMATCH_COST=3)
+# add_definitions(-DALN_GAP_OPENING_COST=5)
+# add_definitions(-DALN_GAP_EXTENDING_COST=2)
+# add_definitions(-DALN_AMBIGUITY_COST=2)
 
 # max and min kmer lengths for local assembly kmer walks
 add_definitions(-DLASSM_MAX_KMER_LEN=121)

@@ -152,8 +152,8 @@ static bool is_overlap_mismatch(int dist, int overlap) {
 static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_Ns, vector<Walk> &walks, Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__);
   // match, mismatch, gap opening, gap extending, ambiguious
-  StripedSmithWaterman::Aligner ssw_aligner(SSW_MATCH_SCORE, SSW_MISMATCH_COST, SSW_GAP_OPENING_COST, SSW_GAP_EXTENDING_COST,
-                                            SSW_AMBIGUITY_COST);
+  StripedSmithWaterman::Aligner ssw_aligner(ALN_MATCH_SCORE, ALN_MISMATCH_COST, ALN_GAP_OPENING_COST, ALN_GAP_EXTENDING_COST,
+                                            ALN_AMBIGUITY_COST);
   StripedSmithWaterman::Filter ssw_filter;
   ssw_filter.report_cigar = false;
   GapStats gap_stats = {0};
@@ -252,11 +252,11 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
               break_scaffold = true;
               gap_stats.num_excess_breaks++;
               DBG_WALK("break neg gap\n");
-            } else if (ssw_aln.sw_score < aln_len - SSW_MISMATCH_COST * CGRAPH_MAX_MISMATCHES_THRES) {
+            } else if (ssw_aln.sw_score < aln_len - ALN_MISMATCH_COST * CGRAPH_MAX_MISMATCHES_THRES) {
               break_scaffold = true;
               gap_stats.num_tolerance_breaks++;
               DBG_WALK("break poor aln: score ", ssw_aln.sw_score, " < ",
-                       aln_len - SSW_MISMATCH_COST * CGRAPH_MAX_MISMATCHES_THRES, "\n");
+                       aln_len - ALN_MISMATCH_COST * CGRAPH_MAX_MISMATCHES_THRES, "\n");
             } else {
               DBG_WALK("close neg gap trunc left at ", ctg.seq.length() - max_overlap + ssw_aln.query_end + 1,
                        " and from right at ", ssw_aln.ref_end + 1, "\n");
