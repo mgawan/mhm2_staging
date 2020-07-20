@@ -759,7 +759,9 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
   auto num_dups = alns.get_num_dups();
   if (num_dups) SLOG_VERBOSE("Number of duplicate alignments ", perc_str(num_dups, num_alns), "\n");
   barrier();
+#ifdef DEBUG
   alns.dump_alns("alns-" + to_string(kmer_len) + ".txt.gz");
+#endif
   return kernel_elapsed;
 }
 

@@ -151,9 +151,6 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
-#ifdef DEBUG
-    alns.dump_alns("ctg-" + to_string(kmer_len) + ".alns.gz");
-#endif
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1],
                                                      max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some error in the assembly
@@ -190,9 +187,6 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
   else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
   Alns alns;
   stage_timers.alignments->start();
-#ifdef DEBUG
-  alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
-#endif
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   int seed_space = KLIGN_SEED_SPACE;
   if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
