@@ -404,6 +404,8 @@ class KmerCtgDHT {
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
 #ifdef DO_SSW
+#warning Building SSW
+    // hack for comparing performance
     ssw_align_block(aln_kernel_timer);
 #else
     gpu_align_block(aln_kernel_timer);
