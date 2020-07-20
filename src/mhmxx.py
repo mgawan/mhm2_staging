@@ -384,7 +384,8 @@ def main():
     if which('nvcc'):
         # FIXME: this ugly hack is because we need to load a shared library on Cori GPU nodes,
         # which can't be done with the craype environment. Not needed anywhere else :(
-        runenv['LD_LIBRARY_PATH'] = mhmxx_lib_path + ':/usr/lib64/slurmpmi/'
+        # The intel library path is only needed for the intel compiler. Sigh.
+        runenv['LD_LIBRARY_PATH'] = mhmxx_lib_path + ':/usr/lib64/slurmpmi/:/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/'
         print('Setting LD_LIBRARY_PATH=' + runenv['LD_LIBRARY_PATH'])
 
     restating = False
