@@ -238,8 +238,6 @@ class KmerCtgDHT {
       if (tot_mem_est >= gpu_mem_avail && kernel_alns.size()) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
-        SLOG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
-             " alignments\n");
         kernel_align_block(aln_kernel_timer);
       }
     }
@@ -274,6 +272,7 @@ class KmerCtgDHT {
     }
   }
 
+#ifdef ENABLE_GPUS
   void gpu_align_block(IntermittentTimer &aln_kernel_timer) {
     gpu_bsw_driver::alignment_results sw_results;
     short scores[] = {(short)aln_scoring.match, (short)-aln_scoring.mismatch, (short)-aln_scoring.gap_opening,
@@ -304,7 +303,8 @@ class KmerCtgDHT {
     }
     gpu_bsw_driver::free_alignments(&sw_results);
   }
-
+#endif
+  
  public:
   int kmer_len;
 

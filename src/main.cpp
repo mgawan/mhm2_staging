@@ -305,9 +305,10 @@ int main(int argc, char **argv) {
     }
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
-    if (ENABLE_GPUS)
-      SLOG("Using ", gpu_bsw_driver::get_num_node_gpus(), " GPUs on node 0, with ",
-           get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
+#ifdef ENABLE_GPUS
+    SLOG("Using ", gpu_bsw_driver::get_num_node_gpus(), " GPUs on node 0, with ",
+         get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
+#endif
   }
 
   Contigs ctgs;
