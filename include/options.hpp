@@ -232,10 +232,10 @@ public:
 
   vector<string> reads_fnames;
   vector<string> paired_fnames;
-  vector<unsigned> kmer_lens = {21, 33, 55, 77, 99};
+  vector<unsigned> kmer_lens = {};
   int max_kmer_len = 0;
   int prev_kmer_len = 0;
-  vector<unsigned> scaff_kmer_lens = {99, 33};
+  vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
   int max_kmer_store_mb = 50;
@@ -354,7 +354,7 @@ public:
                  "Verbose output")
                  ->capture_default_str();
 
-    auto *cfg_opt = app.set_config("--config", "mhmxx.config", "Load options from a configuration file");
+    auto *cfg_opt = app.set_config("--config", "", "Load options from a configuration file");
 
     try {
       app.parse(argc, argv);
@@ -410,8 +410,13 @@ public:
     }
 
     // make sure we only use defaults for kmer lens if none of them were set by the user
-    if (*kmer_lens_opt && !*scaff_kmer_lens_opt) scaff_kmer_lens = {};
-    if (*scaff_kmer_lens_opt && !*kmer_lens_opt) kmer_lens = {};
+    if (!*kmer_lens_opt && !*scaff_kmer_lens_opt) {
+      kmer_lens = { 21, 33, 55, 77, 99 };
+      scaff_kmer_lens = { 99, 33 };
+      // set the option default strings so that the correct values are printed and saved to the .config file
+      kmer_lens_opt->default_str("21 33 55 77 99");
+      scaff_kmer_lens_opt->default_str("99 33");
+    }
 
     setup_output_dir();
     setup_log_file();
