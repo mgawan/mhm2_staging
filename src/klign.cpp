@@ -221,7 +221,7 @@ class KmerCtgDHT {
       int identity = 100 * score1 / ssw_scoring.match / rlen;
       Aln aln = {rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, score1, 0, identity, 0};
       if (ssw_filter.report_cigar) set_sam_string(aln, rseq, to_string(overlap_len) + "M");
-      //alns->add_aln(aln);
+      alns->add_aln(aln);
     } else {
       max_clen = max((int64_t)cseq.size(), max_clen);
       max_rlen = max((int64_t)rseq.size(), max_rlen);
