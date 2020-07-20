@@ -40,6 +40,7 @@
  form.
 */
 
+//#define ALWAYS_USE_SSW
 
 #include <iostream>
 #include <algorithm>
@@ -243,7 +244,6 @@ class KmerCtgDHT {
     }
   }
 
-//#define DO_SSW
   void ssw_align_block(IntermittentTimer &aln_kernel_timer) {
     StripedSmithWaterman::Alignment ssw_aln;
     for (int i = 0; i < kernel_alns.size(); i++) {
@@ -403,13 +403,15 @@ class KmerCtgDHT {
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
-#ifdef DO_SSW
-#warning Building SSW
+  #ifdef ALWAYS_USE_SSW
     // hack for comparing performance
+    #warning Always using SSW
     ssw_align_block(aln_kernel_timer);
-#else
-    gpu_align_block(aln_kernel_timer);
-#endif
+  #else
+    // for now, the GPU alignment doesn't support cigars
+    if (!ssw_filter.report_cigar) gpu_align_block(aln_kernel_timer);
+    else ssw_align_block(aln_kernel_timer);
+  #endif
 #else
     ssw_align_block(aln_kernel_timer);
 #endif
@@ -650,7 +652,8 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
 }
 
 template<int MAX_K>
-static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> &packed_reads_list, int seed_space) {
+static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*> &packed_reads_list, int seed_space,
+                            bool compute_cigar) {
   BarrierTimer timer(__FILEFUNC__);
   SLOG_VERBOSE("Using a seed space of ", seed_space, "\n");
   int64_t tot_num_kmers = 0;
@@ -660,7 +663,11 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
   IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
   IntermittentTimer fetch_ctg_seqs_timer(__FILENAME__ + string(":") + "Fetch ctg seqs");
 #ifdef ENABLE_GPUS
-  IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "GPU_BSW");
+#ifdef ALWAYS_USE_SSW
+  IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
+#else
+  IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + (compute_cigar ? "SSW" : "GPU_BSW"));
+#endif
 #else
   IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
 #endif
@@ -748,14 +755,14 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
     AlnScoring alt_aln_scoring = { .match = 2, .mismatch = 4, .gap_opening = 4, .gap_extending = 2, .ambiguity = 1};
     aln_scoring = alt_aln_scoring;
   }
-  SLOG_VERBOSE("SSW scoring parameters: ", aln_scoring.to_string(), "\n");
+  SLOG_VERBOSE("Alignment scoring parameters: ", aln_scoring.to_string(), "\n");
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, compute_cigar);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
   //kmer_ctg_dht.dump_ctg_kmers();
 #endif
-  double kernel_elapsed = do_alignments(kmer_ctg_dht, packed_reads_list, seed_space);
+  double kernel_elapsed = do_alignments(kmer_ctg_dht, packed_reads_list, seed_space, compute_cigar);
   barrier();
   auto num_alns = kmer_ctg_dht.get_num_alns();
   auto num_dups = alns.get_num_dups();
