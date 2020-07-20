@@ -276,8 +276,8 @@ class KmerCtgDHT {
 
   void gpu_align_block(IntermittentTimer &aln_kernel_timer) {
     gpu_bsw_driver::alignment_results sw_results;
-    short scores[] = {(short)ssw_scoring.match, (short)ssw_scoring.mismatch, (short)ssw_scoring.gap_opening,
-                      (short)ssw_scoring.gap_extending};
+    short scores[] = {(short)ssw_scoring.match, (short)-ssw_scoring.mismatch, (short)-ssw_scoring.gap_opening,
+                      (short)-ssw_scoring.gap_extending};
     discharge();
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size

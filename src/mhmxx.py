@@ -79,9 +79,9 @@ def get_hdw_cores_per_node():
     try:
         import psutil
         cores = psutil.cpu_count(logical=False)
-        print("Found cpus from psutil:", cores)
+        print("Found %d cpus from psutil" % cores)
     except (NameError, ImportError):
-        print("Could not get cpus from psutil")
+        #print("Could not get cpus from psutil")
         pass
     # always trust lscpu, not psutil
     # NOTE some versions of psutil has bugs and comes up with the *WRONG* physical cores 
