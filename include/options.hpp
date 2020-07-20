@@ -333,7 +333,7 @@ public:
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
     app.add_flag("--pin", pin_by,
-                 "Pin processes by Core, Socket, Hyper-thread), clear default or default pinning")
+                 "Pin processes by (thread, socket, core, none) or (clear) - default (core)")
                  ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
