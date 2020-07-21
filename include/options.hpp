@@ -251,6 +251,7 @@ public:
   bool dump_gfa = false;
   bool show_progress = false;
   string pin_by = "core";
+  int sockets_per_node = 0;
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -335,6 +336,8 @@ public:
     app.add_flag("--pin", pin_by,
                  "Pin processes by (thread, socket, core, none) or (clear) - default (core)")
                  ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
+    app.add_flag("--sockets-per-node", sockets_per_node,
+                 "Number of sockets per node to use - processes will be pinned to sockets");
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();

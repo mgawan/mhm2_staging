@@ -53,6 +53,7 @@
 #include <unistd.h>
 #include <utility>
 #include <algorithm>
+#include <dirent.h>
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/timers.hpp"
@@ -63,6 +64,8 @@ using std::string;
 using std::string_view;
 using std::to_string;
 using std::min;
+using std::vector;
+using std::pair;
 
 #ifdef USE_BYTELL
 #include "bytell_hash_map.hpp"
@@ -355,10 +358,75 @@ inline int pin_mask(cpu_set_size_t cpu_set_size) {
 }
 
 inline int pin_socket() {
-    return pin_mask(get_cpu_mask(true));
+  return pin_mask(get_cpu_mask(true));
 }
 
 inline int pin_core() {
-    return pin_mask(get_cpu_mask(false));
+  return pin_mask(get_cpu_mask(false));
 }
 
+inline vector<string> get_dir_entries(const string &dname, const string &prefix) {
+  vector<string> dir_entries;
+  DIR *dir = opendir(dname.c_str());
+  if (dir) {
+    struct dirent *en;
+    while ((en = readdir(dir)) != NULL) {
+      string dname(en->d_name);
+      if (dname.substr(0, prefix.length()) == prefix) dir_entries.push_back(dname);
+    }
+    closedir(dir);  // close all directory
+  } else {
+    SWARN("Could not open ", dname);
+  }
+  return dir_entries;
+}
+
+inline void pin_proc(vector<int> cpus) {
+  cpu_set_t cpu_set;
+  CPU_ZERO(&cpu_set);
+  for (auto cpu : cpus) {
+    CPU_SET(cpu, &cpu_set);
+  }
+  if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
+    if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
+  }
+}
+
+template <typename T>
+inline string vec_to_str(const vector<T> &vec, const string &delimiter = ",") {
+  std::ostringstream oss;
+  for (auto elem : vec) {
+    oss << elem;
+    if (elem != vec.back()) oss << delimiter;
+  }
+  return oss.str();
+}
+
+inline void pin_sockets(int num_sockets) {
+  string node_dir = "/sys/devices/system/node";
+  auto node_entries = get_dir_entries(node_dir, "node");
+  if (node_entries.empty()) return;
+  int my_socket = upcxx::local_team().rank_me() % num_sockets;
+  vector<pair<string, vector<int>>> socket_list(node_entries.size(), {"", {}});
+  vector<int> cpu_list;
+  for (auto &entry : node_entries) {
+    ifstream f(node_dir + "/" + entry + "/cpulist");
+    string buf;
+    getline(f, buf);
+    int node_i = atoi(entry.c_str() + 4);
+    socket_list[node_i].first = buf;
+    if (node_i != my_socket) continue;
+    auto cpu_entries = get_dir_entries(node_dir + "/" + entry, "cpu");
+    for (auto &cpu_entry : cpu_entries) {
+      if (cpu_entry == "cpulist" || cpu_entry == "cpumap") continue;
+      cpu_list.push_back(atoi(cpu_entry.c_str() + 3));
+    }
+  }
+  SLOG("Pinning to ", num_sockets, " out of ", node_entries.size(), " sockets per node\n");
+  for (int i = 0; i < num_sockets; i++) {
+    SLOG("  ", i, ": ", socket_list[i].first, "\n");
+  }
+  sort(cpu_list.begin(), cpu_list.end());
+  DBG("pinning to cpus ", vec_to_str(cpu_list), "\n");
+  pin_proc(cpu_list);
+}

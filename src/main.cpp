@@ -279,25 +279,28 @@ int main(int argc, char **argv) {
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
 #ifndef DEBUG
-  // pin ranks to a single core in production
-
-  if (options->pin_by == "thread") {
-    if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to logical core ", rank_me());
-    else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
-  } else if (options->pin_by == "socket") {
-    if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
-    else SLOG_VERBOSE("Pinned processes by socket\n");
-  } else if (options->pin_by == "core") {
-    if (pin_core() < 0) SWARN("Could not pin processes by physical core\n");
-    else SLOG_VERBOSE("Pinned processes by physical core\n");
-  } else if (options->pin_by == "clear") {
-    if (pin_clear() < 0) SWARN("Could not clear pinning of proccesses\n");
-    else SLOG_VERBOSE("Cleared any pinning of processes\n");
+  // pin ranks only in production
+  if (options->sockets_per_node) {
+    // pin ranks to a given number of sockets per node
+    pin_sockets(options->sockets_per_node);
   } else {
-    assert(options->pin_by == "none");
-    SLOG_VERBOSE("No process pinning enabled\n");
+    if (options->pin_by == "thread") {
+      if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to logical core ", rank_me());
+      else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
+    } else if (options->pin_by == "socket") {
+      if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
+      else SLOG_VERBOSE("Pinned processes by socket\n");
+    } else if (options->pin_by == "core") {
+      if (pin_core() < 0) SWARN("Could not pin processes by physical core\n");
+      else SLOG_VERBOSE("Pinned processes by physical core\n");
+    } else if (options->pin_by == "clear") {
+      if (pin_clear() < 0) SWARN("Could not clear pinning of proccesses\n");
+      else SLOG_VERBOSE("Cleared any pinning of processes\n");
+    } else {
+      assert(options->pin_by == "none");
+      SLOG_VERBOSE("No process pinning enabled\n");
+    }
   }
-
 #endif
 
   if (!upcxx::rank_me()) {
