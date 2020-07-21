@@ -1,0 +1,44 @@
+All statistics are based on contigs of size >= 500 bp, unless otherwise noted (e.g., "# contigs (>= 0 bp)" and "Total length (>= 0 bp)" include all contigs).
+
+Assembly                     final_assembly
+# contigs (>= 0 bp)          8035          
+# contigs (>= 1000 bp)       5485          
+# contigs (>= 5000 bp)       2178          
+# contigs (>= 10000 bp)      1338          
+# contigs (>= 25000 bp)      683           
+# contigs (>= 50000 bp)      402           
+Total length (>= 0 bp)       95082704      
+Total length (>= 1000 bp)    93297681      
+Total length (>= 5000 bp)    85634975      
+Total length (>= 10000 bp)   79745095      
+Total length (>= 25000 bp)   69490900      
+Total length (>= 50000 bp)   59902432      
+# contigs                    8035          
+Largest contig               1244692       
+Total length                 95082704      
+Reference length             102521842     
+N50                          92392         
+N75                          21917         
+L50                          223           
+L75                          761           
+# misassemblies              80            
+# misassembled contigs       79            
+Misassembled contigs length  3132623       
+# local misassemblies        74            
+# scaffold gap ext. mis.     0             
+# scaffold gap loc. mis.     0             
+# unaligned mis. contigs     0             
+# unaligned contigs          0 + 1 part    
+Unaligned length             729           
+Genome fraction (%)          93.510        
+Duplication ratio            1.004         
+# N's per 100 kbp            0.01          
+# mismatches per 100 kbp     17.56         
+# indels per 100 kbp         0.97          
+# predicted rRNA genes       48 + 22 part  
+Largest alignment            1244692       
+Total aligned length         95069493      
+NA50                         86480         
+NA75                         21318         
+LA50                         226           
+LA75                         781           
