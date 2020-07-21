@@ -49,8 +49,8 @@ def main():
                 if (key.startswith('# contigs') or key.startswith('# misassemblies') or key.startswith('# misassembled contigs') \
                     or key.startswith('# local misassemblies')) and d < 4:
                     d = 0
-                if key.startswith('Total length (>= 25000 bp)') or key.startswith('Misassembled contigs length') \
-                   or key.startswith('# indels per 100 kbp'):
+                if key.startswith('Total length (>= 10000 bp)') or key.startswith('Total length (>= 25000 bp)') \
+                   or key.startswith('Misassembled contigs length') or key.startswith('# indels per 100 kbp'):
                     thres = 0.05
                 if key.startswith("# N's per 100 kbp") and d < 1.5:
                     d = 0
