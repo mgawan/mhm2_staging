@@ -264,6 +264,15 @@ inline void dump_single_file(const string &fname, const string &out_str, bool ap
   upcxx::barrier();
 }
 
+template <typename T>
+inline string vec_to_str(const vector<T> &vec, const string &delimiter = ",") {
+  std::ostringstream oss;
+  for (auto elem : vec) {
+    oss << elem;
+    if (elem != vec.back()) oss << delimiter;
+  }
+  return oss.str();
+}
 
 inline int pin_clear() {
   cpu_set_t cpu_set;
@@ -278,12 +287,12 @@ inline int pin_clear() {
   return 0;
 }
 
-inline int pin_thread(pid_t pid, int cid) {
+inline int pin_thread() {
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
-  CPU_SET(cid, &cpu_set);
-  if (sched_setaffinity(pid, sizeof(cpu_set), &cpu_set) == -1) {
-    if (errno == 3) WARN("%s, pid: %d", strerror(errno), pid);
+  CPU_SET(upcxx::local_team().rank_me(), &cpu_set);
+  if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
+    if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
     return -1;
   }
   return 0;
@@ -357,10 +366,6 @@ inline int pin_mask(cpu_set_size_t cpu_set_size) {
   return -1;
 }
 
-inline int pin_socket() {
-  return pin_mask(get_cpu_mask(true));
-}
-
 inline int pin_core() {
   return pin_mask(get_cpu_mask(false));
 }
@@ -392,41 +397,56 @@ inline void pin_proc(vector<int> cpus) {
   }
 }
 
-template <typename T>
-inline string vec_to_str(const vector<T> &vec, const string &delimiter = ",") {
-  std::ostringstream oss;
-  for (auto elem : vec) {
-    oss << elem;
-    if (elem != vec.back()) oss << delimiter;
-  }
-  return oss.str();
-}
-
-inline void pin_sockets(int num_sockets) {
-  string node_dir = "/sys/devices/system/node";
-  auto node_entries = get_dir_entries(node_dir, "node");
-  if (node_entries.empty()) return;
-  int my_socket = upcxx::local_team().rank_me() % num_sockets;
-  vector<pair<string, vector<int>>> socket_list(node_entries.size(), {"", {}});
-  vector<int> cpu_list;
-  for (auto &entry : node_entries) {
-    ifstream f(node_dir + "/" + entry + "/cpulist");
+inline void pin_numa(bool use_hyperthreads) {
+  string numa_node_dir = "/sys/devices/system/node";
+  auto numa_node_entries = get_dir_entries(numa_node_dir, "node");
+  if (numa_node_entries.empty()) return;
+  vector<pair<string, vector<int>>> numa_node_list(numa_node_entries.size(), {"", {}});
+  int num_cpus = 0;
+  int hdw_threads_per_core = 0;
+  for (auto &entry : numa_node_entries) {
+    ifstream f(numa_node_dir + "/" + entry + "/cpulist");
     string buf;
     getline(f, buf);
-    int node_i = atoi(entry.c_str() + 4);
-    socket_list[node_i].first = buf;
-    if (node_i != my_socket) continue;
-    auto cpu_entries = get_dir_entries(node_dir + "/" + entry, "cpu");
+    f.close();
+    int numa_node_i = atoi(entry.c_str() + 4);
+    numa_node_list[numa_node_i].first = buf;
+    auto cpu_entries = get_dir_entries(numa_node_dir + "/" + entry, "cpu");
     for (auto &cpu_entry : cpu_entries) {
       if (cpu_entry == "cpulist" || cpu_entry == "cpumap") continue;
-      cpu_list.push_back(atoi(cpu_entry.c_str() + 3));
+      if (!hdw_threads_per_core) {
+        f.open(numa_node_dir + "/" + entry + "/" + cpu_entry + "/topology/thread_siblings_list");
+        getline(f, buf);
+        // assume that the threads are separated by commans - is this always true?
+        hdw_threads_per_core = std::count(buf.begin(), buf.end(), ',') + 1;
+      }
+      numa_node_list[numa_node_i].second.push_back(atoi(cpu_entry.c_str() + 3));
+      num_cpus++;
     }
   }
-  SLOG("Pinning to ", num_sockets, " out of ", node_entries.size(), " sockets per node\n");
-  for (int i = 0; i < num_sockets; i++) {
-    SLOG("  ", i, ": ", socket_list[i].first, "\n");
+
+  SLOG("Found a total of ", num_cpus, " hardware threads with ", hdw_threads_per_core, " threads per core on ",
+       numa_node_list.size(), " NUMA nodes\n");
+
+  // pack onto numa nodes
+  int hdw_threads_per_numa_node = num_cpus / numa_node_list.size();
+  int cores_per_numa_node = hdw_threads_per_numa_node / hdw_threads_per_core;
+
+  int numa_nodes_to_use = (use_hyperthreads ? upcxx::local_team().rank_n() / hdw_threads_per_numa_node :
+                                              upcxx::local_team().rank_n() / cores_per_numa_node);
+
+  int my_numa_node = upcxx::local_team().rank_me() % numa_nodes_to_use;
+  vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
+  sort(my_cpu_list.begin(), my_cpu_list.end());
+  pin_proc(my_cpu_list);
+  ifstream f("/proc/" + to_string(getpid()) + "/status");
+  string line;
+  string prefix = "Cpus_allowed_list";
+  while (getline(f, line)) {
+    if (line.substr(0, prefix.length()) == prefix) {
+      DBG(line);
+      SLOG("Process 0 on node 0 is pinned to: ", line.substr(prefix.length(), line.length() - prefix.length()), " cpus \n");
+      break;
+    }
   }
-  sort(cpu_list.begin(), cpu_list.end());
-  DBG("pinning to cpus ", vec_to_str(cpu_list), "\n");
-  pin_proc(cpu_list);
 }
