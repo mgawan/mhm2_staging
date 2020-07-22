@@ -274,102 +274,6 @@ inline string vec_to_str(const vector<T> &vec, const string &delimiter = ",") {
   return oss.str();
 }
 
-inline int pin_clear() {
-  cpu_set_t cpu_set;
-  CPU_ZERO(&cpu_set);
-  for (int i = 0; i < sizeof(cpu_set_t) * 8; i++) {
-    CPU_SET(i, &cpu_set);
-  }
-  if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
-    if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
-    return -1;
-  }
-  return 0;
-}
-
-inline int pin_thread() {
-  cpu_set_t cpu_set;
-  CPU_ZERO(&cpu_set);
-  CPU_SET(upcxx::local_team().rank_me(), &cpu_set);
-  if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
-    if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
-    return -1;
-  }
-  return 0;
-}
-
-using cpu_set_size_t = std::pair<cpu_set_t *, size_t>;
-inline cpu_set_size_t get_cpu_mask(bool bySocket = true) {
-  cpu_set_size_t ret = {NULL, 0};
-  ifstream cpuinfo("/proc/cpuinfo");
-  if (!cpuinfo) {
-    return ret;
-  }
-  std::vector<size_t> cpu2socket;
-  std::vector<size_t> cpu2core;
-  std::vector<size_t> sockets;
-  std::vector<size_t> cores;
-  cpu2socket.reserve(256);
-  cpu2core.reserve(256);
-  int socket = 0;
-  for (std::string line; getline(cpuinfo, line);) {
-    if (line.find("physical id") != string::npos) {
-      int val = atoi(line.c_str() + line.find_last_of(' '));
-      cpu2socket.push_back(val);
-      socket = val;
-    }
-    if (line.find("core id") != string::npos) {
-      int val = atoi(line.c_str() + line.find_last_of(' '));
-      cpu2core.push_back(val + socket * 16384);
-    }
-  }
-  for (auto id : cpu2core) {
-    auto p = std::find(cores.begin(), cores.end(), id);
-    if (p == cores.end()) cores.push_back(id);
-  }
-  for (auto id : cpu2socket) {
-    auto p = std::find(sockets.begin(), sockets.end(), id);
-    if (p == sockets.end()) sockets.push_back(id);
-  }
-
-  int num_cpus = cpu2core.size();
-  int num_cores = cores.size();
-  int num_sockets = sockets.size();
-  int num_ids = bySocket ? num_sockets : num_cores;
-  int my_id = upcxx::local_team().rank_me() % num_ids;
-  DBG("Binding to ", bySocket ? "socket" : "core", " ", my_id, " of ", num_ids, " (num_cores=", num_cores,
-      ", num_sockets=", num_sockets, ")\n");
-  size_t size = CPU_ALLOC_SIZE(num_cpus);
-  cpu_set_t *cpu_set_p = CPU_ALLOC(num_cpus);
-  if (cpu_set_p == NULL) return ret;
-  CPU_ZERO_S(size, cpu_set_p);
-  for (int i = 0; i < cpu2socket.size(); i++) {
-    if ((bySocket ? cpu2socket[i] : cpu2core[i]) == (bySocket ? sockets[my_id] : cores[my_id])) {
-      CPU_SET_S(i, size, cpu_set_p);
-    }
-  }
-  ret = {cpu_set_p, size};
-  return ret;
-}
-
-inline int pin_mask(cpu_set_size_t cpu_set_size) {
-  if (cpu_set_size.first) {
-    if (sched_setaffinity(getpid(), cpu_set_size.second, cpu_set_size.first) == -1) {
-      if (errno == 3) SWARN("%s, pid: %d", strerror(errno), getpid());
-      CPU_FREE(cpu_set_size.first);
-      return -1;
-    }
-    CPU_FREE(cpu_set_size.first);
-    return 0;
-  }
-  SWARN("Did not pin to process\n");
-  return -1;
-}
-
-inline int pin_core() {
-  return pin_mask(get_cpu_mask(false));
-}
-
 inline vector<string> get_dir_entries(const string &dname, const string &prefix) {
   vector<string> dir_entries;
   DIR *dir = opendir(dname.c_str());
@@ -397,7 +301,7 @@ inline void pin_proc(vector<int> cpus) {
   }
 }
 
-inline void pin_numa(bool use_hyperthreads) {
+inline void pin_numa() {
   string numa_node_dir = "/sys/devices/system/node";
   auto numa_node_entries = get_dir_entries(numa_node_dir, "node");
   if (numa_node_entries.empty()) return;
@@ -432,9 +336,8 @@ inline void pin_numa(bool use_hyperthreads) {
   int hdw_threads_per_numa_node = num_cpus / numa_node_list.size();
   int cores_per_numa_node = hdw_threads_per_numa_node / hdw_threads_per_core;
 
-  int numa_nodes_to_use = (use_hyperthreads ? upcxx::local_team().rank_n() / hdw_threads_per_numa_node :
-                                              upcxx::local_team().rank_n() / cores_per_numa_node);
-
+  int numa_nodes_to_use = upcxx::local_team().rank_n() / cores_per_numa_node;
+  if (numa_nodes_to_use > numa_node_list.size()) numa_nodes_to_use = numa_node_list.size();
   int my_numa_node = upcxx::local_team().rank_me() % numa_nodes_to_use;
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());

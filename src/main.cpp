@@ -280,15 +280,7 @@ int main(int argc, char **argv) {
 
 #ifndef DEBUG
   // pin ranks only in production
-  if (options->pin_by == "thread") {
-    if (pin_thread() == 0) SLOG_VERBOSE("Pinned processes to hardware threads\n");
-  } else if (options->pin_by == "core") {
-    if (pin_core() == 0) SLOG_VERBOSE("Pinned processes to cores\n");
-  } else if (options->pin_by == "numa-core") {
-    pin_numa(false);
-  } else if (options->pin_by == "numa-thread") {
-    pin_numa(true);
-  }
+  if (options->pin_numa) pin_numa();
 #endif
 
   if (!upcxx::rank_me()) {
