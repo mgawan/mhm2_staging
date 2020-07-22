@@ -49,7 +49,7 @@ to really start from scratch.
 
 A typical command line to run is:
 
-`mhmxx.py -r <READS_lib1.fastq>,<READS_lib2.fastq> -i <insert_size_avg:insert_size_stddev>`
+`mhmxx.py -r <READS_lib1.fastq>,<READS_lib2.fastq>`
 
 This will create a new output directory that contains the results. Note that mhmxx requires interleaved paired reads.
 
