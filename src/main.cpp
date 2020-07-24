@@ -292,7 +292,11 @@ int main(int argc, char **argv) {
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
 #ifdef ENABLE_GPUS
-    SLOG("Using ", gpu_bsw_driver::get_num_node_gpus(), " GPUs on node 0, with ",
+  #ifdef ALWAYS_USE_SSW
+    SWARN("Using SSW but GPUs are available - expect lower performance in alignment");
+  #endif
+    auto num_gpus_per_node = (rank_me() == 0 ? gpu_bsw_driver::get_num_node_gpus() : 0);
+    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ",
          get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
 #endif
   }

@@ -274,11 +274,21 @@ static bool is_overlap(const string &left_seq, const string &right_seq, int over
 }
 
 static string get_frag_seq(FragElem &frag_elem) {
+#ifdef ENABLE_GPUS
+  // FIXME: this hack is to avoid the crazy slowdown we see with IBV initialization
+  global_ptr<char> gbuf = new_array<char>(frag_elem.frag_len + 1);
+  char *buf = gbuf.local();
+#else
   char *buf = new char[frag_elem.frag_len + 1];
+#endif
   rget(frag_elem.frag_seq, buf, frag_elem.frag_len + 1).wait();
   string frag_seq(buf);
   assert(frag_seq.length() == frag_elem.frag_len);
+#ifdef ENABLE_GPUS
+  delete_array(gbuf);
+#else
   delete[] buf;
+#endif
   return frag_seq;
 }
 
