@@ -510,7 +510,6 @@ class KmerCtgDHT {
       rstart = 0;
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
 
-      char buf[ctg_aln_len];
       assert(cstart >= 0 && cstart + ctg_aln_len <= ctg_loc.clen);
       assert(ctg_aln_len <= 2 * rlen);
       // fetch only the substring

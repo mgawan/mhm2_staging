@@ -476,20 +476,9 @@ class CtgGraph {
   }
 
   string get_vertex_seq(upcxx::global_ptr<char> seq_gptr, int64_t seq_len) {
-#ifdef ENABLE_GPUS
-    // FIXME: this hack is to avoid the crazy slowdown we see with IBV initialization
-    upcxx::global_ptr<char> gbuf = upcxx::new_array<char>(seq_len + 1);
-    char *buf = gbuf.local();
-#else
-    char *buf = new(seq_len + 1);
-#endif
+    char buf[seq_len + 1];
     upcxx::rget(seq_gptr, buf, seq_len + 1).wait();
     string s(buf);
-#ifdef ENABLE_GPUS
-    upcxx::delete_array(gbuf);
-#else
-    delete[] buf;
-#endif
     return s;
   }
 
