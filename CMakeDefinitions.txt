@@ -66,7 +66,7 @@ add_definitions(-DKLIGN_EXPAND_BASES=0)
 # max number of unaligned bases to allow on the side of an alignment
 add_definitions(-DKLIGN_UNALIGNED_THRES=1)
 # define this to test out SSW in the GPU mode
-add_definitions(-DALWAYS_USE_SSW)
+# add_definitions(-DALWAYS_USE_SSW)
 
 # controls depth matching in cgraph
 add_definitions(-DCGRAPH_DEPTH_DIFF_THRES=0.1)
