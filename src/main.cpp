@@ -280,7 +280,9 @@ int main(int argc, char **argv) {
 
 #ifndef DEBUG
   // pin ranks only in production
-  if (options->pin_numa) pin_numa();
+  if (options->pin_by == "cpu") pin_cpu();
+  else if (options->pin_by == "core") pin_core();
+  else if (options->pin_by == "numa") pin_numa();
 #endif
 
   if (!upcxx::rank_me()) {

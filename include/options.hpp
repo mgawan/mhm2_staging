@@ -242,7 +242,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
-  bool pin_numa = true;
+  string pin_by = "cpu";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -324,9 +324,10 @@ public:
     app.add_flag("--restart", restart,
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
-    app.add_flag("--numa", pin_numa,
-                 "Restrict processes according to NUMA topology")
-                 ->capture_default_str();
+    app.add_flag("--pin", pin_by,
+                 "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
+                 "or NUMA domains (cpu, core, numa, none) - default is cpu ")
+                 ->capture_default_str() ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();

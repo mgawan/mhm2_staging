@@ -53,6 +53,7 @@
 #include <unistd.h>
 #include <utility>
 #include <algorithm>
+#include <sstream>
 #include <dirent.h>
 
 #include "upcxx_utils/log.hpp"
@@ -290,6 +291,20 @@ inline vector<string> get_dir_entries(const string &dname, const string &prefix)
   return dir_entries;
 }
 
+inline string get_proc_pin() {
+  ifstream f("/proc/" + to_string(getpid()) + "/status");
+  string line;
+  string prefix = "Cpus_allowed_list";
+  while (getline(f, line)) {
+    if (line.substr(0, prefix.length()) == prefix) {
+      DBG(line);
+      return line.substr(prefix.length(), line.length() - prefix.length());
+      break;
+    }
+  }
+  return "";
+}
+
 inline void pin_proc(vector<int> cpus) {
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
@@ -298,6 +313,43 @@ inline void pin_proc(vector<int> cpus) {
   }
   if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
     if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
+  }
+}
+
+inline void pin_cpu() {
+  pin_proc({upcxx::rank_me()});
+  SLOG("Pinning to logical cpus: process 0 on node 0 pinned to cpu", get_proc_pin(), "\n");
+}
+
+inline void pin_core() {
+  string numa_node_dir = "/sys/devices/system/node";
+  auto numa_node_entries = get_dir_entries(numa_node_dir, "node");
+  if (numa_node_entries.empty()) return;
+  vector<int> my_thread_siblings;
+  for (auto &entry : numa_node_entries) {
+    ifstream f(numa_node_dir + "/" + entry + "/cpulist");
+    string buf;
+    getline(f, buf);
+    f.close();
+    int numa_node_i = atoi(entry.c_str() + 4);
+    auto cpu_entries = get_dir_entries(numa_node_dir + "/" + entry, "cpu");
+    for (auto &cpu_entry : cpu_entries) {
+      if (cpu_entry != "cpu" + to_string(upcxx::rank_me())) continue;
+      if (cpu_entry == "cpulist" || cpu_entry == "cpumap") continue;
+      f.open(numa_node_dir + "/" + entry + "/" + cpu_entry + "/topology/thread_siblings_list");
+      getline(f, buf);
+      stringstream iss(buf);
+      while (iss.good()) {
+        string substr;
+        getline(iss, substr, ',');
+        my_thread_siblings.push_back(atoi(substr.c_str()));
+      }
+      break;
+    }
+  }
+  if (!my_thread_siblings.empty()) {
+    pin_proc(my_thread_siblings);
+    SLOG("Pinning to cores: process 0 on node 0 pinned to cpus", get_proc_pin(), "\n");
   }
 }
 
@@ -328,28 +380,16 @@ inline void pin_numa() {
       num_cpus++;
     }
   }
-
-  SLOG("Found a total of ", num_cpus, " hardware threads with ", hdw_threads_per_core, " threads per core on ",
-       numa_node_list.size(), " NUMA nodes\n");
-
+  SLOG("On node 0, found a total of ", num_cpus, " hardware threads with ", hdw_threads_per_core,
+       " threads per core on ", numa_node_list.size(), " NUMA domains\n");
   // pack onto numa nodes
   int hdw_threads_per_numa_node = num_cpus / numa_node_list.size();
   int cores_per_numa_node = hdw_threads_per_numa_node / hdw_threads_per_core;
-
   int numa_nodes_to_use = upcxx::local_team().rank_n() / cores_per_numa_node;
   if (numa_nodes_to_use > numa_node_list.size()) numa_nodes_to_use = numa_node_list.size();
   int my_numa_node = upcxx::local_team().rank_me() % numa_nodes_to_use;
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());
   pin_proc(my_cpu_list);
-  ifstream f("/proc/" + to_string(getpid()) + "/status");
-  string line;
-  string prefix = "Cpus_allowed_list";
-  while (getline(f, line)) {
-    if (line.substr(0, prefix.length()) == prefix) {
-      DBG(line);
-      SLOG("Process 0 on node 0 is pinned to: ", line.substr(prefix.length(), line.length() - prefix.length()), " cpus \n");
-      break;
-    }
-  }
+  SLOG("Pinning to NUMA nodes: process 0 on node 0 is pinned to cpus", get_proc_pin(), "\n");
 }
