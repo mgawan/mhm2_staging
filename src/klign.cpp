@@ -340,7 +340,7 @@ class KmerCtgDHT {
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
 #else
     // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
-    gpu_mem_avail = 32 * 1024;
+    gpu_mem_avail = 32 * 1024 * 1024;
 #endif
   }
 
