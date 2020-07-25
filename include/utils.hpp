@@ -391,5 +391,5 @@ inline void pin_numa() {
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());
   pin_proc(my_cpu_list);
-  SLOG("Pinning to NUMA nodes: process 0 on node 0 is pinned to cpus", get_proc_pin(), "\n");
+  SLOG("Pinning to NUMA domains: process 0 on node 0 is pinned to cpus", get_proc_pin(), "\n");
 }
