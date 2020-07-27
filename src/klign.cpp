@@ -207,13 +207,10 @@ class KmerCtgDHT {
   }
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen, int cstart,
-                  int clen, char orient, int ctg_extra_offset, int read_extra_offset, int overlap_len,
-                  IntermittentTimer &aln_kernel_timer) {
-    if (cseq.compare(ctg_extra_offset, overlap_len, rseq, read_extra_offset, overlap_len) == 0) {
+                  int clen, char orient, int overlap_len, IntermittentTimer &aln_kernel_timer) {
+    if (cseq.compare(0, overlap_len, rseq, rstart, overlap_len) == 0) {
       num_perfect_alns++;
-      rstart += read_extra_offset;
       int rstop = rstart + overlap_len;
-      cstart += ctg_extra_offset;
       int cstop = cstart + overlap_len;
       if (orient == '-') switch_orient(rstart, rstop, rlen);
       int score1 = overlap_len * aln_scoring.match;
@@ -229,7 +226,7 @@ class KmerCtgDHT {
       int64_t tot_mem_est = num_alns * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
-      kernel_alns.push_back({rname, cid, rstart, 0, rlen, cstart, 0, clen, orient});
+      kernel_alns.push_back({rname, cid, 0, 0, rlen, cstart, 0, clen, orient});
       ctg_seqs.push_back(cseq);
       read_seqs.push_back(rseq);
       if (tot_mem_est >= gpu_mem_avail && kernel_alns.size()) {
@@ -279,7 +276,7 @@ class KmerCtgDHT {
     gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail,
                                       rank_me(), local_team().rank_n());
     aln_kernel_timer.stop();
-    
+
     for (int i = 0; i < kernel_alns.size(); i++) {
       progress();
       Aln &aln = kernel_alns[i];
@@ -301,7 +298,7 @@ class KmerCtgDHT {
     gpu_bsw_driver::free_alignments(&sw_results);
   }
 #endif
-  
+
  public:
   int kmer_len;
 
@@ -409,7 +406,7 @@ class KmerCtgDHT {
     max_clen = 0;
     max_rlen = 0;
   }
-  
+
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
   #ifdef ALWAYS_USE_SSW
@@ -502,28 +499,19 @@ class KmerCtgDHT {
       int rstart = pos_in_read - left_of_kmer;
       int overlap_len = left_of_kmer + kmer_len + right_of_kmer;
 
-      // add a few extra on either end if possible
-      int ctg_aln_len = overlap_len + min(ctg_loc.clen - (cstart + overlap_len), KLIGN_EXPAND_BASES);
-      int ctg_extra_offset = min(cstart, KLIGN_EXPAND_BASES);
-      cstart -= ctg_extra_offset;
-      ctg_aln_len += ctg_extra_offset;
-
       // use the whole read, to account for possible indels
-      int read_aln_len = rlen;
-      int read_extra_offset = rstart;
-      rstart = 0;
-      string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
+      string read_subseq = rseq_ptr->substr(0, rlen);
 
-      assert(cstart >= 0 && cstart + ctg_aln_len <= ctg_loc.clen);
+      assert(cstart >= 0 && cstart + overlap_len <= ctg_loc.clen);
       assert(ctg_aln_len <= 2 * rlen);
       // fetch only the substring
       fetch_ctg_seqs_timer.start();
-      rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
+      rget(ctg_loc.seq_gptr + cstart, seq_buf, overlap_len).wait();
       fetch_ctg_seqs_timer.stop();
-      string ctg_subseq(seq_buf, ctg_aln_len);
-      ctg_seq_bytes_fetched += ctg_aln_len;
-      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, ctg_extra_offset,
-                 read_extra_offset, overlap_len, aln_kernel_timer);
+      string ctg_subseq(seq_buf, overlap_len);
+      ctg_seq_bytes_fetched += overlap_len;
+      align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, overlap_len,
+                 aln_kernel_timer);
       num_alns++;
     }
     delete[] seq_buf;
@@ -679,7 +667,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
   IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
 #endif
   kmer_ctg_dht.clear_aln_bufs();
-  barrier();  
+  barrier();
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
     string read_id, read_seq, quals;
