@@ -291,18 +291,44 @@ inline vector<string> get_dir_entries(const string &dname, const string &prefix)
   return dir_entries;
 }
 
+inline std::string &left_trim(std::string &str) {
+  auto it = std::find_if(str.begin(), str.end(), [](char ch) { return !std::isspace<char>(ch, std::locale()); });
+  str.erase(str.begin(), it);
+  return str;
+}
+
 inline string get_proc_pin() {
   ifstream f("/proc/" + to_string(getpid()) + "/status");
   string line;
-  string prefix = "Cpus_allowed_list";
+  string prefix = "Cpus_allowed_list:";
   while (getline(f, line)) {
     if (line.substr(0, prefix.length()) == prefix) {
       DBG(line);
-      return line.substr(prefix.length(), line.length() - prefix.length());
+      line = line.substr(prefix.length(), line.length() - prefix.length());
+      return left_trim(line);
       break;
     }
   }
   return "";
+}
+
+inline vector<int> get_pinned_cpus() {
+  vector<int> cpus;
+  stringstream ss(get_proc_pin());
+  while (ss.good()) {
+    string s;
+    getline(ss, s, ',');
+    s = left_trim(s);
+    auto dash_pos = s.find('-');
+    if (dash_pos != string::npos) {
+      int start = std::stoi(s.substr(0, dash_pos));
+      int stop = std::stoi(s.substr(dash_pos + 1)) + 1;
+      for (int i = start; i < stop; i++) cpus.push_back(i);
+    } else {
+      cpus.push_back(std::stoi(s));
+    }
+  }
+  return cpus;
 }
 
 inline void pin_proc(vector<int> cpus) {
@@ -317,8 +343,10 @@ inline void pin_proc(vector<int> cpus) {
 }
 
 inline void pin_cpu() {
-  pin_proc({upcxx::rank_me()});
-  SLOG("Pinning to logical cpus: process 0 on node 0 pinned to cpu", get_proc_pin(), "\n");
+  auto pinned_cpus = get_pinned_cpus();
+  pin_proc({pinned_cpus[upcxx::rank_me() % pinned_cpus.size()]});
+  SLOG("Pinning to logical cpus: process 0 on node 0 pinned to cpu ", get_proc_pin(), "\n");
+  WARN("Pinned to logical cpus: ", get_proc_pin(), "\n");
 }
 
 inline void pin_core() {
@@ -331,25 +359,25 @@ inline void pin_core() {
     string buf;
     getline(f, buf);
     f.close();
-    int numa_node_i = atoi(entry.c_str() + 4);
+    int numa_node_i = std::stoi(entry.substr(4));
     auto cpu_entries = get_dir_entries(numa_node_dir + "/" + entry, "cpu");
     for (auto &cpu_entry : cpu_entries) {
       if (cpu_entry != "cpu" + to_string(upcxx::rank_me())) continue;
       if (cpu_entry == "cpulist" || cpu_entry == "cpumap") continue;
       f.open(numa_node_dir + "/" + entry + "/" + cpu_entry + "/topology/thread_siblings_list");
       getline(f, buf);
-      stringstream iss(buf);
-      while (iss.good()) {
-        string substr;
-        getline(iss, substr, ',');
-        my_thread_siblings.push_back(atoi(substr.c_str()));
+      stringstream ss(buf);
+      while (ss.good()) {
+        string s;
+        getline(ss, s, ',');
+        my_thread_siblings.push_back(std::stoi(s));
       }
       break;
     }
   }
   if (!my_thread_siblings.empty()) {
     pin_proc(my_thread_siblings);
-    SLOG("Pinning to cores: process 0 on node 0 pinned to cpus", get_proc_pin(), "\n");
+    SLOG("Pinning to cores: process 0 on node 0 pinned to cpus ", get_proc_pin(), "\n");
   }
 }
 
@@ -365,7 +393,7 @@ inline void pin_numa() {
     string buf;
     getline(f, buf);
     f.close();
-    int numa_node_i = atoi(entry.c_str() + 4);
+    int numa_node_i = std::stoi(entry.substr(4));
     numa_node_list[numa_node_i].first = buf;
     auto cpu_entries = get_dir_entries(numa_node_dir + "/" + entry, "cpu");
     for (auto &cpu_entry : cpu_entries) {
@@ -376,7 +404,7 @@ inline void pin_numa() {
         // assume that the threads are separated by commans - is this always true?
         hdw_threads_per_core = std::count(buf.begin(), buf.end(), ',') + 1;
       }
-      numa_node_list[numa_node_i].second.push_back(atoi(cpu_entry.c_str() + 3));
+      numa_node_list[numa_node_i].second.push_back(std::stoi(cpu_entry.substr(3)));
       num_cpus++;
     }
   }
@@ -391,5 +419,5 @@ inline void pin_numa() {
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());
   pin_proc(my_cpu_list);
-  SLOG("Pinning to NUMA domains: process 0 on node 0 is pinned to cpus", get_proc_pin(), "\n");
+  SLOG("Pinning to NUMA domains: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
 }

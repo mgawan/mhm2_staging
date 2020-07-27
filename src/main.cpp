@@ -278,12 +278,13 @@ int main(int argc, char **argv) {
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-#ifndef DEBUG
+//#ifndef DEBUG
+  SLOG_VERBOSE("Process 0 on node 0 is initially pinned to ", get_proc_pin(), "\n");
   // pin ranks only in production
   if (options->pin_by == "cpu") pin_cpu();
   else if (options->pin_by == "core") pin_core();
   else if (options->pin_by == "numa") pin_numa();
-#endif
+//#endif
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
