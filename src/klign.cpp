@@ -40,8 +40,6 @@
  form.
 */
 
-//#define ALWAYS_USE_SSW
-
 #include <iostream>
 #include <algorithm>
 #include <math.h>
@@ -229,13 +227,11 @@ class KmerCtgDHT {
       int64_t num_alns = kernel_alns.size() + 1;
       unsigned max_matrix_size = (max_clen + 1) * (max_rlen + 1);
       int64_t tot_mem_est = num_alns * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
-
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
       kernel_alns.push_back({rname, cid, rstart, 0, rlen, cstart, 0, clen, orient});
       ctg_seqs.push_back(cseq);
       read_seqs.push_back(rseq);
-
       if (tot_mem_est >= gpu_mem_avail && kernel_alns.size()) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
@@ -285,6 +281,7 @@ class KmerCtgDHT {
     aln_kernel_timer.stop();
     
     for (int i = 0; i < kernel_alns.size(); i++) {
+      progress();
       Aln &aln = kernel_alns[i];
       aln.rstop = aln.rstart + sw_results.query_end[i];
       aln.rstart += sw_results.query_begin[i];
@@ -338,12 +335,16 @@ class KmerCtgDHT {
       }
     });
 #ifdef ENABLE_GPUS
+  #ifdef ALWAYS_USE_SSW
+    gpu_mem_avail = 32 * 1024 * 1024;
+  #else
     gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
-    if (!gpu_mem_avail) SDIE("No GPU memory available! Something went wrong...");
+    if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
+  #endif
 #else
     // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
-    gpu_mem_avail = 32 * 1024;
+    gpu_mem_avail = 32 * 1024 * 1024;
 #endif
   }
 
@@ -401,6 +402,14 @@ class KmerCtgDHT {
     kmer_store.flush_updates();
   }
 
+  void clear_aln_bufs() {
+    kernel_alns.clear();
+    ctg_seqs.clear();
+    read_seqs.clear();
+    max_clen = 0;
+    max_rlen = 0;
+  }
+  
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
   #ifdef ALWAYS_USE_SSW
@@ -415,11 +424,7 @@ class KmerCtgDHT {
 #else
     ssw_align_block(aln_kernel_timer);
 #endif
-    kernel_alns.clear();
-    ctg_seqs.clear();
-    read_seqs.clear();
-    max_clen = 0;
-    max_rlen = 0;
+    clear_aln_bufs();
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
@@ -471,6 +476,7 @@ class KmerCtgDHT {
                              IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
+    char *seq_buf = new char[2 * rlen + 1];
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -507,19 +513,20 @@ class KmerCtgDHT {
       int read_extra_offset = rstart;
       rstart = 0;
       string read_subseq = rseq_ptr->substr(rstart, read_aln_len);
-      
+
+      assert(cstart >= 0 && cstart + ctg_aln_len <= ctg_loc.clen);
+      assert(ctg_aln_len <= 2 * rlen);
       // fetch only the substring
-      char *seq_buf = new char[ctg_aln_len + 1];
       fetch_ctg_seqs_timer.start();
       rget(ctg_loc.seq_gptr + cstart, seq_buf, ctg_aln_len).wait();
       fetch_ctg_seqs_timer.stop();
-      string ctg_subseq = string(seq_buf, ctg_aln_len);
-      delete[] seq_buf;
+      string ctg_subseq(seq_buf, ctg_aln_len);
       ctg_seq_bytes_fetched += ctg_aln_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, ctg_extra_offset,
                  read_extra_offset, overlap_len, aln_kernel_timer);
       num_alns++;
     }
+    delete[] seq_buf;
   }
 
   void sort_alns() { alns->sort_alns(); }
@@ -624,6 +631,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
   get_ctgs_timer.stop();
   delete[] kmer_lists;
   kmer_read_map.clear();
+
   compute_alns_timer.start();
   int num_reads_aligned = 0;
   // create a new list of records with all reads having < KLIGN_MAX_ALNS_PER_READ, i.e. those without excessive mappings
@@ -640,7 +648,6 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     // compute alignments
     if (read_record->aligned_ctgs_map.size()) {
       num_reads_aligned++;
-      // when all the ctgs are fetched, do the alignments
       kmer_ctg_dht.compute_alns_for_read(&read_record->aligned_ctgs_map, read_record->id, read_record->seq,
                                          fetch_ctg_seqs_timer, aln_kernel_timer);
     }
@@ -671,7 +678,8 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
 #else
   IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
 #endif
-  barrier();
+  kmer_ctg_dht.clear_aln_bufs();
+  barrier();  
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
     string read_id, read_seq, quals;

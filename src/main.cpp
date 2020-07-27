@@ -278,27 +278,13 @@ int main(int argc, char **argv) {
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-#ifndef DEBUG
-  // pin ranks to a single core in production
-
-  if (options->pin_by == "thread") {
-    if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to logical core ", rank_me());
-    else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
-  } else if (options->pin_by == "socket") {
-    if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
-    else SLOG_VERBOSE("Pinned processes by socket\n");
-  } else if (options->pin_by == "core") {
-    if (pin_core() < 0) SWARN("Could not pin processes by physical core\n");
-    else SLOG_VERBOSE("Pinned processes by physical core\n");
-  } else if (options->pin_by == "clear") {
-    if (pin_clear() < 0) SWARN("Could not clear pinning of proccesses\n");
-    else SLOG_VERBOSE("Cleared any pinning of processes\n");
-  } else {
-    assert(options->pin_by == "none");
-    SLOG_VERBOSE("No process pinning enabled\n");
-  }
-
-#endif
+//#ifndef DEBUG
+  SLOG_VERBOSE("Process 0 on node 0 is initially pinned to ", get_proc_pin(), "\n");
+  // pin ranks only in production
+  if (options->pin_by == "cpu") pin_cpu();
+  else if (options->pin_by == "core") pin_core();
+  else if (options->pin_by == "numa") pin_numa();
+//#endif
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
@@ -309,7 +295,11 @@ int main(int argc, char **argv) {
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
 #ifdef ENABLE_GPUS
-    SLOG("Using ", gpu_bsw_driver::get_num_node_gpus(), " GPUs on node 0, with ",
+  #ifdef ALWAYS_USE_SSW
+    SWARN("Using SSW but GPUs are available - expect lower performance in alignment");
+  #endif
+    auto num_gpus_per_node = (rank_me() == 0 ? gpu_bsw_driver::get_num_node_gpus() : 0);
+    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ",
          get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
 #endif
   }

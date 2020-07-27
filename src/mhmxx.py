@@ -84,14 +84,14 @@ def get_hdw_cores_per_node():
         #print("Could not get cpus from psutil")
         pass
     # always trust lscpu, not psutil
-    # NOTE some versions of psutil has bugs and comes up with the *WRONG* physical cores 
+    # NOTE some versions of psutil has bugs and comes up with the *WRONG* physical cores
     if True:
         import platform
         cpus = multiprocessing.cpu_count()
         hyperthreads = 1
         if platform.system() == 'Darwin':
             for line in os.popen('sysctl -n hw.physicalcpu').readlines():
-                 hyperthreads = cpus / int(line) 
+                 hyperthreads = cpus / int(line)
             print("Found %d cpus and %d hyperthreads from sysctl" % (cpus, hyperthreads))
         else:
             for line in os.popen('lscpu').readlines():
@@ -160,9 +160,9 @@ def get_slurm_cores_per_node(defaultCores = 0):
 def get_cobalt_cores_per_node():
     ntasks_per_node = os.environ.get('COBALT_PARTCORES')
     return int(ntasks_per_node)
-    
+
 def get_lsb_cores_per_node():
-    # LSB_MCPU_HOSTS=batch2 1 h22n07 42 h22n08 42 
+    # LSB_MCPU_HOSTS=batch2 1 h22n07 42 h22n08 42
     lsb_mcpu = os.environ.get('LSB_MCPU_HOSTS')
     host_core = lsb_mcpu.split()
     return int(host_core[-1])
@@ -185,7 +185,7 @@ def get_job_cores_per_node(defaultCores = 0):
     if ntasks_per_node is not None:
         return ntasks_per_node
     return defaultCores
-    
+
 def get_slurm_job_nodes():
     """Query the SLURM job environment for the number of nodes"""
     nodes = os.environ.get('SLURM_JOB_NUM_NODES')
@@ -198,7 +198,7 @@ def get_slurm_job_nodes():
 
 def get_lsb_job_nodes():
     """Query the LFS job environment for the number of nodes"""
-    # LSB_MCPU_HOSTS=batch2 1 h22n07 42 h22n08 42 
+    # LSB_MCPU_HOSTS=batch2 1 h22n07 42 h22n08 42
     nodes = os.environ.get('LSB_MCPU_HOSTS')
     if nodes:
         return int( (len(nodes.split()) - 2) / 2)
@@ -348,7 +348,8 @@ def main():
     argparser = argparse.ArgumentParser(add_help=False)
     argparser.add_argument("--auto-resume", action="store_true", help="Automatically resume after a failure")
     argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
-    argparser.add_argument("--procs-per-node", default=0, help="Processes to spawn per node (default auto-detect cores)")
+    #argparser.add_argument("--procs-per-node", default=0, help="Processes to spawn per node (default auto-detect cores)")
+    argparser.add_argument("--procs", default=0, type=int, help="Total numer of processes")
 
     options, unknown_options = argparser.parse_known_args()
 
@@ -360,18 +361,20 @@ def main():
     mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
     if not (os.path.exists(mhmxx_binary_path) or which(mhmxx_binary_path)):
         die("Cannot find binary mhmxx in '", mhmxx_binary_path, "'")
-    
-    cores_per_node = int(options.procs_per_node)
-    if cores_per_node == 0:
-        cores_per_node = get_job_cores_per_node()
+
+    #cores_per_node = int(options.procs_per_node)
+    #if cores_per_node == 0:
+    #    cores_per_node = get_job_cores_per_node()
     num_nodes = get_job_nodes()
-    
-    cmd = ['upcxx-run', '-n', str(cores_per_node * num_nodes)]
+    if options.procs == 0:
+        options.procs = num_nodes * get_job_cores_per_node()
+
+    cmd = ['upcxx-run', '-n', str(options.procs)]
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
         cmd.extend(['-shared-heap', options.shared_heap])
     cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
     cmd.extend(unknown_options)
-    
+
     print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
     print("Executed as:" + " ".join(sys.argv))
     print("Setting GASNET_COLL_SCRATCH_SIZE=4M")

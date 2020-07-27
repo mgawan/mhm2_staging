@@ -49,6 +49,7 @@
 #include <upcxx/upcxx.hpp>
 
 #include "version.h"
+#include "utils.hpp"
 
 #include "CLI11.hpp"
 
@@ -71,16 +72,6 @@ class Options {
     copy(std::sregex_token_iterator(content.begin(), content.end(), pattern, -1),
          std::sregex_token_iterator(), back_inserter(split_content));
     return split_content;
-  }
-
-  template <typename T>
-  string vec_to_str(const vector<T> &vec, const string &delimiter=",") {
-    std::ostringstream oss;
-    for (auto elem : vec) {
-      oss << elem;
-      if (elem != vec.back()) oss << delimiter;
-    }
-    return oss.str();
   }
 
   bool extract_previous_lens(vector<unsigned> &lens, int k) {
@@ -189,13 +180,14 @@ class Options {
             mkdir(per_thread.c_str(), S_IRWXU); // ignore any errors
             cmd = "lfs setstripe -c 1 " + per_thread;
             status = std::system(cmd.c_str());
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) cout << "Set Lustre striping on the per_thread output directory\n";
-            else cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
-            mkdir((per_thread+"/00000000").c_str(), S_IRWXU);
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+              cout << "Set Lustre striping on the per_thread output directory\n";
+            else
+              cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
+            mkdir((per_thread + "/00000000").c_str(), S_IRWXU);
           }
         }
       }
-
     }
     upcxx::barrier();
     // after we change to the output directory, relative paths will be incorrect, so we need to fix them
@@ -250,7 +242,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
-  string pin_by = "core";
+  string pin_by = "cpu";
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -333,8 +325,9 @@ public:
                  "Restart in previous directory where a run failed")
                  ->capture_default_str();
     app.add_flag("--pin", pin_by,
-                 "Pin processes by (thread, socket, core, none) or (clear) - default (core)")
-                 ->capture_default_str() ->check(CLI::IsMember({"core", "socket", "thread", "clear", "none"}));
+                 "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
+                 "or NUMA domains (cpu, core, numa, none) - default is cpu ")
+                 ->capture_default_str() ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();

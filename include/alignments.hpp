@@ -211,7 +211,8 @@ public:
       if (elem1.read_id == elem2.read_id) return elem1.score1 > elem2.score1;
       if (elem1.read_id.length() == elem2.read_id.length()) {
         auto rlen = elem1.read_id.length();
-        if (elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2) == 0) return (elem1.read_id[rlen - 1] == '1');
+        if (elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2) == 0)
+          return (elem1.read_id[rlen - 1] == '1');
       }
       return elem1.read_id > elem2.read_id;
     });
