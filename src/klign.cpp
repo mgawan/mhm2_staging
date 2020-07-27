@@ -335,9 +335,13 @@ class KmerCtgDHT {
       }
     });
 #ifdef ENABLE_GPUS
+  #ifdef ALWAYS_USE_SSW
+    gpu_mem_avail = 32 * 1024 * 1024;
+  #else
     gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
     if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
+  #endif
 #else
     // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
     gpu_mem_avail = 32 * 1024 * 1024;
