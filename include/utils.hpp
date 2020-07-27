@@ -346,7 +346,6 @@ inline void pin_cpu() {
   auto pinned_cpus = get_pinned_cpus();
   pin_proc({pinned_cpus[upcxx::rank_me() % pinned_cpus.size()]});
   SLOG("Pinning to logical cpus: process 0 on node 0 pinned to cpu ", get_proc_pin(), "\n");
-  WARN("Pinned to logical cpus: ", get_proc_pin(), "\n");
 }
 
 inline void pin_core() {
