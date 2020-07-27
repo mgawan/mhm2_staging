@@ -414,6 +414,7 @@ inline void pin_numa() {
   int cores_per_numa_node = hdw_threads_per_numa_node / hdw_threads_per_core;
   int numa_nodes_to_use = upcxx::local_team().rank_n() / cores_per_numa_node;
   if (numa_nodes_to_use > numa_node_list.size()) numa_nodes_to_use = numa_node_list.size();
+  if (numa_nodes_to_use == 0) numa_nodes_to_use = 1;
   int my_numa_node = upcxx::local_team().rank_me() % numa_nodes_to_use;
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());

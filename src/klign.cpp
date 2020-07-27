@@ -503,7 +503,7 @@ class KmerCtgDHT {
       string read_subseq = rseq_ptr->substr(0, rlen);
 
       assert(cstart >= 0 && cstart + overlap_len <= ctg_loc.clen);
-      assert(ctg_aln_len <= 2 * rlen);
+      assert(overlap_len <= 2 * rlen);
       // fetch only the substring
       fetch_ctg_seqs_timer.start();
       rget(ctg_loc.seq_gptr + cstart, seq_buf, overlap_len).wait();
