@@ -236,6 +236,7 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
             if (max_overlap > seq.size()) max_overlap = seq.size();
             StripedSmithWaterman::Alignment ssw_aln;
             // make sure upcxx progress is done before starting alignment
+            progress();
             discharge();
             ssw_aligner.Align(tail(ctg.seq, max_overlap).c_str(), head(seq, max_overlap).c_str(), max_overlap,
                               ssw_filter, &ssw_aln, max((int)(max_overlap / 2), 15));

@@ -244,6 +244,8 @@ class KmerCtgDHT {
       string &cseq = ctg_seqs[i];
       string &rseq = read_seqs[i];
       // make sure upcxx progress is done before starting alignment
+      // discharge is for internal progress;  progress defaults to user level
+      progress();
       discharge();
       aln_kernel_timer.start();
       // align query, ref, reflen
@@ -270,6 +272,7 @@ class KmerCtgDHT {
     gpu_bsw_driver::alignment_results sw_results;
     short scores[] = {(short)aln_scoring.match, (short)-aln_scoring.mismatch, (short)-aln_scoring.gap_opening,
                       (short)-aln_scoring.gap_extending};
+    progress();
     discharge();
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
@@ -332,15 +335,10 @@ class KmerCtgDHT {
       }
     });
 #ifdef ENABLE_GPUS
-  #ifdef ALWAYS_USE_SSW
-    gpu_mem_avail = 32 * 1024 * 1024;
-  #else
     gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
     if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
-  #endif
 #else
-    // FIXME: this is more for testing here - shouldn't need to block the alignments like this for SSW on the CPU
     gpu_mem_avail = 32 * 1024 * 1024;
 #endif
   }
