@@ -229,7 +229,7 @@ class KmerCtgDHT {
       kernel_alns.push_back({rname, cid, 0, 0, rlen, cstart, 0, clen, orient});
       ctg_seqs.push_back(cseq);
       read_seqs.push_back(rseq);
-      if ((tot_mem_est >= gpu_mem_avail && kernel_alns.size()) || kernel_alns.size() >= 20000) {
+      if ((tot_mem_est >= gpu_mem_avail && kernel_alns.size()) || kernel_alns.size() >= KLIGN_GPU_BLOCK_SIZE) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
         kernel_align_block(aln_kernel_timer);
@@ -407,15 +407,9 @@ class KmerCtgDHT {
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
-  #ifdef ALWAYS_USE_SSW
-    // hack for comparing performance
-    #warning Always using SSW
-    ssw_align_block(aln_kernel_timer);
-  #else
     // for now, the GPU alignment doesn't support cigars
     if (!ssw_filter.report_cigar) gpu_align_block(aln_kernel_timer);
     else ssw_align_block(aln_kernel_timer);
-  #endif
 #else
     ssw_align_block(aln_kernel_timer);
 #endif
@@ -656,11 +650,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
   IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
   IntermittentTimer fetch_ctg_seqs_timer(__FILENAME__ + string(":") + "Fetch ctg seqs");
 #ifdef ENABLE_GPUS
-#ifdef ALWAYS_USE_SSW
-  IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
-#else
   IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + (compute_cigar ? "SSW" : "GPU_BSW"));
-#endif
 #else
   IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
 #endif
