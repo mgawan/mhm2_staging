@@ -1,7 +1,5 @@
 #pragma once
 
-//#include <cuda_runtime_api.h>
-
 #include "driver.hpp"
 #include "gpu_alns.hpp"
 #define cudaErrchk(ans)                                                                  \

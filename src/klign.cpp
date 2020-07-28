@@ -274,6 +274,7 @@ class KmerCtgDHT {
                       (short)-aln_scoring.gap_extending};
     progress();
     discharge();
+    WARN("aligning on GPU");
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
     gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail,
