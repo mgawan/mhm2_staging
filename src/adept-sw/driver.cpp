@@ -52,11 +52,8 @@ void gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vect
   short matchScore = scores[0], misMatchScore = scores[1], startGap = scores[2], extendGap = scores[3];
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
 
-  int device_per_rank = 1;
-  unsigned NBLOCKS = totalAlignments;
-  unsigned alignmentsPerDevice = NBLOCKS / device_per_rank;
-  unsigned leftOver_device = NBLOCKS % device_per_rank;
-  int max_per_device = leftOver_device + alignmentsPerDevice;
+  unsigned alignmentsPerDevice = totalAlignments;
+  int max_per_device = alignmentsPerDevice;
   int its = (max_per_device > 20000) ? (ceil((float)max_per_device / 20000)) : 1;
 
   initialize_alignments(alignments, totalAlignments);  // pinned memory allocation
@@ -65,8 +62,6 @@ void gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vect
   float total_time_cpu = 0;
   int device_count = get_device_count(totRanks);
   int my_cpu_id = omp_get_thread_num();
-  std::cerr << "WARNING: my_cpu_id " << my_cpu_id << " my upc rank " << my_upc_rank << "\n";
-  std::cout << "my_cpu_id " << my_cpu_id << " my upc rank " << my_upc_rank << "\n";
   int my_gpu_id = my_upc_rank % device_count;  // + my_cpu_id;
   cudaSetDevice(my_gpu_id);
 
@@ -76,16 +71,15 @@ void gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vect
   }
 
   int BLOCKS_l = alignmentsPerDevice;
-  if (my_cpu_id == device_per_rank - 1) BLOCKS_l += leftOver_device;
   unsigned leftOvers = BLOCKS_l % its;
   unsigned stringsPerIt = BLOCKS_l / its;
   gpu_alignments gpu_data(stringsPerIt + leftOvers);  // gpu mallocs
 
-  short* alAbeg = alignments->ref_begin + my_cpu_id * alignmentsPerDevice;
-  short* alBbeg = alignments->query_begin + my_cpu_id * alignmentsPerDevice;
-  short* alAend = alignments->ref_end + my_cpu_id * alignmentsPerDevice;
-  short* alBend = alignments->query_end + my_cpu_id * alignmentsPerDevice;  // memory on CPU for copying the results
-  short* top_scores_cpu = alignments->top_scores + my_cpu_id * alignmentsPerDevice;
+  short* alAbeg = alignments->ref_begin;
+  short* alBbeg = alignments->query_begin;
+  short* alAend = alignments->ref_end;
+  short* alBend = alignments->query_end;;  // memory on CPU for copying the results
+  short* top_scores_cpu = alignments->top_scores;
   unsigned* offsetA_h;  // = new unsigned[stringsPerIt + leftOvers];
   cudaMallocHost(&offsetA_h, sizeof(int) * (stringsPerIt + leftOvers));
   unsigned* offsetB_h;  // = new unsigned[stringsPerIt + leftOvers];
@@ -111,20 +105,17 @@ void gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vect
     std::vector<std::string>::const_iterator beginBVec;
     std::vector<std::string>::const_iterator endBVec;
     if (perGPUIts == its - 1) {
-      beginAVec = contigs.begin() + ((alignmentsPerDevice * my_cpu_id) + perGPUIts * stringsPerIt);
-      endAVec = contigs.begin() + ((alignmentsPerDevice * my_cpu_id) + (perGPUIts + 1) * stringsPerIt) +
+      beginAVec = contigs.begin() + (perGPUIts * stringsPerIt);
+      endAVec = contigs.begin() + ((perGPUIts + 1) * stringsPerIt) +
         leftOvers;  // so that each openmp thread has a copy of strings it needs to align
-      beginBVec = reads.begin() + ((alignmentsPerDevice * my_cpu_id) + perGPUIts * stringsPerIt);
-      endBVec = reads.begin() + ((alignmentsPerDevice * my_cpu_id) + (perGPUIts + 1) * stringsPerIt) +
-        leftOvers;  // so that each openmp thread has a copy of strings it needs to align
+      beginBVec = reads.begin() + (perGPUIts * stringsPerIt);
+      endBVec = reads.begin() + ((perGPUIts + 1) * stringsPerIt) + leftOvers;  // so that each openmp thread has a copy of strings it needs to align
       blocksLaunched = stringsPerIt + leftOvers;
     } else {
-      beginAVec = contigs.begin() + ((alignmentsPerDevice * my_cpu_id) + perGPUIts * stringsPerIt);
-      endAVec = contigs.begin() + (alignmentsPerDevice * my_cpu_id) +
-        (perGPUIts + 1) * stringsPerIt;  // so that each openmp thread has a copy of strings it needs to align
-      beginBVec = reads.begin() + ((alignmentsPerDevice * my_cpu_id) + perGPUIts * stringsPerIt);
-      endBVec = reads.begin() + (alignmentsPerDevice * my_cpu_id) +
-        (perGPUIts + 1) * stringsPerIt;  // so that each openmp thread has a copy of strings it needs to align
+      beginAVec = contigs.begin() + (perGPUIts * stringsPerIt);
+      endAVec = contigs.begin() + (perGPUIts + 1) * stringsPerIt;  // so that each openmp thread has a copy of strings it needs to align
+      beginBVec = reads.begin() + (perGPUIts * stringsPerIt);
+      endBVec = reads.begin() + (perGPUIts + 1) * stringsPerIt;  // so that each openmp thread has a copy of strings it needs to align
       blocksLaunched = stringsPerIt;
     }
 
