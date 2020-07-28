@@ -229,7 +229,7 @@ class KmerCtgDHT {
       kernel_alns.push_back({rname, cid, 0, 0, rlen, cstart, 0, clen, orient});
       ctg_seqs.push_back(cseq);
       read_seqs.push_back(rseq);
-      if (tot_mem_est >= gpu_mem_avail && kernel_alns.size()) {
+      if ((tot_mem_est >= gpu_mem_avail && kernel_alns.size()) || kernel_alns.size() >= 20000) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
         kernel_align_block(aln_kernel_timer);
@@ -274,7 +274,6 @@ class KmerCtgDHT {
                       (short)-aln_scoring.gap_extending};
     progress();
     discharge();
-    WARN("aligning on GPU");
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
     gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail,

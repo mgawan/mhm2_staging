@@ -52,17 +52,16 @@ void gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vect
   short matchScore = scores[0], misMatchScore = scores[1], startGap = scores[2], extendGap = scores[3];
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
 
-  unsigned alignmentsPerDevice = totalAlignments;
-  int max_per_device = alignmentsPerDevice;
-  int its = (max_per_device > 20000) ? (ceil((float)max_per_device / 20000)) : 1;
+  int its = (totalAlignments > 20000) ? (ceil((float)totalAlignments / 20000)) : 1;
 
+  if (its > 1) std::cerr << "WARNING: rank " << my_upc_rank << " doing " << its << " kernel iterations\n";
+  
   initialize_alignments(alignments, totalAlignments);  // pinned memory allocation
   auto start = NOW;
 
   float total_time_cpu = 0;
   int device_count = get_device_count(totRanks);
-  int my_cpu_id = omp_get_thread_num();
-  int my_gpu_id = my_upc_rank % device_count;  // + my_cpu_id;
+  int my_gpu_id = my_upc_rank % device_count;  
   cudaSetDevice(my_gpu_id);
 
   cudaStream_t streams_cuda[NSTREAMS];
@@ -70,9 +69,8 @@ void gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vect
     cudaStreamCreate(&streams_cuda[stm]);
   }
 
-  int BLOCKS_l = alignmentsPerDevice;
-  unsigned leftOvers = BLOCKS_l % its;
-  unsigned stringsPerIt = BLOCKS_l / its;
+  unsigned leftOvers = totalAlignments % its;
+  unsigned stringsPerIt = totalAlignments / its;
   gpu_alignments gpu_data(stringsPerIt + leftOvers);  // gpu mallocs
 
   short* alAbeg = alignments->ref_begin;
