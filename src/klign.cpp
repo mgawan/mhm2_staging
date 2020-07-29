@@ -269,26 +269,29 @@ class KmerCtgDHT {
 
 #ifdef ENABLE_GPUS
   void gpu_align_block(IntermittentTimer &aln_kernel_timer) {
-    gpu_bsw_driver::alignment_results sw_results;
     short scores[] = {(short)aln_scoring.match, (short)-aln_scoring.mismatch, (short)-aln_scoring.gap_opening,
                       (short)-aln_scoring.gap_extending};
     progress();
     discharge();
+    
+    gpu_bsw_driver::alignment_results gpu_aln_results;
+    gpu_bsw_driver::initialize_alignments(&gpu_aln_results, kernel_alns.size());
+  
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &sw_results, scores, gpu_mem_avail,
+    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &gpu_aln_results, scores, gpu_mem_avail,
                                       rank_me(), local_team().rank_n());
     aln_kernel_timer.stop();
 
     for (int i = 0; i < kernel_alns.size(); i++) {
       progress();
       Aln &aln = kernel_alns[i];
-      aln.rstop = aln.rstart + sw_results.query_end[i];
-      aln.rstart += sw_results.query_begin[i];
-      aln.cstop = aln.cstart + sw_results.ref_end[i];
-      aln.cstart += sw_results.ref_begin[i];
+      aln.rstop = aln.rstart + gpu_aln_results.query_end[i];
+      aln.rstart += gpu_aln_results.query_begin[i];
+      aln.cstop = aln.cstart + gpu_aln_results.ref_end[i];
+      aln.cstart += gpu_aln_results.ref_begin[i];
       if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
-      aln.score1 = sw_results.top_scores[i];
+      aln.score1 = gpu_aln_results.top_scores[i];
       // FIXME: needs to be set to the second best
       aln.score2 = 0;
       // FIXME: need to get the mismatches
@@ -298,7 +301,7 @@ class KmerCtgDHT {
       //if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
       alns->add_aln(aln);
     }
-    gpu_bsw_driver::free_alignments(&sw_results);
+    gpu_bsw_driver::free_alignments(&gpu_aln_results);
   }
 #endif
 

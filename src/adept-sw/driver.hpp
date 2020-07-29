@@ -22,6 +22,7 @@ struct alignment_results{
 };
 
 void free_alignments(gpu_bsw_driver::alignment_results *alignments);
+void initialize_alignments(gpu_bsw_driver::alignment_results *alignments, int totalAlignments);
 
 void
 kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize, alignment_results *alignments, short scores[4], long long int maxMemAvail, unsigned my_upcxx_rank, unsigned totRanks);

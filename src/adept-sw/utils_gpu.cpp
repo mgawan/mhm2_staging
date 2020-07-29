@@ -10,23 +10,6 @@ unsigned getMaxLength (std::vector<std::string> v)
   return maxLength;
 }
 
-void initialize_alignments(gpu_bsw_driver::alignment_results *alignments, int max_alignments){
-    cudaMallocHost(&(alignments->ref_begin), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->ref_end), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->query_begin), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->query_end), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->top_scores), sizeof(short)*max_alignments);
-}
-
-// void free_alignments(gpu_bsw_driver::alignment_results *alignments){
-//        cudaErrchk(cudaFreeHost(alignments->ref_begin));
-//        cudaErrchk(cudaFreeHost(alignments->ref_end));
-//        cudaErrchk(cudaFreeHost(alignments->query_begin));
-//        cudaErrchk(cudaFreeHost(alignments->query_end));
-//        cudaErrchk(cudaFreeHost(alignments->top_scores));
-
-// }
-
 void asynch_mem_copies_htd(gpu_alignments* gpu_data, unsigned* offsetA_h, unsigned* offsetB_h, char* strA, char* strA_d, char* strB, char* strB_d, unsigned half_length_A, 
 unsigned half_length_B, unsigned totalLengthA, unsigned totalLengthB, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
 
