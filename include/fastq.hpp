@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -164,7 +164,7 @@ class FastqReader {
         string header(buf);
         rtrim(header);
         if (!get_fq_name(header)) continue;
-                  
+
         // now read another three lines, but check that the third line is a + separator
         int64_t test_tell = ftell(f);
         bool record_found = true;
@@ -190,7 +190,7 @@ class FastqReader {
             DBG("Did not find proper pair, rewinding\n");
             if (fseek(f, test_tell, SEEK_SET) != 0) DIE("Could not fseek in ", fname, " to ", offset, ": ", strerror(errno));
         }
-  
+
         // need this to be the second of the pair
         this_pair = header[header.length() - 1];
         DBG("Found possible pair ", (char) this_pair, ", header: ", header, "\n");
@@ -203,7 +203,7 @@ class FastqReader {
             DBG("Found proper pair 1&2\n");
             break;
         }
-        
+
         // did not find valid new start of (possibly paired) record
         last_tell = this_tell;
         last_pair = this_pair;
@@ -251,7 +251,7 @@ public:
     posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
     SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
     DBG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), "\n");
-        
+
     if (!fname2.empty()) {
         // this second reader is generally hidden from the user
         LOG("Opening second FastqReader with ", fname2, "\n");
@@ -275,13 +275,13 @@ public:
 
   size_t get_next_fq_record(string &id, string &seq, string &quals) {
     if (fqr2) {
-        // return a single interleaved file
-        if (first_file) {
-            first_file = false;
-        } else {
-            first_file = true;
-            return fqr2->get_next_fq_record(id, seq, quals);
-        }
+      // return a single interleaved file
+      if (first_file) {
+        first_file = false;
+      } else {
+        first_file = true;
+        return fqr2->get_next_fq_record(id, seq, quals);
+      }
     }
     if (feof(f) || ftell(f) >= end_read) return 0;
     io_t.start();

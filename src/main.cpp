@@ -64,6 +64,10 @@ using namespace std;
 #include "alignments.hpp"
 #include "kmer_dht.hpp"
 
+#ifdef ENABLE_GPUS
+#include "adept-sw/driver.hpp"
+#endif
+
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
@@ -81,8 +85,8 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>
-void find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                     Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0);
+double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
+                       Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0);
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
@@ -94,8 +98,8 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
 
 
 struct StageTimers {
-  IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *localassm, *cgraph, *dump_ctgs,
-    *compute_kmer_depths;
+  IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm, *cgraph,
+    *dump_ctgs, *compute_kmer_depths;
 };
 
 static StageTimers stage_timers = {
@@ -104,6 +108,7 @@ static StageTimers stage_timers = {
   .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
   .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
   .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
+  .kernel_alns = new IntermittentTimer(__FILENAME__ + string(":") + "Kernel alignments", ""),
   .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
   .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
   .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
@@ -146,7 +151,9 @@ void contigging(unsigned kmer_len, unsigned prev_kmer_len, vector<PackedReads*> 
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     stage_timers.alignments->start();
-    find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, KLIGN_SEED_SPACE);
+    double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
+                                                   alns, KLIGN_SEED_SPACE);
+    stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
 #ifdef DEBUG
@@ -188,13 +195,12 @@ void scaffolding(unsigned scaff_i, int max_kmer_len, vector<PackedReads *> packe
   else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
   Alns alns;
   stage_timers.alignments->start();
-#ifdef DEBUG
-  alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
-#endif
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   int seed_space = KLIGN_SEED_SPACE;
   if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
-  find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, seed_space);
+  double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
+                                                 ctgs, alns, seed_space);
+  stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
   // always recalculate the insert size because we may need it for resumes of
   compute_aln_depths("scaff-contigs-" + to_string(scaff_kmer_len), ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
@@ -245,8 +251,9 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
-                         options->min_ctg_print_len);
+  double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
+                                                 options->min_ctg_print_len);
+  stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
@@ -276,27 +283,13 @@ int main(int argc, char **argv) {
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-#ifndef DEBUG
-  // pin ranks to a single core in production
-
-  if (options->pin_by == "thread") {
-    if (pin_thread(getpid(), local_team().rank_me()) == -1) SWARN("Could not pin process ", getpid(), " to logical core ", rank_me());
-    else SLOG_VERBOSE("Pinned processes, with process 0 (pid ", getpid(), ") pinned to a logical core ", local_team().rank_me(), "\n");
-  } else if (options->pin_by == "socket") {
-    if (pin_socket() < 0) SWARN("Could not pin processes by socket\n");
-    else SLOG_VERBOSE("Pinned processes by socket\n");
-  } else if (options->pin_by == "core") {
-    if (pin_core() < 0) SWARN("Could not pin processes by physical core\n");
-    else SLOG_VERBOSE("Pinned processes by physical core\n");
-  } else if (options->pin_by == "clear") {
-    if (pin_clear() < 0) SWARN("Could not clear pinning of proccesses\n");
-    else SLOG_VERBOSE("Cleared any pinning of processes\n");
-  } else {
-    assert(options->pin_by == "none");
-    SLOG_VERBOSE("No process pinning enabled\n");
-  }
-
-#endif
+//#ifndef DEBUG
+  SLOG_VERBOSE("Process 0 on node 0 is initially pinned to ", get_proc_pin(), "\n");
+  // pin ranks only in production
+  if (options->pin_by == "cpu") pin_cpu();
+  else if (options->pin_by == "core") pin_core();
+  else if (options->pin_by == "numa") pin_numa();
+//#endif
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
@@ -306,6 +299,14 @@ int main(int argc, char **argv) {
     }
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
+#ifdef ENABLE_GPUS
+  #ifdef ALWAYS_USE_SSW
+    SWARN("Using SSW but GPUs are available - expect lower performance in alignment");
+  #endif
+    auto num_gpus_per_node = (rank_me() == 0 ? gpu_bsw_driver::get_num_node_gpus() : 0);
+    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ",
+         get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
+#endif
   }
 
   Contigs ctgs;
@@ -449,6 +450,7 @@ int main(int argc, char **argv) {
     SLOG("    ", stage_timers.analyze_kmers->get_final(), "\n");
     SLOG("    ", stage_timers.dbjg_traversal->get_final(), "\n");
     SLOG("    ", stage_timers.alignments->get_final(), "\n");
+    SLOG("      -> ", stage_timers.kernel_alns->get_final(), "\n");
     SLOG("    ", stage_timers.localassm->get_final(), "\n");
     SLOG("    ", stage_timers.cgraph->get_final(), "\n");
     SLOG("    FASTQ total read time: ", FastqReader::get_io_time(), "\n");

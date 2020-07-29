@@ -92,7 +92,8 @@ public:
   }
 
   void add_aln(Aln &aln) {
-    // check for duplicate alns first - do this backwards because only the most recent entries could be for this read
+#ifdef DEBUG
+    // check for duplicate alns to this read - do this backwards because only the most recent entries could be for this read
     for (auto it = alns.rbegin(); it != alns.rend(); ++it) {
       // we have no more entries for this read
       if (it->read_id != aln.read_id) break;
@@ -102,6 +103,7 @@ public:
         return;
       }
     }
+#endif
     alns.push_back(aln);
   }
 
@@ -201,6 +203,18 @@ public:
                  avg_rlen, "\n");
     return most_common_rlen;
   }
+
+  void sort_alns() {
+    BarrierTimer timer(__FILEFUNC__);
+    // sort the alns by name and then for the read from best score to worst - this is needed in later stages
+    std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
+      if (elem1.read_id == elem2.read_id) return elem1.score1 > elem2.score1;
+      if (elem1.read_id.length() == elem2.read_id.length()) {
+        auto rlen = elem1.read_id.length();
+        if (elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2) == 0)
+          return (elem1.read_id[rlen - 1] == '1');
+      }
+      return elem1.read_id > elem2.read_id;
+    });
+  }
 };
-
-
