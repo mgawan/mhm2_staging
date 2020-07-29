@@ -1,6 +1,6 @@
 #pragma once
 
-class gpu_alignments{
+class gpu_alignments {
     public:
     short* ref_start_gpu;
     short* ref_end_gpu;

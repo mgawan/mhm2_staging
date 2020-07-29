@@ -134,7 +134,7 @@ class KmerCtgDHT {
   AlnScoring aln_scoring;
 
 #ifdef ENABLE_GPUS
-  gpu_bsw_driver::alignment_results gpu_aln_results;
+  gpu_bsw_driver::GPUDriver gpu_driver;
 #endif
   
   vector<Aln> kernel_alns;
@@ -273,26 +273,26 @@ class KmerCtgDHT {
 
 #ifdef ENABLE_GPUS
   void gpu_align_block(IntermittentTimer &aln_kernel_timer) {
-    short scores[] = {(short)aln_scoring.match, (short)-aln_scoring.mismatch, (short)-aln_scoring.gap_opening,
-                      (short)-aln_scoring.gap_extending};
     progress();
     discharge();
     
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &gpu_aln_results, scores, gpu_mem_avail);
-    while (!gpu_bsw_driver::kernel_is_done()) progress();
+    gpu_driver.run_kernel(read_seqs, ctg_seqs, max_rlen, max_clen);
+    while (!gpu_driver.kernel_is_done()) progress();
     aln_kernel_timer.stop();
 
+    auto aln_results = gpu_driver.get_aln_results();
+    
     for (int i = 0; i < kernel_alns.size(); i++) {
       progress();
       Aln &aln = kernel_alns[i];
-      aln.rstop = aln.rstart + gpu_aln_results.query_end[i];
-      aln.rstart += gpu_aln_results.query_begin[i];
-      aln.cstop = aln.cstart + gpu_aln_results.ref_end[i];
-      aln.cstart += gpu_aln_results.ref_begin[i];
+      aln.rstop = aln.rstart + aln_results.query_end[i];
+      aln.rstart += aln_results.query_begin[i];
+      aln.cstop = aln.cstart + aln_results.ref_end[i];
+      aln.cstart += aln_results.ref_begin[i];
       if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
-      aln.score1 = gpu_aln_results.top_scores[i];
+      aln.score1 = aln_results.top_scores[i];
       // FIXME: needs to be set to the second best
       aln.score2 = 0;
       // FIXME: need to get the mismatches
@@ -309,7 +309,8 @@ class KmerCtgDHT {
   int kmer_len;
 
   // aligner construction: SSW internal defaults are 2 2 3 1
-  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, AlnScoring &aln_scoring, bool compute_cigar)
+  KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, AlnScoring &aln_scoring, int rlen_limit,
+             bool compute_cigar)
       : kmer_map({})
       , kmer_store(kmer_map)
       , ssw_aligner(aln_scoring.match, aln_scoring.mismatch, aln_scoring.gap_opening, aln_scoring.gap_extending,
@@ -341,7 +342,8 @@ class KmerCtgDHT {
     gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
     if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
-    gpu_bsw_driver::init(&gpu_aln_results, KLIGN_GPU_BLOCK_SIZE, local_team().rank_me(), local_team().rank_n());
+    gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
+                    (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
 #else
     gpu_mem_avail = 32 * 1024 * 1024;
 #endif
@@ -352,9 +354,6 @@ class KmerCtgDHT {
       it = kmer_map->erase(it);
     }
     kmer_store.clear();
-#ifdef ENABLE_GPUS
-    gpu_bsw_driver::fini(&gpu_aln_results);
-#endif
   }
 
   ~KmerCtgDHT() { clear(); }
@@ -734,7 +733,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
 
 template<int MAX_K>
 double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0) {
+                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar=false, int min_ctg_len=0) {
   BarrierTimer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
@@ -747,7 +746,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
     aln_scoring = alt_aln_scoring;
   }
   SLOG_VERBOSE("Alignment scoring parameters: ", aln_scoring.to_string(), "\n");
-  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, compute_cigar);
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, rlen_limit, compute_cigar);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
@@ -767,7 +766,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
 
 #define FA(KMER_LEN) \
     template \
-    double find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, int, bool, int)
+    double find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, int, int, bool, int)
 
 
 FA(32);

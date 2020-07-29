@@ -8,12 +8,10 @@
 
 #define NSTREAMS 2
 
-#define NOW std::chrono::high_resolution_clock::now()
-
-namespace gpu_bsw_driver{
+namespace gpu_bsw_driver {
 
 // for storing the alignment results
-struct alignment_results{
+struct AlignmentResults {
   short* ref_begin;
   short* query_begin;
   short* ref_end;
@@ -21,20 +19,28 @@ struct alignment_results{
   short* top_scores;
 };
 
-void init(gpu_bsw_driver::alignment_results *alignments, int max_alignments, int my_upcxx_rank, int totRanks);
-void fini(gpu_bsw_driver::alignment_results *alignments);
-
-void kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize,
-                       unsigned maxContigSize, alignment_results *alignments, short scores[4], long long int maxMemAvail);
-
-bool kernel_is_done();
-
-void
-verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g_alAend,
-                 short* g_alBend);
-
+  
 size_t get_tot_gpu_mem();
 size_t get_avail_gpu_mem_per_rank(int totRanks);
 int get_num_node_gpus();
+
+  struct DriverState;
+
+  class GPUDriver {
+  private:
+    DriverState *driver_state = nullptr;
+    AlignmentResults alignments;
+  public:
+    ~GPUDriver();
+
+    void init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score, short gap_opening_score,
+              short gap_extending_score, int rlen_limit);
+    void run_kernel(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize);
+    bool kernel_is_done();
+
+    AlignmentResults &get_aln_results() {
+      return alignments;
+    }
+  };
 
 }

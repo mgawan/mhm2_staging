@@ -86,7 +86,7 @@ template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>
 double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0);
+                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar=false, int min_ctg_len=0);
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
@@ -116,8 +116,8 @@ static StageTimers stage_timers = {
 };
 
 template<int MAX_K>
-void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_reads_list, Contigs &ctgs, double &num_kmers_factor,
-                int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads*> packed_reads_list, Contigs &ctgs,
+                double &num_kmers_factor, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
@@ -147,7 +147,7 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     Alns alns;
     stage_timers.alignments->start();
     double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
-                                                   alns, KLIGN_SEED_SPACE);
+                                                   alns, KLIGN_SEED_SPACE, rlen_limit);
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
@@ -180,8 +180,8 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
 }
 
 template <int MAX_K>
-void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs, int &max_expected_ins_size,
-                 int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
+                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   int scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
   bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
@@ -194,7 +194,7 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
   int seed_space = KLIGN_SEED_SPACE;
   if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
   double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
-                                                 ctgs, alns, seed_space);
+                                                 ctgs, alns, seed_space, rlen_limit);
   stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
   // always recalculate the insert size because we may need it for resumes of
@@ -243,11 +243,15 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
     packed_reads->load_reads();
   }
   stage_timers.cache_reads->stop();
+  int rlen_limit = 0;
+  for (auto packed_reads : packed_reads_list) {
+    rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
+  }
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
-                                                 options->min_ctg_print_len);
+  double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
+                                                 alns, 4, rlen_limit, true, options->min_ctg_print_len);
   stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
@@ -333,6 +337,11 @@ int main(int argc, char **argv) {
       SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                   KNORM, "\n");
     }
+    int rlen_limit = 0;
+    for (auto packed_reads : packed_reads_list) {
+      rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
+    }
+    
     if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
     chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
@@ -351,8 +360,8 @@ int main(int argc, char **argv) {
 
   #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, max_expected_ins_size, \
-                               ins_avg, ins_stddev, options); \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, rlen_limit, packed_reads_list, ctgs, num_kmers_factor, \
+                               max_expected_ins_size, ins_avg, ins_stddev, options); \
           break
 
         switch (max_k) {
@@ -391,7 +400,7 @@ int main(int argc, char **argv) {
 
   #define SCAFFOLD_K(KMER_LEN) \
         case KMER_LEN: \
-          scaffolding<KMER_LEN>(i, max_kmer_len, packed_reads_list, ctgs, max_expected_ins_size, ins_avg,\
+          scaffolding<KMER_LEN>(i, max_kmer_len, rlen_limit, packed_reads_list, ctgs, max_expected_ins_size, ins_avg, \
                                 ins_stddev, options); \
           break
 
@@ -462,8 +471,8 @@ int main(int argc, char **argv) {
     if (options->post_assm_only && !options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
     auto max_k = (kmer_len / 32 + 1) * 32;
 
-#define POST_ASSEMBLY(KMER_LEN)                           \
-    case KMER_LEN:                                            \
+#define POST_ASSEMBLY(KMER_LEN)                                         \
+    case KMER_LEN:                                                      \
       post_assembly<KMER_LEN>(kmer_len, ctgs, options, max_expected_ins_size); \
       break
 
