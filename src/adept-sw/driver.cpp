@@ -49,6 +49,8 @@ struct gpu_bsw_driver::DriverState {
   cudaEvent_t event;
   short matchScore, misMatchScore, startGap, extendGap;
   gpu_alignments *gpu_data;
+  unsigned half_length_A = 0;
+  unsigned half_length_B = 0;
 };
 
 void gpu_bsw_driver::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score,
@@ -100,20 +102,19 @@ gpu_bsw_driver::GPUDriver::~GPUDriver() {
 }
 
 bool gpu_bsw_driver::GPUDriver::kernel_is_done() {
-  return (cudaEventQuery(driver_state->event) == cudaSuccess);
+  if (cudaEventQuery(driver_state->event) != cudaSuccess) return false;
+  cudaEventDestroy(driver_state->event);
+  return true;
 }
 
-void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize,
-                                           unsigned maxContigSize) {
+void gpu_bsw_driver::GPUDriver::run_kernel_forwards(std::vector<std::string> reads, std::vector<std::string> contigs,
+                                                    unsigned maxReadSize, unsigned maxContigSize) {
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
 
-  short* alAbeg = alignments.ref_begin;
-  short* alBbeg = alignments.query_begin;
   short* alAend = alignments.ref_end;
   short* alBend = alignments.query_end;;  // memory on CPU for copying the results
-  short* top_scores_cpu = alignments.top_scores;
 
-  int blocksLaunched = 0;
+  int blocksLaunched = totalAlignments;
   std::vector<std::string>::const_iterator beginAVec;
   std::vector<std::string>::const_iterator endAVec;
   std::vector<std::string>::const_iterator beginBVec;
@@ -122,36 +123,35 @@ void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::
   endAVec = contigs.begin() + totalAlignments;
   beginBVec = reads.begin();
   endBVec = reads.begin() + totalAlignments;
-  blocksLaunched = totalAlignments;
 
   std::vector<std::string> sequencesA(beginAVec, endAVec);
   std::vector<std::string> sequencesB(beginBVec, endBVec);
   unsigned running_sum = 0;
   int sequences_per_stream = (blocksLaunched) / NSTREAMS;
   int sequences_stream_leftover = (blocksLaunched) % NSTREAMS;
-  unsigned half_length_A = 0;
-  unsigned half_length_B = 0;
+  driver_state->half_length_A = 0;
+  driver_state->half_length_B = 0;
 
   for (int i = 0; i < (int)sequencesA.size(); i++) {
     running_sum += sequencesA[i].size();
     driver_state->offsetA_h[i] = running_sum;  // sequencesA[i].size();
     if (i == sequences_per_stream - 1) {
-      half_length_A = running_sum;
+      driver_state->half_length_A = running_sum;
       running_sum = 0;
     }
   }
-  unsigned totalLengthA = half_length_A + driver_state->offsetA_h[sequencesA.size() - 1];
+  unsigned totalLengthA = driver_state->half_length_A + driver_state->offsetA_h[sequencesA.size() - 1];
 
   running_sum = 0;
   for (int i = 0; i < (int)sequencesB.size(); i++) {
     running_sum += sequencesB[i].size();
     driver_state->offsetB_h[i] = running_sum;  // sequencesB[i].size();
     if (i == sequences_per_stream - 1) {
-      half_length_B = running_sum;
+      driver_state->half_length_B = running_sum;
       running_sum = 0;
     }
   }
-  unsigned totalLengthB = half_length_B + driver_state->offsetB_h[sequencesB.size() - 1];
+  unsigned totalLengthB = driver_state->half_length_B + driver_state->offsetB_h[sequencesB.size() - 1];
 
   unsigned offsetSumA = 0;
   unsigned offsetSumB = 0;
@@ -165,9 +165,12 @@ void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::
     offsetSumB += sequencesB[i].size();
   }
 
+  cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming);
+  
   asynch_mem_copies_htd(driver_state->gpu_data, driver_state->offsetA_h, driver_state->offsetB_h, driver_state->strA,
-                        driver_state->strA_d, driver_state->strB, driver_state->strB_d, half_length_A, half_length_B, totalLengthA,
-                        totalLengthB, sequences_per_stream, sequences_stream_leftover, driver_state->streams_cuda);
+                        driver_state->strA_d, driver_state->strB, driver_state->strB_d, driver_state->half_length_A,
+                        driver_state->half_length_B, totalLengthA, totalLengthB, sequences_per_stream, sequences_stream_leftover,
+                        driver_state->streams_cuda);
   unsigned minSize = (maxReadSize < maxContigSize) ? maxReadSize : maxContigSize;
   unsigned totShmem = 3 * (minSize + 1) * sizeof(short);
   unsigned alignmentPad = 4 + (4 - totShmem % 4);
@@ -182,7 +185,7 @@ void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::
     driver_state->misMatchScore, driver_state->startGap, driver_state->extendGap);
 
   gpu_bsw::sequence_dna_kernel<<<sequences_per_stream + sequences_stream_leftover, minSize, ShmemBytes, driver_state->streams_cuda[1]>>>(
-    driver_state->strA_d + half_length_A, driver_state->strB_d + half_length_B,
+    driver_state->strA_d + driver_state->half_length_A, driver_state->strB_d + driver_state->half_length_B,
     driver_state->gpu_data->offset_ref_gpu + sequences_per_stream,
     driver_state->gpu_data->offset_query_gpu + sequences_per_stream, driver_state->gpu_data->ref_start_gpu + sequences_per_stream,
     driver_state->gpu_data->ref_end_gpu + sequences_per_stream, driver_state->gpu_data->query_start_gpu + sequences_per_stream,
@@ -193,11 +196,31 @@ void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::
   asynch_mem_copies_dth_mid(driver_state->gpu_data, alAend, alBend, sequences_per_stream, sequences_stream_leftover,
                             driver_state->streams_cuda);
 
-  cudaStreamSynchronize(driver_state->streams_cuda[0]);
-  cudaStreamSynchronize(driver_state->streams_cuda[1]);
+  cudaEventRecord(driver_state->event);
+//  cudaStreamSynchronize(driver_state->streams_cuda[0]);
+//  cudaStreamSynchronize(driver_state->streams_cuda[1]);
+
+}
+
+void gpu_bsw_driver::GPUDriver::run_kernel_backwards(std::vector<std::string> reads, std::vector<std::string> contigs,
+                                                     unsigned maxReadSize, unsigned maxContigSize) {
+  unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
+  
+  short* alAbeg = alignments.ref_begin;
+  short* alBbeg = alignments.query_begin;
+  short* alAend = alignments.ref_end;
+  short* alBend = alignments.query_end;;  // memory on CPU for copying the results
+  short* top_scores_cpu = alignments.top_scores;
+  int blocksLaunched = totalAlignments;
+  int sequences_per_stream = (blocksLaunched) / NSTREAMS;
+  int sequences_stream_leftover = (blocksLaunched) % NSTREAMS;
+  unsigned minSize = (maxReadSize < maxContigSize) ? maxReadSize : maxContigSize;
+  unsigned totShmem = 3 * (minSize + 1) * sizeof(short);
+  unsigned alignmentPad = 4 + (4 - totShmem % 4);
+  size_t ShmemBytes = totShmem + alignmentPad;
 
   int newMin = get_new_min_length(alAend, alBend, blocksLaunched);  // find the new largest of smaller lengths
-
+  
   cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming);
   gpu_bsw::sequence_dna_reverse<<<sequences_per_stream, newMin, ShmemBytes, driver_state->streams_cuda[0]>>>(
     driver_state->strA_d, driver_state->strB_d, driver_state->gpu_data->offset_ref_gpu, driver_state->gpu_data->offset_query_gpu,
@@ -206,7 +229,7 @@ void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::
     driver_state->matchScore, driver_state->misMatchScore, driver_state->startGap, driver_state->extendGap);
     
   gpu_bsw::sequence_dna_reverse<<<sequences_per_stream + sequences_stream_leftover, newMin, ShmemBytes, driver_state->streams_cuda[1]>>>(
-    driver_state->strA_d + half_length_A, driver_state->strB_d + half_length_B,
+    driver_state->strA_d + driver_state->half_length_A, driver_state->strB_d + driver_state->half_length_B,
     driver_state->gpu_data->offset_ref_gpu + sequences_per_stream,
     driver_state->gpu_data->offset_query_gpu + sequences_per_stream, driver_state->gpu_data->ref_start_gpu + sequences_per_stream,
     driver_state->gpu_data->ref_end_gpu + sequences_per_stream, driver_state->gpu_data->query_start_gpu + sequences_per_stream,
@@ -222,6 +245,5 @@ void gpu_bsw_driver::GPUDriver::run_kernel(std::vector<std::string> reads, std::
   alAend += totalAlignments;
   alBend += totalAlignments;
   top_scores_cpu += totalAlignments;
-
 }
 

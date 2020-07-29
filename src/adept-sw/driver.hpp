@@ -35,7 +35,10 @@ int get_num_node_gpus();
 
     void init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score, short gap_opening_score,
               short gap_extending_score, int rlen_limit);
-    void run_kernel(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize);
+    void run_kernel_forwards(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize,
+                             unsigned maxContigSize);
+    void run_kernel_backwards(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize,
+                              unsigned maxContigSize);
     bool kernel_is_done();
 
     AlignmentResults &get_aln_results() {

@@ -278,7 +278,9 @@ class KmerCtgDHT {
     
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    gpu_driver.run_kernel(read_seqs, ctg_seqs, max_rlen, max_clen);
+    gpu_driver.run_kernel_forwards(read_seqs, ctg_seqs, max_rlen, max_clen);
+    while (!gpu_driver.kernel_is_done()) progress();
+    gpu_driver.run_kernel_backwards(read_seqs, ctg_seqs, max_rlen, max_clen);
     while (!gpu_driver.kernel_is_done()) progress();
     aln_kernel_timer.stop();
 
