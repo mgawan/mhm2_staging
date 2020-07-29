@@ -21,12 +21,13 @@ struct alignment_results{
   short* top_scores;
 };
 
-void free_alignments(gpu_bsw_driver::alignment_results *alignments);
-void initialize_alignments(gpu_bsw_driver::alignment_results *alignments, int totalAlignments);
+void init(gpu_bsw_driver::alignment_results *alignments, int max_alignments, int my_upcxx_rank, int totRanks);
+void fini(gpu_bsw_driver::alignment_results *alignments);
 
-void
-kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize, alignment_results *alignments, short scores[4], long long int maxMemAvail, unsigned my_upcxx_rank, unsigned totRanks);
+void kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize,
+                       unsigned maxContigSize, alignment_results *alignments, short scores[4], long long int maxMemAvail);
 
+bool kernel_is_done();
 
 void
 verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g_alAend,

@@ -133,6 +133,10 @@ class KmerCtgDHT {
   StripedSmithWaterman::Filter ssw_filter;
   AlnScoring aln_scoring;
 
+#ifdef ENABLE_GPUS
+  gpu_bsw_driver::alignment_results gpu_aln_results;
+#endif
+  
   vector<Aln> kernel_alns;
   vector<string> ctg_seqs;
   vector<string> read_seqs;
@@ -274,13 +278,10 @@ class KmerCtgDHT {
     progress();
     discharge();
     
-    gpu_bsw_driver::alignment_results gpu_aln_results;
-    gpu_bsw_driver::initialize_alignments(&gpu_aln_results, kernel_alns.size());
-  
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &gpu_aln_results, scores, gpu_mem_avail,
-                                      rank_me(), local_team().rank_n());
+    gpu_bsw_driver::kernel_driver_dna(read_seqs, ctg_seqs, max_rlen, max_clen, &gpu_aln_results, scores, gpu_mem_avail);
+    while (!gpu_bsw_driver::kernel_is_done()) progress();
     aln_kernel_timer.stop();
 
     for (int i = 0; i < kernel_alns.size(); i++) {
@@ -301,7 +302,6 @@ class KmerCtgDHT {
       //if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
       alns->add_aln(aln);
     }
-    gpu_bsw_driver::free_alignments(&gpu_aln_results);
   }
 #endif
 
@@ -341,6 +341,7 @@ class KmerCtgDHT {
     gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
     if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
+    gpu_bsw_driver::init(&gpu_aln_results, KLIGN_GPU_BLOCK_SIZE, local_team().rank_me(), local_team().rank_n());
 #else
     gpu_mem_avail = 32 * 1024 * 1024;
 #endif
@@ -351,6 +352,9 @@ class KmerCtgDHT {
       it = kmer_map->erase(it);
     }
     kmer_store.clear();
+#ifdef ENABLE_GPUS
+    gpu_bsw_driver::fini(&gpu_aln_results);
+#endif
   }
 
   ~KmerCtgDHT() { clear(); }
