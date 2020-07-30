@@ -92,7 +92,7 @@ if(ENABLE_CUDA)
         ${UPCXX_UTILS_LIBRARIES}
         MHMXX_VERSION_LIB
         ADEPT_SW_LIBRARY)
-    install(TARGETS ADEPT_SW_LIBRARY LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    
 else()
     target_link_libraries(mhmxx
         Threads::Threads

@@ -82,6 +82,9 @@ if(CMAKE_CUDA_COMPILER)
 else()
     option(ENABLE_CUDA "Enable CUDA" OFF)
 endif()
+if(ENABLE_CUDA)
+  message(STATUS "Building for GPU with CUDA")
+endif()
 
 find_package(CpuArch
   REQUIRED
