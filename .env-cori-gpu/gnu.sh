@@ -4,13 +4,10 @@ module rm PrgEnv-cray
 module load PrgEnv-gnu
 
 module rm craype-mic-knl
-#module rm craype-haswell
-
-# if these are loaded then the adept-sw library ends up static which causes the link to fail
-module rm craype
 module rm craype-haswell
-#module load craype
-#module load craype-haswell
+
+# if this is loaded then the adept-sw library ends up static which causes the link to fail
+#module rm craype
 
 module load esslurm
 module load cuda
