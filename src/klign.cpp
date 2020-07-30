@@ -134,7 +134,7 @@ class KmerCtgDHT {
   AlnScoring aln_scoring;
 
 #ifdef ENABLE_GPUS
-  gpu_bsw_driver::GPUDriver gpu_driver;
+  adept_sw::GPUDriver gpu_driver;
 #endif
   
   vector<Aln> kernel_alns;
@@ -341,7 +341,7 @@ class KmerCtgDHT {
       }
     });
 #ifdef ENABLE_GPUS
-    gpu_mem_avail = gpu_bsw_driver::get_avail_gpu_mem_per_rank(local_team().rank_n());
+    gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(local_team().rank_n());
     if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
     SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
     gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,

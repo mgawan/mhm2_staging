@@ -7,9 +7,16 @@
 #include <thrust/scan.h>
 
 #include "driver.hpp"
-#include "utils_gpu.hpp"
-#include "gpu_alns.hpp"
 #include "kernel.hpp"
+
+
+static void gpuAssert(cudaError_t code, const char* file, int line, bool abort=true) {
+  if (code != cudaSuccess) {
+    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+    if (abort) exit(code);
+  }
+}
+#define cudaErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
 static int get_device_count(int totRanks) {
   int deviceCount = 0;
@@ -18,26 +25,142 @@ static int get_device_count(int totRanks) {
   return deviceCount;
 }
 
-size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks) {
+size_t adept_sw::get_avail_gpu_mem_per_rank(int totRanks) {
   int ranksPerDevice = totRanks / get_device_count(totRanks);
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
   return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
 }
 
-size_t gpu_bsw_driver::get_tot_gpu_mem() {
+size_t adept_sw::get_tot_gpu_mem() {
   cudaDeviceProp prop;
   cudaErrchk(cudaGetDeviceProperties(&prop, 0));
   return prop.totalGlobalMem;
 }
 
-int gpu_bsw_driver::get_num_node_gpus() {
+int adept_sw::get_num_node_gpus() {
   int deviceCount = 0;
   cudaErrchk(cudaGetDeviceCount(&deviceCount));
   return deviceCount;
 }
 
-struct gpu_bsw_driver::DriverState {
+struct gpu_alignments {
+  short* ref_start_gpu;
+  short* ref_end_gpu;
+  short* query_start_gpu;
+  short* query_end_gpu;
+  short* scores_gpu;
+  unsigned* offset_ref_gpu;
+  unsigned* offset_query_gpu;
+
+  gpu_alignments(int max_alignments) {
+    cudaErrchk(cudaMalloc(&offset_query_gpu, (max_alignments) * sizeof(int)));
+    cudaErrchk(cudaMalloc(&offset_ref_gpu, (max_alignments) * sizeof(int)));
+    cudaErrchk(cudaMalloc(&ref_start_gpu, (max_alignments) * sizeof(short)));
+    cudaErrchk(cudaMalloc(&ref_end_gpu, (max_alignments) * sizeof(short)));
+    cudaErrchk(cudaMalloc(&query_end_gpu, (max_alignments) * sizeof(short)));
+    cudaErrchk(cudaMalloc(&query_start_gpu, (max_alignments) * sizeof(short)));
+    cudaErrchk(cudaMalloc(&scores_gpu, (max_alignments) * sizeof(short)));
+  }
+  
+  ~gpu_alignments() {
+    cudaErrchk(cudaFree(offset_ref_gpu));
+    cudaErrchk(cudaFree(offset_query_gpu));
+    cudaErrchk(cudaFree(ref_start_gpu));
+    cudaErrchk(cudaFree(ref_end_gpu));
+    cudaErrchk(cudaFree(query_start_gpu));
+    cudaErrchk(cudaFree(query_end_gpu));
+  }
+};
+
+unsigned getMaxLength (std::vector<std::string> v)
+{
+  unsigned maxLength = 0;
+  for(auto str : v){
+    if(maxLength < str.length()){
+      maxLength = str.length();
+    }
+  }
+  return maxLength;
+}
+
+void asynch_mem_copies_htd(gpu_alignments* gpu_data, unsigned* offsetA_h, unsigned* offsetB_h, char* strA, char* strA_d,
+                           char* strB, char* strB_d, unsigned half_length_A, unsigned half_length_B, unsigned totalLengthA,
+                           unsigned totalLengthB, int sequences_per_stream, int sequences_stream_leftover,
+                           cudaStream_t* streams_cuda) {
+  cudaErrchk(cudaMemcpyAsync(gpu_data->offset_ref_gpu, offsetA_h, (sequences_per_stream) * sizeof(int),
+                             cudaMemcpyHostToDevice,streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(gpu_data->offset_ref_gpu + sequences_per_stream, offsetA_h + sequences_per_stream, 
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(int),
+                             cudaMemcpyHostToDevice,streams_cuda[1]));
+
+  cudaErrchk(cudaMemcpyAsync(gpu_data->offset_query_gpu, offsetB_h, (sequences_per_stream) * sizeof(int),
+                             cudaMemcpyHostToDevice,streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(gpu_data->offset_query_gpu + sequences_per_stream, offsetB_h + sequences_per_stream, 
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(int),
+                             cudaMemcpyHostToDevice,streams_cuda[1]));
+
+
+  cudaErrchk(cudaMemcpyAsync(strA_d, strA, half_length_A * sizeof(char),
+                             cudaMemcpyHostToDevice,streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(strA_d + half_length_A, strA + half_length_A, (totalLengthA - half_length_A) * sizeof(char),
+                             cudaMemcpyHostToDevice,streams_cuda[1]));
+
+  cudaErrchk(cudaMemcpyAsync(strB_d, strB, half_length_B * sizeof(char),
+                             cudaMemcpyHostToDevice,streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(strB_d + half_length_B, strB + half_length_B, (totalLengthB - half_length_B) * sizeof(char),
+                             cudaMemcpyHostToDevice,streams_cuda[1]));
+}
+
+void asynch_mem_copies_dth_mid(gpu_alignments* gpu_data, short* alAend, short* alBend, int sequences_per_stream,
+                               int sequences_stream_leftover, cudaStream_t* streams_cuda) {
+  cudaErrchk(cudaMemcpyAsync(alAend, gpu_data->ref_end_gpu, sequences_per_stream * sizeof(short),
+                             cudaMemcpyDeviceToHost, streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(alAend + sequences_per_stream, gpu_data->ref_end_gpu + sequences_per_stream, 
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(short), cudaMemcpyDeviceToHost,
+                             streams_cuda[1]));
+
+  cudaErrchk(cudaMemcpyAsync(alBend, gpu_data->query_end_gpu, sequences_per_stream * sizeof(short), cudaMemcpyDeviceToHost,
+                             streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(alBend + sequences_per_stream, gpu_data->query_end_gpu + sequences_per_stream,
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(short), 
+                             cudaMemcpyDeviceToHost, streams_cuda[1]));
+}
+
+void asynch_mem_copies_dth(gpu_alignments* gpu_data, short* alAbeg, short* alBbeg, short* top_scores_cpu, int sequences_per_stream,
+                           int sequences_stream_leftover, cudaStream_t* streams_cuda) {
+  cudaErrchk(cudaMemcpyAsync(alAbeg, gpu_data->ref_start_gpu, sequences_per_stream * sizeof(short),
+                             cudaMemcpyDeviceToHost, streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(alAbeg + sequences_per_stream, gpu_data->ref_start_gpu + sequences_per_stream,
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(short),
+                             cudaMemcpyDeviceToHost, streams_cuda[1]));
+
+  cudaErrchk(cudaMemcpyAsync(alBbeg, gpu_data->query_start_gpu, sequences_per_stream * sizeof(short),
+                             cudaMemcpyDeviceToHost, streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(alBbeg + sequences_per_stream, gpu_data->query_start_gpu + sequences_per_stream,
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(short),
+                             cudaMemcpyDeviceToHost, streams_cuda[1]));
+                          
+  cudaErrchk(cudaMemcpyAsync(top_scores_cpu, gpu_data->scores_gpu, sequences_per_stream * sizeof(short),
+                             cudaMemcpyDeviceToHost, streams_cuda[0]));
+  cudaErrchk(cudaMemcpyAsync(top_scores_cpu + sequences_per_stream, gpu_data->scores_gpu + sequences_per_stream, 
+                             (sequences_per_stream + sequences_stream_leftover) * sizeof(short), cudaMemcpyDeviceToHost,
+                             streams_cuda[1]));
+}
+
+int get_new_min_length(short* alAend, short* alBend, int blocksLaunched) {
+  int newMin = 1000;
+  int maxA = 0;
+  int maxB = 0;
+  for (int i = 0; i < blocksLaunched; i++) {
+    if(alBend[i] > maxB ) maxB = alBend[i];
+    if(alAend[i] > maxA) maxA = alAend[i];
+  }
+  newMin = (maxB > maxA)? maxA : maxB;
+  return newMin;
+}
+
+struct adept_sw::DriverState {
   int device_count;
   int my_gpu_id;
   cudaStream_t streams_cuda[NSTREAMS];
@@ -53,7 +176,7 @@ struct gpu_bsw_driver::DriverState {
   unsigned half_length_B = 0;
 };
 
-void gpu_bsw_driver::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score,
+void adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score,
                                      short gap_opening_score, short gap_extending_score, int max_rlen) {
   driver_state = new DriverState();
   driver_state->matchScore = match_score;
@@ -83,7 +206,7 @@ void gpu_bsw_driver::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short 
   driver_state->gpu_data = new gpu_alignments(KLIGN_GPU_BLOCK_SIZE);  // gpu mallocs
 }
   
-gpu_bsw_driver::GPUDriver::~GPUDriver() {
+adept_sw::GPUDriver::~GPUDriver() {
   cudaErrchk(cudaFreeHost(alignments.ref_begin));
   cudaErrchk(cudaFreeHost(alignments.ref_end));
   cudaErrchk(cudaFreeHost(alignments.query_begin));
@@ -101,13 +224,13 @@ gpu_bsw_driver::GPUDriver::~GPUDriver() {
   delete driver_state;
 }
 
-bool gpu_bsw_driver::GPUDriver::kernel_is_done() {
+bool adept_sw::GPUDriver::kernel_is_done() {
   if (cudaEventQuery(driver_state->event) != cudaSuccess) return false;
   cudaEventDestroy(driver_state->event);
   return true;
 }
 
-void gpu_bsw_driver::GPUDriver::run_kernel_forwards(std::vector<std::string> reads, std::vector<std::string> contigs,
+void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string> &reads, std::vector<std::string> &contigs,
                                                     unsigned maxReadSize, unsigned maxContigSize) {
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
 
@@ -197,12 +320,9 @@ void gpu_bsw_driver::GPUDriver::run_kernel_forwards(std::vector<std::string> rea
                             driver_state->streams_cuda);
 
   cudaEventRecord(driver_state->event);
-//  cudaStreamSynchronize(driver_state->streams_cuda[0]);
-//  cudaStreamSynchronize(driver_state->streams_cuda[1]);
-
 }
 
-void gpu_bsw_driver::GPUDriver::run_kernel_backwards(std::vector<std::string> reads, std::vector<std::string> contigs,
+void adept_sw::GPUDriver::run_kernel_backwards(std::vector<std::string> &reads, std::vector<std::string> &contigs,
                                                      unsigned maxReadSize, unsigned maxContigSize) {
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
   

@@ -302,9 +302,8 @@ int main(int argc, char **argv) {
   #ifdef ALWAYS_USE_SSW
     SWARN("Using SSW but GPUs are available - expect lower performance in alignment");
   #endif
-    auto num_gpus_per_node = (rank_me() == 0 ? gpu_bsw_driver::get_num_node_gpus() : 0);
-    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ",
-         get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
+    auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
+    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
 #endif
   }
 
@@ -346,7 +345,7 @@ int main(int argc, char **argv) {
     chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-        get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+         get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3;
     int ins_avg = 0;
