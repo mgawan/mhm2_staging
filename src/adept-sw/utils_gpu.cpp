@@ -1,11 +1,13 @@
 #include "utils_gpu.hpp"
+#include <sstream>
+#include <exception>
 
 void utils_gpu::gpuAssert(cudaError_t code, const char* file, int line, bool abort) {
     if(code != cudaSuccess)
     {
-        fprintf(stderr, "GPUassert: %s %s %d cpu:%d\n", cudaGetErrorString(code), file, line,omp_get_thread_num());
-        if(abort)
-            exit(code);
+        std::ostringstream os;
+        os << "GPUassert: " << cudaGetErrorString(code) << " " << file << ":" << line << " cpu:" << omp_get_thread_num();
+        throw std::runtime_error(os.str());
     }
 }
 
@@ -58,7 +60,7 @@ void utils_gpu::asynch_mem_copies_dth_mid(gpu_alignments* gpu_data, short* alAen
 }
 
 void utils_gpu::asynch_mem_copies_dth(gpu_alignments* gpu_data, short* alAbeg, short* alBbeg, short* top_scores_cpu, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
-           cudaErrchk(cudaMemcpyAsync(alAbeg, gpu_data->ref_start_gpu, sequences_per_stream * sizeof(short),
+          cudaErrchk(cudaMemcpyAsync(alAbeg, gpu_data->ref_start_gpu, sequences_per_stream * sizeof(short),
                                   cudaMemcpyDeviceToHost, streams_cuda[0]));
           cudaErrchk(cudaMemcpyAsync(alAbeg + sequences_per_stream, gpu_data->ref_start_gpu + sequences_per_stream, (sequences_per_stream + sequences_stream_leftover) * sizeof(short),
                                   cudaMemcpyDeviceToHost, streams_cuda[1]));

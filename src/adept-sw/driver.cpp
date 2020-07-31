@@ -38,11 +38,11 @@ int gpu_bsw_driver::get_num_node_gpus() {
 
 
 void gpu_bsw_driver::initialize_alignments(gpu_bsw_driver::alignment_results *alignments, int max_alignments) {
-    cudaMallocHost(&(alignments->ref_begin), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->ref_end), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->query_begin), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->query_end), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->top_scores), sizeof(short)*max_alignments);
+    cudaErrchk(cudaMallocHost(&(alignments->ref_begin), sizeof(short)*max_alignments));
+    cudaErrchk(cudaMallocHost(&(alignments->ref_end), sizeof(short)*max_alignments));
+    cudaErrchk(cudaMallocHost(&(alignments->query_begin), sizeof(short)*max_alignments));
+    cudaErrchk(cudaMallocHost(&(alignments->query_end), sizeof(short)*max_alignments));
+    cudaErrchk(cudaMallocHost(&(alignments->top_scores), sizeof(short)*max_alignments));
 }
 
 void gpu_bsw_driver::free_alignments(gpu_bsw_driver::alignment_results *alignments) {
@@ -86,11 +86,11 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
       int device_count = get_device_count(totRanks);
       int my_cpu_id = omp_get_thread_num();
       int my_gpu_id = my_upc_rank%device_count;// + my_cpu_id;
-      cudaSetDevice(my_gpu_id);
+      cudaErrchk(cudaSetDevice(my_gpu_id));
 
       cudaStream_t streams_cuda[NSTREAMS];
       for(int stm = 0; stm < NSTREAMS; stm++){
-        cudaStreamCreate(&streams_cuda[stm]);
+        cudaErrchk(cudaStreamCreate(&streams_cuda[stm]));
       }
 
         // int my_cpu_id = omp_get_thread_num();
@@ -111,18 +111,18 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
         short* alBend = alignments->query_end + my_cpu_id * alignmentsPerDevice;  // memory on CPU for copying the results
         short* top_scores_cpu = alignments->top_scores + my_cpu_id * alignmentsPerDevice;
         unsigned* offsetA_h;// = new unsigned[stringsPerIt + leftOvers];
-        cudaMallocHost(&offsetA_h, sizeof(int)*(stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&offsetA_h, sizeof(int)*(stringsPerIt + leftOvers)));
         unsigned* offsetB_h;// = new unsigned[stringsPerIt + leftOvers];
-        cudaMallocHost(&offsetB_h, sizeof(int)*(stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&offsetB_h, sizeof(int)*(stringsPerIt + leftOvers)));
 
         char *strA_d, *strB_d;
         cudaErrchk(cudaMalloc(&strA_d, maxContigSize * (stringsPerIt + leftOvers) * sizeof(char)));
         cudaErrchk(cudaMalloc(&strB_d, maxReadSize *(stringsPerIt + leftOvers)* sizeof(char)));
 
         char* strA;
-        cudaMallocHost(&strA, sizeof(char)*maxContigSize * (stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&strA, sizeof(char)*maxContigSize * (stringsPerIt + leftOvers)));
         char* strB;
-        cudaMallocHost(&strB, sizeof(char)* maxReadSize *(stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&strB, sizeof(char)* maxReadSize *(stringsPerIt + leftOvers)));
 
         float total_packing = 0;
 
@@ -228,8 +228,8 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
             // copyin back end index so that we can find new min
             utils_gpu::asynch_mem_copies_dth_mid(&gpu_data, alAend, alBend, sequences_per_stream, sequences_stream_leftover, streams_cuda);
 
-            cudaStreamSynchronize (streams_cuda[0]);
-            cudaStreamSynchronize (streams_cuda[1]);
+            cudaErrchk(cudaStreamSynchronize (streams_cuda[0]));
+            cudaErrchk(cudaStreamSynchronize (streams_cuda[1]));
 
             auto sec_cpu_start = NOW;
             int newMin = utils_gpu::get_new_min_length(alAend, alBend, blocksLaunched); // find the new largest of smaller lengths
@@ -260,13 +260,13 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
         std::chrono::duration<double> diff2 = end1 - start2;
         cudaErrchk(cudaFree(strA_d));
         cudaErrchk(cudaFree(strB_d));
-        cudaFreeHost(offsetA_h);
-        cudaFreeHost(offsetB_h);
-        cudaFreeHost(strA);
-        cudaFreeHost(strB);
+        cudaErrchk(cudaFreeHost(offsetA_h));
+        cudaErrchk(cudaFreeHost(offsetB_h));
+        cudaErrchk(cudaFreeHost(strA));
+        cudaErrchk(cudaFreeHost(strB));
 
         for(int i = 0; i < NSTREAMS; i++)
-          cudaStreamDestroy(streams_cuda[i]);
+          cudaErrchk(cudaStreamDestroy(streams_cuda[i]));
 
    //     std::cout <<"cpu time:"<<total_time_cpu<<std::endl;
   //      std::cout <<"packing time:"<<total_packing<<std::endl;
@@ -293,13 +293,13 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
                              1,15,16,0,19,17,22,18,21};
 
     int deviceCount;
-    cudaGetDeviceCount(&deviceCount);
+    cudaErrchk(cudaGetDeviceCount(&deviceCount));
     omp_set_num_threads(deviceCount);// one OMP thread per GPU
     std::cout<<"Number of available GPUs:"<<deviceCount<<"\n";
 
     cudaDeviceProp prop[deviceCount];
     for(int i = 0; i < deviceCount; i++)
-      cudaGetDeviceProperties(&prop[i], 0);
+      cudaErrchk(cudaGetDeviceProperties(&prop[i], 0));
 
     unsigned NBLOCKS             = totalAlignments;
     unsigned alignmentsPerDevice = NBLOCKS / deviceCount;
@@ -313,13 +313,13 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
       float total_time_cpu = 0;
       cudaStream_t streams_cuda[NSTREAMS];
       for(int stm = 0; stm < NSTREAMS; stm++){
-        cudaStreamCreate(&streams_cuda[stm]);
+        cudaErrchk(cudaStreamCreate(&streams_cuda[stm]));
       }
 
         int my_cpu_id = omp_get_thread_num();
-        cudaSetDevice(my_cpu_id);
+        cudaErrchk(cudaSetDevice(my_cpu_id));
         int myGPUid;
-        cudaGetDevice(&myGPUid);
+        cudaErrchk(cudaGetDevice(&myGPUid));
         int BLOCKS_l = alignmentsPerDevice;
         if(my_cpu_id == deviceCount - 1)
             BLOCKS_l += leftOver_device;
@@ -340,18 +340,18 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
         short* top_scores_cpu = alignments->top_scores + my_cpu_id * alignmentsPerDevice;
 
         unsigned* offsetA_h;// = new unsigned[stringsPerIt + leftOvers];
-        cudaMallocHost(&offsetA_h, sizeof(int)*(stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&offsetA_h, sizeof(int)*(stringsPerIt + leftOvers)));
         unsigned* offsetB_h;// = new unsigned[stringsPerIt + leftOvers];
-        cudaMallocHost(&offsetB_h, sizeof(int)*(stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&offsetB_h, sizeof(int)*(stringsPerIt + leftOvers)));
 
         char *strA_d, *strB_d;
         cudaErrchk(cudaMalloc(&strA_d, maxContigSize * (stringsPerIt + leftOvers) * sizeof(char)));
         cudaErrchk(cudaMalloc(&strB_d, maxReadSize *(stringsPerIt + leftOvers)* sizeof(char)));
 
         char* strA;
-        cudaMallocHost(&strA, sizeof(char)*maxContigSize * (stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&strA, sizeof(char)*maxContigSize * (stringsPerIt + leftOvers)));
         char* strB;
-        cudaMallocHost(&strB, sizeof(char)* maxReadSize *(stringsPerIt + leftOvers));
+        cudaErrchk(cudaMallocHost(&strB, sizeof(char)* maxReadSize *(stringsPerIt + leftOvers)));
 
         float total_packing = 0;
 
@@ -458,8 +458,8 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
             // copyin back end index so that we can find new min
             utils_gpu::asynch_mem_copies_dth_mid(&gpu_data, alAend, alBend, sequences_per_stream, sequences_stream_leftover, streams_cuda);
 
-            cudaStreamSynchronize (streams_cuda[0]);
-            cudaStreamSynchronize (streams_cuda[1]);
+            cudaErrchk(cudaStreamSynchronize (streams_cuda[0]));
+            cudaErrchk(cudaStreamSynchronize (streams_cuda[1]));
 
             auto sec_cpu_start = NOW;
             int newMin = utils_gpu::get_new_min_length(alAend, alBend, blocksLaunched); // find the new largest of smaller lengths
@@ -490,13 +490,13 @@ gpu_bsw_driver::kernel_driver_aa(std::vector<std::string> reads, std::vector<std
         std::chrono::duration<double> diff2 = end1 - start2;
         cudaErrchk(cudaFree(strA_d));
         cudaErrchk(cudaFree(strB_d));
-        cudaFreeHost(offsetA_h);
-        cudaFreeHost(offsetB_h);
-        cudaFreeHost(strA);
-        cudaFreeHost(strB);
+        cudaErrchk(cudaFreeHost(offsetA_h));
+        cudaErrchk(cudaFreeHost(offsetB_h));
+        cudaErrchk(cudaFreeHost(strA));
+        cudaErrchk(cudaFreeHost(strB));
 
         for(int i = 0; i < NSTREAMS; i++)
-          cudaStreamDestroy(streams_cuda[i]);
+          cudaErrchk(cudaStreamDestroy(streams_cuda[i]));
 
         std::cout <<"cpu time:"<<total_time_cpu<<std::endl;
         std::cout <<"packing time:"<<total_packing<<std::endl;
