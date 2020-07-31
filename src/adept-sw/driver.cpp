@@ -12,8 +12,9 @@
 
 static void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
   if (code != cudaSuccess) {
-    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-    if (abort) exit(code);
+    std::ostringstream os;
+    os << "GPU assert " << cudaGetErrorString(code) << " " << file << ":" << line << "\n";
+    throw std::runtime_error(os.str());
   }
 }
 #define cudaErrchk(ans) \
@@ -31,9 +32,7 @@ size_t adept_sw::get_avail_gpu_mem_per_rank(int totRanks) {
   int num_devices = get_device_count(totRanks);
   if (!num_devices) return 0;
   int ranksPerDevice = totRanks / num_devices;
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
-  return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
+  return (get_tot_gpu_mem() * 0.8) / ranksPerDevice;
 }
 
 size_t adept_sw::get_tot_gpu_mem() {
@@ -75,6 +74,7 @@ struct gpu_alignments {
     cudaErrchk(cudaFree(ref_end_gpu));
     cudaErrchk(cudaFree(query_start_gpu));
     cudaErrchk(cudaFree(query_end_gpu));
+    cudaErrchk(cudaFree(scores_gpu));
   }
 };
 
@@ -174,26 +174,26 @@ void adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_
   driver_state->misMatchScore = mismatch_score;
   driver_state->startGap = gap_opening_score;
   driver_state->extendGap = gap_extending_score;
-  cudaMallocHost(&(alignments.ref_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE);
-  cudaMallocHost(&(alignments.ref_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE);
-  cudaMallocHost(&(alignments.query_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE);
-  cudaMallocHost(&(alignments.query_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE);
-  cudaMallocHost(&(alignments.top_scores), sizeof(short) * KLIGN_GPU_BLOCK_SIZE);
+  cudaErrchk(cudaMallocHost(&(alignments.ref_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&(alignments.ref_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&(alignments.query_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&(alignments.query_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&(alignments.top_scores), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   driver_state->device_count = get_device_count(upcxx_rank_n);
   driver_state->my_gpu_id = upcxx_rank_me % driver_state->device_count;
-  cudaSetDevice(driver_state->my_gpu_id);
+  cudaErrchk(cudaSetDevice(driver_state->my_gpu_id));
   for (int stm = 0; stm < NSTREAMS; stm++) {
-    cudaStreamCreate(&driver_state->streams_cuda[stm]);
+    cudaErrchk(cudaStreamCreate(&driver_state->streams_cuda[stm]));
   }
-  cudaMallocHost(&driver_state->offsetA_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE);
-  cudaMallocHost(&driver_state->offsetB_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE);
+  cudaErrchk(cudaMallocHost(&driver_state->offsetA_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&driver_state->offsetB_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE));
 
   // FIXME: hack for max contig and read size
   cudaErrchk(cudaMalloc(&driver_state->strA_d, max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
   cudaErrchk(cudaMalloc(&driver_state->strB_d, max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
 
-  cudaMallocHost(&driver_state->strA, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE);
-  cudaMallocHost(&driver_state->strB, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE);
+  cudaErrchk(cudaMallocHost(&driver_state->strA, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&driver_state->strB, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
   driver_state->gpu_data = new gpu_alignments(KLIGN_GPU_BLOCK_SIZE);  // gpu mallocs
 }
 
@@ -209,18 +209,18 @@ adept_sw::GPUDriver::~GPUDriver() {
 
   cudaErrchk(cudaFree(driver_state->strA_d));
   cudaErrchk(cudaFree(driver_state->strB_d));
-  cudaFreeHost(driver_state->offsetA_h);
-  cudaFreeHost(driver_state->offsetB_h);
-  cudaFreeHost(driver_state->strA);
-  cudaFreeHost(driver_state->strB);
-  for (int i = 0; i < NSTREAMS; i++) cudaStreamDestroy(driver_state->streams_cuda[i]);
+  cudaErrchk(cudaFreeHost(driver_state->offsetA_h));
+  cudaErrchk(cudaFreeHost(driver_state->offsetB_h));
+  cudaErrchk(cudaFreeHost(driver_state->strA));
+  cudaErrchk(cudaFreeHost(driver_state->strB));
+  for (int i = 0; i < NSTREAMS; i++) cudaErrchk(cudaStreamDestroy(driver_state->streams_cuda[i]));
   delete driver_state->gpu_data;
   delete driver_state;
 }
 
 bool adept_sw::GPUDriver::kernel_is_done() {
   if (cudaEventQuery(driver_state->event) != cudaSuccess) return false;
-  cudaEventDestroy(driver_state->event);
+  cudaErrchk(cudaEventDestroy(driver_state->event));
   return true;
 }
 
@@ -230,7 +230,7 @@ void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, s
 
   short* alAend = alignments.ref_end;
   short* alBend = alignments.query_end;
-  ;  // memory on CPU for copying the results
+  // memory on CPU for copying the results
 
   int blocksLaunched = totalAlignments;
   std::vector<std::string>::const_iterator beginAVec;
@@ -283,7 +283,7 @@ void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, s
     offsetSumB += sequencesB[i].size();
   }
 
-  cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming);
+  cudaErrchk(cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming));
 
   asynch_mem_copies_htd(driver_state->gpu_data, driver_state->offsetA_h, driver_state->offsetB_h, driver_state->strA,
                         driver_state->strA_d, driver_state->strB, driver_state->strB_d, driver_state->half_length_A,
@@ -294,7 +294,7 @@ void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, s
   unsigned alignmentPad = 4 + (4 - totShmem % 4);
   size_t ShmemBytes = totShmem + alignmentPad;
   if (ShmemBytes > 48000)
-    cudaFuncSetAttribute(gpu_bsw::sequence_dna_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, ShmemBytes);
+    cudaErrchk(cudaFuncSetAttribute(gpu_bsw::sequence_dna_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, ShmemBytes));
 
   gpu_bsw::sequence_dna_kernel<<<sequences_per_stream, minSize, ShmemBytes, driver_state->streams_cuda[0]>>>(
       driver_state->strA_d, driver_state->strB_d, driver_state->gpu_data->offset_ref_gpu, driver_state->gpu_data->offset_query_gpu,
@@ -316,7 +316,7 @@ void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, s
   asynch_mem_copies_dth_mid(driver_state->gpu_data, alAend, alBend, sequences_per_stream, sequences_stream_leftover,
                             driver_state->streams_cuda);
 
-  cudaEventRecord(driver_state->event);
+  cudaErrchk(cudaEventRecord(driver_state->event));
 }
 
 void adept_sw::GPUDriver::run_kernel_backwards(std::vector<std::string>& reads, std::vector<std::string>& contigs,
@@ -339,7 +339,7 @@ void adept_sw::GPUDriver::run_kernel_backwards(std::vector<std::string>& reads, 
 
   int newMin = get_new_min_length(alAend, alBend, blocksLaunched);  // find the new largest of smaller lengths
 
-  cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming);
+  cudaErrchk(cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming));
   gpu_bsw::sequence_dna_reverse<<<sequences_per_stream, newMin, ShmemBytes, driver_state->streams_cuda[0]>>>(
       driver_state->strA_d, driver_state->strB_d, driver_state->gpu_data->offset_ref_gpu, driver_state->gpu_data->offset_query_gpu,
       driver_state->gpu_data->ref_start_gpu, driver_state->gpu_data->ref_end_gpu, driver_state->gpu_data->query_start_gpu,
@@ -358,7 +358,7 @@ void adept_sw::GPUDriver::run_kernel_backwards(std::vector<std::string>& reads, 
 
   asynch_mem_copies_dth(driver_state->gpu_data, alAbeg, alBbeg, top_scores_cpu, sequences_per_stream, sequences_stream_leftover,
                         driver_state->streams_cuda);
-  cudaEventRecord(driver_state->event);
+  cudaErrchk(cudaEventRecord(driver_state->event));
 
   alAbeg += totalAlignments;
   alBbeg += totalAlignments;
