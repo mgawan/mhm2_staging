@@ -197,6 +197,9 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
                                                  ctgs, alns, seed_space, rlen_limit);
   stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
+#ifdef DEBUG
+  alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
+#endif
   // always recalculate the insert size because we may need it for resumes of
   compute_aln_depths("scaff-contigs-" + to_string(scaff_kmer_len), ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
   // Failed runs
