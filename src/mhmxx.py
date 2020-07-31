@@ -322,6 +322,10 @@ def capture_err(err_msgs):
 def print_err_msgs(err_msgs):
     global _output_dir
     err_msgs.append('==============================================')
+    if not _output_dir:
+        for msg in err_msgs:
+            print_red(msg)
+        return
     if _output_dir[0] != '/':
         _output_dir = os.getcwd() + "/" + _output_dir
     print_red("Check " + _output_dir + "err.log for details")
