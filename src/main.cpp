@@ -122,8 +122,16 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
   SLOG("\n");
+  bool is_debug = false;
+#ifndef DEBUG
+  is_debug = true;
+#endif
+ 
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  {
+  string contigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
+  if (options->restart && file_exists(contigs_fname)) {
+      ctgs.load_contigs(contigs_fname);
+  } else {
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
@@ -139,10 +147,11 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     stage_timers.dbjg_traversal->start();
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
     stage_timers.dbjg_traversal->stop();
+    if (is_debug || options->checkpoint) {
+      ctgs.dump_contigs(contigs_fname, 0);
+    }
   }
-#ifdef DEBUG
-  ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
-#endif
+  
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     stage_timers.alignments->start();
@@ -164,9 +173,10 @@ void contigging(int kmer_len, int prev_kmer_len, vector<PackedReads*> packed_rea
     stage_timers.localassm->stop();
   }
   barrier();
-  if (options->checkpoint) {
+  if (is_debug || options->checkpoint) {
     stage_timers.dump_ctgs->start();
-    ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+    string contigs_fname("contigs-" + to_string(kmer_len) + ".fasta");
+    ctgs.dump_contigs(contigs_fname, 0);
     stage_timers.dump_ctgs->stop();
   }
   SLOG(KBLUE "_________________________", KNORM, "\n");
@@ -188,36 +198,45 @@ void scaffolding(int scaff_i, int max_kmer_len, vector<PackedReads *> packed_rea
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
   else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
-  Alns alns;
-  stage_timers.alignments->start();
-  auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  int seed_space = KLIGN_SEED_SPACE;
-  if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
-  double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
-                                                 ctgs, alns, seed_space);
-  stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
-  stage_timers.alignments->stop();
-  // always recalculate the insert size because we may need it for resumes of
-  compute_aln_depths("scaff-contigs-" + to_string(scaff_kmer_len), ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
-  // Failed runs
-  tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
-  // insert size should never be larger than this; if it is that signals some
-  // error in the assembly
-  max_expected_ins_size = ins_avg + 8 * ins_stddev;
-  int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
-  stage_timers.cgraph->start();
-  traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
-  stage_timers.cgraph->stop();
-  if ((!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
-      (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
-    if (options->checkpoint) {
-      stage_timers.dump_ctgs->start();
-      ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
-      stage_timers.dump_ctgs->stop();
+  bool is_debug = false;
+#ifndef DEBUG
+  is_debug = true;
+#endif
+  string scaff_contigs_fname("scaff-contigs-" + to_string(scaff_kmer_len) + ".fasta");
+  if (options->restart && file_exists(scaff_contigs_fname)) {
+    ctgs.load_contigs(scaff_contigs_fname);
+  } else {
+    Alns alns;
+    stage_timers.alignments->start();
+    auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+    int seed_space = KLIGN_SEED_SPACE;
+    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
+    double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
+                                                   ctgs, alns, seed_space);
+    stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
+    stage_timers.alignments->stop();
+    // always recalculate the insert size because we may need it for resumes of
+    // Failed runs
+    compute_aln_depths(scaff_contigs_fname, ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
+    tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
+    // insert size should never be larger than this; if it is that signals some
+    // error in the assembly
+    max_expected_ins_size = ins_avg + 8 * ins_stddev;
+    int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
+    stage_timers.cgraph->start();
+    traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
+                       break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
+    stage_timers.cgraph->stop();
+    if ((!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
+        (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
+      if (is_debug || options->checkpoint) {
+        stage_timers.dump_ctgs->start();
+        ctgs.dump_contigs(scaff_contigs_fname, 0);
+        stage_timers.dump_ctgs->stop();
+      }
+      SLOG(KBLUE "_________________________", KNORM, "\n");
+      ctgs.print_stats(options->min_ctg_print_len);
     }
-    SLOG(KBLUE "_________________________", KNORM, "\n");
-    ctgs.print_stats(options->min_ctg_print_len);
   }
   chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
   SLOG("\n");
@@ -427,7 +446,7 @@ int main(int argc, char **argv) {
     // output final assembly
     SLOG(KBLUE "_________________________", KNORM, "\n");
     stage_timers.dump_ctgs->start();
-    ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
+    ctgs.dump_contigs("final_assembly.fasta", options->min_ctg_print_len);
     stage_timers.dump_ctgs->stop();
 
     SLOG(KBLUE "_________________________", KNORM, "\n");

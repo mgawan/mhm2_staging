@@ -222,7 +222,13 @@ public:
       //for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
       fasta += ctg->seq + "\n";
     }
-    dump_single_file(fname + ".fasta", fasta);
+    dump_single_file(fname, fasta);
+#ifdef DEBUG
+    // two important things here.  
+    // 1: touch and test the load_contigs code when debugging
+    // 2: ensure restarts keep identical contigs in the ranks when debugging after load_contigs balances the input
+    load_contigs(fname);
+#endif
   }
 
   void load_contigs(const string &ctgs_fname) {
@@ -243,6 +249,7 @@ public:
       return f.tellg();
     };
 
+    SLOG_VERBOSE("Loading fasta file ", ctgs_fname, "\n");
     BarrierTimer timer(__FILEFUNC__);
     contigs.clear();
     string line;
