@@ -1,5 +1,15 @@
 #include "utils_gpu.hpp"
-unsigned getMaxLength (std::vector<std::string> v)
+
+void utils_gpu::gpuAssert(cudaError_t code, const char* file, int line, bool abort) {
+    if(code != cudaSuccess)
+    {
+        fprintf(stderr, "GPUassert: %s %s %d cpu:%d\n", cudaGetErrorString(code), file, line,omp_get_thread_num());
+        if(abort)
+            exit(code);
+    }
+}
+
+unsigned utils_gpu::getMaxLength (std::vector<std::string> v)
 {
   unsigned maxLength = 0;
   for(auto str : v){
@@ -10,24 +20,7 @@ unsigned getMaxLength (std::vector<std::string> v)
   return maxLength;
 }
 
-void initialize_alignments(gpu_bsw_driver::alignment_results *alignments, int max_alignments){
-    cudaMallocHost(&(alignments->ref_begin), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->ref_end), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->query_begin), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->query_end), sizeof(short)*max_alignments);
-    cudaMallocHost(&(alignments->top_scores), sizeof(short)*max_alignments);
-}
-
-// void free_alignments(gpu_bsw_driver::alignment_results *alignments){
-//        cudaErrchk(cudaFreeHost(alignments->ref_begin));
-//        cudaErrchk(cudaFreeHost(alignments->ref_end));
-//        cudaErrchk(cudaFreeHost(alignments->query_begin));
-//        cudaErrchk(cudaFreeHost(alignments->query_end));
-//        cudaErrchk(cudaFreeHost(alignments->top_scores));
-
-// }
-
-void asynch_mem_copies_htd(gpu_alignments* gpu_data, unsigned* offsetA_h, unsigned* offsetB_h, char* strA, char* strA_d, char* strB, char* strB_d, unsigned half_length_A, 
+void utils_gpu::asynch_mem_copies_htd(gpu_alignments* gpu_data, unsigned* offsetA_h, unsigned* offsetB_h, char* strA, char* strA_d, char* strB, char* strB_d, unsigned half_length_A, 
 unsigned half_length_B, unsigned totalLengthA, unsigned totalLengthB, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
 
         cudaErrchk(cudaMemcpyAsync(gpu_data->offset_ref_gpu, offsetA_h, (sequences_per_stream) * sizeof(int),
@@ -53,7 +46,7 @@ unsigned half_length_B, unsigned totalLengthA, unsigned totalLengthB, int sequen
 
 }
 
-void asynch_mem_copies_dth_mid(gpu_alignments* gpu_data, short* alAend, short* alBend, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
+void utils_gpu::asynch_mem_copies_dth_mid(gpu_alignments* gpu_data, short* alAend, short* alBend, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
             cudaErrchk(cudaMemcpyAsync(alAend, gpu_data->ref_end_gpu, sequences_per_stream * sizeof(short),
                 cudaMemcpyDeviceToHost, streams_cuda[0]));
             cudaErrchk(cudaMemcpyAsync(alAend + sequences_per_stream, gpu_data->ref_end_gpu + sequences_per_stream, 
@@ -64,7 +57,7 @@ void asynch_mem_copies_dth_mid(gpu_alignments* gpu_data, short* alAend, short* a
                 cudaMemcpyDeviceToHost, streams_cuda[1]));
 }
 
-void asynch_mem_copies_dth(gpu_alignments* gpu_data, short* alAbeg, short* alBbeg, short* top_scores_cpu, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
+void utils_gpu::asynch_mem_copies_dth(gpu_alignments* gpu_data, short* alAbeg, short* alBbeg, short* top_scores_cpu, int sequences_per_stream, int sequences_stream_leftover, cudaStream_t* streams_cuda){
            cudaErrchk(cudaMemcpyAsync(alAbeg, gpu_data->ref_start_gpu, sequences_per_stream * sizeof(short),
                                   cudaMemcpyDeviceToHost, streams_cuda[0]));
           cudaErrchk(cudaMemcpyAsync(alAbeg + sequences_per_stream, gpu_data->ref_start_gpu + sequences_per_stream, (sequences_per_stream + sequences_stream_leftover) * sizeof(short),
@@ -82,7 +75,7 @@ void asynch_mem_copies_dth(gpu_alignments* gpu_data, short* alAbeg, short* alBbe
 
 }
 
-int get_new_min_length(short* alAend, short* alBend, int blocksLaunched){
+int utils_gpu::get_new_min_length(short* alAend, short* alBend, int blocksLaunched){
         int newMin = 1000;
         int maxA = 0;
         int maxB = 0;

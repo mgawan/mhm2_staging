@@ -21,6 +21,7 @@ struct alignment_results{
   short* top_scores;
 };
 
+void initialize_alignments(gpu_bsw_driver::alignment_results *alignments, int max_alignments);
 void free_alignments(gpu_bsw_driver::alignment_results *alignments);
 
 void
