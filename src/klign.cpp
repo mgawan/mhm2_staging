@@ -342,10 +342,11 @@ class KmerCtgDHT {
     });
 #ifdef ENABLE_GPUS
     gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(local_team().rank_n());
-    if (!gpu_mem_avail) DIE("No GPU memory available! Something went wrong...");
-    SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
-    gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
-                    (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
+    if (gpu_mem_avail) {
+      SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
+      gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
+                      (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
+    }
 #else
     gpu_mem_avail = 32 * 1024 * 1024;
 #endif
@@ -416,7 +417,7 @@ class KmerCtgDHT {
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
 #ifdef ENABLE_GPUS
     // for now, the GPU alignment doesn't support cigars
-    if (!ssw_filter.report_cigar) gpu_align_block(aln_kernel_timer);
+    if (!ssw_filter.report_cigar && gpu_mem_avail) gpu_align_block(aln_kernel_timer);
     else ssw_align_block(aln_kernel_timer);
 #else
     ssw_align_block(aln_kernel_timer);
@@ -518,6 +519,8 @@ class KmerCtgDHT {
   }
 
   void sort_alns() { alns->sort_alns(); }
+
+  int get_gpu_mem_avail() { return gpu_mem_avail; }
 };
 
 template<int MAX_K>
@@ -658,7 +661,8 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
   IntermittentTimer get_ctgs_timer(__FILENAME__ + string(":") + "Get ctgs with kmer");
   IntermittentTimer fetch_ctg_seqs_timer(__FILENAME__ + string(":") + "Fetch ctg seqs");
 #ifdef ENABLE_GPUS
-  IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + (compute_cigar ? "SSW" : "GPU_BSW"));
+  IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") +
+                                     ((compute_cigar && kmer_ctg_dht.get_gpu_mem_avail()) ? "SSW" : "GPU_BSW"));
 #else
   IntermittentTimer aln_kernel_timer(__FILENAME__ + string(":") + "SSW");
 #endif

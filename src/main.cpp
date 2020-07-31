@@ -299,11 +299,11 @@ int main(int argc, char **argv) {
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
 #ifdef ENABLE_GPUS
-  #ifdef ALWAYS_USE_SSW
-    SWARN("Using SSW but GPUs are available - expect lower performance in alignment");
-  #endif
     auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
-    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
+    if (num_gpus_per_node) 
+      SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
+    else
+      SWARN("Compiled for GPUs but no GPUs available...");
 #endif
   }
 

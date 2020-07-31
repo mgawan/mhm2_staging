@@ -11,15 +11,15 @@ namespace adept_sw {
 
 // for storing the alignment results
 struct AlignmentResults {
-  short *ref_begin;
-  short *query_begin;
-  short *ref_end;
-  short *query_end;
-  short *top_scores;
+  short *ref_begin = nullptr;
+  short *query_begin = nullptr;
+  short *ref_end = nullptr;
+  short *query_end = nullptr;
+  short *top_scores = nullptr;
 };
 
 size_t get_tot_gpu_mem();
-gsize_t get_avail_gpu_mem_per_rank(int totRanks);
+size_t get_avail_gpu_mem_per_rank(int totRanks);
 int get_num_node_gpus();
 
 struct DriverState;

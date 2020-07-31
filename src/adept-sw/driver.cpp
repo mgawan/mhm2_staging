@@ -21,13 +21,16 @@ static void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 
 static int get_device_count(int totRanks) {
   int deviceCount = 0;
-  cudaErrchk(cudaGetDeviceCount(&deviceCount));
+  auto res = cudaGetDeviceCount(&deviceCount);
+  if (res != cudaSuccess) return 0;
   if (deviceCount > totRanks) return totRanks;
   return deviceCount;
 }
 
 size_t adept_sw::get_avail_gpu_mem_per_rank(int totRanks) {
-  int ranksPerDevice = totRanks / get_device_count(totRanks);
+  int num_devices = get_device_count(totRanks);
+  if (!num_devices) return 0;
+  int ranksPerDevice = totRanks / num_devices;
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
   return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
@@ -41,7 +44,8 @@ size_t adept_sw::get_tot_gpu_mem() {
 
 int adept_sw::get_num_node_gpus() {
   int deviceCount = 0;
-  cudaErrchk(cudaGetDeviceCount(&deviceCount));
+  auto res = cudaGetDeviceCount(&deviceCount);
+  if (res != cudaSuccess) return 0;
   return deviceCount;
 }
 
@@ -194,6 +198,9 @@ void adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_
 }
 
 adept_sw::GPUDriver::~GPUDriver() {
+  // won't have been allocated if there was no GPU present
+  if (!alignments.ref_begin) return;
+  
   cudaErrchk(cudaFreeHost(alignments.ref_begin));
   cudaErrchk(cudaFreeHost(alignments.ref_end));
   cudaErrchk(cudaFreeHost(alignments.query_begin));
