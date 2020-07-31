@@ -19,9 +19,7 @@ static int get_device_count(int totRanks) {
 
 size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks) {
   int ranksPerDevice = totRanks / get_device_count(totRanks);
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
-  return (prop.totalGlobalMem * 0.8) / ranksPerDevice;
+  return (get_tot_gpu_mem() * 0.8) / ranksPerDevice;
 }
 
 size_t gpu_bsw_driver::get_tot_gpu_mem() {
