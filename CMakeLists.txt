@@ -44,6 +44,7 @@
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(MHMxx)
 
+message(STATUS "Building ${CMAKE_PROJECT_NAME} with CMake ${CMAKE_VERSION}")
 #----------------------------------------------------------------------------------------#
 #   project specification
 #----------------------------------------------------------------------------------------#
@@ -75,9 +76,9 @@ set(CMAKE_C_EXTENSIONS OFF)
 include(CheckLanguage)
 check_language(CUDA)
 if(CMAKE_CUDA_COMPILER)
+    SET(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+    SET(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS ON)
     enable_language(CUDA)
-    set(CMAKE_CUDA_STANDARD 14 CACHE STRING "")
-    set(CMAKE_CUDA_EXTENSIONS OFF CACHE BOOL "")
     option(ENABLE_CUDA "Enable CUDA" ON)
 else()
     option(ENABLE_CUDA "Enable CUDA" OFF)

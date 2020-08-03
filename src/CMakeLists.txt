@@ -72,18 +72,14 @@ endif()
 include_directories("ssw")
 add_subdirectory(ssw)
 
-if(ENABLE_CUDA)
-    include_directories("adept-sw")
-    add_subdirectory(adept-sw)
-endif()
-
 add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp
     walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp aln_depths.cpp)
 
-
 if(ENABLE_CUDA)
-    set_property(TARGET mhmxx PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    include_directories("adept-sw")
+    add_subdirectory(adept-sw)
+    set_property(TARGET mhmxx PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # necessary to turn off cmake_device_link for static build
     target_link_libraries(mhmxx
         Threads::Threads
         SSW_LIBRARY
@@ -91,7 +87,8 @@ if(ENABLE_CUDA)
         ${UPCXX_LIBRARIES}
         ${UPCXX_UTILS_LIBRARIES}
         MHMXX_VERSION_LIB
-        ADEPT_SW_LIBRARY)
+        ${ADEPT_SW_BROKEN_DEVICE_LINK_HACK} # necessary for cmake_device_link static build
+        ADEPT_SW_LIBRARY_static)
     
 else()
     target_link_libraries(mhmxx
@@ -103,5 +100,6 @@ else()
         MHMXX_VERSION_LIB)
 endif()
 
-install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+
+install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
