@@ -13,11 +13,12 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wall,${OpenMP_CXX_FLAGS} -gencode arch=compute_70,code=sm_70")
 message(STATUS "CMAKE_CUDA_FLAGS=${CMAKE_CUDA_FLAGS}")
 
-add_library(ADEPT_SW_LIBRARY_obj OBJECT driver.cu kernel.cu gpu_alns.cu utils_gpu.cu)
+add_library(ADEPT_SW_LIBRARY_obj OBJECT driver.cpp kernel.cpp gpu_alns.cpp utils_gpu.cpp)
 if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13)
   target_link_libraries(ADEPT_SW_LIBRARY_obj INTERFACE OpenMP::OpenMP_CXX)
 endif()
 
+set_source_files_properties(driver.cpp kernel.cpp gpu_alns.cpp utils_gpu.cpp PROPERTIES LANGUAGE CUDA LINKER_LANGUAGE CUDA)
 option(ADEPT_SW_SHARED "Adept-SW shared library" ON)
 option(ADEPT_SW_STATIC "Adept-SW static library" ON)
 
