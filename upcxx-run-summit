@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# --by-socket 1 RS per socket with 3 GPUs per RS
+# CPRS=21 jsrun  --rs_per_socket 1 --cpu_per_rs $CPRS --gpu_per_rs 3 --tasks_per_rs $CPRS -d plane:$CPRS --bind rs
+# --by-gpu 3 RS per socket with 1 GPU per RS
+# CPRS=7 jsrun --rs_per_socket 3 --cpu_per_rs $CPRS --gpu_per_rs 1 --tasks_per_rs $CPRS -d plane:$CPRS --bind rs
+
+### does not bind by socket or core properly...
+## --by-host 1 RS per host with 6 GPU per RS
+## CPRS=42 jsrun --rs_per_host 1 --cpu_per_rs $CPRS --gpu_per_rs 6 --tasks_per_rs $CPRS -d plane:$((CPRS/2)) --bind packed:$((CPRS/2))
+
+
+if [ -n "${__UPCXX_RUN_SUMMIT}" ]
+then
+  socket=$(hwloc-calc -I Node $(hwloc-bind --get))
+
+  if [ "${__UPCXX_RUN_SUMMIT_MODE}" == "highbandwidth" ]
+  then
+    # high bandwidth HCA from both sockets
+    case $socket in
+      1) export GASNET_IBV_PORTS=mlx5_1+mlx5_2 ;;
+      *) export GASNET_IBV_PORTS=mlx5_0+mlx5_3 ;;
+    esac
+  else
+    # low latency only HCAs closest to socket
+    case $socket in
+      1) export GASNET_IBV_PORTS=mlx5_2+mlx5_3 ;;
+      *) export GASNET_IBV_PORTS=mlx5_0+mlx5_1 ;;
+    esac
+  fi
+ 
+  if [ -n "${PMIX_RANK}" ] && [ "${__UPCXX_RUN_SUMMIT_nHCAS}" != "2" ]
+  then
+    # 1 HCA per rank
+    if ((${PMIX_RANK} % 2))
+    then
+      export GASNET_IBV_PORTS=${GASNET_IBV_PORTS%+*}
+    else
+      export GASNET_IBV_PORTS=${GASNET_IBV_PORTS#*+}
+    fi
+  fi
+  if [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "4" ]
+  then
+     export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
+  fi
+  if [ "${PMIX_RANK}" == "0" ]
+  then
+    hwloc-ps
+    cat /proc/self/cgroup
+    grep Cpus /proc/self/status
+    echo GASNET_IBV_PORTS=$GASNET_IBV_PORTS
+  fi
+  exec "$@"
+fi
+
+export __UPCXX_RUN_SUMMIT=1
+
+while [ 1 ]
+do
+  _opt=$1
+  opt=${_opt#--}
+  if [ "${_opt}" == "${opt}" ]
+  then
+    break
+  fi
+  shift
+
+  case $opt in
+    "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;; # default
+    "by-gpu")    RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;;
+
+    "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
+    "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
+
+    "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;; # default
+    "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;;
+    "4-hca") export __UPCXX_RUN_SUMMIT_nHCAs=4 ;;
+
+    *) echo "Invalid option to $0: '$opt'" 1>&2 ; exit 1 ;;
+  esac
+done
+
+# default is by socket
+RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;
+
+set -x
+#exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind rs $0 "$@"
+#exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS $0 "$@"
+exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind none $0 "$@"
+
