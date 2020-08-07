@@ -303,7 +303,7 @@ inline string get_proc_pin() {
   string prefix = "Cpus_allowed_list:";
   while (getline(f, line)) {
     if (line.substr(0, prefix.length()) == prefix) {
-      DBG(line);
+      DBG(line, "\n");
       line = line.substr(prefix.length(), line.length() - prefix.length());
       return left_trim(line);
       break;

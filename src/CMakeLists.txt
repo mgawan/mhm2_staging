@@ -53,6 +53,10 @@ message("Building ${CMAKE_BUILD_TYPE} version")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-reorder -Wno-sign-compare -Wno-unused-function -Wno-catch-value")
 
+if(ENABLE_CUDA)
+    add_definitions(-DENABLE_GPUS)
+endif()
+
 # a bit of jiggery-pokery to get a list of all compile time definitions in the code
 get_directory_property(dir_defs COMPILE_DEFINITIONS)
 set(all_defs "")
@@ -63,10 +67,6 @@ foreach(d ${dir_defs})
 endforeach()
 
 add_definitions(-DALL_DEFNS=\"${all_defs}\")
-
-if(ENABLE_CUDA)
-    add_definitions(-DENABLE_GPUS)
-endif()
 
 # include ssw library
 include_directories("ssw")
