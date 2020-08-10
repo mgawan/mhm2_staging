@@ -87,7 +87,6 @@ if(ENABLE_CUDA)
         ${UPCXX_LIBRARIES}
         ${UPCXX_UTILS_LIBRARIES}
         MHMXX_VERSION_LIB
-        ${ADEPT_SW_BROKEN_DEVICE_LINK_HACK} # necessary for cmake_device_link static build
         ADEPT_SW_LIBRARY_static)
     
 else()
