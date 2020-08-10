@@ -243,7 +243,7 @@ public:
   bool dump_gfa = false;
   bool show_progress = false;
   string pin_by = "cpu";
-  intrank_t ranks_per_gpu = 0; // autodetect
+  int ranks_per_gpu = 0; // autodetect
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -311,6 +311,9 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
+    app.add_option("--ranks-per-gpu", ranks_per_gpu,
+                   "Override the automatic detction of ranks/gpu (i.e. local_team().rank_n() / devices).")
+                   ->capture_default_str() ->check(CLI::Range(0, (int) upcxx::local_team().rank_n()*8));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,
@@ -329,9 +332,6 @@ public:
                  "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
                  "or NUMA domains (cpu, core, numa, none) - default is cpu ")
                  ->capture_default_str() ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
-    app.add_flag("--ranks-per-gpu", ranks_per_gpu,
-                 "Override the automatic detction of ranks/gpu (i.e. local_team().rank_n() / devices).")
-                 ->default_val(0)->capture_default_str()->check(CLI::Range(0, upcxx::local_team().rank_n()));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
