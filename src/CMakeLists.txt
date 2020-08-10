@@ -79,7 +79,7 @@ add_executable(mhmxx
 if(ENABLE_CUDA)
     include_directories("adept-sw")
     add_subdirectory(adept-sw)
-    set_property(TARGET mhmxx PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # necessary to turn off cmake_device_link for static build
+    set_property(TARGET mhmxx PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # just to be sure. It should be off in parent dir
     target_link_libraries(mhmxx
         Threads::Threads
         SSW_LIBRARY
