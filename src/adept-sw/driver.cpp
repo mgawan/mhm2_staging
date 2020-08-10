@@ -10,15 +10,23 @@
 #include <thrust/host_vector.h>
 #include <thrust/scan.h>
 
-static int get_device_count(int totRanks) {
+int gpu_bsw_driver::get_device_count(int totRanks) {
   int deviceCount = 0;
   cudaErrchk(cudaGetDeviceCount(&deviceCount));
   if (deviceCount > totRanks) return totRanks;
   return deviceCount;
 }
 
-size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks) {
-  int ranksPerDevice = totRanks / get_device_count(totRanks);
+std::string gpu_bsw_driver::get_device_name(int device_id) {
+    char dev_id[256];
+    cudaErrchk( cudaDeviceGetPCIBusId ( dev_id, 256, device_id ) );
+    return std::string(dev_id);
+}
+
+size_t gpu_bsw_driver::get_avail_gpu_mem_per_rank(int totRanks, int device_count) {
+  if (device_count == 0)
+      device_count = get_device_count(totRanks);
+  int ranksPerDevice = totRanks / device_count;
   return (get_tot_gpu_mem() * 0.8) / ranksPerDevice;
 }
 
@@ -85,6 +93,7 @@ gpu_bsw_driver::kernel_driver_dna(std::vector<std::string> reads, std::vector<st
       int my_cpu_id = omp_get_thread_num();
       int my_gpu_id = my_upc_rank%device_count;// + my_cpu_id;
       cudaErrchk(cudaSetDevice(my_gpu_id));
+
 
       cudaStream_t streams_cuda[NSTREAMS];
       for(int stm = 0; stm < NSTREAMS; stm++){

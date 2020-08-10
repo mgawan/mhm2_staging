@@ -36,7 +36,9 @@ verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g
                  short* g_alBend);
 
 size_t get_tot_gpu_mem();
-size_t get_avail_gpu_mem_per_rank(int totRanks);
+size_t get_avail_gpu_mem_per_rank(int totRanks, int device_count = 0);
 int get_num_node_gpus();
+int get_device_count(int totRanks);
+std::string get_device_name(int device_num);
 
 }

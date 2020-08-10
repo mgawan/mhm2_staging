@@ -243,6 +243,7 @@ public:
   bool dump_gfa = false;
   bool show_progress = false;
   string pin_by = "cpu";
+  intrank_t ranks_per_gpu = 0; // autodetect
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -328,6 +329,9 @@ public:
                  "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
                  "or NUMA domains (cpu, core, numa, none) - default is cpu ")
                  ->capture_default_str() ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
+    app.add_flag("--ranks-per-gpu", ranks_per_gpu,
+                 "Override the automatic detction of ranks/gpu (i.e. local_team().rank_n() / devices).")
+                 ->default_val(0)->capture_default_str()->check(CLI::Range(0, upcxx::local_team().rank_n()));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
                  ->capture_default_str();
