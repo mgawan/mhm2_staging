@@ -1,15 +1,5 @@
 #!/bin/bash
 
-# --by-socket 1 RS per socket with 3 GPUs per RS
-# CPRS=21 jsrun  --rs_per_socket 1 --cpu_per_rs $CPRS --gpu_per_rs 3 --tasks_per_rs $CPRS -d plane:$CPRS --bind rs
-# --by-gpu 3 RS per socket with 1 GPU per RS
-# CPRS=7 jsrun --rs_per_socket 3 --cpu_per_rs $CPRS --gpu_per_rs 1 --tasks_per_rs $CPRS -d plane:$CPRS --bind rs
-
-### does not bind by socket or core properly...
-## --by-host 1 RS per host with 6 GPU per RS
-## CPRS=42 jsrun --rs_per_host 1 --cpu_per_rs $CPRS --gpu_per_rs 6 --tasks_per_rs $CPRS -d plane:$((CPRS/2)) --bind packed:$((CPRS/2))
-
-
 if [ -n "${__UPCXX_RUN_SUMMIT}" ]
 then
   socket=$(hwloc-calc -I Node $(hwloc-bind --get))
@@ -17,6 +7,7 @@ then
   if [ "${__UPCXX_RUN_SUMMIT_MODE}" == "highbandwidth" ]
   then
     # high bandwidth HCA from both sockets
+    __UPCXX_RUN_SUMMIT_nHCAS=2
     case $socket in
       1) export GASNET_IBV_PORTS=mlx5_1+mlx5_2 ;;
       *) export GASNET_IBV_PORTS=mlx5_0+mlx5_3 ;;
@@ -43,12 +34,11 @@ then
   then
      export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
   fi
-  if [ "${PMIX_RANK}" == "0" ]
+  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "41" ]
   then
-    hwloc-ps
-    cat /proc/self/cgroup
-    grep Cpus /proc/self/status
-    echo GASNET_IBV_PORTS=$GASNET_IBV_PORTS
+    echo "hwloc-ps ${PMIX_RANK}:" `hwloc-ps`
+    echo "Cpus ${PMIX_RANK}:" `grep Cpus /proc/self/status`
+    echo "HCAs ${PMIX_RANK}: GASNET_IBV_PORTS=$GASNET_IBV_PORTS"
   fi
   exec "$@"
 fi
@@ -84,7 +74,5 @@ done
 RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;
 
 set -x
-#exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind rs $0 "$@"
-#exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS $0 "$@"
 exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind none $0 "$@"
 
