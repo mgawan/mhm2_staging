@@ -1,5 +1,22 @@
 #!/bin/bash
 
+USAGE="$0 <options> upcxx-executable <options>
+
+Options:
+  --help            Print this message
+
+  --low-latency     Select the HCA(s) for lowest latency (default)
+  --high-bandwidth  Select the HCA(s) for higest bandwidth
+
+  --by-socket       Resource Set by socket - Bind ranks to 1 socket with 3 GPUs (default)
+  --by-gpu          Resource Set by GPU    - Bind ranks to 7 cores on 1 socket with 1 GPU
+
+  --1-hca           Use 1 HCA per rank (default)
+  --2-hca           Use 2 HCA per rank
+  --4-hca           Use 4 HCA per rank (i.e. all)
+
+"
+
 if [ -n "${__UPCXX_RUN_SUMMIT}" ]
 then
   socket=$(hwloc-calc -I Node $(hwloc-bind --get))
@@ -65,6 +82,8 @@ do
     "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;; # default
     "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;;
     "4-hca") export __UPCXX_RUN_SUMMIT_nHCAs=4 ;;
+
+    "help") echo "$USAGE" ; exit 0 ;;
 
     *) echo "Invalid option to $0: '$opt'" 1>&2 ; exit 1 ;;
   esac
