@@ -180,8 +180,8 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*>
       progress();
     }
     progbar.done();
-    kmer_dht->flush_updates();
   }
+  kmer_dht->flush_updates();
   DBG("This rank processed ", num_reads, " reads\n");
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
