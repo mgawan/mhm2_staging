@@ -285,7 +285,7 @@ public:
                    "Previous kmer length (need to specify if contigging and contig file is specified)")
                    ->capture_default_str() ->check(CLI::Range(0, 159));
     auto *scaff_kmer_lens_opt = app.add_option("-s, --scaff-kmer-lens", scaff_kmer_lens,
-                   "kmer lengths for scaffolding (comma separated)")
+                   "kmer lengths for scaffolding (comma separated). 0 to disable scaffolding")
                    ->delimiter(',') ->capture_default_str();
     app.add_option("-Q, --quality-offset", qual_offset,
                    "Phred encoding offset")
@@ -413,6 +413,19 @@ public:
       // set the option default strings so that the correct values are printed and saved to the .config file
       kmer_lens_opt->default_str("21 33 55 77 99");
       scaff_kmer_lens_opt->default_str("99 33");
+    } else if (kmer_lens.size() && *kmer_lens_opt && !*scaff_kmer_lens_opt) {
+      // use the last and second from kmer_lens for scaffolding
+      auto n = kmer_lens.size();
+      if (n == 1) {
+        scaff_kmer_lens = kmer_lens;
+        scaff_kmer_lens_opt->default_str( to_string(scaff_kmer_lens[0]) );
+      } else {
+        scaff_kmer_lens = { kmer_lens[n-1], kmer_lens[n == 2 ? 0 : 1] };
+        scaff_kmer_lens_opt->default_str( to_string(scaff_kmer_lens[0]) + " " + to_string(scaff_kmer_lens[1]));
+      } 
+    } else if (scaff_kmer_lens.size() == 1 && scaff_kmer_lens[0] == 0) {
+        // disable scaffolding rounds
+        scaff_kmer_lens.clear();
     }
 
     setup_output_dir();

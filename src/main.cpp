@@ -434,6 +434,8 @@ int main(int argc, char **argv) {
   #undef SCAFFOLD_K
 
       }
+    } else {
+        SLOG_VERBOSE("Skipping scaffolding stage - no scaff_kmer_lens specified\n");
     }
 
     // cleanup
