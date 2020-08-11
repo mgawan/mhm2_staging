@@ -165,19 +165,42 @@ class FastqReader {
         rtrim(header);
         if (!get_fq_name(header)) continue;
 
-        // now read another three lines, but check that the third line is a + separator
+        // now read another three lines, but check that next line is sequence and the third line is a + separator and the fourth line is the same length as the second
         int64_t test_tell = ftell(f);
+        int seqlen = 0;
         bool record_found = true;
+        DBG_VERBOSE("Testing for header: ", header, "\n");
         for (int j = 0; j < 3; j++) {
           if (!fgets(buf, BUF_SIZE, f)) DIE("Missing record info at pos ", ftell(f));
-          if (j == 0 && buf[0] == '@') {
-              // previous was quality line, this next line is the header line.
-              record_found = false;
-              break;
+          if (j == 0) {
+              // sequence line should have only sequence characters
+              seqlen = strlen(buf);
+              for(int k=0; k < seqlen; k++) {
+                switch(buf[k]) {
+                  case('a'): case('c'): case('g'): case('t'): case('A'): case('C'): case('G'): case('T'): case('N'): 
+                      break; //okay
+                  case('\n'): 
+                      // newline.  okay if last char
+                      record_found = k == seqlen-1; break;
+                  case('@'): // previous was quality line, this next line is the header line.
+                  default:   // not okay
+                      DBG_VERBOSE("Found non-seq '", buf[k], "' at ", k, " in: ", buf, "\n");
+                      record_found = false;
+                }
+                if (!record_found) break;
+              }
+              if (!record_found) break;
+              
           }
           if (j == 1 && buf[0] != '+') {
-            //DIE("muddled fastq, header ", header, " buf '", buf, "' len ", strlen(buf));
             // this is not a correct boundary for a fastq record - move on
+            DBG_VERBOSE("Found non + ", buf, "\n");
+            record_found = false;
+            break;
+          }
+          if (j == 2 && seqlen != strlen(buf)) { 
+            // qual should be same length as sequence
+            DBG_VERBOSE("Found different len ", seqlen, " vs ", strlen(buf), " in ", buf, "\n");
             record_found = false;
             break;
           }
@@ -187,8 +210,9 @@ class FastqReader {
             i+=3;
         } else {
             // rewind and test next line as a potential header
-            DBG("Did not find proper pair, rewinding\n");
+            DBG_VERBOSE("Did not find proper pair, rewinding\n");
             if (fseek(f, test_tell, SEEK_SET) != 0) DIE("Could not fseek in ", fname, " to ", offset, ": ", strerror(errno));
+            continue;
         }
 
         // need this to be the second of the pair
