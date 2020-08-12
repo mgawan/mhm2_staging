@@ -10,30 +10,26 @@
 #include "driver.hpp"
 #include "kernel.hpp"
 
-static void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
+void adept_sw::gpuAssert(cudaError_t code, const char* file, int line, bool abort) {
   if (code != cudaSuccess) {
     std::ostringstream os;
     os << "GPU assert " << cudaGetErrorString(code) << " " << file << ":" << line << "\n";
     throw std::runtime_error(os.str());
   }
 }
-#define cudaErrchk(ans) \
-  { gpuAssert((ans), __FILE__, __LINE__); }
 
-static int get_device_count(int totRanks) {
-  int deviceCount = 0;
-  auto res = cudaGetDeviceCount(&deviceCount);
-  if (res != cudaSuccess) return 0;
-  if (deviceCount > totRanks) return totRanks;
-  return deviceCount;
-}
-
-size_t adept_sw::get_avail_gpu_mem_per_rank(int totRanks) {
-  int num_devices = get_device_count(totRanks);
+size_t adept_sw::get_avail_gpu_mem_per_rank(int totRanks, int num_devices) {
+  if (num_devices == 0) num_devices = get_num_node_gpus();
   if (!num_devices) return 0;
   int ranksPerDevice = totRanks / num_devices;
   return (get_tot_gpu_mem() * 0.8) / ranksPerDevice;
 }
+
+std::string adept_sw::get_device_name(int device_id) {
+    char dev_id[256];
+    cudaErrchk( cudaDeviceGetPCIBusId ( dev_id, 256, device_id ) );
+    return std::string(dev_id);
+}  
 
 size_t adept_sw::get_tot_gpu_mem() {
   cudaDeviceProp prop;
@@ -179,7 +175,7 @@ void adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_
   cudaErrchk(cudaMallocHost(&(alignments.query_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&(alignments.query_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&(alignments.top_scores), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
-  driver_state->device_count = get_device_count(upcxx_rank_n);
+  driver_state->device_count = get_num_node_gpus();
   driver_state->my_gpu_id = upcxx_rank_me % driver_state->device_count;
   cudaErrchk(cudaSetDevice(driver_state->my_gpu_id));
   for (int stm = 0; stm < NSTREAMS; stm++) {
