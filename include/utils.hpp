@@ -58,6 +58,7 @@
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/timers.hpp"
+#include "upcxx_utils/ofstream.hpp"
 
 using namespace upcxx_utils;
 
@@ -224,45 +225,12 @@ future<> tmp_reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op
 
 inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
   BarrierTimer timer(__FILEFUNC__);
-  // write to a temporary file and rename it on completion to ensure that there are no corrupted files should
-  // there be a crash
-  auto tmp_fname = fname + ".tmp";
-  if (append && !upcxx::rank_me()) {
-    // rename file to be appended to to temporary
-    if (rename(fname.c_str(), tmp_fname.c_str()) != 0) DIE("Could not rename ", fname, " to temporary: ", strerror(errno));
-  }
-  upcxx::barrier();
-  size_t offsets[2];
-  auto sz = out_str.length();
-  size_t append_file_size = (append && !upcxx::rank_me() ? get_file_size(tmp_fname) : 0);
-  offsets[0] = (sz + append_file_size);
-  tmp_reduce_prefix_ring(offsets, offsets + 1, 1, upcxx::op_fast_add).wait();
-  // the offset is actually the start of this rank's block
-  auto my_fpos = offsets[1] - sz;
-  upcxx::barrier();
-  //WARN("rank ", upcxx::rank_me(), " writing ", sz, " bytes to file ", tmp_fname, " at position ", my_fpos);
-  int fileno = -1;
-  size_t fsize = 0;
-  // last rank creates the file and truncates it to the correct length (only last rank knows the correct total size)
-  if (upcxx::rank_me() == upcxx::rank_n() - 1) {
-    // rename previous file to tmp file
-    fileno = open(tmp_fname.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fileno == -1) DIE("Could not open file ", tmp_fname, ": ", strerror(errno));
-    if (ftruncate(fileno, my_fpos + sz) == -1) WARN("Could not truncate ", tmp_fname, " to ", my_fpos + sz, " bytes");
-  }
-  upcxx::barrier();
-  // wait until rank n-1 has finished setting up the file
-  if (rank_me() != rank_n() - 1) fileno = open(tmp_fname.c_str(), O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-  if (fileno == -1) DIE("Could not open file ", tmp_fname, ": ", strerror(errno));
-  auto bytes_written = pwrite(fileno, out_str.c_str(), sz, my_fpos);
-  close(fileno);
-  if (bytes_written != sz) DIE("Could not write all ", sz, " bytes; only wrote ", bytes_written);
-  upcxx::barrier();
-  if (!upcxx::rank_me() && rename(tmp_fname.c_str(), fname.c_str()) != 0)
-	DIE("Could not rename temporary file ", tmp_fname, " to ", fname, ", error: ", strerror(errno));
-  auto tot_bytes_written = upcxx::reduce_one(bytes_written, upcxx::op_fast_add, 0).wait();
-  SLOG_VERBOSE("Successfully wrote ", get_size_str(tot_bytes_written), " bytes to ", fname, "\n");
-  upcxx::barrier();
+  auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
+  upcxx_utils::dist_ofstream of(fname, append);
+  of << out_str;
+  of.close();
+  SLOG_VERBOSE("Successfully wrote ", get_size_str(fut_tot_bytes_written.wait()), " bytes to ", fname, "\n");
+  assert(rank_me() || of.get_last_known_tellp() == fut_tot_bytes_written.wait());
 }
 
 template <typename T>
@@ -303,7 +271,7 @@ inline string get_proc_pin() {
   string prefix = "Cpus_allowed_list:";
   while (getline(f, line)) {
     if (line.substr(0, prefix.length()) == prefix) {
-      DBG(line);
+      DBG(line, "\n");
       line = line.substr(prefix.length(), line.length() - prefix.length());
       return left_trim(line);
       break;

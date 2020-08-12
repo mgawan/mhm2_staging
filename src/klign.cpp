@@ -311,8 +311,9 @@ class KmerCtgDHT {
   int kmer_len;
 
   // aligner construction: SSW internal defaults are 2 2 3 1
+
   KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, AlnScoring &aln_scoring, int rlen_limit,
-             bool compute_cigar)
+             bool compute_cigar, int ranks_per_gpu = 0)
       : kmer_map({})
       , kmer_store(kmer_map)
       , ssw_aligner(aln_scoring.match, aln_scoring.mismatch, aln_scoring.gap_opening, aln_scoring.gap_extending,
@@ -341,11 +342,19 @@ class KmerCtgDHT {
       }
     });
 #ifdef ENABLE_GPUS
-    gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(local_team().rank_n());
+    auto device_count = adept_sw::get_num_node_gpus();
+    if (ranks_per_gpu == 0) {
+        // auto detect
+        gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(local_team().rank_n(), device_count);
+    } else {
+        gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(ranks_per_gpu, 1);
+    }
     if (gpu_mem_avail) {
       SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
       gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
                       (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
+    } else {
+      SWARN("No GPU memory detected!  (", device_count, " devices detected)\n");
     }
 #else
     gpu_mem_avail = 32 * 1024 * 1024;
@@ -739,7 +748,8 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
 
 template<int MAX_K>
 double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar=false, int min_ctg_len=0) {
+                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar=false, int min_ctg_len=0, int ranks_per_gpu = 0) {
+
   BarrierTimer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
@@ -752,7 +762,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
     aln_scoring = alt_aln_scoring;
   }
   SLOG_VERBOSE("Alignment scoring parameters: ", aln_scoring.to_string(), "\n");
-  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, rlen_limit, compute_cigar);
+  KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, rlen_limit, compute_cigar, ranks_per_gpu);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
@@ -769,8 +779,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_lis
 
 #define FA(KMER_LEN) \
     template \
-    double find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, int, int, bool, int)
-
+    double find_alignments<KMER_LEN>(unsigned, vector<PackedReads*>&, int, int, Contigs&, Alns&, int, int, bool, int, int)
 
 FA(32);
 #if MAX_BUILD_KMER >= 64
