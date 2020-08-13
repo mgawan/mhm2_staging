@@ -373,10 +373,20 @@ def main():
     if options.procs == 0:
         options.procs = num_nodes * get_job_cores_per_node()
 
-    cmd = ['upcxx-run', '-n', str(options.procs)]
+    cmd = ['upcxx-run', '-n', str(options.procs), '-N', str(num_nodes)]
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
         cmd.extend(['-shared-heap', options.shared_heap])
-    cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
+        
+    # special spawner for summit -- executes jsrun and picks up job size from the environment!
+    if 'LMOD_SYSTEM_NAME' in os.environ and os.environ['LMOD_SYSTEM_NAME'] == "summit":
+        print("This is Summit - executing custom script mhmxx-upcxx-run-summit to spawn the job")
+        cmd = [mhmxx_binary_path + "-upcxx-run-summit"]
+        if 'UPCXX_RUN_SUMMIT_OPTS' in os.environ:
+            cmd.extend(os.environ['UPCXX_RUN_SUMMIT_OPTS'].split())
+        if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
+            os.environ['UPCXX_SHARED_HEAP_SIZE'] = options.shared_heap
+        
+    cmd.extend(['--', mhmxx_binary_path])
     cmd.extend(unknown_options)
 
     print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")

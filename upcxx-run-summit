@@ -51,11 +51,9 @@ then
   then
      export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
   fi
-  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "41" ]
+  if [ "${PMIX_RANK}" == "0" ] || [ "${__UPCXX_RUN_SUMMIT_VERBOSE}" == "1" -a "${PMIX_RANK}" == "41" ]
   then
-    echo "hwloc-ps ${PMIX_RANK}:" `hwloc-ps`
-    echo "Cpus ${PMIX_RANK}:" `grep Cpus /proc/self/status`
-    echo "HCAs ${PMIX_RANK}: GASNET_IBV_PORTS=$GASNET_IBV_PORTS"
+    echo "${PMIX_RANK}: pid=$$ GASNET_IBV_PORTS='$GASNET_IBV_PORTS' hwloc='$(hwloc-ps)'"=
   fi
   exec "$@"
 fi
@@ -79,9 +77,15 @@ do
     "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
     "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
 
+    "verbose") export __UPCXX_RUN_SUMMIT_VERBOSE=1 ;;
+
+    "use-odp") export GASNET_USE_XRC=0 ; export GASNET_USE_ODP=1 ;;
+
     "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;; # default
     "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;;
     "4-hca") export __UPCXX_RUN_SUMMIT_nHCAs=4 ;;
+
+    "") break ;; # last option
 
     "help") echo "$USAGE" ; exit 0 ;;
 

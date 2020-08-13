@@ -191,3 +191,4 @@ message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 include_directories("zstr/src")
 
 add_subdirectory(src)
+install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhmxx-upcxx-run-summit)
