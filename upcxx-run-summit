@@ -51,9 +51,20 @@ then
   then
      export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
   fi
+  if [ -n "${__UPCXX_RUN_SUMMIT_SHARED_HEAP}" ]
+  then
+      if [ "${__UPCXX_RUN_SUMMIT_SHARED_HEAP%*%}" != "${__UPCXX_RUN_SUMMIT_SHARED_HEAP}" ]
+      then
+          # fix the % in shared heap size to allocate the correct pattern for gasnet max segsize
+          export GASNET_MAX_SEGSIZE=$(printf "0.%02d/H" ${__UPCXX_RUN_SUMMIT_SHARED_HEAP%*%})
+          export UPCXX_SHARED_HEAP_SIZE="MAX"
+      else 
+          export UPCXX_SHARED_HEAP_SIZE="${__UPCXX_RUN_SUMMIT_SHARED_HEAP}"
+      fi
+  fi
   if [ "${PMIX_RANK}" == "0" ] || [ "${__UPCXX_RUN_SUMMIT_VERBOSE}" == "1" -a "${PMIX_RANK}" == "41" ]
   then
-    echo "${PMIX_RANK}: pid=$$ GASNET_IBV_PORTS='$GASNET_IBV_PORTS' hwloc='$(hwloc-ps)'"=
+    echo "${PMIX_RANK}: pid=$$ GASNET_IBV_PORTS='$GASNET_IBV_PORTS' hwloc='$(hwloc-ps)' GASNET_MAX_SEGSIZE=${GASNET_MAX_SEGSIZE} UPCXX_SHARED_HEAP_SIZE=${UPCXX_SHARED_HEAP_SIZE}"
   fi
   exec "$@"
 fi
@@ -62,9 +73,10 @@ export __UPCXX_RUN_SUMMIT=1
 
 while [ 1 ]
 do
-  _opt=$1
-  opt=${_opt#--}
-  if [ "${_opt}" == "${opt}" ]
+  __opt=$1
+  _opt=${__opt#-} # for 1 dash
+  opt=${_opt#-}  # for optional second dash
+  if [ "${__opt}" == "${opt}" ]
   then
     break
   fi
@@ -76,6 +88,8 @@ do
 
     "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
     "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
+
+    "shared-heap") export __UPCXX_RUN_SUMMIT_SHARED_HEAP=$1 ; shift ;;
 
     "verbose") export __UPCXX_RUN_SUMMIT_VERBOSE=1 ;;
 
