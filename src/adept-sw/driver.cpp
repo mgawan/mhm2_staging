@@ -12,6 +12,7 @@
 
 #include "driver.hpp"
 #include "kernel.hpp"
+#include <chrono>
 
 #define cudaErrchk(ans) \
   { gpuAssert((ans), __FILE__, __LINE__); }
@@ -48,6 +49,25 @@ int adept_sw::get_num_node_gpus() {
   auto res = cudaGetDeviceCount(&deviceCount);
   if (res != cudaSuccess) return 0;
   return deviceCount;
+}
+
+
+std::thread adept_sw::initialize_gpu(double &time_to_initialize) {
+    std::thread t([&time_to_initialize] {
+      double *first_touch;
+      using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
+      timepoint_t t = std::chrono::high_resolution_clock::now();
+      std::chrono::duration<double> elapsed;
+      cudaErrchk(cudaMallocHost(&first_touch, sizeof(double)));
+      cudaErrchk(cudaFreeHost(first_touch));
+      elapsed = std::chrono::high_resolution_clock::now() - t;
+      time_to_initialize = elapsed.count();
+    });
+    return t;
+}
+std::thread adept_sw::initialize_gpu() {
+    double dummy;
+    return initialize_gpu(dummy);
 }
 
 struct gpu_alignments {
@@ -169,8 +189,11 @@ struct adept_sw::DriverState {
   unsigned half_length_B = 0;
 };
 
-void adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score,
+double adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score,
                                short gap_opening_score, short gap_extending_score, int max_rlen) {
+  using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
+  timepoint_t t = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed;
   driver_state = new DriverState();
   driver_state->matchScore = match_score;
   driver_state->misMatchScore = mismatch_score;
@@ -197,6 +220,8 @@ void adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_
   cudaErrchk(cudaMallocHost(&driver_state->strA, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&driver_state->strB, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
   driver_state->gpu_data = new gpu_alignments(KLIGN_GPU_BLOCK_SIZE);  // gpu mallocs
+  elapsed =  std::chrono::high_resolution_clock::now() - t;
+  return elapsed.count();
 }
 
 adept_sw::GPUDriver::~GPUDriver() {

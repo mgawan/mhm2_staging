@@ -351,8 +351,9 @@ class KmerCtgDHT {
     }
     if (gpu_mem_avail) {
       SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
-      gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
+      auto init_time = gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
                       (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
+      SLOG_VERBOSE("Initialized adept_sw driver in ", init_time, " s\n");
     } else {
       SWARN("No GPU memory detected!  (", device_count, " devices detected)\n");
     }
@@ -424,6 +425,8 @@ class KmerCtgDHT {
   }
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
+    BaseTimer t(__FILEFUNC__);
+    t.start();
 #ifdef ENABLE_GPUS
     // for now, the GPU alignment doesn't support cigars
     if (!ssw_filter.report_cigar && gpu_mem_avail) gpu_align_block(aln_kernel_timer);
@@ -431,6 +434,8 @@ class KmerCtgDHT {
 #else
     ssw_align_block(aln_kernel_timer);
 #endif
+    t.stop();
+    SLOG_VERBOSE("Aligned block with ", kernel_alns.size(), " alignments in ", t.get_elapsed(), "\n");
     clear_aln_bufs();
   }
 
