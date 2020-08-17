@@ -7,10 +7,16 @@
 #include <sstream>
 #include <string>
 
+#include <cuda_runtime_api.h>
+#include <cuda.h>
+
 #include "driver.hpp"
 #include "kernel.hpp"
 
-void adept_sw::gpuAssert(cudaError_t code, const char* file, int line, bool abort) {
+#define cudaErrchk(ans) \
+  { gpuAssert((ans), __FILE__, __LINE__); }
+
+static void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
   if (code != cudaSuccess) {
     std::ostringstream os;
     os << "GPU assert " << cudaGetErrorString(code) << " " << file << ":" << line << "\n";

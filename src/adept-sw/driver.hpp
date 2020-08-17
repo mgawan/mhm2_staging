@@ -5,9 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <cuda_runtime_api.h>
-#include <cuda.h>
-
 #define NSTREAMS 2
 
 #ifndef KLIGN_GPU_BLOCK_SIZE
@@ -24,12 +21,6 @@ struct AlignmentResults {
   short *query_end = nullptr;
   short *top_scores = nullptr;
 };
-
-void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true);
-
-#define cudaErrchk(ans) \
-  { adept_sw::gpuAssert((ans), __FILE__, __LINE__); }
-
 
 size_t get_tot_gpu_mem();
 size_t get_avail_gpu_mem_per_rank(int totRanks, int numDevices = 0);
