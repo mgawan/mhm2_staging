@@ -322,13 +322,15 @@ int main(int argc, char **argv) {
          " is ", get_size_str(tot_file_size), "\n");
   }
 #ifdef ENABLE_GPUS
+  std::thread *init_gpu_thread = nullptr;
+  double gpu_startup_duration = 0;
   auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
-  if (num_gpus_per_node) 
+  if (num_gpus_per_node) {
     SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
-  else
+    init_gpu_thread = adept_sw::initialize_gpu(gpu_startup_duration);
+  } else {
     SWARN("Compiled for GPUs but no GPUs available...");
-  double gpu_startup_duration;
-  auto init_gpu_thread = adept_sw::initialize_gpu(gpu_startup_duration);
+  }
 #endif
 
   Contigs ctgs;
@@ -411,9 +413,12 @@ int main(int argc, char **argv) {
     }
     
 #ifdef ENABLE_GPUS
-    SLOG_VERBOSE("Waiting for GPU to be initialized (should be noop)\n");
-    init_gpu_thread.join();
-    LOG("GPU took ", gpu_startup_duration, " seconds to initialize\n");
+    if (init_gpu_thread) {
+      SLOG_VERBOSE("Waiting for GPU to be initialized (should be noop)\n");
+      init_gpu_thread->join();
+      delete init_gpu_thread;
+      LOG("GPU took ", gpu_startup_duration, " seconds to initialize\n");
+    }
 #endif
     
     // scaffolding loops
