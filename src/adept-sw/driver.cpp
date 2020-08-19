@@ -251,6 +251,11 @@ bool adept_sw::GPUDriver::kernel_is_done() {
   return true;
 }
 
+void adept_sw::GPUDriver::kernel_block() {
+    cudaErrchk(cudaEventSynchronize(driver_state->event));
+    cudaErrchk(cudaEventDestroy(driver_state->event));
+}
+
 void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, std::vector<std::string>& contigs,
                                               unsigned maxReadSize, unsigned maxContigSize) {
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
@@ -310,7 +315,7 @@ void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, s
     offsetSumB += sequencesB[i].size();
   }
 
-  cudaErrchk(cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming));
+  cudaErrchk(cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming | cudaEventBlockingSync));
 
   asynch_mem_copies_htd(driver_state->gpu_data, driver_state->offsetA_h, driver_state->offsetB_h, driver_state->strA,
                         driver_state->strA_d, driver_state->strB, driver_state->strB_d, driver_state->half_length_A,
@@ -366,7 +371,7 @@ void adept_sw::GPUDriver::run_kernel_backwards(std::vector<std::string>& reads, 
 
   int newMin = get_new_min_length(alAend, alBend, blocksLaunched);  // find the new largest of smaller lengths
 
-  cudaErrchk(cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming));
+  cudaErrchk(cudaEventCreateWithFlags(&driver_state->event, cudaEventDisableTiming | cudaEventBlockingSync));
   gpu_bsw::sequence_dna_reverse<<<sequences_per_stream, newMin, ShmemBytes, driver_state->streams_cuda[0]>>>(
       driver_state->strA_d, driver_state->strB_d, driver_state->gpu_data->offset_ref_gpu, driver_state->gpu_data->offset_query_gpu,
       driver_state->gpu_data->ref_start_gpu, driver_state->gpu_data->ref_end_gpu, driver_state->gpu_data->query_start_gpu,

@@ -50,6 +50,7 @@ class GPUDriver {
   void run_kernel_backwards(std::vector<std::string> &reads, std::vector<std::string> &contigs, unsigned maxReadSize,
                             unsigned maxContigSize);
   bool kernel_is_done();
+  void kernel_block();
 
   AlignmentResults &get_aln_results() { return alignments; }
 };
