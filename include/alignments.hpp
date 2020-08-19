@@ -90,9 +90,9 @@ public:
     alns.clear();
     vector<Aln>().swap(alns);
   }
-
-  void add_aln(Aln &aln) {
-#ifdef DEBUG
+  
+  // return true if this aln is a duplicate with recent entries
+  bool check_dup(Aln &aln) {
     // check for duplicate alns to this read - do this backwards because only the most recent entries could be for this read
     for (auto it = alns.rbegin(); it != alns.rend(); ++it) {
       // we have no more entries for this read
@@ -100,11 +100,23 @@ public:
       // now check for equality
       if (it->rstart == aln.rstart && it->rstop == aln.rstop && it->cstart == aln.cstart && it->cstop == aln.cstop) {
         num_dups++;
-        return;
+        return true;
       }
-    }
+    }     
+    return false;
+  }
+
+  void add_aln(Aln &aln) {
+#ifdef DEBUG
+    if (check_dup(aln)) return;
 #endif
     alns.push_back(aln);
+  }
+  
+  void append(Alns &more_alns) {
+      alns.insert(alns.end(), more_alns.alns.begin(), more_alns.alns.end());
+      num_dups += more_alns.num_dups;
+      more_alns.clear();
   }
 
   Aln &get_aln(int64_t i) {
@@ -113,6 +125,14 @@ public:
 
   size_t size() {
     return alns.size();
+  }
+  
+  void reserve(size_t capacity) {
+    alns.reserve(capacity);
+  }
+  
+  void reset() {
+    alns.clear();
   }
 
   int64_t get_num_dups() {
