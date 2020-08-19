@@ -575,7 +575,7 @@ class KmerCtgDHT {
     }
     active_kernel_fut.wait();
     t.stop();
-    if (print) SLOG_VERBOSE("Aligned final block with ", num, " alignments in ", t.get_elapsed(), "\n");
+    SLOG_VERBOSE("Aligned final block with ", num, " alignments in ", t.get_elapsed(), "\n");
   }
   
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
