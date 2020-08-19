@@ -64,6 +64,7 @@ using namespace std;
 #include "kmer_dht.hpp"
 
 #ifdef ENABLE_GPUS
+#include <thread>
 #include "adept-sw/driver.hpp"
 #endif
 
@@ -305,14 +306,12 @@ int main(int argc, char **argv) {
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-//#ifndef DEBUG
   SLOG_VERBOSE("Process 0 on node 0 is initially pinned to ", get_proc_pin(), "\n");
   // pin ranks only in production
   if (options->pin_by == "cpu") pin_cpu();
   else if (options->pin_by == "core") pin_core();
   else if (options->pin_by == "numa") pin_numa();
-//#endif
-
+  
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
@@ -321,14 +320,18 @@ int main(int argc, char **argv) {
     }
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
-#ifdef ENABLE_GPUS
-    auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
-    if (num_gpus_per_node) 
-      SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
-    else
-      SWARN("Compiled for GPUs but no GPUs available...");
-#endif
   }
+#ifdef ENABLE_GPUS
+  std::thread *init_gpu_thread = nullptr;
+  double gpu_startup_duration = 0;
+  auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
+  if (num_gpus_per_node) {
+    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
+    init_gpu_thread = adept_sw::initialize_gpu(gpu_startup_duration);
+  } else {
+    SWARN("Compiled for GPUs but no GPUs available...");
+  }
+#endif
 
   Contigs ctgs;
   int max_kmer_len = 0;
@@ -408,7 +411,16 @@ int main(int argc, char **argv) {
         prev_kmer_len = kmer_len;
       }
     }
-
+    
+#ifdef ENABLE_GPUS
+    if (init_gpu_thread) {
+      SLOG_VERBOSE("Waiting for GPU to be initialized (should be noop)\n");
+      init_gpu_thread->join();
+      delete init_gpu_thread;
+      LOG("GPU took ", gpu_startup_duration, " seconds to initialize\n");
+    }
+#endif
+    
     // scaffolding loops
     if (options->scaff_kmer_lens.size()) {
       if (!max_kmer_len) {
