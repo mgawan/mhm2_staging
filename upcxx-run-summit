@@ -11,9 +11,13 @@ Options:
   --by-socket       Resource Set by socket - Bind ranks to 1 socket with 3 GPUs (default)
   --by-gpu          Resource Set by GPU    - Bind ranks to 7 cores on 1 socket with 1 GPU
 
-  --1-hca           Use 1 HCA per rank (default)
-  --2-hca           Use 2 HCA per rank
+  --1-hca           Use 1 HCA per rank
+  --2-hca           Use 2 HCA per rank (default)
   --4-hca           Use 4 HCA per rank (i.e. all)
+
+  --use-odp         Use ODB instead of the default XRC
+
+  --shared-heap     set either a percentage of node RAM '10%' or fixed amount per thread '128MB'
 
 "
 
@@ -37,17 +41,19 @@ then
     esac
   fi
  
-  if [ -n "${PMIX_RANK}" ] && [ "${__UPCXX_RUN_SUMMIT_nHCAS}" != "2" ]
+  if [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "1" ]
   then
     # 1 HCA per rank
-    if ((${PMIX_RANK} % 2))
+    if [ -n "${PMIX_RANK}" ] && ((${PMIX_RANK} % 2))
     then
       export GASNET_IBV_PORTS=${GASNET_IBV_PORTS%+*}
     else
       export GASNET_IBV_PORTS=${GASNET_IBV_PORTS#*+}
     fi
-  fi
-  if [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "4" ]
+  elif [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "2" ]
+  then
+    # noop
+  elif [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "4" ]
   then
      export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
   fi
@@ -95,8 +101,8 @@ do
 
     "use-odp") export GASNET_USE_XRC=0 ; export GASNET_USE_ODP=1 ;;
 
-    "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;; # default
-    "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;;
+    "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;;
+    "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;; #default
     "4-hca") export __UPCXX_RUN_SUMMIT_nHCAs=4 ;;
 
     "") break ;; # last option

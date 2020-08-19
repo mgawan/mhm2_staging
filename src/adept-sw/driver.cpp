@@ -52,22 +52,23 @@ int adept_sw::get_num_node_gpus() {
 }
 
 
-std::thread adept_sw::initialize_gpu(double &time_to_initialize) {
-    std::thread t([&time_to_initialize] {
-      double *first_touch;
-      using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
-      timepoint_t t = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> elapsed;
-      cudaErrchk(cudaMallocHost(&first_touch, sizeof(double)));
-      cudaErrchk(cudaFreeHost(first_touch));
-      elapsed = std::chrono::high_resolution_clock::now() - t;
-      time_to_initialize = elapsed.count();
-    });
-    return t;
+std::thread *adept_sw::initialize_gpu(double &time_to_initialize) {
+  auto t = new std::thread([&time_to_initialize] {
+                             double *first_touch;
+                             using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
+                             timepoint_t t = std::chrono::high_resolution_clock::now();
+                             std::chrono::duration<double> elapsed;
+                             cudaErrchk(cudaMallocHost(&first_touch, sizeof(double)));
+                             cudaErrchk(cudaFreeHost(first_touch));
+                             elapsed = std::chrono::high_resolution_clock::now() - t;
+                             time_to_initialize = elapsed.count();
+                           });
+  return t;
 }
-std::thread adept_sw::initialize_gpu() {
-    double dummy;
-    return initialize_gpu(dummy);
+
+std::thread *adept_sw::initialize_gpu() {
+  double dummy;
+  return initialize_gpu(dummy);
 }
 
 struct gpu_alignments {

@@ -30,8 +30,8 @@ int get_num_node_gpus();
 
 // The first call to cudaMallocHost can take several seconds of real time but no cpu time
 // so start it asap in a new thread
-std::thread initialize_gpu();
-std::thread initialize_gpu(double &time_to_initialize);
+std::thread *initialize_gpu();
+std::thread *initialize_gpu(double &time_to_initialize);
 
 struct DriverState;
 
