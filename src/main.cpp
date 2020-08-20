@@ -124,14 +124,14 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
   SLOG("\n");
   bool is_debug = false;
-#ifndef DEBUG
+#ifdef DEBUG
   is_debug = true;
 #endif
- 
+
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
   string contigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
   if (options->restart && file_exists(contigs_fname)) {
-      ctgs.load_contigs(contigs_fname);
+    ctgs.load_contigs(contigs_fname);
   } else {
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
@@ -200,7 +200,7 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
   if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
   else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
   bool is_debug = false;
-#ifndef DEBUG
+#ifdef DEBUG
   is_debug = true;
 #endif
   string scaff_contigs_fname("scaff-contigs-" + to_string(scaff_kmer_len) + ".fasta");
