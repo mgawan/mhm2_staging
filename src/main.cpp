@@ -220,9 +220,8 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
 #ifdef DEBUG
     alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
-    // always recalculate the insert size because we may need it for resumes of
     compute_aln_depths("", ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
-    // Failed runs
+    // always recalculate the insert size because we may need it for resumes of failed runs
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some
     // error in the assembly

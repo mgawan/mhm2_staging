@@ -233,9 +233,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   auto all_num_alns = reduce_one(alns.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Dropped ", perc_str(reduce_one(num_bad_overlaps, op_fast_add, 0).wait(), all_num_alns), " bad overlaps and ",
                perc_str(reduce_one(num_bad_alns, op_fast_add, 0).wait(), all_num_alns), " low quality alns\n");
-  if (fname == "" && use_kmer_depths) {
-      SLOG_VERBOSE("Skipping contig depths calculations and output\n");
-  }
+  if (fname == "" && use_kmer_depths) SLOG_VERBOSE("Skipping contig depths calculations and output\n");
   // get string to dump
   string out_str = "";
   if (!upcxx::rank_me()) out_str = "contigName\tcontigLen\ttotalAvgDepth\tavg_depth\tvar_depth\n";
@@ -255,7 +253,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   }
   barrier();
   if (fname != "") {
-      DBG("Prepared contig depths for '", fname, "' with ", out_str.size(), " bytes\n");
-      dump_single_file(fname, out_str);
+    DBG("Prepared contig depths for '", fname, "' with ", out_str.size(), " bytes\n");
+    dump_single_file(fname, out_str);
   }
 }
