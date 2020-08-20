@@ -3,6 +3,15 @@
 
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhmxx)
 
+### 0.1.3 2020-08-20
+   * Added support for GPU in alignments with CUDA-enabled detection and build
+      * major refactor of adept-sw for better performance and ease of building
+   * Fixed fastq reader edge cases in record boundary detection
+   * Support in options for 1 contig and 1 scaffolding round
+   * Optimal execution environment on Summit with custom spawner
+   * Better checkpointing support
+   * Various fixes from upcxx-utils including ofstream bugs
+
 ### 0.1.2 2020-07-06
    * Semi-stable alpha release
    * Added skeleton for CI building on cori and hulk development server
