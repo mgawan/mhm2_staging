@@ -246,5 +246,5 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
     if (!use_kmer_depths) ctg.depth = avg_depth;
     upcxx::progress();
   }
-  dump_single_file(fname, out_str);
+  if (fname != "") dump_single_file(fname, out_str);
 }

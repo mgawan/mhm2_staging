@@ -221,7 +221,7 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
     alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
     // always recalculate the insert size because we may need it for resumes of
-    compute_aln_depths(scaff_contigs_fname, ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
+    compute_aln_depths("", ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
     // Failed runs
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some
@@ -233,13 +233,12 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
                        break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
     stage_timers.cgraph->stop();
     ctgs.print_stats(options->min_ctg_print_len);
-    if (is_debug || options->checkpoint ||
-        (!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
-        (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
-        SLOG_VERBOSE("Saving scaffold contigs ", scaff_contigs_fname, "\n");
-        stage_timers.dump_ctgs->start();
-        ctgs.dump_contigs(scaff_contigs_fname, 0);
-        stage_timers.dump_ctgs->stop();
+    int max_scaff_i = (options->dump_gfa ? options->scaff_kmer_lens.size() - 2 : options->scaff_kmer_lens.size() - 1);
+    if ((is_debug || options->checkpoint) && scaff_i < max_scaff_i) {
+      SLOG_VERBOSE("Saving scaffold contigs ", scaff_contigs_fname, "\n");
+      stage_timers.dump_ctgs->start();
+      ctgs.dump_contigs(scaff_contigs_fname, 0);
+      stage_timers.dump_ctgs->stop();
     }
   }
 
