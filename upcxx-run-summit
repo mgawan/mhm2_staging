@@ -52,7 +52,7 @@ then
     fi
   elif [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "2" ]
   then
-    # noop
+    dummy=noop
   elif [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "4" ]
   then
      export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
