@@ -135,8 +135,10 @@ class CtgsDepths {
   }
 
   std::pair<double, double> get_depth(int64_t cid) {
+    auto target_rank = get_target_rank(cid);
+    //DBG_VERBOSE("Sending rpc to ", target_rank, " for cid=", cid, "\n");
     return upcxx::rpc(
-               get_target_rank(cid),
+               target_rank,
                [](ctgs_depths_map_t &ctgs_depths, int64_t cid, int edge_base_len) -> pair<double, double> {
                  const auto it = ctgs_depths->find(cid);
                  if (it == ctgs_depths->end()) DIE("could not fetch vertex ", cid, "\n");
@@ -231,6 +233,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   auto all_num_alns = reduce_one(alns.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Dropped ", perc_str(reduce_one(num_bad_overlaps, op_fast_add, 0).wait(), all_num_alns), " bad overlaps and ",
                perc_str(reduce_one(num_bad_alns, op_fast_add, 0).wait(), all_num_alns), " low quality alns\n");
+  if (fname == "" && use_kmer_depths) SLOG_VERBOSE("Skipping contig depths calculations and output\n");
   // get string to dump
   string out_str = "";
   if (!upcxx::rank_me()) out_str = "contigName\tcontigLen\ttotalAvgDepth\tavg_depth\tvar_depth\n";
@@ -239,12 +242,18 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   for (auto &ctg : ctgs) {
     if (ctg.seq.length() < min_ctg_len) continue;
     auto [avg_depth, var_depth] = ctgs_depths.get_depth(ctg.id);
-    ostringstream oss;
-    oss << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth << "\n";
-    out_str += oss.str();
+    if (fname != "") {
+      ostringstream oss;
+      oss << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth << "\n";
+      out_str += oss.str();
+    }
     // it seems that using aln depths improves the ctgy at the cost of an increase in msa
     if (!use_kmer_depths) ctg.depth = avg_depth;
     upcxx::progress();
   }
-  dump_single_file(fname, out_str);
+  barrier();
+  if (fname != "") {
+    DBG("Prepared contig depths for '", fname, "' with ", out_str.size(), " bytes\n");
+    dump_single_file(fname, out_str);
+  }
 }

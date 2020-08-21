@@ -225,6 +225,7 @@ future<> tmp_reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op
 
 inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
   BarrierTimer timer(__FILEFUNC__);
+  SLOG_VERBOSE("Writing ", fname, "\n");
   auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
   upcxx_utils::dist_ofstream of(fname, append);
   of << out_str;
