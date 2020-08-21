@@ -326,7 +326,7 @@ class KmerCtgDHT {
         }
     };
 
-  static shared_ptr<Alns>  _ssw_align_block(AlignBlockData &abd, IntermittentTimer &aln_kernel_timer) {
+  static void _ssw_align_block(AlignBlockData &abd, IntermittentTimer &aln_kernel_timer) {
     DBG_VERBOSE("Starting _ssw_align_block of ", abd.kernel_alns.size(), "\n");
     auto alns_ptr = abd.alns.get();
     for (int i = 0; i < abd.kernel_alns.size(); i++) {
@@ -335,94 +335,87 @@ class KmerCtgDHT {
       string &rseq = abd.read_seqs[i];
       ssw_align_read(abd.ssw_aligner, abd.ssw_filter, alns_ptr, abd.aln_scoring, aln_kernel_timer, aln, cseq, rseq);
     }
-    return abd.alns;
   }
-  
   upcxx::future<> ssw_align_block(IntermittentTimer &aln_kernel_timer) {
-      shared_ptr< promise<> > sh_prom = make_shared<promise<>>();
-      upcxx::persona & return_persona = upcxx::current_persona();
+        auto &myself = *this;
+        shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself);
+        assert(kernel_alns.empty());
 
-      auto &myself = *this;
-      shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself);
-      assert(kernel_alns.empty());
-            
-      shared_ptr<std::thread> sh_run = make_shared<std::thread>([&return_persona, &myself, sh_abd, &aln_kernel_timer, sh_prom] {
-          BaseTimer t("ssw_align_block (thread)");
-          t.start();
-          assert(!sh_abd->kernel_alns.empty());
-          auto sh_new_alns = _ssw_align_block(*sh_abd, aln_kernel_timer);
-          t.stop();
-          DBG_VERBOSE("Finished aligning block in ", t.get_elapsed(), " s\n");
-          return_persona.lpc_ff([&myself, sh_prom, sh_new_alns] {
-              DBG_VERBOSE("appending and returning\n");
-              myself.alns->append(*sh_new_alns);
-              sh_prom->fulfill_anonymous(1);
-          });
-      });
-      return sh_prom->get_future().then([sh_prom, sh_run]{
-          DBG_VERBOSE("Joining run (cpu) thread\n");
-          sh_run->join();
-          DBG_VERBOSE("Joined\n");
-      });
-  }
+        future<> fut = upcxx_utils::execute_in_new_thread(
+                [sh_abd, &aln_kernel_timer]() {
+                    BaseTimer t("ssw_align_block (thread)");
+                    t.start();
+                    assert(!sh_abd->kernel_alns.empty());
+                    _ssw_align_block(*sh_abd, aln_kernel_timer);
+                    t.stop();
+                    DBG_VERBOSE("Finished aligning block in ", t.get_elapsed(), " s\n");
+                }
+        );
+        fut = fut.then(
+                [&myself,sh_abd]() {
+                    DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+                    myself.alns->append(*(sh_abd->alns));
+                });
+        return fut;
+
+    }
 
 #ifdef ENABLE_GPUS
-  static shared_ptr<Alns>  _gpu_align_block_kernel(AlignBlockData &abd, IntermittentTimer &aln_kernel_timer) {
-    DBG_VERBOSE("Starting _gpu_align_block_kernel of ", abd.kernel_alns.size(), "\n");
-    aln_kernel_timer.start();
-    
-    // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    abd.gpu_driver.run_kernel_forwards(abd.read_seqs, abd.ctg_seqs, abd.max_rlen, abd.max_clen);
-    abd.gpu_driver.kernel_block();
-    abd.gpu_driver.run_kernel_backwards(abd.read_seqs, abd.ctg_seqs, abd.max_rlen, abd.max_clen);
-    abd.gpu_driver.kernel_block();
-    aln_kernel_timer.stop();
 
-    auto aln_results = abd.gpu_driver.get_aln_results();
-    
-    for (int i = 0; i < abd.kernel_alns.size(); i++) {
-      //progress();
-      Aln &aln = abd.kernel_alns[i];
-      aln.rstop = aln.rstart + aln_results.query_end[i];
-      aln.rstart += aln_results.query_begin[i];
-      aln.cstop = aln.cstart + aln_results.ref_end[i];
-      aln.cstart += aln_results.ref_begin[i];
-      if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
-      aln.score1 = aln_results.top_scores[i];
-      // FIXME: needs to be set to the second best
-      aln.score2 = 0;
-      // FIXME: need to get the mismatches
-      aln.mismatches = 0;//ssw_aln.mismatches;
-      aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
-      // FIXME: need to get cigar
-      //if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
-      abd.alns->add_aln(aln);
+    static void _gpu_align_block_kernel(AlignBlockData &abd, IntermittentTimer &aln_kernel_timer) {
+        DBG_VERBOSE("Starting _gpu_align_block_kernel of ", abd.kernel_alns.size(), "\n");
+        aln_kernel_timer.start();
+
+        // align query_seqs, ref_seqs, max_query_size, max_ref_size
+        abd.gpu_driver.run_kernel_forwards(abd.read_seqs, abd.ctg_seqs, abd.max_rlen, abd.max_clen);
+        abd.gpu_driver.kernel_block();
+        abd.gpu_driver.run_kernel_backwards(abd.read_seqs, abd.ctg_seqs, abd.max_rlen, abd.max_clen);
+        abd.gpu_driver.kernel_block();
+        aln_kernel_timer.stop();
+
+        auto aln_results = abd.gpu_driver.get_aln_results();
+
+        for (int i = 0; i < abd.kernel_alns.size(); i++) {
+            //progress();
+            Aln &aln = abd.kernel_alns[i];
+            aln.rstop = aln.rstart + aln_results.query_end[i];
+            aln.rstart += aln_results.query_begin[i];
+            aln.cstop = aln.cstart + aln_results.ref_end[i];
+            aln.cstart += aln_results.ref_begin[i];
+            if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
+            aln.score1 = aln_results.top_scores[i];
+            // FIXME: needs to be set to the second best
+            aln.score2 = 0;
+            // FIXME: need to get the mismatches
+            aln.mismatches = 0; //ssw_aln.mismatches;
+            aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
+            // FIXME: need to get cigar
+            //if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+            abd.alns->add_aln(aln);
+        }
     }
-    return abd.alns;
-  }
-  upcxx::future<> gpu_align_block(IntermittentTimer &aln_kernel_timer) {
-      shared_ptr< promise<> > sh_prom = make_shared<promise<>>();
-      upcxx::persona & return_persona = upcxx::current_persona();
-      auto &myself = *this;
-      shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself);
-      shared_ptr<std::thread> sh_run_gpu = make_shared<std::thread>([&return_persona, &myself, sh_abd, &aln_kernel_timer, sh_prom] {
-          BaseTimer t("gpu_align_block (thread)");
-          t.start();
-          auto sh_new_alns = _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
-          t.stop();
-          DBG_VERBOSE("Finished aligning block in ", t.get_elapsed(), " s\n");
-          return_persona.lpc_ff([&myself, sh_prom, sh_new_alns] {
-              DBG_VERBOSE("appending and returning\n");
-              myself.alns->append(*sh_new_alns);
-              sh_prom->fulfill_anonymous(1);
-          });
-      });
-      return sh_prom->get_future().then([sh_prom, sh_run_gpu]{
-          DBG_VERBOSE("Joining run (cpu) thread\n");
-          sh_run_gpu->join();
-          DBG_VERBOSE("Joined\n");
-      });
-  }
+
+    upcxx::future<> gpu_align_block(IntermittentTimer &aln_kernel_timer) {
+        auto &myself = *this;
+        shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself);
+        assert(kernel_alns.empty());
+
+        future<> fut = upcxx_utils::execute_in_new_thread(
+                [&myself, sh_abd, &aln_kernel_timer] {
+                    BaseTimer t("gpu_align_block (thread)");
+                    t.start();
+                    _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
+                    t.stop();
+                    DBG_VERBOSE("Finished aligning block in ", t.get_elapsed(), " s\n");
+                });
+        fut = fut.then(
+                [&myself, sh_abd]() {
+                    DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+                    myself.alns->append(*(sh_abd->alns));
+                });
+
+        return fut;
+    }
 #endif
 
  public:

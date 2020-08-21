@@ -390,3 +390,76 @@ inline void pin_numa() {
   pin_proc(my_cpu_list);
   SLOG("Pinning to NUMA domains: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
 }
+
+// temporary until it is properly within upcxx_utils
+#include <thread>
+#include <memory>
+#include <functional>
+
+namespace upcxx_utils {
+
+    // Func no argument returned or given lambda - void()
+
+    template<typename Func>
+    future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
+        assert(persona.active_with_caller());
+        shared_ptr< promise<> > sh_prom = make_shared<promise <> > ();
+
+        shared_ptr<std::thread> sh_run = make_shared<std::thread>(
+                [&persona, func, sh_prom] {
+                    func();
+
+                    // fulfill only in calling persona
+                    persona.lpc_ff([&persona, sh_prom]() {
+                        assert(persona.active_with_caller());
+                        sh_prom->fulfill_anonymous(1);
+                    });
+                });
+        auto fut_finished = sh_prom->get_future().then( // keep sh_prom and sh_run alive until complete
+                [&persona, sh_prom, sh_run] () {
+                    assert(persona.active_with_caller());
+                    sh_run->join();
+                });
+        return fut_finished;
+    }
+
+    template<typename Func>
+    future<> execute_in_new_thread(Func func) {
+        return execute_in_new_thread(upcxx::current_persona(), func);
+    }
+
+    /*
+    // func with return but no arguments
+    
+    template<typename Ret, typename Func>
+    future<Ret> execute_in_new_thread2(upcxx::persona &persona, Func func) {
+        assert(persona.active_with_caller());
+        shared_ptr< promise<Ret> > sh_prom = make_shared< promise <Ret> > ();
+        sh_prom->require_anonymous(1);
+        auto fut_ret = sh_prom->get_future();
+
+        shared_ptr<std::thread> sh_run = make_shared<std::thread>(
+                [&persona, func, sh_prom] {
+                    sh_prom->fulfill_result(func());
+
+                    // fulfill only in calling persona
+                    persona.lpc_ff([&persona, sh_prom]() {
+                        assert(persona.active_with_caller());
+                        sh_prom->fulfill_anonymous(1);
+                    });
+                });
+                
+        auto fut_finished = fut_ret.then( // keep sh_prom and sh_run alive until complete
+                [&persona, sh_prom, sh_run] (Ret ignored) {
+                    assert(persona.active_with_caller());
+                    sh_run->join();
+                });
+        return when_all(fut_finished, fut_ret);
+    }
+
+    template<typename Ret, typename Func>
+    future<Ret> execute_in_new_thread2(Func func) {
+        return execute_in_new_thread2(upcxx::current_persona(), func);
+    }
+     * */
+};
