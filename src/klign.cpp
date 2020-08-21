@@ -354,8 +354,8 @@ class KmerCtgDHT {
       auto init_time = gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
                       (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
       SLOG_VERBOSE("Initialized adept_sw driver in ", init_time, " s\n");
-    } else {
-      SWARN("No GPU memory detected!  (", device_count, " devices detected)\n");
+      //} else {
+      //SWARN("No GPU memory detected!  (", device_count, " devices detected)\n");
     }
 #else
     gpu_mem_avail = 32 * 1024 * 1024;
