@@ -267,7 +267,7 @@ inline std::string &left_trim(std::string &str) {
 }
 
 inline string get_proc_pin() {
-  ifstream f("/proc/" + to_string(getpid()) + "/status");
+  ifstream f("/proc/self/status");
   string line;
   string prefix = "Cpus_allowed_list:";
   while (getline(f, line)) {
@@ -311,12 +311,19 @@ inline void pin_proc(vector<int> cpus) {
   }
 }
 
+
+// FIXME None of these work on summit / Power9 
+// where the numeric ordering of smt cpus across cores is different from Intel
+// ... and one core per socket is off limits for system work
+
+// pins to one and only one logical CPU (smt thread)
 inline void pin_cpu() {
   auto pinned_cpus = get_pinned_cpus();
   pin_proc({pinned_cpus[upcxx::rank_me() % pinned_cpus.size()]});
   SLOG("Pinning to logical cpus: process 0 on node 0 pinned to cpu ", get_proc_pin(), "\n");
 }
 
+// pins to all smt threads (logical CPUs) of a physical core
 inline void pin_core() {
   string numa_node_dir = "/sys/devices/system/node";
   auto numa_node_entries = get_dir_entries(numa_node_dir, "node");
@@ -330,7 +337,7 @@ inline void pin_core() {
     int numa_node_i = std::stoi(entry.substr(4));
     auto cpu_entries = get_dir_entries(numa_node_dir + "/" + entry, "cpu");
     for (auto &cpu_entry : cpu_entries) {
-      if (cpu_entry != "cpu" + to_string(upcxx::rank_me())) continue;
+      if (cpu_entry != "cpu" + to_string(upcxx::local_team().rank_me())) continue;
       if (cpu_entry == "cpulist" || cpu_entry == "cpumap") continue;
       f.open(numa_node_dir + "/" + entry + "/" + cpu_entry + "/topology/thread_siblings_list");
       getline(f, buf);
@@ -428,38 +435,4 @@ namespace upcxx_utils {
         return execute_in_new_thread(upcxx::current_persona(), func);
     }
 
-    /*
-    // func with return but no arguments
-    
-    template<typename Ret, typename Func>
-    future<Ret> execute_in_new_thread2(upcxx::persona &persona, Func func) {
-        assert(persona.active_with_caller());
-        shared_ptr< promise<Ret> > sh_prom = make_shared< promise <Ret> > ();
-        sh_prom->require_anonymous(1);
-        auto fut_ret = sh_prom->get_future();
-
-        shared_ptr<std::thread> sh_run = make_shared<std::thread>(
-                [&persona, func, sh_prom] {
-                    sh_prom->fulfill_result(func());
-
-                    // fulfill only in calling persona
-                    persona.lpc_ff([&persona, sh_prom]() {
-                        assert(persona.active_with_caller());
-                        sh_prom->fulfill_anonymous(1);
-                    });
-                });
-                
-        auto fut_finished = fut_ret.then( // keep sh_prom and sh_run alive until complete
-                [&persona, sh_prom, sh_run] (Ret ignored) {
-                    assert(persona.active_with_caller());
-                    sh_run->join();
-                });
-        return when_all(fut_finished, fut_ret);
-    }
-
-    template<typename Ret, typename Func>
-    future<Ret> execute_in_new_thread2(Func func) {
-        return execute_in_new_thread2(upcxx::current_persona(), func);
-    }
-     * */
 };
