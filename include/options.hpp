@@ -242,7 +242,7 @@ public:
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
-  string pin_by = "cpu";
+  string pin_by = "core";
   int ranks_per_gpu = 0; // autodetect
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
@@ -330,7 +330,7 @@ public:
                  ->capture_default_str();
     app.add_flag("--pin", pin_by,
                  "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
-                 "or NUMA domains (cpu, core, numa, none) - default is cpu ")
+                 "or NUMA domains (cpu, core, numa, none) - default is core (physical core with smt threads)")
                  ->capture_default_str() ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
     app.add_flag("--post-asm-align", post_assm_aln,
                  "Align reads to final assembly")
