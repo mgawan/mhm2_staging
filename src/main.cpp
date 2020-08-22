@@ -220,9 +220,8 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
 #ifdef DEBUG
     alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
 #endif
-    // always recalculate the insert size because we may need it for resumes of
-    compute_aln_depths(scaff_contigs_fname, ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
-    // Failed runs
+    compute_aln_depths("", ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
+    // always recalculate the insert size because we may need it for resumes of failed runs
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some
     // error in the assembly
@@ -233,13 +232,12 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
                        break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
     stage_timers.cgraph->stop();
     ctgs.print_stats(options->min_ctg_print_len);
-    if (is_debug || options->checkpoint ||
-        (!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
-        (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
-        SLOG_VERBOSE("Saving scaffold contigs ", scaff_contigs_fname, "\n");
-        stage_timers.dump_ctgs->start();
-        ctgs.dump_contigs(scaff_contigs_fname, 0);
-        stage_timers.dump_ctgs->stop();
+    int max_scaff_i = (options->dump_gfa ? options->scaff_kmer_lens.size() - 2 : options->scaff_kmer_lens.size() - 1);
+    if ((is_debug || options->checkpoint) && scaff_i < max_scaff_i) {
+      SLOG_VERBOSE("Saving scaffold contigs ", scaff_contigs_fname, "\n");
+      stage_timers.dump_ctgs->start();
+      ctgs.dump_contigs(scaff_contigs_fname, 0);
+      stage_timers.dump_ctgs->stop();
     }
   }
 
@@ -322,15 +320,23 @@ int main(int argc, char **argv) {
          " is ", get_size_str(tot_file_size), "\n");
   }
 #ifdef ENABLE_GPUS
-  std::thread *init_gpu_thread = nullptr;
+  // initialize the GPU and first-touch memory and functions in a new thread as this can take many seconds to complete
   double gpu_startup_duration = 0;
-  auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
-  if (num_gpus_per_node) {
-    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
-    init_gpu_thread = adept_sw::initialize_gpu(gpu_startup_duration);
-  } else {
-    SWARN("Compiled for GPUs but no GPUs available...");
-  }
+  int num_gpus = -1;
+  size_t gpu_mem = 0;
+  bool init_gpu_thread = true;
+  SLOG_VERBOSE("Detecting GPUs\n");
+  auto detect_gpu_fut = execute_in_new_thread(
+    [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+      adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
+  }).then(
+    [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+        if (num_gpus>0) {
+            SLOG_VERBOSE("Using ", num_gpus, " GPUs on node 0, with ", get_size_str(gpu_mem), " available memory. Detected in ", gpu_startup_duration, " s.\n");
+        } else {
+            SWARN("Compiled for GPUs but no GPUs available...");
+        }
+    });
 #endif
 
   Contigs ctgs;
@@ -414,10 +420,9 @@ int main(int argc, char **argv) {
     
 #ifdef ENABLE_GPUS
     if (init_gpu_thread) {
-      SLOG_VERBOSE("Waiting for GPU to be initialized (should be noop)\n");
-      init_gpu_thread->join();
-      delete init_gpu_thread;
-      LOG("GPU took ", gpu_startup_duration, " seconds to initialize\n");
+      Timer t("Waiting for GPU to be initialized (should be noop)");
+      init_gpu_thread = false;
+      detect_gpu_fut.wait();
     }
 #endif
     
