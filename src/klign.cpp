@@ -348,7 +348,7 @@ class KmerCtgDHT {
                     assert(!sh_abd->kernel_alns.empty());
                     _ssw_align_block(*sh_abd, aln_kernel_timer);
                     t.stop();
-                    DBG_VERBOSE("Finished aligning block in ", t.get_elapsed(), " s\n");
+                    SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s\n");
                 }
         );
         fut = fut.then(
@@ -406,7 +406,7 @@ class KmerCtgDHT {
                     t.start();
                     _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
                     t.stop();
-                    DBG_VERBOSE("Finished aligning block in ", t.get_elapsed(), " s\n");
+                    SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s\n");
                 });
         fut = fut.then(
                 [&myself, sh_abd]() {
@@ -544,18 +544,35 @@ class KmerCtgDHT {
   }
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
-    active_kernel_fut.wait();
     auto num = kernel_alns.size();
-#ifdef ENABLE_GPUS
-    // for now, the GPU alignment doesn't support cigars
-    if (!ssw_filter.report_cigar && gpu_mem_avail) {
-        active_kernel_fut = gpu_align_block(aln_kernel_timer);
-    } else {
-        active_kernel_fut = ssw_align_block(aln_kernel_timer);
+
+    // steal work from kernel block if the previous kernel is still active
+    while (!active_kernel_fut.ready() && !kernel_alns.empty()) {
+        assert(!ctg_seqs.empty());
+        assert(!read_seqs.empty());
+        // steal one from the block
+        ssw_align_read(aln_cpu_bypass_timer, kernel_alns.back(), ctg_seqs.back(), read_seqs.back());
+        kernel_alns.pop_back();
+        ctg_seqs.pop_back();
+        read_seqs.pop_back();
+        progress();
     }
+    if (kernel_alns.empty()) {
+        LOG("Drained entire kernel block of ", num, " while waiting for previous block\n");
+    } else {
+        active_kernel_fut.wait(); // should be ready already
+#ifdef ENABLE_GPUS
+        // for now, the GPU alignment doesn't support cigars
+        if (!ssw_filter.report_cigar && gpu_mem_avail) {
+            active_kernel_fut = gpu_align_block(aln_kernel_timer);
+        } else {
+            active_kernel_fut = ssw_align_block(aln_kernel_timer);
+        }
 #else
-    active_kernel_fut = ssw_align_block(aln_kernel_timer);
+        active_kernel_fut = ssw_align_block(aln_kernel_timer);
 #endif
+    }
+    
     clear_aln_bufs();
   }
 
