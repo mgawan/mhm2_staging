@@ -237,27 +237,14 @@ class KmerCtgDHT {
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
       
+      kernel_alns.push_back({rname, cid, 0, 0, rlen, cstart, 0, clen, orient});
+      ctg_seqs.push_back(cseq);
+      read_seqs.push_back(rseq);
       bool will_run_kernel = (tot_mem_est >= gpu_mem_avail) | (num_alns >= KLIGN_GPU_BLOCK_SIZE);
-      Aln aln({rname, cid, 0, 0, rlen, cstart, 0, clen, orient});
-      if (!active_kernel_fut.ready() && will_run_kernel) {
-          // bypass GPU and align this read on CPU (i.e. this master_persona thread)
-          // ideally this is rare in hyperthreaded and GPU environments
-          assert(upcxx::master_persona().active_with_caller());
-          ssw_align_read(aln_cpu_bypass_timer, aln, cseq, rseq);
-#ifndef ENABLE_GPUS
-          // extra progress and yield some time if there is no GPU (not strictly necessary)
-          progress();
-          std::this_thread::yield();
-#endif
-      } else {
-          kernel_alns.push_back(std::move(aln));
-          ctg_seqs.push_back(cseq);
-          read_seqs.push_back(rseq);
-          if (will_run_kernel) {
-              DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
-                " alignments\n");
-              kernel_align_block(aln_kernel_timer);
-          }
+      if (will_run_kernel) {
+          DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
+            " alignments\n");
+          kernel_align_block(aln_kernel_timer);
       }
     }
   }
@@ -546,7 +533,8 @@ class KmerCtgDHT {
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
     auto num = kernel_alns.size();
 
-    // steal work from kernel block if the previous kernel is still active
+    // steal work from this kernel block if the previous kernel is still active
+    // if true, this balances the block size that will be sent to the kernel
     while (!active_kernel_fut.ready() && !kernel_alns.empty()) {
         assert(!ctg_seqs.empty());
         assert(!read_seqs.empty());
@@ -555,6 +543,9 @@ class KmerCtgDHT {
         kernel_alns.pop_back();
         ctg_seqs.pop_back();
         read_seqs.pop_back();
+#ifndef ENABLE_GPUS
+        std::this_thread::yield(); // yield if the kernel is CPU based
+#endif
         progress();
     }
     if (kernel_alns.empty()) {
