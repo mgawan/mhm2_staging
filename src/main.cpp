@@ -149,7 +149,9 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
     stage_timers.dbjg_traversal->stop();
     if (is_debug || options->checkpoint) {
+      stage_timers.dump_ctgs->start();
       ctgs.dump_contigs(contigs_fname, 0);
+      stage_timers.dump_ctgs->stop();
     }
   }
   
