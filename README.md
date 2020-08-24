@@ -9,17 +9,7 @@ https://bitbucket.org/berkeleylab/upcxx/wiki/Home
 
 ## Building
 
-To build, first set your environment
-
-For example, on cori, source one of the .env-cori....sh files
-
-`source .env-cori-knl/gnu.sh`
-
-then, use cmake directly:
-
-`mkdir -p build && cd build && cmake -DCMAKE_INSTALL_PREFIX=path-to-install .. && make -j all install`
-
-Or, use the build wrapper script without the source command above. First, set the environment:
+To build, first set your environment:
 
 `export MHMXX_BUILD_ENV=.env-cori-knl/gnu.sh`
 
@@ -47,6 +37,15 @@ You can also run
 `./build.sh clean`
 
 to really start from scratch.
+
+You can also use cmake directly:
+
+`mkdir -p build && cd build && cmake -DCMAKE_INSTALL_PREFIX=path-to-install .. && make -j all install`
+
+You'll need to first set the environment, e.g.:
+
+`source .env-cori-knl/gnu.sh`
+
 
 ## Running
 
