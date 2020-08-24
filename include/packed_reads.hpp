@@ -170,6 +170,7 @@ public:
   void add_read(const string &read_id, const string &seq, const string &quals) {
     packed_reads.push_back(std::make_unique<PackedRead>(read_id, seq, quals, qual_offset));
     if (str_ids) read_id_idx_to_str.push_back(read_id);
+    max_read_len = max(max_read_len, (unsigned) seq.length());
   }
 
   void load_reads() {
@@ -197,6 +198,7 @@ public:
       progbar.update(tot_bytes_read);
       packed_reads.push_back(std::make_unique<PackedRead>(id, seq, quals, qual_offset));
       if (str_ids) read_id_idx_to_str.push_back(id);
+      max_read_len = max(max_read_len, (unsigned)seq.length());
     }
     progbar.done();
     upcxx::barrier();

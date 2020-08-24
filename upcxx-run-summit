@@ -1,0 +1,121 @@
+#!/bin/bash
+
+USAGE="$0 <options> upcxx-executable <options>
+
+Options:
+  --help            Print this message
+
+  --low-latency     Select the HCA(s) for lowest latency (default)
+  --high-bandwidth  Select the HCA(s) for higest bandwidth
+
+  --by-socket       Resource Set by socket - Bind ranks to 1 socket with 3 GPUs (default)
+  --by-gpu          Resource Set by GPU    - Bind ranks to 7 cores on 1 socket with 1 GPU
+
+  --1-hca           Use 1 HCA per rank
+  --2-hca           Use 2 HCA per rank (default)
+  --4-hca           Use 4 HCA per rank (i.e. all)
+
+  --use-odp         Use ODB instead of the default XRC
+
+  --shared-heap     set either a percentage of node RAM '10%' or fixed amount per thread '128MB'
+
+"
+
+if [ -n "${__UPCXX_RUN_SUMMIT}" ]
+then
+  socket=$(hwloc-calc -I Node $(hwloc-bind --get))
+
+  if [ "${__UPCXX_RUN_SUMMIT_MODE}" == "highbandwidth" ]
+  then
+    # high bandwidth HCA from both sockets
+    __UPCXX_RUN_SUMMIT_nHCAS=2
+    case $socket in
+      1) export GASNET_IBV_PORTS=mlx5_1+mlx5_2 ;;
+      *) export GASNET_IBV_PORTS=mlx5_0+mlx5_3 ;;
+    esac
+  else
+    # low latency only HCAs closest to socket
+    case $socket in
+      1) export GASNET_IBV_PORTS=mlx5_2+mlx5_3 ;;
+      *) export GASNET_IBV_PORTS=mlx5_0+mlx5_1 ;;
+    esac
+  fi
+ 
+  if [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "1" ]
+  then
+    # 1 HCA per rank
+    if [ -n "${PMIX_RANK}" ] && ((${PMIX_RANK} % 2))
+    then
+      export GASNET_IBV_PORTS=${GASNET_IBV_PORTS%+*}
+    else
+      export GASNET_IBV_PORTS=${GASNET_IBV_PORTS#*+}
+    fi
+  elif [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "2" ]
+  then
+    dummy=noop
+  elif [ "${__UPCXX_RUN_SUMMIT_nHCAS}" == "4" ]
+  then
+     export GASNET_IBV_PORTS=mlx5_0+mlx5_1+mlx5_2+mlx5_3
+  fi
+  if [ -n "${__UPCXX_RUN_SUMMIT_SHARED_HEAP}" ]
+  then
+      if [ "${__UPCXX_RUN_SUMMIT_SHARED_HEAP%*%}" != "${__UPCXX_RUN_SUMMIT_SHARED_HEAP}" ]
+      then
+          # fix the % in shared heap size to allocate the correct pattern for gasnet max segsize
+          export GASNET_MAX_SEGSIZE=$(printf "0.%02d/H" ${__UPCXX_RUN_SUMMIT_SHARED_HEAP%*%})
+          export UPCXX_SHARED_HEAP_SIZE="MAX"
+      else 
+          export UPCXX_SHARED_HEAP_SIZE="${__UPCXX_RUN_SUMMIT_SHARED_HEAP}"
+      fi
+  fi
+  if [ "${PMIX_RANK}" == "0" ] || [ "${__UPCXX_RUN_SUMMIT_VERBOSE}" == "1" -a "${PMIX_RANK}" == "41" ]
+  then
+    echo "${PMIX_RANK}: pid=$$ GASNET_IBV_PORTS='$GASNET_IBV_PORTS' hwloc='$(hwloc-ps)' GASNET_MAX_SEGSIZE=${GASNET_MAX_SEGSIZE} UPCXX_SHARED_HEAP_SIZE=${UPCXX_SHARED_HEAP_SIZE}"
+  fi
+  exec "$@"
+fi
+
+export __UPCXX_RUN_SUMMIT=1
+
+while [ 1 ]
+do
+  __opt=$1
+  _opt=${__opt#-} # for 1 dash
+  opt=${_opt#-}  # for optional second dash
+  if [ "${__opt}" == "${opt}" ]
+  then
+    break
+  fi
+  shift
+
+  case $opt in
+    "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;; # default
+    "by-gpu")    RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;;
+
+    "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
+    "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
+
+    "shared-heap") export __UPCXX_RUN_SUMMIT_SHARED_HEAP=$1 ; shift ;;
+
+    "verbose") export __UPCXX_RUN_SUMMIT_VERBOSE=1 ;;
+
+    "use-odp") export GASNET_USE_XRC=0 ; export GASNET_USE_ODP=1 ;;
+
+    "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;;
+    "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;; #default
+    "4-hca") export __UPCXX_RUN_SUMMIT_nHCAs=4 ;;
+
+    "") break ;; # last option
+
+    "help") echo "$USAGE" ; exit 0 ;;
+
+    *) echo "Invalid option to $0: '$opt'" 1>&2 ; exit 1 ;;
+  esac
+done
+
+# default is by socket
+RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;
+
+set -x
+exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind none $0 "$@"
+

@@ -4,38 +4,54 @@
 #include <cmath>
 #include <string>
 #include <vector>
-#include <omp.h>
+#include <thread>
 
 #define NSTREAMS 2
 
-#define NOW std::chrono::high_resolution_clock::now()
+#ifndef KLIGN_GPU_BLOCK_SIZE
+#define KLIGN_GPU_BLOCK_SIZE 20000
+#endif
 
-namespace gpu_bsw_driver{
+namespace adept_sw {
 
 // for storing the alignment results
-struct alignment_results{
-  short* ref_begin;
-  short* query_begin;
-  short* ref_end;
-  short* query_end;
-  short* top_scores;
+struct AlignmentResults {
+  short *ref_begin = nullptr;
+  short *query_begin = nullptr;
+  short *ref_end = nullptr;
+  short *query_end = nullptr;
+  short *top_scores = nullptr;
 };
 
-void free_alignments(gpu_bsw_driver::alignment_results *alignments);
-
-void
-kernel_driver_dna(std::vector<std::string> reads, std::vector<std::string> contigs, unsigned maxReadSize, unsigned maxContigSize, alignment_results *alignments, short scores[4], long long int maxMemAvail, unsigned my_upc_rank, unsigned totRanks);
-
-
-void
-kernel_driver_aa(std::vector<std::string> reads, std::vector<std::string> contigs, alignment_results *alignments, short scoring_matrix[], short openGap, short extendGap);
-
-void
-verificationTest(std::string rstFile, short* g_alAbeg, short* g_alBbeg, short* g_alAend,
-                 short* g_alBend);
-
 size_t get_tot_gpu_mem();
-size_t get_avail_gpu_mem_per_rank(int totRanks);
+size_t get_avail_gpu_mem_per_rank(int totRanks, int numDevices = 0);
+std::string get_device_name(int device_id);
 int get_num_node_gpus();
 
-}
+// The first call to cudaMallocHost can take several seconds of real time but no cpu time
+// so start it asap in a new thread
+std::thread *initialize_gpu();
+std::thread *initialize_gpu(double &time_to_initialize);
+
+struct DriverState;
+
+class GPUDriver {
+  DriverState *driver_state = nullptr;
+  AlignmentResults alignments;
+
+ public:
+  ~GPUDriver();
+  
+  // returns the time to execute
+  double init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score, short gap_opening_score,
+            short gap_extending_score, int rlen_limit);
+  void run_kernel_forwards(std::vector<std::string> &reads, std::vector<std::string> &contigs, unsigned maxReadSize,
+                           unsigned maxContigSize);
+  void run_kernel_backwards(std::vector<std::string> &reads, std::vector<std::string> &contigs, unsigned maxReadSize,
+                            unsigned maxContigSize);
+  bool kernel_is_done();
+
+  AlignmentResults &get_aln_results() { return alignments; }
+};
+
+}  // namespace adept_sw

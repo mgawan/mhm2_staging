@@ -65,6 +65,7 @@ using namespace std;
 #include "kmer_dht.hpp"
 
 #ifdef ENABLE_GPUS
+#include <thread>
 #include "adept-sw/driver.hpp"
 #endif
 
@@ -81,12 +82,12 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
 template<int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                   double &num_kmers_factor, double &error_rate);
+                   double &num_kmers_factor);
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>
 double find_alignments(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, bool compute_cigar=false, int min_ctg_len=0);
+                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar=false, int min_ctg_len=0, int ranks_per_gpu=0);
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
@@ -116,43 +117,52 @@ static StageTimers stage_timers = {
 };
 
 template<int MAX_K>
-void contigging(unsigned kmer_len, unsigned prev_kmer_len, vector<PackedReads*> packed_reads_list, Contigs &ctgs, double &num_kmers_factor,
-                double &error_rate, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+
+void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads*> packed_reads_list, Contigs &ctgs,
+                double &num_kmers_factor, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
   SLOG("\n");
+  bool is_debug = false;
+#ifdef DEBUG
+  is_debug = true;
+#endif
+
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  {
-    
+
+  string contigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
+  if (options->restart && file_exists(contigs_fname)) {
+    ctgs.load_contigs(contigs_fname);
+  } else {
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
     // use the max among all ranks
     my_num_kmers = upcxx::reduce_all(my_num_kmers, upcxx::op_max).wait();
-    int delta_k = kmer_len > prev_kmer_len ? kmer_len - prev_kmer_len : kmer_len;
-    double error_factor = 1.0 - pow(1.0 - error_rate, (double) delta_k);
-    SLOG_VERBOSE("Calculated error_factor from estimated_error_rate=", error_rate, ", delta_k=", delta_k, ": ", error_factor, "\n");
-    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, error_factor, max_kmer_store, options->max_rpcs_in_flight, 
+    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight, 
                                          options->force_bloom, options->use_heavy_hitters);
     barrier();
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dynamic_min_depth, options->dmin_thres,
-                  ctgs, kmer_dht, num_kmers_factor, error_rate);
+                  ctgs, kmer_dht, num_kmers_factor);
     stage_timers.analyze_kmers->stop();
     barrier();
     stage_timers.dbjg_traversal->start();
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
     stage_timers.dbjg_traversal->stop();
+    if (is_debug || options->checkpoint) {
+      stage_timers.dump_ctgs->start();
+      ctgs.dump_contigs(contigs_fname, 0);
+      stage_timers.dump_ctgs->stop();
+    }
   }
-#ifdef DEBUG
-  ctgs.dump_contigs("uutigs-" + to_string(kmer_len), 0);
-#endif
+  
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     stage_timers.alignments->start();
     double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
-                                                   alns, KLIGN_SEED_SPACE);
+                                                   alns, KLIGN_SEED_SPACE, rlen_limit, false, 0, options->ranks_per_gpu);
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
@@ -169,9 +179,10 @@ void contigging(unsigned kmer_len, unsigned prev_kmer_len, vector<PackedReads*> 
     stage_timers.localassm->stop();
   }
   barrier();
-  if (options->checkpoint) {
+  if (is_debug || options->checkpoint) {
     stage_timers.dump_ctgs->start();
-    ctgs.dump_contigs("contigs-" + to_string(kmer_len), 0);
+    string contigs_fname("contigs-" + to_string(kmer_len) + ".fasta");
+    ctgs.dump_contigs(contigs_fname, 0);
     stage_timers.dump_ctgs->stop();
   }
   SLOG(KBLUE "_________________________", KNORM, "\n");
@@ -185,45 +196,57 @@ void contigging(unsigned kmer_len, unsigned prev_kmer_len, vector<PackedReads*> 
 }
 
 template <int MAX_K>
-void scaffolding(unsigned scaff_i, int max_kmer_len, vector<PackedReads *> packed_reads_list, Contigs &ctgs, int &max_expected_ins_size,
-                 int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+
+void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
+                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
   unsigned scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
   bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
   else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
-  Alns alns;
-  stage_timers.alignments->start();
-  auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  int seed_space = KLIGN_SEED_SPACE;
-  if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
-  double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
-                                                 ctgs, alns, seed_space);
-  stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
-  stage_timers.alignments->stop();
-  // always recalculate the insert size because we may need it for resumes of
-  compute_aln_depths("scaff-contigs-" + to_string(scaff_kmer_len), ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
-  // Failed runs
-  tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
-  // insert size should never be larger than this; if it is that signals some
-  // error in the assembly
-  max_expected_ins_size = ins_avg + 8 * ins_stddev;
-  int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
-  stage_timers.cgraph->start();
-  traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                     break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
-  stage_timers.cgraph->stop();
-  if ((!options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 1) ||
-      (options->dump_gfa && scaff_i < options->scaff_kmer_lens.size() - 2)) {
-    if (options->checkpoint) {
+  bool is_debug = false;
+#ifdef DEBUG
+  is_debug = true;
+#endif
+  string scaff_contigs_fname("scaff-contigs-" + to_string(scaff_kmer_len) + ".fasta");
+  if ((options->restart || is_debug) && file_exists(scaff_contigs_fname)) {
+    SLOG_VERBOSE("(Re)loading scaffold contigs ", scaff_contigs_fname, "\n");
+    ctgs.load_contigs(scaff_contigs_fname);
+  } else {
+    Alns alns;
+    stage_timers.alignments->start();
+    auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+    int seed_space = KLIGN_SEED_SPACE;
+    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
+    double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
+                                                 ctgs, alns, seed_space, rlen_limit, false, 0, options->ranks_per_gpu);
+    stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
+    stage_timers.alignments->stop();
+#ifdef DEBUG
+    alns.dump_alns("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
+#endif
+    compute_aln_depths("", ctgs, alns, max_kmer_len, 0, options->use_kmer_depths);
+    // always recalculate the insert size because we may need it for resumes of failed runs
+    tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
+    // insert size should never be larger than this; if it is that signals some
+    // error in the assembly
+    max_expected_ins_size = ins_avg + 8 * ins_stddev;
+    int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
+    stage_timers.cgraph->start();
+    traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
+                       break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
+    stage_timers.cgraph->stop();
+    ctgs.print_stats(options->min_ctg_print_len);
+    int max_scaff_i = (options->dump_gfa ? options->scaff_kmer_lens.size() - 2 : options->scaff_kmer_lens.size() - 1);
+    if ((is_debug || options->checkpoint) && scaff_i < max_scaff_i) {
+      SLOG_VERBOSE("Saving scaffold contigs ", scaff_contigs_fname, "\n");
       stage_timers.dump_ctgs->start();
-      ctgs.dump_contigs("scaff-contigs-" + to_string(scaff_kmer_len), 0);
+      ctgs.dump_contigs(scaff_contigs_fname, 0);
       stage_timers.dump_ctgs->stop();
     }
-    SLOG(KBLUE "_________________________", KNORM, "\n");
-    ctgs.print_stats(options->min_ctg_print_len);
   }
+
   chrono::duration<double> loop_t_elapsed = chrono::high_resolution_clock::now() - loop_start_t;
   SLOG("\n");
   SLOG(KBLUE, "Completed ", (gfa_iter ? "GFA output" : "scaffolding"), " round k = ", scaff_kmer_len, " in ", setprecision(2),
@@ -248,11 +271,15 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
     packed_reads->load_reads();
   }
   stage_timers.cache_reads->stop();
+  int rlen_limit = 0;
+  for (auto packed_reads : packed_reads_list) {
+    rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
+  }
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, true,
-                                                 options->min_ctg_print_len);
+  double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
+                                                 alns, 4, rlen_limit, true, options->min_ctg_print_len, options->ranks_per_gpu);
   stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {
@@ -283,14 +310,12 @@ int main(int argc, char **argv) {
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-//#ifndef DEBUG
   SLOG_VERBOSE("Process 0 on node 0 is initially pinned to ", get_proc_pin(), "\n");
   // pin ranks only in production
   if (options->pin_by == "cpu") pin_cpu();
   else if (options->pin_by == "core") pin_core();
   else if (options->pin_by == "numa") pin_numa();
-//#endif
-
+  
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
@@ -299,15 +324,18 @@ int main(int argc, char **argv) {
     }
     SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""),
          " is ", get_size_str(tot_file_size), "\n");
-#ifdef ENABLE_GPUS
-  #ifdef ALWAYS_USE_SSW
-    SWARN("Using SSW but GPUs are available - expect lower performance in alignment");
-  #endif
-    auto num_gpus_per_node = (rank_me() == 0 ? gpu_bsw_driver::get_num_node_gpus() : 0);
-    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ",
-         get_size_str(gpu_bsw_driver::get_tot_gpu_mem()), " available memory\n");
-#endif
   }
+#ifdef ENABLE_GPUS
+  std::thread *init_gpu_thread = nullptr;
+  double gpu_startup_duration = 0;
+  auto num_gpus_per_node = (rank_me() == 0 ? adept_sw::get_num_node_gpus() : 0);
+  if (num_gpus_per_node) {
+    SLOG("Using ", num_gpus_per_node, " GPUs on node 0, with ", get_size_str(adept_sw::get_tot_gpu_mem()), " available memory\n");
+    init_gpu_thread = adept_sw::initialize_gpu(gpu_startup_duration);
+  } else {
+    SWARN("Compiled for GPUs but no GPUs available...");
+  }
+#endif
 
   Contigs ctgs;
   int max_kmer_len = 0;
@@ -338,14 +366,19 @@ int main(int argc, char **argv) {
       SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                   KNORM, "\n");
     }
+    int rlen_limit = 0;
+    for (auto packed_reads : packed_reads_list) {
+      rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
+    }
+    
     if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
     chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-        get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
-    unsigned prev_kmer_len = options->prev_kmer_len;
-    double num_kmers_factor = 1.0 / 3.0; // initial estimate assumes average 3x coverage
-    double error_rate = 0.02; // initial estimate of 2% of the bases are not accurate
+
+    get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+    int prev_kmer_len = options->prev_kmer_len;
+    double num_kmers_factor = 1.0 / 3;
     int ins_avg = 0;
     int ins_stddev = 0;
 
@@ -357,8 +390,8 @@ int main(int argc, char **argv) {
 
   #define CONTIG_K(KMER_LEN) \
         case KMER_LEN: \
-          contigging<KMER_LEN>(kmer_len, prev_kmer_len, packed_reads_list, ctgs, num_kmers_factor, error_rate, max_expected_ins_size, \
-                               ins_avg, ins_stddev, options); \
+          contigging<KMER_LEN>(kmer_len, prev_kmer_len, rlen_limit, packed_reads_list, ctgs, num_kmers_factor, \
+                               max_expected_ins_size, ins_avg, ins_stddev, options); \
           break
 
         switch (max_k) {
@@ -383,7 +416,16 @@ int main(int argc, char **argv) {
         prev_kmer_len = kmer_len;
       }
     }
-
+    
+#ifdef ENABLE_GPUS
+    if (init_gpu_thread) {
+      SLOG_VERBOSE("Waiting for GPU to be initialized (should be noop)\n");
+      init_gpu_thread->join();
+      delete init_gpu_thread;
+      LOG("GPU took ", gpu_startup_duration, " seconds to initialize\n");
+    }
+#endif
+    
     // scaffolding loops
     if (options->scaff_kmer_lens.size()) {
       if (!max_kmer_len) {
@@ -397,7 +439,7 @@ int main(int argc, char **argv) {
 
   #define SCAFFOLD_K(KMER_LEN) \
         case KMER_LEN: \
-          scaffolding<KMER_LEN>(i, max_kmer_len, packed_reads_list, ctgs, max_expected_ins_size, ins_avg,\
+          scaffolding<KMER_LEN>(i, max_kmer_len, rlen_limit, packed_reads_list, ctgs, max_expected_ins_size, ins_avg, \
                                 ins_stddev, options); \
           break
 
@@ -421,6 +463,8 @@ int main(int argc, char **argv) {
   #undef SCAFFOLD_K
 
       }
+    } else {
+        SLOG_VERBOSE("Skipping scaffolding stage - no scaff_kmer_lens specified\n");
     }
 
     // cleanup
@@ -433,7 +477,7 @@ int main(int argc, char **argv) {
     // output final assembly
     SLOG(KBLUE "_________________________", KNORM, "\n");
     stage_timers.dump_ctgs->start();
-    ctgs.dump_contigs("final_assembly", options->min_ctg_print_len);
+    ctgs.dump_contigs("final_assembly.fasta", options->min_ctg_print_len);
     stage_timers.dump_ctgs->stop();
 
     SLOG(KBLUE "_________________________", KNORM, "\n");
@@ -468,8 +512,8 @@ int main(int argc, char **argv) {
     if (options->post_assm_only && !options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
     auto max_k = (kmer_len / 32 + 1) * 32;
 
-#define POST_ASSEMBLY(KMER_LEN)                           \
-    case KMER_LEN:                                            \
+#define POST_ASSEMBLY(KMER_LEN)                                         \
+    case KMER_LEN:                                                      \
       post_assembly<KMER_LEN>(kmer_len, ctgs, options, max_expected_ins_size); \
       break
 

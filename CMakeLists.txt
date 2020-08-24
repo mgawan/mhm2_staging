@@ -44,6 +44,7 @@
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(MHMxx)
 
+message(STATUS "Building ${CMAKE_PROJECT_NAME} with CMake ${CMAKE_VERSION}")
 #----------------------------------------------------------------------------------------#
 #   project specification
 #----------------------------------------------------------------------------------------#
@@ -75,12 +76,20 @@ set(CMAKE_C_EXTENSIONS OFF)
 include(CheckLanguage)
 check_language(CUDA)
 if(CMAKE_CUDA_COMPILER)
-    enable_language(CUDA)
-    set(CMAKE_CUDA_STANDARD 14 CACHE STRING "")
-    set(CMAKE_CUDA_EXTENSIONS OFF CACHE BOOL "")
     option(ENABLE_CUDA "Enable CUDA" ON)
+    if (ENABLE_CUDA)
+      SET(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+      SET(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # only build device link objects for GPU targets 
+      enable_language(CUDA)
+    endif()
 else()
-    option(ENABLE_CUDA "Enable CUDA" OFF)
+    message(STATUS "No CUDA environment detected")
+    set(ENABLE_CUDA OFF CACHE BOOL "Enable CUDA" FORCE)
+endif()
+if(ENABLE_CUDA)
+  message(STATUS "Building for GPU with CUDA")
+else()
+  message(STATUS "Building for CPU only")
 endif()
 
 find_package(CpuArch
@@ -167,6 +176,7 @@ endif()
 
 if(UPCXX_UTILS_AS_SUBMODULE OR NOT UPCXX_UTILS_FOUND)
   message(STATUS "Did not find an installation of upcxx_utils, including submodule in src/upcxx_utils")
+  option(UPCXX_ENABLE_TESTING OFF)
   include_directories(upcxx-utils/include)
   add_subdirectory(upcxx-utils)
   set(UPCXX_UTILS_FOUND TRUE)
@@ -181,3 +191,4 @@ message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 include_directories("zstr/src")
 
 add_subdirectory(src)
+install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhmxx-upcxx-run-summit)

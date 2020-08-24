@@ -203,18 +203,26 @@ public:
                  avg_rlen, "\n");
     return most_common_rlen;
   }
-
+  
   void sort_alns() {
     BarrierTimer timer(__FILEFUNC__);
     // sort the alns by name and then for the read from best score to worst - this is needed in later stages
     std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
-      if (elem1.read_id == elem2.read_id) return elem1.score1 > elem2.score1;
-      if (elem1.read_id.length() == elem2.read_id.length()) {
-        auto rlen = elem1.read_id.length();
-        if (elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2) == 0)
-          return (elem1.read_id[rlen - 1] == '1');
-      }
-      return elem1.read_id > elem2.read_id;
-    });
+        if (elem1.read_id == elem2.read_id) {
+          // sort by score, then contig len then last by cid to get a deterministic ordering
+          if (elem1.score1 == elem2.score1) {
+            if (elem1.clen == elem2.clen) return elem1.cid > elem2.cid;
+            return elem1.clen > elem2.clen;
+          }
+          return elem1.score1 > elem2.score1;
+        }
+        if (elem1.read_id.length() == elem2.read_id.length()) {
+          auto rlen = elem1.read_id.length();
+          auto cmp = elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2);
+          if (cmp == 0) return (elem1.read_id[rlen - 1] == '1');
+          return cmp > 0;
+        }
+        return elem1.read_id > elem2.read_id;
+      });
   }
 };

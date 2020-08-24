@@ -9,17 +9,11 @@ https://bitbucket.org/berkeleylab/upcxx/wiki/Home
 
 ## Building
 
-To build, first ensure that upcxx is in your PATH:
+To build, first set your environment:
 
-for example, on cori, source one of the .env-cori/env.sh files
+`export MHMXX_BUILD_ENV=.env-cori-knl/gnu.sh`
 
-source .env-cori/env-knl-gnu.sh
-
-then, use cmake directly:
-
-`mkdir -p build && cd build && cmake -DCMAKE_INSTALL_PREFIX=path-to-install .. && make -j all install`
-
-or, use the build wrapper script and simply run:
+and then simply run:
 
 `./build.sh Release`
 
@@ -44,6 +38,15 @@ You can also run
 
 to really start from scratch.
 
+You can also use cmake directly:
+
+`mkdir -p build && cd build && cmake -DCMAKE_INSTALL_PREFIX=path-to-install .. && make -j all install`
+
+You'll need to first set the environment, e.g.:
+
+`source .env-cori-knl/gnu.sh`
+
+
 ## Running
 
 
@@ -62,7 +65,7 @@ To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need th
 All six permuations of gnu, cray and intel environments on haswell and knl hardware are supported
 by sourcing one of these environments:
 
-`.env-cori/env-haswell-cray.sh  .env-cori/env-haswell-gnu.sh  .env-cori/env-haswell-intel.sh  .env-cori/env-knl-cray.sh  .env-cori/env-knl-gnu.sh  .env-cori/env-knl-intel.sh`
+`.env-cori-haswell/cray.sh  .env-cori-haswell/gnu.sh  .env-cori-haswell/intel.sh  .env-cori-knl/cray.sh  .env-cori-knl/gnu.sh  .env-cori-knl/intel.sh`
 
 To use these with the build.sh script, simply run as, e.g.:
 

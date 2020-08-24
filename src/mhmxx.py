@@ -325,7 +325,9 @@ def capture_err(err_msgs):
 def print_err_msgs(err_msgs):
     global _output_dir
     err_msgs.append('==============================================')
-    if _output_dir[0] != '/':
+    if len(_output_dir) == 0:
+        _output_dir = os.getcwd() + "/"
+    elif _output_dir[0] != '/':
         _output_dir = os.getcwd() + "/" + _output_dir
     print_red("Check " + _output_dir + "err.log for details")
     # keep track of all msg copies so we don't print duplicates
@@ -374,10 +376,20 @@ def main():
     if options.procs == 0:
         options.procs = num_nodes * get_job_cores_per_node()
 
-    cmd = ['upcxx-run', '-n', str(options.procs)]
+    cmd = ['upcxx-run', '-n', str(options.procs), '-N', str(num_nodes)]
+    
+    # special spawner for summit -- executes jsrun and picks up job size from the environment!
+    if 'LMOD_SYSTEM_NAME' in os.environ and os.environ['LMOD_SYSTEM_NAME'] == "summit":
+        print("This is Summit - executing custom script mhmxx-upcxx-run-summit to spawn the job")
+        # expect mhmxx-upcxx-run-summit to be in same directory as mhmxx.py too
+        cmd = [mhmxx_binary_path + "-upcxx-run-summit"]
+        if 'UPCXX_RUN_SUMMIT_OPTS' in os.environ:
+            cmd.extend(os.environ['UPCXX_RUN_SUMMIT_OPTS'].split())
+        
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
-        cmd.extend(['-shared-heap', options.shared_heap])
-    cmd.extend(['-N', str(num_nodes), '--', mhmxx_binary_path])
+        cmd.extend(['-shared-heap', options.shared_heap]) # both upcxx-run and upcxx-run-summit support this
+        
+    cmd.extend(['--', mhmxx_binary_path])
     cmd.extend(unknown_options)
 
     print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")

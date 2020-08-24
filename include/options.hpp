@@ -256,6 +256,7 @@ public:
   bool dump_gfa = false;
   bool show_progress = false;
   string pin_by = "cpu";
+  int ranks_per_gpu = 0; // autodetect
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -310,7 +311,7 @@ public:
                    "Previous kmer length (need to specify if contigging and contig file is specified)")
                    ->capture_default_str() ->check(CLI::Range(0, 159));
     auto *scaff_kmer_lens_opt = app.add_option("-s, --scaff-kmer-lens", scaff_kmer_lens,
-                   "kmer lengths for scaffolding (comma separated)")
+                   "kmer lengths for scaffolding (comma separated). 0 to disable scaffolding")
                    ->delimiter(',') ->capture_default_str();
     app.add_option("-Q, --quality-offset", qual_offset,
                    "Phred encoding offset")
@@ -339,6 +340,9 @@ public:
     app.add_option("--break-scaff-Ns", break_scaff_Ns,
                    "Number of Ns allowed before a scaffold is broken")
                    ->capture_default_str() ->check(CLI::Range(0, 1000));
+    app.add_option("--ranks-per-gpu", ranks_per_gpu,
+                   "Override the automatic detction of ranks/gpu (i.e. local_team().rank_n() / devices).")
+                   ->capture_default_str() ->check(CLI::Range(0, (int) upcxx::local_team().rank_n()*8));
     auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")
                                           ->capture_default_str();
     app.add_flag("--force-bloom", force_bloom,
@@ -438,6 +442,19 @@ public:
       // set the option default strings so that the correct values are printed and saved to the .config file
       kmer_lens_opt->default_str("21 33 55 77 99");
       scaff_kmer_lens_opt->default_str("99 33");
+    } else if (kmer_lens.size() && *kmer_lens_opt && !*scaff_kmer_lens_opt) {
+      // use the last and second from kmer_lens for scaffolding
+      auto n = kmer_lens.size();
+      if (n == 1) {
+        scaff_kmer_lens = kmer_lens;
+        scaff_kmer_lens_opt->default_str( to_string(scaff_kmer_lens[0]) );
+      } else {
+        scaff_kmer_lens = { kmer_lens[n-1], kmer_lens[n == 2 ? 0 : 1] };
+        scaff_kmer_lens_opt->default_str( to_string(scaff_kmer_lens[0]) + " " + to_string(scaff_kmer_lens[1]));
+      } 
+    } else if (scaff_kmer_lens.size() == 1 && scaff_kmer_lens[0] == 0) {
+        // disable scaffolding rounds
+        scaff_kmer_lens.clear();
     }
 
     setup_output_dir();

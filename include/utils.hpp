@@ -161,14 +161,15 @@ inline void switch_orient(int &start, int &stop, int &len) {
   stop = len - tmp;
 }
 
-
-inline void dump_single_file(const string &fname, const string &out_str, bool append = false) {
-    auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
-    upcxx_utils::dist_ofstream of(fname, world(), append);
-    of << out_str;
-    of.close();
-    SLOG_VERBOSE("Successfully wrote ", get_size_str(fut_tot_bytes_written.wait()), " bytes to ", fname, "\n");
-    assert(rank_me() || of.get_last_known_tellp() == fut_tot_bytes_written.wait());
+inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
+  BarrierTimer timer(__FILEFUNC__);
+  SLOG_VERBOSE("Writing ", fname, "\n");
+  auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
+  upcxx_utils::dist_ofstream of(fname, append);
+  of << out_str;
+  of.close();
+  SLOG_VERBOSE("Successfully wrote ", get_size_str(fut_tot_bytes_written.wait()), " bytes to ", fname, "\n");
+  assert(rank_me() || of.get_last_known_tellp() == fut_tot_bytes_written.wait());
 }
 
 inline vector<string> get_dir_entries(const string &dname, const string &prefix) {
@@ -212,7 +213,7 @@ inline string get_proc_pin() {
   string prefix = "Cpus_allowed_list:";
   while (getline(f, line)) {
     if (line.substr(0, prefix.length()) == prefix) {
-      DBG(line);
+      DBG(line, "\n");
       line = line.substr(prefix.length(), line.length() - prefix.length());
       return left_trim(line);
       break;
