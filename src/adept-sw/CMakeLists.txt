@@ -9,13 +9,25 @@ set(CMAKE_CUDA_EXTENSIONS OFF CACHE BOOL "")
 enable_language(CUDA)
 
 find_package(OpenMP REQUIRED)
+find_package(CUDA REQUIRED)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-if(NOT CMAKE_CUDA_COMPUTE_CAPABILITY)
-  set(CMAKE_CUDA_COMPUTE_CAPABILITY 70 CACHE STRING "")
+
+CUDA_SELECT_NVCC_ARCH_FLAGS(ARCH_FLAGS_LIST)
+if(ARCH_FLAGS_LIST)
+  STRING(REPLACE ";" " " ARCH_FLAGS "${ARCH_FLAGS_LIST}")
+else()
+  message(WARNING "Could not auto-detect the GPU arch flags building for all gpu compute capabilities 3 - 7")
+  foreach(CMAKE_CUDA_COMPUTE_CAPABILITY 30 50 60 70)
+    set(ARCH_FLAGS "${ARCH_FLAGS} -gencode arch=compute_${CMAKE_CUDA_COMPUTE_CAPABILITY},code=sm_${CMAKE_CUDA_COMPUTE_CAPABILITY}")
+  endforeach()
 endif()
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wall,${OpenMP_CXX_FLAGS} -gencode arch=compute_${CMAKE_CUDA_COMPUTE_CAPABILITY},code=sm_${CMAKE_CUDA_COMPUTE_CAPABILITY}")
+
+message(STATUS "ARCH_FLAGS=${ARCH_FLAGS}")
+
+
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wall,${OpenMP_CXX_FLAGS} ${ARCH_FLAGS}")
 message(STATUS "CMAKE_CUDA_FLAGS=${CMAKE_CUDA_FLAGS}")
 
 add_library(ADEPT_SW_LIBRARY_obj OBJECT driver.cpp kernel.cpp)
