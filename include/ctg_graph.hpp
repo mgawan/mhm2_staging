@@ -481,16 +481,7 @@ class CtgGraph {
     string s(buf);
     return s;
   }
-
-  void mark_edge_short_aln(CidPair cids) {
-    upcxx::rpc(get_edge_target_rank(cids),
-               [](edge_map_t &edges, CidPair cids) {
-                 const auto it = edges->find(cids);
-                 if (it == edges->end()) DIE("Can't find edge ", cids);
-                 it->second.short_aln = true;
-               }, edges, cids);
-  }
-
+  
   shared_ptr<Edge> get_edge(cid_t cid1, cid_t cid2) {
     CidPair cids = { .cid1 = cid1, .cid2 = cid2 };
     if (cid1 < cid2) std::swap(cids.cid1, cids.cid2);
