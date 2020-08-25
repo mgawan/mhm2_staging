@@ -574,9 +574,12 @@ class KmerCtgDHT {
     if (num) {
         kernel_align_block(aln_kernel_timer);
     }
+    bool is_ready = active_kernel_fut.ready();
     active_kernel_fut.wait();
     t.stop();
-    SLOG_VERBOSE("Aligned final block with ", num, " alignments in ", t.get_elapsed(), "\n");
+    if (num || !is_ready) {
+        SLOG_VERBOSE("Aligned and waited for final block with ", num, " alignments in ", t.get_elapsed(), "\n");
+    }
   }
   
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
@@ -673,6 +676,12 @@ class KmerCtgDHT {
   }
 
   void sort_alns() { 
+      if (!kernel_alns.empty()) {
+          DIE("sort_alns called while alignments are still pending to be processed - ", kernel_alns.size());
+      }
+      if (!active_kernel_fut.ready()) {
+          SWARN("Waiting for active_kernel - has flush_remaining() been called?\n");
+      }
       active_kernel_fut.wait();
       alns->sort_alns(); 
   }
