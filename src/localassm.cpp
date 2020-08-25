@@ -161,7 +161,7 @@ public:
           if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
           if (side == 'L') it->second.reads_left.push_back({read_id, seq, quals});
           else it->second.reads_right.push_back({read_id, seq, quals});
-        }, ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals);
+        }, ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals).wait();
   }
 
   int64_t get_num_ctgs() {
