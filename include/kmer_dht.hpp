@@ -226,7 +226,7 @@ class KmerDHT {
 
 public:
 
-  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, double error_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
+  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -244,7 +244,7 @@ public:
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
-    double adjustment_factor = num_kmers_factor + error_factor;
+    double adjustment_factor = num_kmers_factor;
     // adjustment estimate should not exceed 85% of the raw count
     if (adjustment_factor > 0.85) adjustment_factor = 0.85;
     auto my_adjusted_num_kmers = my_num_kmers * adjustment_factor;
@@ -252,7 +252,7 @@ public:
     auto free_mem = get_free_mem();
     auto lowest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_min).wait();
     auto highest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_max).wait();
-    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " and error factor of ", error_factor, " require ",
+    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ",
                  get_size_str(required_space), " per node (", my_adjusted_num_kmers, " kmers per rank), and there is ", get_size_str(lowest_free_mem),
                  " to ", get_size_str(highest_free_mem), " available on the nodes\n");
     if (force_bloom) {

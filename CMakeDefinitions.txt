@@ -121,5 +121,3 @@ add_definitions(-DLASSM_MIN_EXPECTED_DEPTH=0.3)
 add_definitions(-DLASSM_RATING_THRES=0)
 # limit to restrict the computational overhead
 add_definitions(-DLASSM_MAX_COUNT_MERS_READS=3000)
-
-
