@@ -130,7 +130,7 @@ class PackedReads {
   vector<std::unique_ptr<PackedRead>> packed_reads;
   // this is only used when we need to know the actual name of the original reads
   vector<string> read_id_idx_to_str;
-  unsigned max_read_len;
+  unsigned max_read_len = 0;
   uint64_t index = 0;
   unsigned qual_offset;
   string fname;
@@ -159,7 +159,7 @@ public:
     return fname;
   }
 
-  int get_max_read_len() {
+  unsigned get_max_read_len() {
     return max_read_len;
   }
 
@@ -204,7 +204,7 @@ public:
     upcxx::barrier();
     auto all_estimated_records = upcxx::reduce_one(estimated_records, upcxx::op_fast_add, 0).wait();
     auto all_num_records = upcxx::reduce_one(packed_reads.size(), upcxx::op_fast_add, 0).wait();
-    SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, ")\n");
+    SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, ") max_read=", max_read_len, "\n");
   }
 
 };

@@ -271,7 +271,7 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
     packed_reads->load_reads();
   }
   stage_timers.cache_reads->stop();
-  int rlen_limit = 0;
+  unsigned rlen_limit = 0;
   for (auto packed_reads : packed_reads_list) {
     rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
   }
@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
       SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                   KNORM, "\n");
     }
-    int rlen_limit = 0;
+    unsigned rlen_limit = 0;
     for (auto packed_reads : packed_reads_list) {
       rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
     }
