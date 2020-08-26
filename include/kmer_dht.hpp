@@ -53,6 +53,7 @@
 
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/log.hpp"
+#include "upcxx_utils/flat_aggr_store.hpp"
 #include "upcxx_utils/three_tier_aggr_store.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "upcxx_utils/mem_profile.hpp"
@@ -212,8 +213,13 @@ class KmerDHT {
   dist_object<BloomFilter> bloom_filter1;
   // the second bloom filer stores only kmers that are above the repeat depth, and is used for correctly sizing the kmer hash table
   dist_object<BloomFilter> bloom_filter2;
+#ifndef FLAT_AGGR_STORE
   ThreeTierAggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
   ThreeTierAggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
+#else
+  FlatAggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
+  FlatAggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
+#endif
   int64_t max_kmer_store_bytes;
   int64_t initial_kmer_dht_reservation;
   int64_t my_num_kmers;
