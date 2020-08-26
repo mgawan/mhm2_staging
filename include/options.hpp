@@ -257,7 +257,7 @@ public:
 
   bool load(int argc, char **argv) {
     //MHMXX version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
-    string full_version_str = "MHMXX version " + string(MHMXX_VERSION) + "-" + string(MHMXX_BRANCH) + " built on " +
+    string full_version_str = "MHMXX version " + string(MHMXX_VERSION) + "-" + string(MHMXX_BRANCH) + " with upcxx-utils " + string(UPCXX_UTILS_VERSION) + " built on " +
         string(MHMXX_BUILD_DATE);
     CLI::App app(full_version_str);
     app.add_option("-r, --reads", reads_fnames,
