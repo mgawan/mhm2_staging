@@ -316,7 +316,6 @@ public:
   }
 
   ~KmerDHT() {
-
     clear();
   }
 
@@ -590,7 +589,6 @@ public:
     BarrierTimer timer(__FILEFUNC__);
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
         kmer_store_bloom.flush_updates();
-        kmer_store_bloom.clear();
     } else {
         kmer_store.flush_updates();
     }
