@@ -311,6 +311,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 #endif
 #endif
   barrier();
+  kmer_dht->clear_stores();
   //kmer_dht->purge_fx_kmers();
 }
 

@@ -418,6 +418,7 @@ class KmerCtgDHT {
   void flush_add_kmers() {
     BarrierTimer timer(__FILEFUNC__);
     kmer_store.flush_updates();
+    kmer_store.clear();
   }
 
   void clear_aln_bufs() {

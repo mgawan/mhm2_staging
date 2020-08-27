@@ -307,11 +307,16 @@ public:
   void clear() {
     kmers->clear();
     KmerMap().swap(*kmers);
+    clear_stores();
+  }
+  
+  void clear_stores() {
+    kmer_store_bloom.clear();
+    kmer_store.clear();
   }
 
   ~KmerDHT() {
-    kmer_store_bloom.clear();
-    kmer_store.clear();
+
     clear();
   }
 
@@ -583,8 +588,12 @@ public:
 
   void flush_updates() {
     BarrierTimer timer(__FILEFUNC__);
-    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) kmer_store_bloom.flush_updates();
-    else kmer_store.flush_updates();
+    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
+        kmer_store_bloom.flush_updates();
+        kmer_store_bloom.clear();
+    } else {
+        kmer_store.flush_updates();
+    }
   }
 
   void purge_kmers(int threshold) {
