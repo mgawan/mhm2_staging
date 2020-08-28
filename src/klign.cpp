@@ -136,7 +136,7 @@ class KmerCtgDHT {
 #ifdef ENABLE_GPUS
   adept_sw::GPUDriver gpu_driver;
 #endif
-  
+
   vector<Aln> kernel_alns;
   vector<string> ctg_seqs;
   vector<string> read_seqs;
@@ -275,7 +275,7 @@ class KmerCtgDHT {
   void gpu_align_block(IntermittentTimer &aln_kernel_timer) {
     progress();
     discharge();
-    
+
     aln_kernel_timer.start();
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
     gpu_driver.run_kernel_forwards(read_seqs, ctg_seqs, max_rlen, max_clen);
@@ -285,7 +285,7 @@ class KmerCtgDHT {
     aln_kernel_timer.stop();
 
     auto aln_results = gpu_driver.get_aln_results();
-    
+
     for (int i = 0; i < kernel_alns.size(); i++) {
       progress();
       Aln &aln = kernel_alns[i];
@@ -435,7 +435,8 @@ class KmerCtgDHT {
     ssw_align_block(aln_kernel_timer);
 #endif
     t.stop();
-    SLOG_VERBOSE("Aligned block with ", kernel_alns.size(), " alignments in ", t.get_elapsed(), "\n");
+    // interferes with progress ticker
+    DBG("Aligned block with ", kernel_alns.size(), " alignments in ", t.get_elapsed(), "\n");
     clear_aln_bufs();
   }
 
