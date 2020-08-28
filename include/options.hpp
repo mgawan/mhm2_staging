@@ -242,7 +242,7 @@ public:
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store_mb = 50;
+  int max_kmer_store_mb = 0; // default to use 1% of node memory
   int max_rpcs_in_flight = 100;
   bool use_heavy_hitters = false; // only enable when files are localized
   bool force_bloom = false;
@@ -326,8 +326,8 @@ public:
                    "Absolute mininimum depth threshold for DeBruijn graph traversal")
                    ->capture_default_str() ->check(CLI::Range(1, 100));
     app.add_option("--max-kmer-store", max_kmer_store_mb,
-                   "Maximum size for kmer store in MB")
-                   ->capture_default_str() ->check(CLI::Range(1, 1000));
+                   "Maximum size for kmer store in MB. 0 for auto 1% memory")
+                   ->capture_default_str() ->check(CLI::Range(0, 1000));
     app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight,
                    "Maximum number of RPCs in flight, per process (0 = unlimited)")
                    ->capture_default_str() ->check(CLI::Range(0, 10000));
@@ -459,6 +459,12 @@ public:
 
     setup_output_dir();
     setup_log_file();
+        
+    if (max_kmer_store_mb == 0) {
+        // use 1% of the minimum available memory
+        max_kmer_store_mb = get_free_mem()/1024/1024/100;
+        max_kmer_store_mb = upcxx::reduce_all(max_kmer_store_mb, upcxx::op_fast_min).wait();        
+    }
 
     auto logger_t = chrono::high_resolution_clock::now();
     if (upcxx::local_team().rank_me() == 0) {
