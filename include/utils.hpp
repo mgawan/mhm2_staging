@@ -373,16 +373,16 @@ namespace upcxx_utils {
     
     
     
- 
-    inline std::deque< upcxx::future<> > &_get_outstanding_queue() {
-        static std::deque< upcxx::future<> > outstanding_queue;
+    using LimitedFutureQueue = std::deque< upcxx::future<> >;
+    
+    inline LimitedFutureQueue &_get_outstanding_queue() {
+        static LimitedFutureQueue outstanding_queue;
         return outstanding_queue;
     }
     
-    inline upcxx::future<> limit_outstanding_futures(upcxx::future<> fut, int limit = 0) {
+    inline upcxx::future<> limit_outstanding_futures(upcxx::future<> fut, int limit = 0, LimitedFutureQueue & outstanding_queue = upcxx_utils::_get_outstanding_queue()) {
         if (limit == 0) limit = upcxx::local_team().rank_n() * 2;
         if (limit == -1) limit = 0;
-        auto & outstanding_queue = upcxx_utils::_get_outstanding_queue();
         outstanding_queue.push_back(fut);
         while (outstanding_queue.size() > limit) {
             auto fut = outstanding_queue.front();
@@ -398,8 +398,7 @@ namespace upcxx_utils {
     }
     
     
-    inline future<> flush_outstanding_futures_async() {
-        auto & outstanding_queue = upcxx_utils::_get_outstanding_queue();
+    inline future<> flush_outstanding_futures_async(LimitedFutureQueue & outstanding_queue = upcxx_utils::_get_outstanding_queue()) {
         auto all_fut = make_future();
         while (!outstanding_queue.empty()) {
             auto fut = outstanding_queue.front();
@@ -410,12 +409,12 @@ namespace upcxx_utils {
         return all_fut;
     }
     
-    inline void flush_outstanding_futures() {
-        flush_outstanding_futures_async().wait();
+    inline void flush_outstanding_futures(LimitedFutureQueue & outstanding_queue = upcxx_utils::_get_outstanding_queue()) {
+        flush_outstanding_futures_async(outstanding_queue).wait();
     }
     
     template<typename Result, typename Future>
-    upcxx::future<> assign_oustanding_future_result(Result &res, Future fut, int limit = 0) {
+    upcxx::future<> assign_oustanding_future_result(Result &res, Future fut, int limit = 0, LimitedFutureQueue & outstanding_queue = upcxx_utils::_get_outstanding_queue()) {
         upcxx::future<> res_fut = fut.then(
                 [&res](Result val) 
                 {
