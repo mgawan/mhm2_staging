@@ -606,13 +606,14 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
   get_ctgs_timer.start();
-  future<> fut_chain = make_future();
+  //future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
   for (int i = 0; i < rank_n(); i++) {
+    auto target_rank = (i+rank_me()) % rank_n();
     progress();
     // skip targets that have no ctgs - this should reduce communication at scale
-    if (kmer_lists[i].empty()) continue;
-    auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
+    if (kmer_lists[target_rank].empty()) continue;
+    auto fut = kmer_ctg_dht.get_ctgs_with_kmers(target_rank, kmer_lists[target_rank]).then(
       [&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated ctg location
         for (auto &kmer_ctg_loc : kmer_ctg_locs) {
@@ -636,9 +637,11 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
           }
         }
       });
-    fut_chain = when_all(fut_chain, fut);
+      upcxx_utils::limit_outstanding_futures(fut).wait();
+    //fut_chain = when_all(fut_chain, fut);
   }
-  fut_chain.wait();
+  //fut_chain.wait();
+  upcxx_utils::flush_outstanding_futures();
   get_ctgs_timer.stop();
   delete[] kmer_lists;
   kmer_read_map.clear();

@@ -332,3 +332,97 @@ inline void pin_numa() {
   SLOG("Pinning to ", numa_nodes_to_use, " NUMA domains each with ", cores_per_numa_node, " cores, ", hdw_threads_per_numa_node, " cpus: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
 }
 
+
+// temporary until it is properly within upcxx_utils
+#include <thread>
+#include <memory>
+#include <functional>
+#include <deque>
+
+namespace upcxx_utils {
+
+    // Func no argument returned or given lambda - void()
+
+    template<typename Func>
+    future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
+        assert(persona.active_with_caller());
+        shared_ptr< promise<> > sh_prom = make_shared<promise <> > ();
+
+        shared_ptr<std::thread> sh_run = make_shared<std::thread>(
+                [&persona, func, sh_prom] {
+                    func();
+
+                    // fulfill only in calling persona
+                    persona.lpc_ff([&persona, sh_prom]() {
+                        assert(persona.active_with_caller());
+                        sh_prom->fulfill_anonymous(1);
+                    });
+                });
+        auto fut_finished = sh_prom->get_future().then( // keep sh_prom and sh_run alive until complete
+                [&persona, sh_prom, sh_run] () {
+                    assert(persona.active_with_caller());
+                    sh_run->join();
+                });
+        return fut_finished;
+    }
+
+    template<typename Func>
+    future<> execute_in_new_thread(Func func) {
+        return execute_in_new_thread(upcxx::current_persona(), func);
+    }
+    
+    
+    
+ 
+    inline std::deque< upcxx::future<> > &_get_outstanding_queue() {
+        static std::deque< upcxx::future<> > outstanding_queue;
+        return outstanding_queue;
+    }
+    
+    inline upcxx::future<> limit_outstanding_futures(upcxx::future<> fut, int limit = 0) {
+        if (limit == 0) limit = upcxx::local_team().rank_n() * 2;
+        if (limit == -1) limit = 0;
+        auto & outstanding_queue = upcxx_utils::_get_outstanding_queue();
+        outstanding_queue.push_back(fut);
+        while (outstanding_queue.size() > limit) {
+            auto fut = outstanding_queue.front();
+            outstanding_queue.pop_front();
+            outstanding_queue.front() = when_all(fut, outstanding_queue.front());
+        }
+        assert(outstanding_queue.size() <= limit);
+        if (outstanding_queue.size() == limit) {
+            return outstanding_queue.front();
+        } else {
+            return make_future();
+        }
+    }
+    
+    
+    inline future<> flush_outstanding_futures_async() {
+        auto & outstanding_queue = upcxx_utils::_get_outstanding_queue();
+        auto all_fut = make_future();
+        while (!outstanding_queue.empty()) {
+            auto fut = outstanding_queue.front();
+            outstanding_queue.pop_front();
+            all_fut = when_all(all_fut, fut);
+        }
+        assert(outstanding_queue.empty());
+        return all_fut;
+    }
+    
+    inline void flush_outstanding_futures() {
+        flush_outstanding_futures_async().wait();
+    }
+    
+    template<typename Result, typename Future>
+    upcxx::future<> assign_oustanding_future_result(Result &res, Future fut, int limit = 0) {
+        upcxx::future<> res_fut = fut.then(
+                [&res](Result val) 
+                {
+                    res = val;
+                });
+        return limit_outstanding_futures(res_fut, limit);
+    }
+    
+
+};
