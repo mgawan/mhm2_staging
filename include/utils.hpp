@@ -344,7 +344,7 @@ namespace upcxx_utils {
     // Func no argument returned or given lambda - void()
 
     template<typename Func>
-    future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
+    upcxx::future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
         assert(persona.active_with_caller());
         shared_ptr< promise<> > sh_prom = make_shared<promise <> > ();
 
@@ -367,7 +367,7 @@ namespace upcxx_utils {
     }
 
     template<typename Func>
-    future<> execute_in_new_thread(Func func) {
+    upcxx::future<> execute_in_new_thread(Func func) {
         return execute_in_new_thread(upcxx::current_persona(), func);
     }
     
@@ -398,8 +398,8 @@ namespace upcxx_utils {
     }
     
     
-    inline future<> flush_outstanding_futures_async(LimitedFutureQueue & outstanding_queue = upcxx_utils::_get_outstanding_queue()) {
-        auto all_fut = make_future();
+    inline upcxx::future<> flush_outstanding_futures_async(LimitedFutureQueue & outstanding_queue = upcxx_utils::_get_outstanding_queue()) {
+        upcxx::future<> all_fut = make_future();
         while (!outstanding_queue.empty()) {
             auto fut = outstanding_queue.front();
             outstanding_queue.pop_front();
