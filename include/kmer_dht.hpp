@@ -574,7 +574,7 @@ public:
 
     barrier();
     // two bloom false positive rates applied
-    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 1000);
+    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 20000);
     auto node0_cores = upcxx::local_team().rank_n();
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
     SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved),
