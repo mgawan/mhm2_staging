@@ -51,6 +51,7 @@
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/three_tier_aggr_store.hpp"
+#include "upcxx_utils/limit_outstanding.hpp"
 
 #include "utils.hpp"
 #include "ssw.hpp"
