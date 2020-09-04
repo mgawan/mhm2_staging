@@ -609,8 +609,11 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
   get_ctgs_timer.start();
   //future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
+  auto lranks = local_team().rank_n();
+  auto nnodes = rank_n() / lranks;
   for (int i = 0; i < rank_n(); i++) {
-    auto target_rank = (i+rank_me()) % rank_n();
+    // stagger by rank_me, round robin by node
+    auto target_rank = ((i%nnodes)*lranks + i/nnodes + rank_me()) % rank_n(); 
     progress();
     // skip targets that have no ctgs - this should reduce communication at scale
     if (kmer_lists[target_rank].empty()) continue;
@@ -638,7 +641,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
           }
         }
       });
-    upcxx_utils::limit_outstanding_futures(fut).wait();
+    upcxx_utils::limit_outstanding_futures(fut, std::max(nnodes*2, lranks*4)).wait();
     //fut_chain = when_all(fut_chain, fut);
   }
   //fut_chain.wait();
