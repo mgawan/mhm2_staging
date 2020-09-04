@@ -638,7 +638,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
           }
         }
       });
-      upcxx_utils::limit_outstanding_futures(fut).wait();
+    upcxx_utils::limit_outstanding_futures(fut).wait();
     //fut_chain = when_all(fut_chain, fut);
   }
   //fut_chain.wait();

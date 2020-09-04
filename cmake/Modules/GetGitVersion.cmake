@@ -112,7 +112,7 @@ then
     exit
   fi
 fi
-echo \${ver}
+echo \"\${ver}\" \"\${branch}\"
 ")
 
 #
