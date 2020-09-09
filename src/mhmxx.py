@@ -394,8 +394,7 @@ def main():
 
     print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
     print("Executed as:" + " ".join(sys.argv))
-    print("Setting GASNET_COLL_SCRATCH_SIZE=4M")
-    runenv = dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M")
+    runenv = dict(os.environ)
 
     mhmxx_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
     if not (os.path.exists(mhmxx_lib_path)):

@@ -433,16 +433,18 @@ class KmerCtgDHT {
   void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
     BaseTimer t(__FILEFUNC__);
     t.start();
+    if (ctg_seqs.size()) {
 #ifdef ENABLE_GPUS
-    // for now, the GPU alignment doesn't support cigars
-    if (!ssw_filter.report_cigar && gpu_mem_avail) gpu_align_block(aln_kernel_timer);
-    else ssw_align_block(aln_kernel_timer);
+      // for now, the GPU alignment doesn't support cigars
+      if (!ssw_filter.report_cigar && gpu_mem_avail) gpu_align_block(aln_kernel_timer);
+      else ssw_align_block(aln_kernel_timer);
 #else
-    ssw_align_block(aln_kernel_timer);
+      ssw_align_block(aln_kernel_timer);
 #endif
-    t.stop();
-    // interferes with progress ticker
-    DBG("Aligned block with ", kernel_alns.size(), " alignments in ", t.get_elapsed(), "\n");
+      t.stop();
+      // interferes with progress ticker
+      DBG("Aligned block with ", kernel_alns.size(), " alignments in ", t.get_elapsed(), "\n");
+    }
     clear_aln_bufs();
   }
 
