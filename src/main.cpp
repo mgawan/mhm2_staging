@@ -427,12 +427,15 @@ int main(int argc, char **argv) {
 #endif
     
     // scaffolding loops
+    if (options->dump_gfa) {
+      if (options->scaff_kmer_lens.size()) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
+      else options->scaff_kmer_lens.push_back(options->kmer_lens[0]);
+    }
     if (options->scaff_kmer_lens.size()) {
       if (!max_kmer_len) {
         if (options->max_kmer_len) max_kmer_len = options->max_kmer_len;
         else max_kmer_len = options->scaff_kmer_lens.front();
       }
-      if (options->dump_gfa) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
       for (unsigned i = 0; i < options->scaff_kmer_lens.size(); ++i) {
         auto scaff_kmer_len = options->scaff_kmer_lens[i];
         auto max_k = (scaff_kmer_len / 32 + 1) * 32;

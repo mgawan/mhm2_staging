@@ -453,8 +453,8 @@ public:
         scaff_kmer_lens_opt->default_str( to_string(scaff_kmer_lens[0]) + " " + to_string(scaff_kmer_lens[1]));
       } 
     } else if (scaff_kmer_lens.size() == 1 && scaff_kmer_lens[0] == 0) {
-        // disable scaffolding rounds
-        scaff_kmer_lens.clear();
+      // disable scaffolding rounds
+      scaff_kmer_lens.clear();
     }
 
     setup_output_dir();
