@@ -53,6 +53,7 @@
 #include <x86intrin.h>
 #endif
 #include <upcxx/upcxx.hpp>
+#include <functional>
 
 using namespace std;
 using namespace upcxx;
@@ -182,9 +183,14 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
                  vector<PackedReads*> &packed_reads_list, bool checkpoint) {
   BarrierTimer timer(__FILEFUNC__);
 
-  int64_t num_ambiguous = 0;
-  int64_t num_merged = 0;
-  int64_t num_reads = 0;
+  using shared_of = shared_ptr<upcxx_utils::dist_ofstream>;
+  std::vector<shared_of> all_outputs;
+  std::vector<function<void()>> delayed_lambdas;
+  
+  int64_t tot_bytes_read = 0;
+  int64_t tot_num_ambiguous = 0;
+  int64_t tot_num_merged = 0;
+  int tot_max_read_len = 0;
   // for unique read id need to estimate number of reads in our sections of all files
   auto [my_num_reads_estimate, read_len] = estimate_num_reads(reads_fname_list);
   auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
@@ -193,15 +199,23 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   // double the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
   uint64_t read_id = rank_me() * max_num_reads * 2;
   IntermittentTimer dump_reads_t("dump_reads");
+  future<> wrote_all_files_fut = make_future();
   int ri = 0;
   for (auto const &reads_fname : reads_fname_list) {
     string out_fname = get_merged_reads_fname(reads_fname);
     if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, will overwrite...");
 
     FastqReader fqr(reads_fname);
-    ProgressBar progbar(fqr.my_file_size(), "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
+    auto my_file_size = fqr.my_file_size();
+    ProgressBar progbar(my_file_size, "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
 
-    string outputs;
+    const int num_syncs = 5;
+    shared_of sh_out_file;
+    uint64_t sync_bytes = my_file_size / num_syncs, have_synced = 0;
+    if (checkpoint) {
+        sh_out_file=make_shared<upcxx_utils::dist_ofstream>(get_merged_reads_fname(reads_fname));
+        all_outputs.push_back(sh_out_file);
+    }
     int max_read_len = 0;
     int64_t overlap_len = 0;
     int64_t merged_len = 0;
@@ -220,14 +234,27 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
     string id1, seq1, quals1, id2, seq2, quals2;
     int64_t num_pairs = 0;
-    size_t tot_bytes_read = 0;
+    int64_t bytes_read = 0;
+    int64_t num_ambiguous = 0;
+    int64_t num_merged = 0;
+    int64_t num_reads = 0;
+
     for (; ; num_pairs++) {
-      size_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
+      int64_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
       if (!bytes_read1) break;
-      size_t bytes_read2 = fqr.get_next_fq_record(id2, seq2, quals2);
+      int64_t bytes_read2 = fqr.get_next_fq_record(id2, seq2, quals2);
       if (!bytes_read2) break;
-      tot_bytes_read += bytes_read1 + bytes_read2;
-      progbar.update(tot_bytes_read);
+      bytes_read += bytes_read1 + bytes_read2;
+      progbar.update(bytes_read);
+      
+      while(checkpoint && have_synced < bytes_read / sync_bytes) {
+          // start writing a batch of data
+          dump_reads_t.start();
+          wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->flush_collective());
+          progress();
+          dump_reads_t.stop();
+          have_synced++;
+      }
 
       if (id1.compare(0, id1.length() - 2, id2, 0, id2.length() -2) != 0) DIE("Mismatched pairs ", id1, " ", id2);
       if (id1[id1.length() - 1] != '1' || id2[id2.length() - 1] != '2') DIE("Mismatched pair numbers ", id1, " ", id2);
@@ -393,9 +420,8 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
         packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/2", "N", to_string((char)qual_offset));
         if (checkpoint) {
           ostringstream out_buf;
-          out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
-          out_buf << "@r" << read_id << "/2\nN\n+\n" << (char)qual_offset << "\n";
-          outputs += out_buf.str();
+          *sh_out_file << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
+          *sh_out_file << "@r" << read_id << "/2\nN\n+\n" << (char)qual_offset << "\n";
         }
       }
       if (!is_merged) {
@@ -404,38 +430,71 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
         packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/2", seq2, quals2);
         if (checkpoint) {
           ostringstream out_buf;
-          out_buf << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
-          out_buf << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
-          outputs += out_buf.str();
+          *sh_out_file << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
+          *sh_out_file << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
         }
       }
       // inc by 2 so that we can use a later optimization of treating the even as /1 and the odd as /2
       read_id += 2;
     }
-    progbar.done();
-    barrier();
     if (checkpoint) {
+      // close this file, but do not wait for it yet
       dump_reads_t.start();
-      dump_single_file(get_merged_reads_fname(reads_fname), outputs);
+      assert(have_synced <= num_syncs);
+      while(have_synced < num_syncs) {
+          // catch up in case this rank missed any collective sync calls
+          wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->flush_collective());
+          have_synced++;
+      }
+      wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->close_async());
+      progress();
       dump_reads_t.stop();
     }
-    auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
-    auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
-    auto all_num_ambiguous = upcxx::reduce_one(num_ambiguous, op_fast_add, 0).wait();
-    auto all_merged_len = upcxx::reduce_one(merged_len, op_fast_add, 0).wait();
-    auto all_overlap_len = upcxx::reduce_one(overlap_len, op_fast_add, 0).wait();
-    auto all_max_read_len = upcxx::reduce_one(max_read_len, op_fast_max, 0).wait();
-    SLOG_VERBOSE("Merged reads in file ", reads_fname, ":\n");
-    SLOG_VERBOSE("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
-    SLOG_VERBOSE("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
-    SLOG_VERBOSE("  average merged length ", (double)all_merged_len / all_num_merged, "\n");
-    SLOG_VERBOSE("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
-    SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
-    SLOG_VERBOSE("Total bytes read ", tot_bytes_read, "\n");
+
+    progbar.done();
+    
+    tot_num_merged += num_merged;
+    tot_num_ambiguous += num_ambiguous;
+    tot_max_read_len = std::max(tot_max_read_len, max_read_len);
+    tot_bytes_read += bytes_read;
+    
+    // the following lambda must be executed after a barrier, but involves a collective reduction.
+    // delay it for later execution
+    auto delay_lambda = [reads_fname, num_pairs, num_merged, num_ambiguous, merged_len, overlap_len, max_read_len, bytes_read] {
+        auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
+        auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
+        auto all_num_ambiguous = upcxx::reduce_one(num_ambiguous, op_fast_add, 0).wait();
+        auto all_merged_len = upcxx::reduce_one(merged_len, op_fast_add, 0).wait();
+        auto all_overlap_len = upcxx::reduce_one(overlap_len, op_fast_add, 0).wait();
+        auto all_max_read_len = upcxx::reduce_one(max_read_len, op_fast_max, 0).wait();
+        SLOG_VERBOSE("Merged reads in file ", reads_fname, ":\n");
+        SLOG_VERBOSE("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
+        SLOG_VERBOSE("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
+        SLOG_VERBOSE("  average merged length ", (double) all_merged_len / all_num_merged, "\n");
+        SLOG_VERBOSE("  average overlap length ", (double) all_overlap_len / all_num_merged, "\n");
+        SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
+        SLOG_VERBOSE("Total bytes read ", bytes_read, "\n");
+    };
+    delayed_lambdas.push_back(delay_lambda);
     num_reads += num_pairs * 2;
     ri++;
   }
+  
+  barrier();
+  for(auto delay_lambda : delayed_lambdas) {
+      delay_lambda();
+  }
+  
+  // finish all file writing and report
+  dump_reads_t.start();
+  wrote_all_files_fut.wait();
+  for(auto sh_of : all_outputs) {
+      wrote_all_files_fut = when_all(wrote_all_files_fut, sh_of->report_timings());
+  }
+  wrote_all_files_fut.wait();
+  dump_reads_t.stop();
   elapsed_write_io_t = dump_reads_t.get_elapsed();
   dump_reads_t.done();
+  
   barrier();
 }
