@@ -248,6 +248,8 @@ public:
     , fqr2(nullptr)
     , first_file(true)
     , io_t("fastq IO for " + fname) {
+    Timer construction_timer("FastqReader construct " + get_basename(fname));
+    construction_timer.initiate_entrance_reduction();
     string fname2;
     size_t pos;
     if ((pos = fname.find(':')) != string::npos) {
@@ -255,8 +257,7 @@ public:
         fname2 = fname.substr(pos+1);
         fname = fname.substr(0,pos);
     }
-    Timer open_timer("Opening " + fname);
-    open_timer.initiate_entrance_reduction();
+    io_t.start();
     // only one rank gets the file size, to prevent many hits on metadata
     if (!rank_me()) file_size = get_file_size(fname);
     file_size = upcxx::broadcast(file_size, 0).wait();
@@ -264,7 +265,8 @@ public:
     if (!f) {
       SDIE("Could not open file ", fname, ": ", strerror(errno));
     }
-    open_timer.initiate_exit_reduction();
+    LOG("Opened and got bcast size for ", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
+    io_t.stop();
 
     // just a part of the file is read by this thread
     int64_t read_block = INT_CEIL(file_size, rank_n());
