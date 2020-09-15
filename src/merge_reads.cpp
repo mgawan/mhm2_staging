@@ -88,6 +88,9 @@ static const double Q2Perror[] = {
 
 static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) {
   // estimate reads in this rank's section of all the files
+  future<int> fut_max_read_len;
+  future<> progress_fut = make_future();
+ 
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -109,18 +112,21 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
       progbar.update(tot_bytes_read);
       records_processed++;
       // do not read the entire data set for just an estimate
-      if (records_processed > 100000) break;
+      if (records_processed > 50000) break;
     }
     total_records_processed += records_processed;
     if (records_processed) {
       int64_t bytes_per_record = tot_bytes_read / records_processed;
       estimated_total_records += fqr.my_file_size() / bytes_per_record;
     }
-    progbar.done();
-    barrier();
+    progress_fut = when_all(progress_fut, progbar.set_done());
     max_read_len = max(fqr.get_max_read_len(), max_read_len);
   }
-  DBG("This rank processed ", num_lines, " lines (", num_reads, " reads)\n");
+  fut_max_read_len = reduce_all(max_read_len, upcxx::op_fast_max);
+  DBG("This rank processed ", num_lines, " lines (", num_reads, " reads) with max_read_len=", max_read_len, "\n");
+  timer.initate_exit_barrier();
+  progress_fut.wait(); 
+  max_read_len = fut_max_read_len.wait();
   SLOG_VERBOSE("Found maximum read length of ", max_read_len, "\n");
   return {estimated_total_records, max_read_len};
 }
@@ -182,10 +188,10 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
                  vector<PackedReads*> &packed_reads_list, bool checkpoint) {
   BarrierTimer timer(__FILEFUNC__);
+  Timer merge_time(__FILEFUNC__ + ":merging");
 
   using shared_of = shared_ptr<upcxx_utils::dist_ofstream>;
   std::vector<shared_of> all_outputs;
-  std::vector<function<void()>> delayed_lambdas;
   
   int64_t tot_bytes_read = 0;
   int64_t tot_num_ambiguous = 0;
@@ -200,8 +206,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   uint64_t read_id = rank_me() * max_num_reads * 2;
   IntermittentTimer dump_reads_t("dump_reads");
   future<> wrote_all_files_fut = make_future();
+  promise<> summary_promise;
+  future<> fut_summary = summary_promise.get_future();
   int ri = 0;
   for (auto const &reads_fname : reads_fname_list) {
+    Timer merge_file_timer("merging " + get_basename(reads_fname));
+    merge_file_timer.initiate_entrance_reduction();
+    
     string out_fname = get_merged_reads_fname(reads_fname);
     if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, will overwrite...");
 
@@ -432,23 +443,31 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->close_async());
       dump_reads_t.stop();
     }
-
-    progbar.done();
+    auto prog_done = progbar.set_done();
+    wrote_all_files_fut = when_all(wrote_all_files_fut, prog_done);
     
     tot_num_merged += num_merged;
     tot_num_ambiguous += num_ambiguous;
     tot_max_read_len = std::max(tot_max_read_len, max_read_len);
     tot_bytes_read += bytes_read;
     
-    // the following lambda must be executed after a barrier, but involves a collective reduction.
-    // delay it for later execution
-    auto delay_lambda = [reads_fname, num_pairs, num_merged, num_ambiguous, merged_len, overlap_len, max_read_len, bytes_read] {
-        auto all_num_pairs = upcxx::reduce_one(num_pairs, op_fast_add, 0).wait();
-        auto all_num_merged = upcxx::reduce_one(num_merged, op_fast_add, 0).wait();
-        auto all_num_ambiguous = upcxx::reduce_one(num_ambiguous, op_fast_add, 0).wait();
-        auto all_merged_len = upcxx::reduce_one(merged_len, op_fast_add, 0).wait();
-        auto all_overlap_len = upcxx::reduce_one(overlap_len, op_fast_add, 0).wait();
-        auto all_max_read_len = upcxx::reduce_one(max_read_len, op_fast_max, 0).wait();
+    // start the collective reductions
+    // delay the summary output for when they complete
+    auto fut_reductions = when_all(
+            upcxx::reduce_one(num_pairs, op_fast_add, 0),
+            upcxx::reduce_one(num_merged, op_fast_add, 0),
+            upcxx::reduce_one(num_ambiguous, op_fast_add, 0),
+            upcxx::reduce_one(merged_len, op_fast_add, 0),
+            upcxx::reduce_one(overlap_len, op_fast_add, 0),
+            upcxx::reduce_one(max_read_len, op_fast_max, 0)
+    );
+    fut_summary = when_all(fut_summary, fut_reductions).then([reads_fname, bytes_read] (
+            int64_t all_num_pairs, 
+            int64_t all_num_merged, 
+            int64_t all_num_ambiguous, 
+            int64_t all_merged_len,
+            int64_t all_overlap_len,
+            int all_max_read_len) {
         SLOG_VERBOSE("Merged reads in file ", reads_fname, ":\n");
         SLOG_VERBOSE("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
         SLOG_VERBOSE("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
@@ -456,16 +475,12 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
         SLOG_VERBOSE("  average overlap length ", (double) all_overlap_len / all_num_merged, "\n");
         SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
         SLOG_VERBOSE("Total bytes read ", bytes_read, "\n");
-    };
-    delayed_lambdas.push_back(delay_lambda);
+    });
+
     num_reads += num_pairs * 2;
     ri++;
   }
-  
-  barrier();
-  for(auto delay_lambda : delayed_lambdas) {
-      delay_lambda();
-  }
+  merge_time.initiate_exit_reduction();
   
   // finish all file writing and report
   dump_reads_t.start();
@@ -474,9 +489,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       wrote_all_files_fut = when_all(wrote_all_files_fut, sh_of->report_timings());
   }
   wrote_all_files_fut.wait();
+  
   dump_reads_t.stop();
   elapsed_write_io_t = dump_reads_t.get_elapsed();
   dump_reads_t.done();
+
+  summary_promise.fulfill_anonymous(1);
+  fut_summary.wait();
   
-  barrier();
+  timer.initate_exit_barrier();
 }
