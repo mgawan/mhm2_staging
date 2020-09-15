@@ -255,6 +255,8 @@ public:
         fname2 = fname.substr(pos+1);
         fname = fname.substr(0,pos);
     }
+    Timer open_timer("Opening " + fname);
+    open_timer.initiate_entrance_reduction();
     // only one rank gets the file size, to prevent many hits on metadata
     if (!rank_me()) file_size = get_file_size(fname);
     file_size = upcxx::broadcast(file_size, 0).wait();
@@ -262,6 +264,7 @@ public:
     if (!f) {
       SDIE("Could not open file ", fname, ": ", strerror(errno));
     }
+    open_timer.initiate_exit_reduction();
 
     // just a part of the file is read by this thread
     int64_t read_block = INT_CEIL(file_size, rank_n());
