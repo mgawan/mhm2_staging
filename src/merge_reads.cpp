@@ -209,9 +209,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     auto my_file_size = fqr.my_file_size();
     ProgressBar progbar(my_file_size, "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
 
-    const int num_syncs = 5;
     shared_of sh_out_file;
-    uint64_t sync_bytes = my_file_size / num_syncs, have_synced = 0;
     if (checkpoint) {
         sh_out_file=make_shared<upcxx_utils::dist_ofstream>(get_merged_reads_fname(reads_fname));
         all_outputs.push_back(sh_out_file);
@@ -246,15 +244,6 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       if (!bytes_read2) break;
       bytes_read += bytes_read1 + bytes_read2;
       progbar.update(bytes_read);
-      
-      while(checkpoint && have_synced < bytes_read / sync_bytes) {
-          // start writing a batch of data
-          dump_reads_t.start();
-          wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->flush_collective());
-          progress();
-          dump_reads_t.stop();
-          have_synced++;
-      }
 
       if (id1.compare(0, id1.length() - 2, id2, 0, id2.length() -2) != 0) DIE("Mismatched pairs ", id1, " ", id2);
       if (id1[id1.length() - 1] != '1' || id2[id2.length() - 1] != '2') DIE("Mismatched pair numbers ", id1, " ", id2);
@@ -440,14 +429,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     if (checkpoint) {
       // close this file, but do not wait for it yet
       dump_reads_t.start();
-      assert(have_synced <= num_syncs);
-      while(have_synced < num_syncs) {
-          // catch up in case this rank missed any collective sync calls
-          wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->flush_collective());
-          have_synced++;
-      }
       wrote_all_files_fut = when_all(wrote_all_files_fut, sh_out_file->close_async());
-      progress();
       dump_reads_t.stop();
     }
 

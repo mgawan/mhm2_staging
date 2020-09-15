@@ -164,6 +164,7 @@ inline void switch_orient(int &start, int &stop, int &len) {
 inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
   BarrierTimer timer(__FILEFUNC__);
   SLOG_VERBOSE("Writing ", fname, "\n");
+  SWARN("This is not the most efficient way to write a file anymore...\n");
   auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
   upcxx_utils::dist_ofstream of(fname, append);
   of << out_str;

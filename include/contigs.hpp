@@ -212,17 +212,17 @@ public:
 
   void dump_contigs(const string &fname, unsigned min_ctg_len) {
     BarrierTimer timer(__FILEFUNC__);
-    string fasta = "";
+    dist_ofstream of(fname);
     for (auto it = contigs.begin(); it != contigs.end(); ++it) {
       auto ctg = it;
       if (ctg->seq.length() < min_ctg_len) continue;
-      fasta += ">Contig" + to_string(ctg->id) + " " + to_string(ctg->depth) + "\n";
+      of << ">Contig" << to_string(ctg->id) << " " << to_string(ctg->depth) << "\n";
       string rc_uutig = revcomp(ctg->seq);
       string seq = (rc_uutig < ctg->seq ? rc_uutig : ctg->seq);
       //for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
-      fasta += ctg->seq + "\n";
+      of << ctg->seq << "\n";
     }
-    dump_single_file(fname, fasta);
+    of.close(); // sync and output stats
 #ifdef DEBUG
     // two important things here.  
     // 1: touch and test the load_contigs code when debugging

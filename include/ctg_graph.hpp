@@ -809,12 +809,12 @@ class CtgGraph {
 
   void print_gfa2(const string &gfa_fname, int min_ctg_print_len) {
     BarrierTimer timer(__FILEFUNC__);
-    string out_str = "";
+    dist_ofstream of(gfa_fname + ".gfa");
     for (auto v = get_first_local_vertex(); v != nullptr; v = get_next_local_vertex()) {
       if (v->clen < min_ctg_print_len) continue;
       // don't include the sequence, and have a user tag 'kd' for kmer depth, and 'ad' for alignment depth
-      out_str += "S\t" + to_string(v->cid) + "\t" + to_string(v->clen) + "\t*\tkd: " + to_string(v->depth) +
-                 " ad: " + to_string(v->aln_depth) + "\n";
+      of << "S\t" << to_string(v->cid) << "\t" << to_string(v->clen) << "\t*\tkd: " << to_string(v->depth) 
+                 << " ad: " << to_string(v->aln_depth) << "\n";
     }
     for (auto edge = get_first_local_edge(); edge != nullptr; edge = get_next_local_edge()) {
       int clen1 = get_vertex_clen(edge->cids.cid1);
@@ -825,26 +825,26 @@ class CtgGraph {
                      to_string(edge->cids.cid2) + (edge->end2 == 3 ? "+" : "-");
       if (edge->gap >= 0) {
         // this is a gap, not an edge, according to the GFA terminology
-        out_str += "G\t*\t" + cid_str + "\t" + to_string(edge->gap) + "\t*";
+        of << "G\t*\t" << cid_str << "\t" << to_string(edge->gap) << "\t*";
       } else {
         // this is a negative gap - set as an alignment overlap in the GFA output
         // we don't have the actual alignments, but we know that for this to be valid, the alignment must be almost
         // perfect over the tail and front of the two contigs, so we can give the positions based on the gap size
-        out_str += "E\t*\t" + cid_str + "\t";
+        of << "E\t*\t" << cid_str << "\t";
         int overlap = -edge->gap;
         // positions are specified *before* revcomp
         int begin_pos1 = (edge->end1 == 5 ? clen1 - overlap : 0);
         int end_pos1 = (edge->end1 == 5 ? clen1 : overlap);
         int begin_pos2 = (edge->end1 == 3 ? clen2 - overlap : 0);
         int end_pos2 = (edge->end1 == 3 ? clen2 : overlap);
-        out_str += to_string(begin_pos1) + "\t" + to_string(end_pos1);
-        if (end_pos1 == clen1) out_str += "$";
-        if (end_pos2 == clen2) out_str += "$";
+        of << to_string(begin_pos1) << "\t" << to_string(end_pos1);
+        if (end_pos1 == clen1) of << "$";
+        if (end_pos2 == clen2) of << "$";
       }
       // add MHM specific tags
-      out_str += "\tsp: " + to_string(edge->support) + "\ttp: " + edge_type_str(edge->edge_type) + "\n";
+      of << "\tsp: " << to_string(edge->support) << "\ttp: " << edge_type_str(edge->edge_type) << "\n";
     }
-    dump_single_file(gfa_fname + ".gfa", out_str);
+    of.close(); // sync and prints stats
   }
 };
 
