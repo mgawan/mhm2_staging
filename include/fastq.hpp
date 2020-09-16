@@ -48,11 +48,16 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <memory>
+#include <string>
+#include <map>
+
 #include <upcxx/upcxx.hpp>
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
+
+#include "utils.hpp"
 
 using std::string;
 using std::to_string;
@@ -66,6 +71,7 @@ using namespace upcxx_utils;
 #define INT_CEIL(numerator, denominator) (((numerator) - 1) / (denominator) + 1)
 #define BUF_SIZE 2047
 
+using upcxx::future;
 
 class FastqReader {
   string fname;
@@ -79,6 +85,7 @@ class FastqReader {
   shared_ptr<FastqReader> fqr2;
   bool first_file;
   IntermittentTimer io_t;
+  future<> open_fut;
   
   inline static double overall_io_t = 0;
 
@@ -241,54 +248,95 @@ class FastqReader {
 
 public:
 
-  FastqReader(const string &_fname)
+    FastqReader(const string &_fname, bool wait = false)
     : fname(_fname)
     , f(nullptr)
     , max_read_len(0)
     , fqr2(nullptr)
     , first_file(true)
-    , io_t("fastq IO for " + fname) {
-    Timer construction_timer("FastqReader construct " + get_basename(fname));
-    construction_timer.initiate_entrance_reduction();
-    string fname2;
-    size_t pos;
-    if ((pos = fname.find(':')) != string::npos) {
-        // colon separating a pair into two files
-        fname2 = fname.substr(pos+1);
-        fname = fname.substr(0,pos);
-    }
-    io_t.start();
-    // only one rank gets the file size, to prevent many hits on metadata
-    if (!rank_me()) file_size = get_file_size(fname);
-    file_size = upcxx::broadcast(file_size, 0).wait();
-    f = fopen(fname.c_str(), "r");
-    if (!f) {
-      SDIE("Could not open file ", fname, ": ", strerror(errno));
-    }
-    LOG("Opened and got bcast size for ", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
-    io_t.stop();
+    , io_t("fastq IO for " + fname)
+    , open_fut() // never ready
+    {
+        Timer construction_timer("FastqReader construct " + get_basename(fname));
+        construction_timer.initiate_entrance_reduction();
+        string fname2;
+        size_t pos;
+        if ((pos = fname.find(':')) != string::npos) {
+            // colon separating a pair into two files
+            fname2 = fname.substr(pos + 1);
+            fname = fname.substr(0, pos);
+        }
+        int fd = -1;
+        if (!rank_me()) {
+            // only one rank gets the file size, to prevent many hits on metadata
+            io_t.start();
+            fd = open(fname.c_str(), O_RDONLY);
+            if (fd < 0)
+                DIE("Could not open file ", fname, ": ", strerror(errno));
+            file_size = get_file_size(fd);
+            io_t.stop();
+        }
 
-    // just a part of the file is read by this thread
-    int64_t read_block = INT_CEIL(file_size, rank_n());
-    start_read = read_block * rank_me();
-    end_read = read_block * (rank_me() + 1);
-    if (rank_me()) start_read = get_fptr_for_next_record(start_read);
-    if (rank_me() == rank_n() - 1) end_read = file_size;
-    else end_read = get_fptr_for_next_record(end_read);
-    if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
-    // tell the OS this file will be accessed sequentially
-    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
-    SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
-    DBG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), "\n");
+        future<> file_size_fut = upcxx::broadcast(file_size, 0).then(
+                [&file_size = this->file_size](int64_t sz) {
+                    file_size = sz;
+                });
 
-    if (!fname2.empty()) {
-        // this second reader is generally hidden from the user
-        LOG("Opening second FastqReader with ", fname2, "\n");
-        fqr2 = make_shared<FastqReader>(fname2);
+        // continue opening IO operations to find this rank's start record in a separate thread        
+        open_fut = file_size_fut.then([this, fd]() {
+            return execute_in_new_thread([this, fd]() {
+                this->continue_open(fd);
+            });
+        });
+        
+        if (!fname2.empty()) {
+            // this second reader is generally hidden from the user
+            LOG("Opening second FastqReader with ", fname2, "\n");
+            fqr2 = make_shared<FastqReader>(fname2);
+        }
+        
+        if (wait) {
+            open_fut.wait();
+            if (fqr2)
+                fqr2->open_fut.wait();
+        }
     }
-  }
+    
+    void continue_open(int fd = -1) {
+        io_t.start();
+        if (fd < 0) {
+            f = fopen(fname.c_str(), "r");
+        } else {
+            f = fdopen(fd, "r");
+        }
+        if (!f) {
+            SDIE("Could not open file ", fname, ": ", strerror(errno));
+        }
+            
+        LOG("Opened", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
+        io_t.stop();
 
+        // just a part of the file is read by this thread
+        int64_t read_block = INT_CEIL(file_size, rank_n());
+        start_read = read_block * rank_me();
+        end_read = read_block * (rank_me() + 1);
+        
+        io_t.start();
+        if (rank_me()) start_read = get_fptr_for_next_record(start_read);
+        if (rank_me() == rank_n() - 1) end_read = file_size;
+        else end_read = get_fptr_for_next_record(end_read);
+        
+        if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
+        // tell the OS this file will be accessed sequentially
+        posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);    
+        SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
+        double fseek_t = io_t.get_elapsed_since_start();
+        io_t.stop();
+        LOG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), " seek+advise ", fseek_t, "s io to open+find+seek ", io_t.get_elapsed(), "s\n");        
+    }
+    
   ~FastqReader() {
+    open_fut.wait();
     if (f) fclose(f);
     io_t.done_all_async(); // will print in Timings' order eventually
     FastqReader::overall_io_t += io_t.get_elapsed();
@@ -303,6 +351,10 @@ public:
   }
 
   size_t get_next_fq_record(string &id, string &seq, string &quals) {
+    if (!open_fut.ready()) {
+        WARN("Attempt to read ", fname, " before it is ready. wait on open_fut first to avoid this warning!\n");
+        open_fut.wait();
+    }
     if (fqr2) {
       // return a single interleaved file
       if (first_file) {
@@ -351,10 +403,64 @@ public:
   }
 
   void reset() {
+    open_fut.wait();
+    io_t.start();
     if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
+    io_t.stop();
     if (fqr2) fqr2->reset();
   }
 
 };
 
+class FastqReaders {
+    // singleton class to hold as set of fastq readers open and re-usable
+    using ShFastqReader = shared_ptr<FastqReader>;
+    std::unordered_map<string, ShFastqReader> readers;
+
+    FastqReaders() : readers() {}
+    
+public:
+    static FastqReaders &getInstance() {
+        static FastqReaders _;
+        return _;
+    }
+    
+    static FastqReader &open(const string fname) {
+        FastqReaders &me = getInstance();
+        auto it = me.readers.find(fname);
+        if (it == me.readers.end()) {
+            it = me.readers.insert(it, {fname, make_shared<FastqReader>(fname)});
+        }
+        assert(it != me.readers.end());
+        assert(it->second);
+        return *(it->second);
+    }
+    
+    template<typename Container>
+    static void open_all(Container &fnames) {
+        for(string &fname : fnames) {
+            open(fname);
+        }
+    }
+
+    static FastqReader &get(const string fname) {
+        FastqReader &fqr = open(fname);
+        fqr.reset();
+        return fqr;
+    }
+    
+    static void close(const string fname) {
+        FastqReaders &me = getInstance();
+        auto it = me.readers.find(fname);
+        if (it != me.readers.end()) {
+            me.readers.erase(it);
+        }
+    }
+    
+    static void close_all() {
+        FastqReaders &me = getInstance();
+        me.readers.clear();
+    }
+    
+};
 

@@ -178,7 +178,7 @@ public:
     // first estimate the number of records
     size_t tot_bytes_read = 0;
     int64_t num_records = 0;
-    FastqReader fqr(fname);
+    FastqReader &fqr = FastqReaders::get(fname);
     string id, seq, quals;
     for (num_records = 0; num_records < 10000; num_records++) {
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);

@@ -342,12 +342,68 @@ inline void pin_numa() {
 
 namespace upcxx_utils {
 
+    /*
+     * TODO #include <future> // for std::async
+     * requires removal of using namespace std across the board
+     * templates must be in header files
+     * and std::future makes calls to upcxx::future ambiguous (same with promise)
+     * 
+
+    template <typename F, typename... Ts>
+    inline auto reallyAsync(F&& f, Ts&&... params) {
+        return std::async(std::launch::async, std::forward<F>(f),
+                    std::forward<Ts>(params)...);
+    }
+
+    template<typename Func, typename... Args>
+    auto execute_async(Func&& func, Args&&... args) {
+        auto t_start = Timer::now();
+        auto sh_prom = make_shared< upcxx::promise <> > ();
+        const upcxx::persona &persona = upcxx::current_persona();
+        DBG("Starting async sh_prom=", sh_prom.get(), "\n");
+        
+        auto returning_func = 
+        [t_start, sh_prom, &persona] (Func&& f, Args&& ... a) {
+            auto ret = f(a...);
+            duration_seconds sec = Timer::now() - t_start;
+            DBG("Completed running async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                                
+            // fulfill only in calling persona
+            persona.lpc_ff([t_start, sh_prom]() {
+                duration_seconds sec = Timer::now() - t_start;
+                DBG_VERBOSE("Fulfilling promised async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                sh_prom->fulfill_anonymous(1);
+            });
+            
+            sec = Timer::now() - t_start;
+            DBG_VERBOSE("Returning async result sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+            return ret;
+        };
+        auto async_fut = reallyAsync(returning_func, args...);
+
+        return sh_prom->get_future().then(
+                [t_start, sh_prom, &persona, async_fut]() {
+                    assert(persona.active_with_caller());
+                    
+                    duration_seconds sec = Timer::now() - t_start;
+                    DBG_VERBOSE("Waiting for completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                    
+                    async_fut.wait(); // should be noop but there could be a short race between lpc and returning the value
+                    assert(async_fut.valid());
+                    
+                    sec = Timer::now() - t_start;
+                    DBG("Returning completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                    return async_fut.get();
+                });
+    }
+    */
+    
     // Func no argument returned or given lambda - void()
 
     template<typename Func>
     upcxx::future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
         assert(persona.active_with_caller());
-        shared_ptr< promise<> > sh_prom = make_shared<promise <> > ();
+        shared_ptr< upcxx::promise<> > sh_prom = make_shared< upcxx::promise<> > ();
 
         shared_ptr<std::thread> sh_run = make_shared<std::thread>(
                 [&persona, func, sh_prom] {

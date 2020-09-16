@@ -92,6 +92,8 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   future<> progress_fut = make_future();
  
   BarrierTimer timer(__FILEFUNC__);
+  FastqReaders::open_all(reads_fname_list);
+  
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
@@ -99,7 +101,7 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   string id, seq, quals;
   int max_read_len = 0;
   for (auto const &reads_fname : reads_fname_list) {
-    FastqReader fqr(reads_fname);
+    FastqReader &fqr = FastqReaders::get(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of reads");
     size_t tot_bytes_read = 0;
     int64_t records_processed = 0;
@@ -189,7 +191,9 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
                  vector<PackedReads*> &packed_reads_list, bool checkpoint) {
   BarrierTimer timer(__FILEFUNC__);
   Timer merge_time(__FILEFUNC__ + " merging all");
-
+  FastqReaders::open_all(reads_fname_list);
+  vector<string> merged_reads_fname_list;
+  
   using shared_of = shared_ptr<upcxx_utils::dist_ofstream>;
   std::vector<shared_of> all_outputs;
   
@@ -216,14 +220,16 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     string out_fname = get_merged_reads_fname(reads_fname);
     if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, will overwrite...");
 
-    FastqReader fqr(reads_fname);
+    FastqReader &fqr = FastqReaders::get(reads_fname);
     auto my_file_size = fqr.my_file_size();
     ProgressBar progbar(my_file_size, "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
 
     shared_of sh_out_file;
     if (checkpoint) {
-        sh_out_file=make_shared<upcxx_utils::dist_ofstream>(get_merged_reads_fname(reads_fname));
+        auto merged_name = get_merged_reads_fname(reads_fname);
+        sh_out_file=make_shared<upcxx_utils::dist_ofstream>(merged_name);
         all_outputs.push_back(sh_out_file);
+        merged_reads_fname_list.push_back(merged_name);
     }
     int max_read_len = 0;
     int64_t overlap_len = 0;
@@ -481,6 +487,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     ri++;
   }
   merge_time.initiate_exit_reduction();
+ 
   
   // finish all file writing and report
   dump_reads_t.start();
@@ -497,5 +504,9 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   summary_promise.fulfill_anonymous(1);
   fut_summary.wait();
   
+  // merged files will now be used exclusively
+  FastqReaders::close_all(); 
+  FastqReaders::open_all(merged_reads_fname_list);
+
   timer.initate_exit_barrier();
 }
