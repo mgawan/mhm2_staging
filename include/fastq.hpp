@@ -290,7 +290,7 @@ public:
 
   ~FastqReader() {
     if (f) fclose(f);
-    io_t.done();
+    io_t.done_all_async(); // will print in Timings' order eventually
     FastqReader::overall_io_t += io_t.get_elapsed();
   }
 

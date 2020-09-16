@@ -188,7 +188,7 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
                  vector<PackedReads*> &packed_reads_list, bool checkpoint) {
   BarrierTimer timer(__FILEFUNC__);
-  Timer merge_time(__FILEFUNC__ + ":merging");
+  Timer merge_time(__FILEFUNC__ + " merging all");
 
   using shared_of = shared_ptr<upcxx_utils::dist_ofstream>;
   std::vector<shared_of> all_outputs;
