@@ -302,6 +302,7 @@ public:
         }
     }
     
+    // this happens within a separate thread
     void continue_open(int fd = -1) {
         io_t.start();
         if (fd < 0) {
@@ -312,7 +313,6 @@ public:
         if (!f) {
             SDIE("Could not open file ", fname, ": ", strerror(errno));
         }
-            
         LOG("Opened", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
         io_t.stop();
 
@@ -321,11 +321,11 @@ public:
         start_read = read_block * rank_me();
         end_read = read_block * (rank_me() + 1);
         
-        io_t.start();
         if (rank_me()) start_read = get_fptr_for_next_record(start_read);
         if (rank_me() == rank_n() - 1) end_read = file_size;
         else end_read = get_fptr_for_next_record(end_read);
         
+        io_t.start();
         if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
         // tell the OS this file will be accessed sequentially
         posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);    
@@ -429,7 +429,10 @@ public:
         FastqReaders &me = getInstance();
         auto it = me.readers.find(fname);
         if (it == me.readers.end()) {
+            upcxx::discharge(); // opening itself may take some time
             it = me.readers.insert(it, {fname, make_shared<FastqReader>(fname)});
+            upcxx::discharge(); // opening requires a broadcast with to complete
+            upcxx::progress(); // opening requires some user progress too
         }
         assert(it != me.readers.end());
         assert(it->second);
