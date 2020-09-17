@@ -84,9 +84,20 @@ add_definitions(-DALL_DEFNS=\"${all_defs}\")
 include_directories("ssw")
 add_subdirectory(ssw)
 
+set(TGTS)
+foreach(tgt fastq)
+  add_library(${tgt} OBJECT ${tgt}.cpp)
+  if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
+    target_link_libraries(${tgt} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
+  endif()
+  list(APPEND TGTS $<TARGET_OBJECTS:${tgt}>)
+endforeach()
+
 add_executable(mhmxx
     main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp
-    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp aln_depths.cpp)
+    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp aln_depths.cpp
+    ${TGTS}
+)
 
 if(ENABLE_CUDA)
     include_directories("adept-sw")

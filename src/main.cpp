@@ -541,6 +541,8 @@ int main(int argc, char **argv) {
   #undef POST_ASSEMBLY
   }
 
+  FastqReaders::close_all(); // needed to cleanup any open files in this singleton
+
 #ifdef DEBUG
   _dbgstream.flush();
   while(close_dbg());
