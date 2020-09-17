@@ -471,6 +471,7 @@ int main(int argc, char **argv) {
     }
 
     // cleanup
+    FastqReaders::close_all(); // needed to cleanup any open files in this singleton
     auto fin_start_t = chrono::high_resolution_clock::now();
     for (auto packed_reads : packed_reads_list) {
       delete packed_reads;
@@ -540,8 +541,6 @@ int main(int argc, char **argv) {
     }
   #undef POST_ASSEMBLY
   }
-
-  FastqReaders::close_all(); // needed to cleanup any open files in this singleton
 
 #ifdef DEBUG
   _dbgstream.flush();
