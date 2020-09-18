@@ -54,6 +54,7 @@
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "fastq.hpp"
+#include "zstr.hpp"
 
 using std::string;
 using std::string_view;
@@ -64,6 +65,7 @@ using upcxx::rank_n;
 
 using namespace upcxx_utils;
 
+using std::max;
 
 class PackedRead {
   static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
