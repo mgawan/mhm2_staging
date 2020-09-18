@@ -48,6 +48,8 @@
 #include <fcntl.h>
 #include <upcxx/upcxx.hpp>
 
+#include "zstr.hpp"
+
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/three_tier_aggr_store.hpp"
