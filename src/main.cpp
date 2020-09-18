@@ -218,7 +218,7 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
     stage_timers.alignments->start();
     auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
     int seed_space = KLIGN_SEED_SPACE;
-    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
+    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 1;
     double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
                                                  ctgs, alns, seed_space, rlen_limit, false, 0, options->ranks_per_gpu);
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
@@ -427,12 +427,15 @@ int main(int argc, char **argv) {
 #endif
     
     // scaffolding loops
+    if (options->dump_gfa) {
+      if (options->scaff_kmer_lens.size()) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
+      else options->scaff_kmer_lens.push_back(options->kmer_lens[0]);
+    }
     if (options->scaff_kmer_lens.size()) {
       if (!max_kmer_len) {
         if (options->max_kmer_len) max_kmer_len = options->max_kmer_len;
         else max_kmer_len = options->scaff_kmer_lens.front();
       }
-      if (options->dump_gfa) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
       for (unsigned i = 0; i < options->scaff_kmer_lens.size(); ++i) {
         auto scaff_kmer_len = options->scaff_kmer_lens[i];
         auto max_k = (scaff_kmer_len / 32 + 1) * 32;
