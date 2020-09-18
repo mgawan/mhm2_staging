@@ -55,12 +55,14 @@
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/flat_aggr_store.hpp"
 #include "upcxx_utils/timers.hpp"
+#include "upcxx_utils/ofstream.hpp"
 
 #include "utils.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
 
 using namespace std;
+using namespace upcxx_utils;
 
 struct CtgBaseDepths {
   int64_t cid;

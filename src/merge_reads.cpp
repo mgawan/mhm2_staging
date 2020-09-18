@@ -64,6 +64,8 @@ using namespace upcxx;
 #include "packed_reads.hpp"
 #include "upcxx_utils.hpp"
 
+#include "upcxx_utils/ofstream.hpp"
+
 using namespace upcxx_utils;
 
 static const double Q2Perror[] = {

@@ -85,7 +85,7 @@ include_directories("ssw")
 add_subdirectory(ssw)
 
 set(TGTS)
-foreach(tgt fastq alignments contigs packed_reads)
+foreach(tgt fastq alignments contigs packed_reads utils bloom)
   add_library(${tgt} OBJECT ${tgt}.cpp)
   if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
     target_link_libraries(${tgt} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
