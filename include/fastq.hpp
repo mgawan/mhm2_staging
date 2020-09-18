@@ -43,21 +43,10 @@
 */
 
 
-
-#include <iostream>
-#include <unistd.h>
-#include <fcntl.h>
-#include <memory>
-#include <string>
 #include <map>
 
 #include <upcxx/upcxx.hpp>
-
-#include "upcxx_utils/log.hpp"
-#include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
-
-#include "utils.hpp"
 
 using std::string;
 using std::to_string;
@@ -65,6 +54,8 @@ using std::shared_ptr;
 
 using upcxx::rank_me;
 using upcxx::rank_n;
+
+using upcxx_utils::IntermittentTimer;
 
 #define INT_CEIL(numerator, denominator) (((numerator) - 1) / (denominator) + 1)
 #define BUF_SIZE 2047
