@@ -218,7 +218,7 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
     stage_timers.alignments->start();
     auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
     int seed_space = KLIGN_SEED_SPACE;
-    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 4;
+    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 1;
     double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
                                                  ctgs, alns, seed_space, rlen_limit, false, 0, options->ranks_per_gpu);
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
