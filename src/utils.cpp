@@ -191,6 +191,9 @@ std::string &left_trim(std::string &str) {
 }
 
 int pin_clear() {
+#if defined(__APPLE__) && defined(__MACH__)
+  // TODO
+#else
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
   for (unsigned i = 0; i < sizeof(cpu_set_t) * 8; i++) {
@@ -200,6 +203,7 @@ int pin_clear() {
     if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
     return -1;
   }
+#endif
   return 0;
 }
 
@@ -238,6 +242,9 @@ vector<int> get_pinned_cpus() {
 }
 
 void pin_proc(vector<int> cpus) {
+#if defined(__APPLE__) && defined(__MACH__)
+  // TODO
+#else
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
   for (auto cpu : cpus) {
@@ -246,6 +253,7 @@ void pin_proc(vector<int> cpus) {
   if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
     if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
   }
+#endif
 }
 
 void pin_cpu() {
