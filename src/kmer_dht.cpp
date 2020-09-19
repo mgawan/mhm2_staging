@@ -97,7 +97,13 @@
     */
   }
   
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in kmer_dht.hpp
+// template instantiations each happen in src/CMakeLists via kmer_dht-extern-template.in.cpp
 
+  /*
+   * These are now instantiated in kmer_dht-extern-template.in.cpp
+   *
 
 __MACRO_KMER_DHT__(32, template);
 
@@ -122,3 +128,4 @@ __MACRO_KMER_DHT__(160,  template);
 
 #endif
 
+*/

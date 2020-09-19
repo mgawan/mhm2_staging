@@ -151,6 +151,7 @@ struct KmerCounts {
 
 template<int MAX_K>
 class KmerDHT {
+public:
   using KmerMap = HASH_TABLE<Kmer<MAX_K>, KmerCounts, KmerHash<MAX_K>, KmerEqual<MAX_K>>;
 
   // total bytes for k = 51: 16+18+18=52
@@ -161,6 +162,7 @@ class KmerDHT {
     UPCXX_SERIALIZED_FIELDS(kmer, left, right, count);
   };
 
+private:
   dist_object<KmerMap> kmers;
   // The first bloom filter stores all kmers and is used to check for single occurrences to filter out
   dist_object<BloomFilter> bloom_filter1;
@@ -637,6 +639,11 @@ public:
 
 };
 
+
+
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in kmer_dht.hpp
+// template instantiations each happen in src/CMakeLists via kmer_dht-extern-template.in.cpp
 
 #define __MACRO_KMER_DHT__(KMER_LEN, MODIFIER) \
     MODIFIER class KmerDHT<KMER_LEN>; \

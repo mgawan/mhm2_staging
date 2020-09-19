@@ -78,6 +78,13 @@ const uint64_t TWIN_TABLE[256] = {
   };
 
 
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in kmer.hpp
+// template instantiations each happen in src/CMakeLists via kmer-extern-template.in.cpp
+
+/*
+ * This is now in kmer-extern-template.in.cpp
+ * 
 __MACRO_KMER__(32,  template);
 
 
@@ -101,3 +108,4 @@ __MACRO_KMER__(128,  template);
 __MACRO_KMER__(160,  template);
 
 #endif
+ */

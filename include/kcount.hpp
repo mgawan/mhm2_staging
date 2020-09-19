@@ -295,12 +295,9 @@ MODIFIER void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<PackedRead
 #define __MACRO_KCOUNT__(KMER_LEN, MODIFIER) \
 __ANALYZE_KMERS__(KMER_LEN, MODIFIER); \
 
-/*
- __COUNT_KMERS__(KMER_LEN, MODIFIER); \
- __COUNT_CTG_KMERS__(KMER_LEN, MODIFIER); \
- __ADD_CTG_KMERS__(KMER_LEN, MODIFIER); \
- __ANALYZE_KMERS__(KMER_LEN, MODIFIER); \
- */
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in in kcount.hpp
+// template instantiations each happen in src/CMakeLists via kcount-extern-template.in.cpp
 
 __MACRO_KCOUNT__(32, extern template);
 

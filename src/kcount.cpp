@@ -99,6 +99,13 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
 }
 
 
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in kcount.hpp
+// template instantiations each happen in src/CMakeLists via kcount-extern-template.in.cpp
+
+/*
+ * This is called in kcount-extern-template.in.cpp
+ * 
 __MACRO_KCOUNT__(32, template);
 
 #if MAX_BUILD_KMER >= 64
@@ -121,3 +128,5 @@ __MACRO_KCOUNT__(128,  template);
 __MACRO_KCOUNT__(160,  template);
 
 #endif
+
+ */
