@@ -42,19 +42,18 @@
  form.
 */
 
-
 #include <array>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <memory>
 
+using std::max;
 using std::string;
 using std::string_view;
 using std::to_string;
-using std::vector;
-using std::max;
 using std::unique_ptr;
+using std::vector;
 
 class PackedRead {
   static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
@@ -68,18 +67,15 @@ class PackedRead {
   // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
   // 8+150+2=160 vs 13+300=313
 
-public:
-
+ public:
   PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset);
 
   ~PackedRead();
 
   void unpack(string &read_id_str, string &seq, string &quals, int qual_offset);
-  
 };
 
 class PackedReads {
-
   vector<unique_ptr<PackedRead>> packed_reads;
   // this is only used when we need to know the actual name of the original reads
   vector<string> read_id_idx_to_str;
@@ -89,8 +85,8 @@ class PackedReads {
   string fname;
   bool str_ids;
 
-public:
-  PackedReads(int qual_offset, const string &fname, bool str_ids=false);
+ public:
+  PackedReads(int qual_offset, const string &fname, bool str_ids = false);
 
   bool get_next_read(string &id, string &seq, string &quals);
 
@@ -105,7 +101,4 @@ public:
   void add_read(const string &read_id, const string &seq, const string &quals);
 
   void load_reads();
-  
 };
-
-

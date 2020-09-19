@@ -40,21 +40,19 @@
  form.
 */
 
-
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <upcxx/upcxx.hpp>
 
+#include "alignments.hpp"
+#include "contigs.hpp"
+#include "ctg_graph.hpp"
+#include "fastq.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
-
 #include "utils.hpp"
 #include "zstr.hpp"
-#include "ctg_graph.hpp"
-#include "contigs.hpp"
-#include "alignments.hpp"
-#include "fastq.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -63,7 +61,6 @@ using namespace upcxx_utils;
 //#define DUMP_LINKS
 
 static CtgGraph *_graph = nullptr;
-
 
 // functions for evaluating the gap correction analytically assuming Gaussian insert size distribution
 // this is taken from meraculous bmaToLinks.pl
@@ -90,10 +87,11 @@ double erf(int x) {
   double a8 = -0.82215223;
   double a9 = 0.17087277;
   double tau = t * exp(-x * x + a0 + a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5 + a6 * t6 + a7 * t7 + a8 * t8 + a9 * t9);
-  if (x < 0) return (tau - 1);
-  else return (1 - tau);
+  if (x < 0)
+    return (tau - 1);
+  else
+    return (1 - tau);
 }
-
 
 double G0(double a, double b, double mu, double sigma) {
   const double sqrtTwo = sqrt(2);
@@ -101,11 +99,10 @@ double G0(double a, double b, double mu, double sigma) {
   const double sqrtPi = sqrt(pi);
 
   double rt2sig = sqrtTwo * sigma;
-  double erfa = erf((a - mu)/rt2sig);
-  double erfb = erf((b - mu)/rt2sig);
-  return (sqrtPi/sqrtTwo) * sigma * (erfb - erfa);
+  double erfa = erf((a - mu) / rt2sig);
+  double erfb = erf((b - mu) / rt2sig);
+  return (sqrtPi / sqrtTwo) * sigma * (erfb - erfa);
 }
-
 
 double G1(double a, double b, double mu, double sigma) {
   double za = (a - mu) / sigma;
@@ -113,9 +110,8 @@ double G1(double a, double b, double mu, double sigma) {
   double expa = exp(-0.5 * za * za);
   double expb = exp(-0.5 * zb * zb);
   double g0 = G0(a, b, mu, sigma);
-  return (sigma * sigma * (expa-expb) + mu * g0);
+  return (sigma * sigma * (expa - expb) + mu * g0);
 }
-
 
 double G2(double a, double b, double mu, double sigma) {
   double za = (a - mu) / sigma;
@@ -127,7 +123,6 @@ double G2(double a, double b, double mu, double sigma) {
   double sigma2 = sigma * sigma;
   return (sigma2 * g0 + mu * g1 + sigma2 * (a * expa - b * expb));
 }
-
 
 double mean_spanning_clone(double g, double k, double l, double c1, double c2, double mu, double sigma) {
   double x1 = g + 2 * k - 1;
@@ -146,48 +141,44 @@ double mean_spanning_clone(double g, double k, double l, double c1, double c2, d
   num = N1 + N2 + N3;
   den = D1 + D2 + D3;
   if (den) {
-    return num/den;
+    return num / den;
   } else {
-    //WARN("mean_spanning_clone failed for (g,k,l,c1,c2,mu,sigma)");
+    // WARN("mean_spanning_clone failed for (g,k,l,c1,c2,mu,sigma)");
     return 0;
   }
 }
 
-
 double estimate_gap_size(double meanAnchor, double k, double l, double c1, double c2, double mu, double sigma) {
-  double gMax = mu+3 * sigma - 2 * k;
+  double gMax = mu + 3 * sigma - 2 * k;
   double gMin = -(k - 2);
-  double gMid = mu-meanAnchor;
+  double gMid = mu - meanAnchor;
   // Negative gap size padding disabled for metagenomes
-  //if (gMid < gMin) gMid = gMin + 1;
+  // if (gMid < gMin) gMid = gMin + 1;
   if (gMid > gMax) gMid = gMax - 1;
   double aMax = mean_spanning_clone(gMax, k, l, c1, c2, mu, sigma) - gMax;
   double aMin = mean_spanning_clone(gMin, k, l, c1, c2, mu, sigma) - gMin;
   double aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
-  double deltaG = gMax-gMin;
+  double deltaG = gMax - gMin;
   double iterations = 0;
   while (deltaG > 10) {
     iterations++;
     if (meanAnchor > aMid) {
       gMax = gMid;
       aMax = aMid;
-      gMid = (gMid+gMin) / 2;
+      gMid = (gMid + gMin) / 2;
       aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
     } else if (meanAnchor < aMid) {
       gMin = gMid;
       aMin = aMid;
-      gMid = (gMid+gMax) / 2;
+      gMid = (gMid + gMax) / 2;
       aMid = mean_spanning_clone(gMid, k, l, c1, c2, mu, sigma) - gMid;
     } else {
       break;
     }
-    deltaG = gMax-gMin;
+    deltaG = gMax - gMin;
   }
   return gMid;
 }
-
-
-
 
 static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &alns, Aln &best_aln, string &read_status,
                               string &type_status, int64_t *reject_5_trunc, int64_t *reject_3_trunc, int64_t *reject_uninf) {
@@ -195,10 +186,7 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
   int min_rstart = -1;
   read_status = "";
   // sort in order of highest to lowest aln scores
-  sort(alns.begin(), alns.end(),
-       [](auto &aln1, auto &aln2) {
-         return aln1.score1 > aln2.score1;
-       });
+  sort(alns.begin(), alns.end(), [](auto &aln1, auto &aln2) { return aln1.score1 > aln2.score1; });
   for (auto aln : alns) {
     // Assess alignment for completeness (do this before scaffold coordinate conversion!)
     // Important: Truncations are performed before reverse complementation
@@ -209,8 +197,10 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
     int projected_start = (aln.orient == '+' ? cstart - unaligned_start : aln.cstop + unaligned_start);
     string start_status = "";
     int projected_off = 0;
-    if (projected_start < 1) projected_off = 1 - projected_start;
-    else if (projected_start > aln.clen) projected_off = projected_start - aln.clen;
+    if (projected_start < 1)
+      projected_off = 1 - projected_start;
+    else if (projected_start > aln.clen)
+      projected_off = projected_start - aln.clen;
     int missing_start_bases = unaligned_start - projected_off;
     if (unaligned_start == 0) {
       start_status = "FULL";
@@ -227,8 +217,10 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
     int projected_end = (aln.orient == '+' ? aln.cstop + unaligned_end : cstart - unaligned_end);
     string end_status = "";
     projected_off = 0;
-    if (projected_end < 1) projected_off = 1 - projected_end;
-    else if (projected_end > aln.clen) projected_off = projected_end - aln.clen;
+    if (projected_end < 1)
+      projected_off = 1 - projected_end;
+    else if (projected_end > aln.clen)
+      projected_off = projected_end - aln.clen;
     int missing_end_bases = unaligned_end - projected_off;
     if (unaligned_end == 0) {
       end_status = "FULL";
@@ -243,13 +235,15 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
 
     int endDistance = insert_avg + 3 * insert_stddev;
     // Assess alignment location relative to scaffold (pointing out, pointing in, or in the middle)
-    if ((aln.orient == '+' && projected_start > aln.clen - endDistance) ||
-        (aln.orient == '-' && projected_start < endDistance)) {
+    if ((aln.orient == '+' && projected_start > aln.clen - endDistance) || (aln.orient == '-' && projected_start < endDistance)) {
       if (min_rstart == -1 || rstart < min_rstart) {
         read_status = start_status + "." + end_status + ".OUT";
-        if (start_status == "GAP") type_status = "OUTGAP";
-        else if (end_status == "GAP") type_status = "INTGAP";
-        else type_status = "ANCHOR";
+        if (start_status == "GAP")
+          type_status = "OUTGAP";
+        else if (end_status == "GAP")
+          type_status = "INTGAP";
+        else
+          type_status = "ANCHOR";
         best_aln = aln;
         min_rstart = rstart;
       } else {
@@ -263,12 +257,10 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
   return true;
 }
 
-
-
 // gets all the alns for a single read
 static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read) {
   string start_read_id = "";
-  for (; i < (int64_t) alns.size(); i++) {
+  for (; i < (int64_t)alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
@@ -277,17 +269,20 @@ static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_
   }
 }
 
-
-static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
+static void add_span_pos_gap_read(Edge *edge, Aln &aln) {
   int gap_start = 0;
   if (aln.cid == edge->cids.cid1) {
-    if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-')) gap_start = aln.rstop;
-    else gap_start = aln.rlen - aln.rstart;
+    if ((edge->end1 == 3 && aln.orient == '+') || (edge->end1 == 5 && aln.orient == '-'))
+      gap_start = aln.rstop;
+    else
+      gap_start = aln.rlen - aln.rstart;
     if (gap_start == aln.rlen) return;
   } else if (aln.cid == edge->cids.cid2) {
     // head
-    if ((edge->end2 == 5 && aln.orient == '+') || (edge->end2 == 3 && aln.orient == '-')) gap_start = aln.rstart;
-    else gap_start = aln.rlen - aln.rstop;
+    if ((edge->end2 == 5 && aln.orient == '+') || (edge->end2 == 3 && aln.orient == '-'))
+      gap_start = aln.rstart;
+    else
+      gap_start = aln.rlen - aln.rstop;
     if (gap_start == 0) return;
   } else {
     DIE("cid doesn't match in pos edge\n");
@@ -295,7 +290,6 @@ static void add_span_pos_gap_read(Edge* edge, Aln &aln) {
   edge->gap_reads.emplace_back(aln.read_id, gap_start, aln.orient, aln.cid);
   _graph->add_pos_gap_read(aln.read_id);
 }
-
 
 enum class ProcessPairResult { FAIL_SMALL, FAIL_SELF_LINK, FAIL_EDIST, FAIL_MIN_GAP, SUCCESS };
 
@@ -319,17 +313,27 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
   if (d1 >= end_distance || d2 >= end_distance) return ProcessPairResult::FAIL_EDIST;
 
   int end_separation = insert_avg - (d1 + d2);
-  CidPair cids = { .cid1 = aln1.cid, .cid2 = aln2.cid };
+  CidPair cids = {.cid1 = aln1.cid, .cid2 = aln2.cid};
   int end1 = aln1.orient == '+' ? 3 : 5;
   int end2 = aln2.orient == '+' ? 3 : 5;
   if (cids.cid1 < cids.cid2) {
     swap(end1, end2);
     swap(cids.cid1, cids.cid2);
   }
-  Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = end_separation, .support = 1,
-                .aln_len = min(aln1.rstop - aln1.rstart, aln2.rstop - aln2.rstart), .aln_score = min(aln1.score1, aln2.score1),
-                .edge_type = EdgeType::SPAN, .seq = "",
-                .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
+  Edge edge = {.cids = cids,
+               .end1 = end1,
+               .end2 = end2,
+               .gap = end_separation,
+               .support = 1,
+               .aln_len = min(aln1.rstop - aln1.rstart, aln2.rstop - aln2.rstart),
+               .aln_score = min(aln1.score1, aln2.score1),
+               .edge_type = EdgeType::SPAN,
+               .seq = "",
+               .mismatch_error = false,
+               .conflict_error = false,
+               .excess_error = false,
+               .short_aln = false,
+               .gap_reads = {}};
   if (edge.gap > 0) {
     add_span_pos_gap_read(&edge, aln1);
     add_span_pos_gap_read(&edge, aln2);
@@ -337,7 +341,6 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
   _graph->add_or_update_edge(edge);
   return ProcessPairResult::SUCCESS;
 }
-
 
 // so the way meraculous spanner seems to work is that it only makes a pair out of the alignments with the shortest rstart.
 void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &alns, CtgGraph *graph) {
@@ -352,15 +355,15 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   int64_t num_pairs = 0;
   int64_t aln_i = 0;
   int read_len = 0;
-  Aln prev_best_aln = { .read_id = "" };
+  Aln prev_best_aln = {.read_id = ""};
   string read_status = "", type_status = "", prev_read_status = "", prev_type_status = "";
-  while (aln_i < (int64_t) alns.size()) {
+  while (aln_i < (int64_t)alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
     get_all_alns_for_read(alns, aln_i, alns_for_read);
     t_get_alns.stop();
     progbar.update(aln_i);
-    Aln best_aln = { .read_id = "" };
+    Aln best_aln = {.read_id = ""};
     if (get_best_span_aln(insert_avg, insert_stddev, alns_for_read, best_aln, read_status, type_status, &reject_5_trunc,
                           &reject_3_trunc, &reject_uninf)) {
       if (!prev_best_aln.read_id.empty()) {
@@ -375,12 +378,12 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
                                     prev_read_status, read_status);
             result_counts[(int)res]++;
           }
-            // there will be no previous one next time
-            prev_best_aln.read_id = "";
-            prev_read_status = "";
-            prev_type_status = "";
-            continue;
-            //}
+          // there will be no previous one next time
+          prev_best_aln.read_id = "";
+          prev_read_status = "";
+          prev_type_status = "";
+          continue;
+          //}
         }
       }
     }
@@ -418,7 +421,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
       // it appears that the full complex calculation (taken from meraculous) doesn't actually improve anything
       // compared to a simple setting based on the insert average
       edge->gap = estimate_gap_size(mean_offset, kmer_len, read_len, clen1, clen2, insert_avg, insert_stddev);
-//      edge->gap = mean_gap_estimate;
+      //      edge->gap = mean_gap_estimate;
       if (edge->gap > 0) num_pos_spans++;
       // debug print in form comparable to mhm
       string ctg1 = "Contig" + to_string(edge->cids.cid1) + "." + to_string(edge->end1);
@@ -437,4 +440,3 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   SLOG_VERBOSE("Found ", perc_str(tot_num_spans_only, _graph->get_num_edges()), " spans\n");
   SLOG_VERBOSE("Found ", perc_str(reduce_one(num_pos_spans, op_fast_add, 0).wait(), tot_num_spans_only), " pos gap spans\n");
 }
-

@@ -42,17 +42,15 @@
  form.
 */
 
-
 #include <string>
 #include <string_view>
-#include <vector>
 #include <utility>
+#include <vector>
 
-
+using std::pair;
 using std::string;
 using std::string_view;
 using std::vector;
-using std::pair;
 
 #ifdef USE_BYTELL
 #include "bytell_hash_map.hpp"
@@ -68,13 +66,13 @@ string revcomp(const string &seq);
 
 char comp_nucleotide(char ch);
 
-int hamming_dist(string_view s1, string_view s2, bool require_equal_len=true);
+int hamming_dist(string_view s1, string_view s2, bool require_equal_len = true);
 
 string get_merged_reads_fname(string reads_fname);
 
 void switch_orient(int &start, int &stop, int &len);
 
-void dump_single_file(const string &fname, const string &out_str, bool append=false);
+void dump_single_file(const string &fname, const string &out_str, bool append = false);
 
 vector<string> get_dir_entries(const string &dname, const string &prefix);
 
@@ -95,99 +93,98 @@ void pin_core();
 void pin_numa();
 
 // temporary until it is properly within upcxx_utils
-#include <thread>
-#include <memory>
-#include <functional>
 #include <deque>
+#include <functional>
+#include <memory>
+#include <thread>
 #include <upcxx/upcxx.hpp>
 
 namespace upcxx_utils {
 
-    /*
-     * TODO #include <future> // for std::async
-     * requires removal of using namespace std across the board
-     * templates must be in header files
-     * and std::future makes calls to upcxx::future ambiguous (same with promise)
-     * 
+/*
+ * TODO #include <future> // for std::async
+ * requires removal of using namespace std across the board
+ * templates must be in header files
+ * and std::future makes calls to upcxx::future ambiguous (same with promise)
+ *
 
-    template <typename F, typename... Ts>
-    inline auto reallyAsync(F&& f, Ts&&... params) {
-        return std::async(std::launch::async, std::forward<F>(f),
-                    std::forward<Ts>(params)...);
-    }
+template <typename F, typename... Ts>
+inline auto reallyAsync(F&& f, Ts&&... params) {
+    return std::async(std::launch::async, std::forward<F>(f),
+                std::forward<Ts>(params)...);
+}
 
-    template<typename Func, typename... Args>
-    auto execute_async(Func&& func, Args&&... args) {
-        auto t_start = Timer::now();
-        auto sh_prom = make_shared< upcxx::promise <> > ();
-        const upcxx::persona &persona = upcxx::current_persona();
-        DBG("Starting async sh_prom=", sh_prom.get(), "\n");
-        
-        auto returning_func = 
-        [t_start, sh_prom, &persona] (Func&& f, Args&& ... a) {
-            auto ret = f(a...);
+template<typename Func, typename... Args>
+auto execute_async(Func&& func, Args&&... args) {
+    auto t_start = Timer::now();
+    auto sh_prom = make_shared< upcxx::promise <> > ();
+    const upcxx::persona &persona = upcxx::current_persona();
+    DBG("Starting async sh_prom=", sh_prom.get(), "\n");
+
+    auto returning_func =
+    [t_start, sh_prom, &persona] (Func&& f, Args&& ... a) {
+        auto ret = f(a...);
+        duration_seconds sec = Timer::now() - t_start;
+        DBG("Completed running async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+
+        // fulfill only in calling persona
+        persona.lpc_ff([t_start, sh_prom]() {
             duration_seconds sec = Timer::now() - t_start;
-            DBG("Completed running async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
-                                
-            // fulfill only in calling persona
-            persona.lpc_ff([t_start, sh_prom]() {
+            DBG_VERBOSE("Fulfilling promised async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+            sh_prom->fulfill_anonymous(1);
+        });
+
+        sec = Timer::now() - t_start;
+        DBG_VERBOSE("Returning async result sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+        return ret;
+    };
+    auto async_fut = reallyAsync(returning_func, args...);
+
+    return sh_prom->get_future().then(
+            [t_start, sh_prom, &persona, async_fut]() {
+                assert(persona.active_with_caller());
+
                 duration_seconds sec = Timer::now() - t_start;
-                DBG_VERBOSE("Fulfilling promised async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
-                sh_prom->fulfill_anonymous(1);
+                DBG_VERBOSE("Waiting for completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(),
+"s\n");
+
+                async_fut.wait(); // should be noop but there could be a short race between lpc and returning the value
+                assert(async_fut.valid());
+
+                sec = Timer::now() - t_start;
+                DBG("Returning completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                return async_fut.get();
             });
-            
-            sec = Timer::now() - t_start;
-            DBG_VERBOSE("Returning async result sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
-            return ret;
-        };
-        auto async_fut = reallyAsync(returning_func, args...);
+}
+*/
 
-        return sh_prom->get_future().then(
-                [t_start, sh_prom, &persona, async_fut]() {
-                    assert(persona.active_with_caller());
-                    
-                    duration_seconds sec = Timer::now() - t_start;
-                    DBG_VERBOSE("Waiting for completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
-                    
-                    async_fut.wait(); // should be noop but there could be a short race between lpc and returning the value
-                    assert(async_fut.valid());
-                    
-                    sec = Timer::now() - t_start;
-                    DBG("Returning completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
-                    return async_fut.get();
-                });
-    }
-    */
-    
-    // Func no argument returned or given lambda - void()
+// Func no argument returned or given lambda - void()
 
-    template<typename Func>
-    upcxx::future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
+template <typename Func>
+upcxx::future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
+  assert(persona.active_with_caller());
+  std::shared_ptr<upcxx::promise<> > sh_prom = std::make_shared<upcxx::promise<> >();
+
+  std::shared_ptr<std::thread> sh_run = std::make_shared<std::thread>([&persona, func, sh_prom] {
+    func();
+
+    // fulfill only in calling persona
+    persona.lpc_ff([&persona, sh_prom]() {
+      assert(persona.active_with_caller());
+      sh_prom->fulfill_anonymous(1);
+    });
+  });
+  auto fut_finished = sh_prom->get_future().then(  // keep sh_prom and sh_run alive until complete
+      [&persona, sh_prom, sh_run]() {
         assert(persona.active_with_caller());
-        std::shared_ptr< upcxx::promise<> > sh_prom = std::make_shared< upcxx::promise<> > ();
+        sh_run->join();
+      });
+  return fut_finished;
+}
 
-        std::shared_ptr<std::thread> sh_run = std::make_shared<std::thread>(
-                [&persona, func, sh_prom] {
-                    func();
+template <typename Func>
+upcxx::future<> execute_in_new_thread(Func func) {
+  return execute_in_new_thread(upcxx::current_persona(), func);
+}
 
-                    // fulfill only in calling persona
-                    persona.lpc_ff([&persona, sh_prom]() {
-                        assert(persona.active_with_caller());
-                        sh_prom->fulfill_anonymous(1);
-                    });
-                });
-        auto fut_finished = sh_prom->get_future().then( // keep sh_prom and sh_run alive until complete
-                [&persona, sh_prom, sh_run] () {
-                    assert(persona.active_with_caller());
-                    sh_run->join();
-                });
-        return fut_finished;
-    }
-
-    template<typename Func>
-    upcxx::future<> execute_in_new_thread(Func func) {
-        return execute_in_new_thread(upcxx::current_persona(), func);
-    }
-    
-
-};
+};  // namespace upcxx_utils

@@ -42,9 +42,8 @@
  form.
 */
 
-#include "version.h"
 #include "contigs.hpp"
-
+#include "version.h"
 
 struct Aln {
   string read_id;
@@ -60,14 +59,11 @@ struct Aln {
   string to_string();
 };
 
-
 class Alns {
-
   vector<Aln> alns;
   int64_t num_dups;
 
-public:
-
+ public:
   Alns();
 
   void clear();
@@ -80,19 +76,14 @@ public:
 
   int64_t get_num_dups();
 
-  inline auto begin() {
-      return alns.begin();
-  }
-  inline auto end() {
-      return alns.end();
-  };
+  inline auto begin() { return alns.begin(); }
+  inline auto end() { return alns.end(); };
 
   void dump_alns(string fname);
-  
-  void dump_single_file_alns(const string fname, bool as_sam_format=false, Contigs *ctgs=nullptr);
-  
+
+  void dump_single_file_alns(const string fname, bool as_sam_format = false, Contigs *ctgs = nullptr);
+
   int calculate_unmerged_rlen();
-  
+
   void sort_alns();
-  
 };

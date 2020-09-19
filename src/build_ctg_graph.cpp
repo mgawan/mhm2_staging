@@ -40,20 +40,19 @@
  form.
 */
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <upcxx/upcxx.hpp>
 
+#include "alignments.hpp"
+#include "contigs.hpp"
+#include "ctg_graph.hpp"
+#include "packed_reads.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
-
 #include "utils.hpp"
-#include "ctg_graph.hpp"
-#include "contigs.hpp"
-#include "alignments.hpp"
-#include "packed_reads.hpp"
 
 using namespace std;
 using namespace upcxx;
@@ -64,9 +63,7 @@ using namespace upcxx_utils;
 void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &alns, CtgGraph *graph);
 void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 
-
 static CtgGraph *_graph = nullptr;
-
 
 // return A C G T (0-3) or 4 if not a base
 static int base_to_number(const char base) {
@@ -97,22 +94,21 @@ static int tn_to_number(const string &seq, int pos) {
 
 static void compute_tnfs(Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__);
-  const string TN[] = {"GGTA", "AGCC", "AAAA", "ACAT", "AGTC", "ACGA", "CATA", "CGAA", "AAGT", "CAAA", "CCAG", "GGAC",
-                       "ATTA", "GATC", "CCTC", "CTAA", "ACTA", "AGGC", "GCAA", "CCGC", "CGCC", "AAAC", "ACTC", "ATCC",
-                       "GACC", "GAGA", "ATAG", "ATCA", "CAGA", "AGTA", "ATGA", "AAAT", "TTAA", "TATA", "AGTG", "AGCT",
-                       "CCAC", "GGCC", "ACCC", "GGGA", "GCGC", "ATAC", "CTGA", "TAGA", "ATAT", "GTCA", "CTCC", "ACAA",
-                       "ACCT", "TAAA", "AACG", "CGAG", "AGGG", "ATCG", "ACGC", "TCAA", "CTAC", "CTCA", "GACA", "GGAA",
-                       "CTTC", "GCCC", "CTGC", "TGCA", "GGCA", "CACG", "GAGC", "AACT", "CATG", "AATT", "ACAG", "AGAT",
-                       "ATAA", "CATC", "GCCA", "TCGA", "CACA", "CAAC", "AAGG", "AGCA", "ATGG", "ATTC", "GTGA", "ACCG",
-                       "GATA", "GCTA", "CGTC", "CCCG", "AAGC", "CGTA", "GTAC", "AGGA", "AATG", "CACC", "CAGC", "CGGC",
-                       "ACAC", "CCGG", "CCGA", "CCCC", "TGAA", "AACA", "AGAG", "CCCA", "CGGA", "TACA", "ACCA", "ACGT",
-                       "GAAC", "GTAA", "ATGC", "GTTA", "TCCA", "CAGG", "ACTG", "AAAG", "AAGA", "CAAG", "GCGA", "AACC",
-                       "ACGG", "CCAA", "CTTA", "AGAC", "AGCG", "GAAA", "AATC", "ATTG", "GCAC", "CCTA", "CGAC", "CTAG",
-                       "AGAA", "CGCA", "CGCG", "AATA" };
-  //Palindromic sequences
-  const string TNP[] = {"ACGT", "AGCT", "TCGA", "TGCA", "CATG", "CTAG", "GATC", "GTAC", "ATAT", "TATA", "CGCG", "GCGC", "AATT",
-                        "TTAA", "CCGG", "GGCC" };
-  const char bases[] {'A', 'C', 'G', 'T'};
+  const string TN[] = {"GGTA", "AGCC", "AAAA", "ACAT", "AGTC", "ACGA", "CATA", "CGAA", "AAGT", "CAAA", "CCAG", "GGAC", "ATTA",
+                       "GATC", "CCTC", "CTAA", "ACTA", "AGGC", "GCAA", "CCGC", "CGCC", "AAAC", "ACTC", "ATCC", "GACC", "GAGA",
+                       "ATAG", "ATCA", "CAGA", "AGTA", "ATGA", "AAAT", "TTAA", "TATA", "AGTG", "AGCT", "CCAC", "GGCC", "ACCC",
+                       "GGGA", "GCGC", "ATAC", "CTGA", "TAGA", "ATAT", "GTCA", "CTCC", "ACAA", "ACCT", "TAAA", "AACG", "CGAG",
+                       "AGGG", "ATCG", "ACGC", "TCAA", "CTAC", "CTCA", "GACA", "GGAA", "CTTC", "GCCC", "CTGC", "TGCA", "GGCA",
+                       "CACG", "GAGC", "AACT", "CATG", "AATT", "ACAG", "AGAT", "ATAA", "CATC", "GCCA", "TCGA", "CACA", "CAAC",
+                       "AAGG", "AGCA", "ATGG", "ATTC", "GTGA", "ACCG", "GATA", "GCTA", "CGTC", "CCCG", "AAGC", "CGTA", "GTAC",
+                       "AGGA", "AATG", "CACC", "CAGC", "CGGC", "ACAC", "CCGG", "CCGA", "CCCC", "TGAA", "AACA", "AGAG", "CCCA",
+                       "CGGA", "TACA", "ACCA", "ACGT", "GAAC", "GTAA", "ATGC", "GTTA", "TCCA", "CAGG", "ACTG", "AAAG", "AAGA",
+                       "CAAG", "GCGA", "AACC", "ACGG", "CCAA", "CTTA", "AGAC", "AGCG", "GAAA", "AATC", "ATTG", "GCAC", "CCTA",
+                       "CGAC", "CTAG", "AGAA", "CGCA", "CGCG", "AATA"};
+  // Palindromic sequences
+  const string TNP[] = {"ACGT", "AGCT", "TCGA", "TGCA", "CATG", "CTAG", "GATC", "GTAC",
+                        "ATAT", "TATA", "CGCG", "GCGC", "AATT", "TTAA", "CCGG", "GGCC"};
+  const char bases[]{'A', 'C', 'G', 'T'};
   unordered_map<std::string, int> TN_map;
   unordered_set<std::string> TNP_map;
   // lookup table 0 - 255 of raw 4-mer to tetramer index in TNF
@@ -124,18 +120,18 @@ static void compute_tnfs(Contigs &ctgs) {
   for (size_t i = 0; i < 16; ++i) {
     TNP_map.insert(TNP[i]);
   }
-  TN_lookup[256] = nTNF; // any non-base in the kmer
+  TN_lookup[256] = nTNF;  // any non-base in the kmer
   string tnf_seq(4, 0);
   for (int i0 = 0; i0 < 4; i0++) {
     tnf_seq[0] = bases[i0];
-    for(int i1 = 0; i1 < 4; i1++) {
+    for (int i1 = 0; i1 < 4; i1++) {
       tnf_seq[1] = bases[i1];
-      for(int i2 = 0; i2 < 4; i2++) {
+      for (int i2 = 0; i2 < 4; i2++) {
         tnf_seq[2] = bases[i2];
-        for(int i3 = 0; i3 < 4; i3++) {
+        for (int i3 = 0; i3 < 4; i3++) {
           tnf_seq[3] = bases[i3];
           string tn = tnf_seq;
-          int tn_number= tn_to_number(tnf_seq, 0);
+          int tn_number = tn_to_number(tnf_seq, 0);
           assert(tn_number <= 255);
           auto it = TN_map.find(tn);
           if (it != TN_map.end()) {
@@ -143,7 +139,7 @@ static void compute_tnfs(Contigs &ctgs) {
             continue;
           }
           tn = revcomp(tn);
-          if (TNP_map.find(tn) == TNP_map.end()) { //if it is palindromic, then skip
+          if (TNP_map.find(tn) == TNP_map.end()) {  // if it is palindromic, then skip
             it = TN_map.find(tn);
             if (it != TN_map.end()) {
               TN_lookup[tn_number] = it->second;
@@ -152,7 +148,7 @@ static void compute_tnfs(Contigs &ctgs) {
               continue;
             }
           } else {
-            TN_lookup[tn_number] = nTNF; // skip
+            TN_lookup[tn_number] = nTNF;  // skip
           }
         }
       }
@@ -232,7 +228,7 @@ static void add_vertices_from_ctgs(Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Adding contig vertices to graph");
   for (auto &ctg : ctgs) {
-    Vertex v = { .cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth };
+    Vertex v = {.cid = ctg.id, .clen = (int)ctg.seq.length(), .depth = ctg.depth};
 #ifdef TNF_PATH_RESOLUTION
     v.tnf = ctg.tnf;
 #endif
@@ -256,8 +252,7 @@ string get_consensus_seq(const vector<string> &seqs, int max_len) {
         case 'G': base_freqs[i][2]++; break;
         case 'T': base_freqs[i][3]++; break;
         case 'N': break;
-        default:
-          WARN("Unknown base at pos ", i, " (", seq.size(), "): ", seq[i], "\n", seq);
+        default: WARN("Unknown base at pos ", i, " (", seq.size(), "): ", seq[i], "\n", seq);
       }
     }
   }
@@ -288,12 +283,12 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge) {
     auto seq = _graph->get_read_seq(gap_read.read_name);
     if (seq == "") DIE("Could not find read seq for read ", gap_read.read_name, "\n");
     if (gap_read.gap_start < kmer_len) {
-      //WARN("Positive gap overlap is less than kmer length, ", gap_read.gap_start, " < ", kmer_len, "\n");
+      // WARN("Positive gap overlap is less than kmer length, ", gap_read.gap_start, " < ", kmer_len, "\n");
       continue;
     }
     int rstart = gap_read.gap_start - (kmer_len - 1);
-    if ((int) seq.length() < gap_size + rstart) {
-      //WARN("seq length is less than sub string access with rstart ", rstart, ", gap ", gap_size, "\n",
+    if ((int)seq.length() < gap_size + rstart) {
+      // WARN("seq length is less than sub string access with rstart ", rstart, ", gap ", gap_size, "\n",
       //     gap_read.read_name, " ", seq);
       continue;
     }
@@ -315,28 +310,26 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail) {
   int max_len = 0;
   for (auto gap_read : edge->gap_reads) {
     if (gap_read.cid != cid) continue;
-    //sprintf(buf, "gs %3d rs %3d rp %3d %c ", gap_read.gap_start, gap_read.rstart, gap_read.rstop, gap_read.orient);
+    // sprintf(buf, "gs %3d rs %3d rp %3d %c ", gap_read.gap_start, gap_read.rstart, gap_read.rstop, gap_read.orient);
     auto gap_seq = _graph->get_read_seq(gap_read.read_name);
     if (gap_seq == "") DIE("Could not find read seq for read ", gap_read.read_name, "\n");
     if (tail) {
-      if ((edge->end1 == 5 && gap_read.orient == '+') || (edge->end1 == 3 && gap_read.orient == '-'))
-        gap_seq = revcomp(gap_seq);
+      if ((edge->end1 == 5 && gap_read.orient == '+') || (edge->end1 == 3 && gap_read.orient == '-')) gap_seq = revcomp(gap_seq);
       if (gap_read.gap_start > kmer_len) {
         gap_seq.erase(0, gap_read.gap_start - kmer_len);
         gap_read.gap_start = kmer_len;
       }
-      //DBG_SPANS(buf, gap_seq, "\n");
+      // DBG_SPANS(buf, gap_seq, "\n");
     } else {
-      if ((edge->end2 == 3 && gap_read.orient == '+') || (edge->end2 == 5 && gap_read.orient == '-'))
-        gap_seq = revcomp(gap_seq);
-      if (gap_read.gap_start + kmer_len < (int) gap_seq.size()) gap_seq.erase(gap_read.gap_start + kmer_len);
+      if ((edge->end2 == 3 && gap_read.orient == '+') || (edge->end2 == 5 && gap_read.orient == '-')) gap_seq = revcomp(gap_seq);
+      if (gap_read.gap_start + kmer_len < (int)gap_seq.size()) gap_seq.erase(gap_read.gap_start + kmer_len);
       // pad the front of the gap sequence with Ns to make them all the same length
       string offset_padding(1 + _graph->max_read_len - kmer_len - gap_read.gap_start, 'N');
       gap_seq = offset_padding + gap_seq;
-      //DBG_SPANS(buf, gap_seq, "\n");
+      // DBG_SPANS(buf, gap_seq, "\n");
     }
     seqs.push_back(gap_seq);
-    if ((int) gap_seq.size() > max_len) max_len = gap_seq.size();
+    if ((int)gap_seq.size() > max_len) max_len = gap_seq.size();
   }
   if (seqs.empty()) {
     if (tail) {
@@ -345,14 +338,14 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail) {
       if (edge->end1 == 5) ctg_seq = revcomp(ctg_seq);
       int tail_len = vertex->clen - kmer_len;
       if (tail_len < 0) tail_len = 0;
-      //ctg_seq = ctg_seq.substr(tail_len);
+      // ctg_seq = ctg_seq.substr(tail_len);
       ctg_seq.erase(0, tail_len);
       DBG_SPANS("TAIL contig", vertex->cid, ".", edge->end1, "\t", ctg_seq, "\n");
     } else {
       auto vertex = _graph->get_vertex(edge->cids.cid2);
       ctg_seq = _graph->get_vertex_seq(vertex->seq_gptr, vertex->clen);
       if (edge->end2 == 3) ctg_seq = revcomp(ctg_seq);
-      //ctg_seq = ctg_seq.substr(0, kmer_len);
+      // ctg_seq = ctg_seq.substr(0, kmer_len);
       ctg_seq.erase(kmer_len);
       DBG_SPANS("HEAD contig", vertex->cid, ".", edge->end2, "\t", ctg_seq, "\n");
     }
@@ -365,7 +358,7 @@ static bool is_overlap_mismatch(int dist, int overlap) {
   return (dist > CGRAPH_SPAN_OVERLAP_MISMATCH_THRES || dist > overlap / 10);
 }
 
-static std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, int max_overlap, int expected_overlap=-1) {
+static std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, int max_overlap, int expected_overlap = -1) {
   int min_dist = max_overlap;
   if (expected_overlap != -1) {
     int min_dist = hamming_dist(tail(s1, expected_overlap), head(s2, expected_overlap));
@@ -382,7 +375,7 @@ static std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, 
   return {min_dist, expected_overlap};
 }
 
-static void parse_reads(unsigned kmer_len, const vector<PackedReads*> &packed_reads_list) {
+static void parse_reads(unsigned kmer_len, const vector<PackedReads *> &packed_reads_list) {
   BarrierTimer timer(__FILEFUNC__);
 
   int64_t num_seqs_added = 0;
@@ -447,8 +440,7 @@ static void parse_reads(unsigned kmer_len, const vector<PackedReads*> &packed_re
             }
           }
           if (is_overlap_mismatch(min_dist, expected_overlap)) {
-            DBG_SPANS("overlap mismatch: hdist ", min_dist, " best overlap ", expected_overlap,
-                      " original gap ", edge->gap, "\n");
+            DBG_SPANS("overlap mismatch: hdist ", min_dist, " best overlap ", expected_overlap, " original gap ", edge->gap, "\n");
             if (tail_seq.size() + head_seq.size() < 2 * kmer_len + edge->gap) {
               // the gap is not closed - fill with Ns
               int num_ns = 2 * kmer_len + edge->gap - tail_seq.size() - head_seq.size();
@@ -487,15 +479,13 @@ static void parse_reads(unsigned kmer_len, const vector<PackedReads*> &packed_re
   auto tot_pos_spans_closed = reduce_one(num_pos_spans_closed, op_fast_add, 0).wait();
   auto tot_pos_spans_w_ns = reduce_one(num_pos_spans_w_ns, op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", perc_str(tot_pos_spans, tot_pos_gaps), " positive spans, of which ",
-               perc_str(tot_pos_spans_closed, tot_pos_spans), " were closed - ",
-               perc_str(tot_pos_spans_w_ns, tot_pos_spans_closed), " with Ns\n");
+               perc_str(tot_pos_spans_closed, tot_pos_spans), " were closed - ", perc_str(tot_pos_spans_w_ns, tot_pos_spans_closed),
+               " with Ns\n");
 }
-
 
 static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vector<cid_t> > &nb_cids_merged,
                       IntermittentTimer &t_merge_get_nbs, IntermittentTimer &t_merge_sort_nbs,
-                      IntermittentTimer &t_merge_output_nbs)
-{
+                      IntermittentTimer &t_merge_output_nbs) {
   nb_cids_merged.clear();
 
   // dead-end
@@ -526,20 +516,18 @@ static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vecto
   // just one nb found
   if (nbs.size() == 1) {
     nb_cids_merged.push_back({nbs[0].vertex->cid});
-    DBG_BUILD("\t", nbs[0].vertex->cid, " gap ", nbs[0].edge->gap, " len ", nbs[0].vertex->clen, " depth ", nbs[0].vertex->depth, "\n");
+    DBG_BUILD("\t", nbs[0].vertex->cid, " gap ", nbs[0].edge->gap, " len ", nbs[0].vertex->clen, " depth ", nbs[0].vertex->depth,
+              "\n");
     return false;
   }
   t_merge_sort_nbs.start();
   // found multiple nbs, check for overlaps that can be merged
   // first, sort nbs by gap size
-  sort(nbs.begin(), nbs.end(),
-       [](const auto &elem1, const auto &elem2) {
-         return elem1.edge->gap < elem2.edge->gap;
-       });
+  sort(nbs.begin(), nbs.end(), [](const auto &elem1, const auto &elem2) { return elem1.edge->gap < elem2.edge->gap; });
   t_merge_sort_nbs.stop();
 
   // gather a vector of merged paths (there can be more than one because of forks)
-  vector<vector<NbPair*> > all_next_nbs = {};
+  vector<vector<NbPair *> > all_next_nbs = {};
   // attempt to merge all neighbors as overlaps
   for (size_t i = 0; i < nbs.size(); i++) {
     NbPair *nb = &nbs[i];
@@ -595,8 +583,7 @@ static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vecto
   return true;
 }
 
-static void merge_nbs()
-{
+static void merge_nbs() {
   barrier();
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_merges = 0;
@@ -606,14 +593,14 @@ static void merge_nbs()
   double max_orphan_depth = 0;
   {
     IntermittentTimer t_merge_ends(__FILENAME__ + string(":") + "merge ends"),
-      t_merge_get_nbs(__FILENAME__ + string(":") + "merge get nbs"),
-      t_merge_sort_nbs(__FILENAME__ + string(":") + "merge sort nbs"),
-      t_merge_output_nbs(__FILENAME__ + string(":") + "merge output nbs");
+        t_merge_get_nbs(__FILENAME__ + string(":") + "merge get nbs"),
+        t_merge_sort_nbs(__FILENAME__ + string(":") + "merge sort nbs"),
+        t_merge_output_nbs(__FILENAME__ + string(":") + "merge output nbs");
     ProgressBar progbar(_graph->get_local_num_vertices(), "Merge nbs");
     // mark all the vertices that have forks and the side of the forks. Note that in many cases what look like forks are
     // actually vertices that should be merged into a single neighbor
     for (auto v = _graph->get_first_local_vertex(); v != nullptr; v = _graph->get_next_local_vertex()) {
-      DBG_BUILD(v->cid,  " len ",  v->clen,  " depth ",  v->depth,  ":\n");
+      DBG_BUILD(v->cid, " len ", v->clen, " depth ", v->depth, ":\n");
       if (v->end5.empty() && v->end3.empty()) {
         num_orphans++;
         if (v->clen > max_orphan_len) max_orphan_len = v->clen;
@@ -632,9 +619,8 @@ static void merge_nbs()
       if (v_num_nbs > max_nbs) max_nbs = v_num_nbs;
       progbar.update();
     }
-    DBG("Number of nbs ", num_nbs, " avg degree ", ((double)num_nbs / _graph->get_local_num_vertices()),
-        " merged ", num_merged_nbs, " avg degree ", ((double)num_merged_nbs / _graph->get_local_num_vertices()),
-        " max degree ", max_nbs, "\n");
+    DBG("Number of nbs ", num_nbs, " avg degree ", ((double)num_nbs / _graph->get_local_num_vertices()), " merged ", num_merged_nbs,
+        " avg degree ", ((double)num_merged_nbs / _graph->get_local_num_vertices()), " max degree ", max_nbs, "\n");
     progbar.done();
     t_merge_ends.done_all();
     t_merge_get_nbs.done_all();
@@ -643,7 +629,7 @@ static void merge_nbs()
   }
   barrier();
   auto tot_merges = reduce_one(num_merges, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Merged ", perc_str(tot_merges, 2 *_graph->get_num_vertices()), " vertices\n");
+  SLOG_VERBOSE("Merged ", perc_str(tot_merges, 2 * _graph->get_num_vertices()), " vertices\n");
   auto tot_orphans = reduce_one(num_orphans, op_fast_add, 0).wait();
   auto all_max_orphan_len = reduce_one(max_orphan_len, op_fast_max, 0).wait();
   auto all_max_orphan_depth = reduce_one(max_orphan_depth, op_fast_max, 0).wait();
@@ -651,7 +637,7 @@ static void merge_nbs()
                all_max_orphan_len, ", max depth ", all_max_orphan_depth, "\n");
 }
 
-void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads*> &packed_reads_list,
+void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads *> &packed_reads_list,
                      Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__);
   _graph = graph;
@@ -673,7 +659,7 @@ void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kme
   SLOG_VERBOSE("  empty spans: ", perc_str(reduce_one(empty_spans, op_fast_add, 0).wait(), num_edges), "\n");
   barrier();
   set_nbs();
-  //mark_short_aln_edges(max_kmer_len);
+  // mark_short_aln_edges(max_kmer_len);
   parse_reads(kmer_len, packed_reads_list);
   merge_nbs();
 }

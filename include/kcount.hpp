@@ -42,11 +42,12 @@
  form.
 */
 
-#include "upcxx/upcxx.hpp"
 #include <vector>
-#include "packed_reads.hpp"
-#include "kmer_dht.hpp"
+
 #include "contigs.hpp"
+#include "kmer_dht.hpp"
+#include "packed_reads.hpp"
+#include "upcxx/upcxx.hpp"
 
 using std::vector;
 using upcxx::dist_object;
@@ -56,19 +57,18 @@ using upcxx::dist_object;
 //#define DBG_ADD_KMER DBG
 #define DBG_ADD_KMER(...)
 
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list);
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &packed_reads_list);
 
-
-template<int MAX_K>
-void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
-                        dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
+template <int MAX_K>
+void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
+                 dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
   BarrierTimer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
   // and Q = -10 log10(P)
   // eg qual_cutoff for k=21 is 16, for k=99 is 22.
-  //int qual_cutoff = -10 * log10(0.5 / kmer_len);
-  //SLOG_VERBOSE("Using quality cutoff ", qual_cutoff, "\n");
+  // int qual_cutoff = -10 * log10(0.5 / kmer_len);
+  // SLOG_VERBOSE("Using quality cutoff ", qual_cutoff, "\n");
   int qual_cutoff = KCOUNT_QUAL_CUTOFF;
   int64_t num_reads = 0;
   int64_t num_lines = 0;
@@ -103,22 +103,28 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*> &packe
         // disable kmer counting of kmers after a bad quality score (of 2) in the read
         // ... but allow extension counting (if an extension q score still passes the QUAL_CUTOFF)
         found_bad_qual_pos = quals.find_first_of(qual_offset + 2);
-        if (found_bad_qual_pos == string::npos) found_bad_qual_pos = seq.length();
-        else num_bad_quals++;
+        if (found_bad_qual_pos == string::npos)
+          found_bad_qual_pos = seq.length();
+        else
+          num_bad_quals++;
       }
 #endif
       // skip kmers that contain an N
       size_t found_N_pos = seq.find_first_of('N');
-      if (found_N_pos == string::npos) found_N_pos = seq.length();
-      else num_Ns++;
-      for (int i = 1; i < (int) kmers.size() - 1; i++) {
+      if (found_N_pos == string::npos)
+        found_N_pos = seq.length();
+      else
+        num_Ns++;
+      for (int i = 1; i < (int)kmers.size() - 1; i++) {
         // skip kmers that contain an N
         if (i + kmer_len > found_N_pos) {
-          i = found_N_pos; // skip
+          i = found_N_pos;  // skip
           // find the next N
           found_N_pos = seq.find_first_of('N', found_N_pos + 1);
-          if (found_N_pos == string::npos) found_N_pos = seq.length();
-          else num_Ns++;
+          if (found_N_pos == string::npos)
+            found_N_pos = seq.length();
+          else
+            num_Ns++;
           continue;
         }
         int count = 1;
@@ -153,7 +159,7 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads*> &packe
 };
 
 // count ctg kmers if using bloom
-template<int MAX_K>
+template <int MAX_K>
 void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   BarrierTimer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
@@ -167,7 +173,7 @@ void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K
       Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
-      for (int i = 1; i < (int) (ctg->seq.length() - kmer_len); i++) {
+      for (int i = 1; i < (int)(ctg->seq.length() - kmer_len); i++) {
         kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], 1);
       }
       num_kmers += kmers.size();
@@ -176,14 +182,14 @@ void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K
   }
   progbar.done();
   kmer_dht->flush_updates();
-  DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
+  DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers, " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
   barrier();
 };
 
-template<int MAX_K>
+template <int MAX_K>
 void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
@@ -202,7 +208,7 @@ void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dis
       Kmer<MAX_K>::get_kmers(kmer_len, ctg->seq, kmers);
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
-      for (int i = 1; i < (int) (ctg->seq.length() - kmer_len); i++) {
+      for (int i = 1; i < (int)(ctg->seq.length() - kmer_len); i++) {
         uint16_t depth = ctg->depth;
 #ifdef USE_KMER_DEPTHS
         uint16_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
@@ -218,7 +224,7 @@ void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dis
   }
   progbar.done();
   kmer_dht->flush_updates();
-  DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers , " kmers\n");
+  DBG("This rank processed ", ctgs.size(), " contigs and ", num_kmers, " kmers\n");
   auto all_num_ctgs = reduce_one(ctgs.size(), op_fast_add, 0).wait();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   SLOG_VERBOSE("Processed a total of ", all_num_ctgs, " contigs and ", all_num_kmers, " kmers\n");
@@ -230,18 +236,16 @@ void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dis
 #endif
 };
 
-
-template<int MAX_K>
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
+template <int MAX_K>
+void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
                    double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
                    double &num_kmers_factor) {
   BarrierTimer timer(__FILEFUNC__);
-  auto fut_has_contigs = upcxx::reduce_all(ctgs.size(), upcxx::op_fast_max)
-    .then([](size_t max_ctgs) { return max_ctgs > 0; });
-  
+  auto fut_has_contigs = upcxx::reduce_all(ctgs.size(), upcxx::op_fast_max).then([](size_t max_ctgs) { return max_ctgs > 0; });
+
   _dynamic_min_depth = dynamic_min_depth;
   _dmin_thres = dmin_thres;
-  
+
   if (kmer_dht->get_use_bloom()) {
     count_kmers(kmer_len, qual_offset, packed_reads_list, kmer_dht, BLOOM_SET_PASS);
     num_kmers_factor = kmer_dht->get_num_kmers_factor();
@@ -273,34 +277,31 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 #endif
   barrier();
   kmer_dht->clear_stores();
-  //kmer_dht->purge_fx_kmers();
+  // kmer_dht->purge_fx_kmers();
 };
 
-
-
-#define __COUNT_KMERS__(KMER_LEN, MODIFIER) \
-MODIFIER void count_kmers<KMER_LEN>(unsigned kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list, \
-                        dist_object<KmerDHT<KMER_LEN>> &kmer_dht, PASS_TYPE pass_type)
+#define __COUNT_KMERS__(KMER_LEN, MODIFIER)                                                                         \
+  MODIFIER void count_kmers<KMER_LEN>(unsigned kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list, \
+                                      dist_object<KmerDHT<KMER_LEN>> &kmer_dht, PASS_TYPE pass_type)
 
 #define __COUNT_CTG_KMERS__(KMER_LEN, MODIFIER) \
-MODIFIER void count_ctg_kmers<KMER_LEN>(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
+  MODIFIER void count_ctg_kmers<KMER_LEN>(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
 
-#define __ADD_CTG_KMERS__(KMER_LEN, MODIFIER) \
-MODIFIER void add_ctg_kmers<KMER_LEN>(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
+#define __ADD_CTG_KMERS__(KMER_LEN, MODIFIER)                                                     \
+  MODIFIER void add_ctg_kmers<KMER_LEN>(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, \
+                                        dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
 
-#define __ANALYZE_KMERS__(KMER_LEN, MODIFIER) \
-MODIFIER void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<PackedReads*>&, double, int, Contigs&, \
-                               dist_object<KmerDHT<KMER_LEN> >&, double&)
+#define __ANALYZE_KMERS__(KMER_LEN, MODIFIER)                                                                     \
+  MODIFIER void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<PackedReads *> &, double, int, Contigs &, \
+                                        dist_object<KmerDHT<KMER_LEN>> &, double &)
 
-#define __MACRO_KCOUNT__(KMER_LEN, MODIFIER) \
-__ANALYZE_KMERS__(KMER_LEN, MODIFIER); \
+#define __MACRO_KCOUNT__(KMER_LEN, MODIFIER) __ANALYZE_KMERS__(KMER_LEN, MODIFIER);
 
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in in kcount.hpp
 // template instantiations each happen in src/CMakeLists via kcount-extern-template.in.cpp
 
 __MACRO_KCOUNT__(32, extern template);
-
 
 #if MAX_BUILD_KMER >= 64
 
@@ -322,5 +323,3 @@ __MACRO_KCOUNT__(128, extern template);
 __MACRO_KCOUNT__(160, extern template);
 
 #endif
-
-

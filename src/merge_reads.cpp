@@ -40,62 +40,51 @@
  form.
 */
 
-
-#include <iostream>
-#include <fstream>
 #include <math.h>
-#include <algorithm>
 #include <stdarg.h>
+
+#include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <iostream>
 #ifdef __x86_64__
 #include <emmintrin.h>
 #include <immintrin.h>
 #include <x86intrin.h>
 #endif
-#include <upcxx/upcxx.hpp>
 #include <functional>
+#include <upcxx/upcxx.hpp>
 
 using namespace std;
 using namespace upcxx;
 
-#include "zstr.hpp"
-#include "utils.hpp"
 #include "fastq.hpp"
 #include "packed_reads.hpp"
 #include "upcxx_utils.hpp"
-
 #include "upcxx_utils/ofstream.hpp"
+#include "utils.hpp"
+#include "zstr.hpp"
 
 using namespace upcxx_utils;
 
 static const double Q2Perror[] = {
-  1.0,
-  0.7943,	0.6309,	0.5012,	0.3981,	0.3162,
-  0.2512,	0.1995,	0.1585,	0.1259,	0.1,
-  0.07943,	0.06310,	0.05012,	0.03981,	0.03162,
-  0.02512,	0.01995,	0.01585,	0.01259,	0.01,
-  0.007943,	0.006310,	0.005012,	0.003981,	0.003162,
-  0.002512,	0.001995,	0.001585,	0.001259,	0.001,
-  0.0007943,	0.0006310,	0.0005012,	0.0003981,	0.0003162,
-  0.0002512,	0.0001995,	0.0001585,	0.0001259,	0.0001,
-  7.943e-05,	6.310e-05,	5.012e-05,	3.981e-05,	3.162e-05,
-  2.512e-05,	1.995e-05,	1.585e-05,	1.259e-05,	1e-05,
-  7.943e-06,	6.310e-06,	5.012e-06,	3.981e-06,	3.162e-06,
-  2.512e-06,	1.995e-06,	1.585e-06,	1.259e-06,	1e-06,
-  7.943e-07,	6.310e-07,	5.012e-07,	3.981e-07,	3.1622e-07,
-  2.512e-07,	1.995e-07,	1.585e-07,	1.259e-07,	1e-07,
-  7.943e-08,	6.310e-08,	5.012e-08,	3.981e-08,	3.1622e-08,
-  2.512e-08,	1.995e-08,	1.585e-08,	1.259e-08,	1e-08
-};
+    1.0,       0.7943,    0.6309,    0.5012,    0.3981,    0.3162,    0.2512,    0.1995,    0.1585,    0.1259,     0.1,
+    0.07943,   0.06310,   0.05012,   0.03981,   0.03162,   0.02512,   0.01995,   0.01585,   0.01259,   0.01,       0.007943,
+    0.006310,  0.005012,  0.003981,  0.003162,  0.002512,  0.001995,  0.001585,  0.001259,  0.001,     0.0007943,  0.0006310,
+    0.0005012, 0.0003981, 0.0003162, 0.0002512, 0.0001995, 0.0001585, 0.0001259, 0.0001,    7.943e-05, 6.310e-05,  5.012e-05,
+    3.981e-05, 3.162e-05, 2.512e-05, 1.995e-05, 1.585e-05, 1.259e-05, 1e-05,     7.943e-06, 6.310e-06, 5.012e-06,  3.981e-06,
+    3.162e-06, 2.512e-06, 1.995e-06, 1.585e-06, 1.259e-06, 1e-06,     7.943e-07, 6.310e-07, 5.012e-07, 3.981e-07,  3.1622e-07,
+    2.512e-07, 1.995e-07, 1.585e-07, 1.259e-07, 1e-07,     7.943e-08, 6.310e-08, 5.012e-08, 3.981e-08, 3.1622e-08, 2.512e-08,
+    1.995e-08, 1.585e-08, 1.259e-08, 1e-08};
 
 static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) {
   // estimate reads in this rank's section of all the files
   future<int> fut_max_read_len;
   future<> progress_fut = make_future();
- 
+
   BarrierTimer timer(__FILEFUNC__);
   FastqReaders::open_all(reads_fname_list);
-  
+
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
@@ -129,7 +118,7 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   fut_max_read_len = reduce_all(max_read_len, upcxx::op_fast_max);
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads) with max_read_len=", max_read_len, "\n");
   timer.initate_exit_barrier();
-  progress_fut.wait(); 
+  progress_fut.wait();
   max_read_len = fut_max_read_len.wait();
   SLOG_VERBOSE("Found maximum read length of ", max_read_len, "\n");
   return {estimated_total_records, max_read_len};
@@ -141,18 +130,20 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
   int16_t mismatches = 0;
   int16_t jumpSize, jumpLen;
 
-#ifdef  __x86_64__
+#if defined(__APPLE__) && defined(__MACH__)
+#else
+#if defined(__x86_64__)
   // 128-bit SIMD
   if (len >= 16) {
     jumpSize = sizeof(__m128i);
-    jumpLen = len/jumpSize;
-    for(int16_t i = 0; i < jumpLen ; i++) {
-      __m128i aa = _mm_loadu_si128((const __m128i *)a); // load 16 bytes from a
-      __m128i bb = _mm_loadu_si128((const __m128i *)b); // load 16 bytes from b
-      __m128i matched = _mm_cmpeq_epi8(aa, bb); // bytes that are equal are now 0xFF, not equal are 0x00
-      uint32_t myMaskMatched = _mm_movemask_epi8(matched); // mask of most significant bit for each byte
+    jumpLen = len / jumpSize;
+    for (int16_t i = 0; i < jumpLen; i++) {
+      __m128i aa = _mm_loadu_si128((const __m128i *)a);     // load 16 bytes from a
+      __m128i bb = _mm_loadu_si128((const __m128i *)b);     // load 16 bytes from b
+      __m128i matched = _mm_cmpeq_epi8(aa, bb);             // bytes that are equal are now 0xFF, not equal are 0x00
+      uint32_t myMaskMatched = _mm_movemask_epi8(matched);  // mask of most significant bit for each byte
       // count mismatches
-      mismatches += _popcnt32( (~myMaskMatched) & 0xffff ); // over 16 bits
+      mismatches += _popcnt32((~myMaskMatched) & 0xffff);  // over 16 bits
       if (mismatches > max) break;
       a += jumpSize;
       b += jumpSize;
@@ -160,19 +151,20 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
     len -= jumpLen * jumpSize;
   }
 #endif
+#endif
   // CPU version and fall through 8 bytes at a time
   if (mismatches <= max) {
     assert(len >= 0);
     jumpSize = sizeof(int64_t);
-    jumpLen = len/jumpSize;
-    for(int16_t i = 0; i < jumpLen ; i++) {
-      int64_t *aa = (int64_t*) a, *bb = (int64_t*) b;
-      if (*aa != *bb) { // likely
-        for (int j =0; j<jumpSize; j++) {
+    jumpLen = len / jumpSize;
+    for (int16_t i = 0; i < jumpLen; i++) {
+      int64_t *aa = (int64_t *)a, *bb = (int64_t *)b;
+      if (*aa != *bb) {  // likely
+        for (int j = 0; j < jumpSize; j++) {
           if (a[j] != b[j]) mismatches++;
         }
         if (mismatches > max) break;
-      } // else it matched
+      }  // else it matched
       a += jumpSize;
       b += jumpSize;
     }
@@ -181,24 +173,23 @@ int16_t fast_count_mismatches(const char *a, const char *b, int len, int16_t max
   // do the remaining bytes, if needed
   if (mismatches <= max) {
     assert(len >= 0);
-    for(int j = 0; j < len; j++) {
+    for (int j = 0; j < len; j++) {
       mismatches += ((a[j] == b[j]) ? 0 : 1);
     }
   }
   return mismatches;
 }
 
-
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
-                 vector<PackedReads*> &packed_reads_list, bool checkpoint) {
+                 vector<PackedReads *> &packed_reads_list, bool checkpoint) {
   BarrierTimer timer(__FILEFUNC__);
   Timer merge_time(__FILEFUNC__ + " merging all");
   FastqReaders::open_all(reads_fname_list);
   vector<string> merged_reads_fname_list;
-  
+
   using shared_of = shared_ptr<upcxx_utils::dist_ofstream>;
   std::vector<shared_of> all_outputs;
-  
+
   int64_t tot_bytes_read = 0;
   int64_t tot_num_ambiguous = 0;
   int64_t tot_num_merged = 0;
@@ -218,7 +209,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   for (auto const &reads_fname : reads_fname_list) {
     Timer merge_file_timer("merging " + get_basename(reads_fname));
     merge_file_timer.initiate_entrance_reduction();
-    
+
     string out_fname = get_merged_reads_fname(reads_fname);
     if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, will overwrite...");
 
@@ -228,10 +219,10 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
     shared_of sh_out_file;
     if (checkpoint) {
-        auto merged_name = get_merged_reads_fname(reads_fname);
-        sh_out_file=make_shared<upcxx_utils::dist_ofstream>(merged_name);
-        all_outputs.push_back(sh_out_file);
-        merged_reads_fname_list.push_back(merged_name);
+      auto merged_name = get_merged_reads_fname(reads_fname);
+      sh_out_file = make_shared<upcxx_utils::dist_ofstream>(merged_name);
+      all_outputs.push_back(sh_out_file);
+      merged_reads_fname_list.push_back(merged_name);
     }
     int max_read_len = 0;
     int64_t overlap_len = 0;
@@ -239,14 +230,14 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
     const int16_t MIN_OVERLAP = 12;
     const int16_t EXTRA_TEST_OVERLAP = 2;
-    const int16_t MAX_MISMATCHES = 3; // allow up to 3 mismatches, with MAX_PERROR
+    const int16_t MAX_MISMATCHES = 3;  // allow up to 3 mismatches, with MAX_PERROR
     const int Q2PerrorSize = sizeof(Q2Perror) / sizeof(*Q2Perror);
     assert(qual_offset == 33 || qual_offset == 64);
 
     // illumina reads generally accumulate errors at the end, so allow more mismatches in the overlap as long as differential
     // quality indicates a clear winner
-    const double MAX_PERROR = 0.025; // max 2.5% accumulated mismatch prob of error within overlap by differential quality score
-    const int16_t EXTRA_MISMATCHES_PER_1000 = (int) 150; // allow addtl mismatches per 1000 bases overlap before aborting test
+    const double MAX_PERROR = 0.025;  // max 2.5% accumulated mismatch prob of error within overlap by differential quality score
+    const int16_t EXTRA_MISMATCHES_PER_1000 = (int)150;  // allow addtl mismatches per 1000 bases overlap before aborting test
     const uint8_t MAX_MATCH_QUAL = 41 + qual_offset;
 
     string id1, seq1, quals1, id2, seq2, quals2;
@@ -256,7 +247,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     int64_t num_merged = 0;
     int64_t num_reads = 0;
 
-    for (; ; num_pairs++) {
+    for (;; num_pairs++) {
       int64_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
       if (!bytes_read1) break;
       int64_t bytes_read2 = fqr.get_next_fq_record(id2, seq2, quals2);
@@ -264,7 +255,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       bytes_read += bytes_read1 + bytes_read2;
       progbar.update(bytes_read);
 
-      if (id1.compare(0, id1.length() - 2, id2, 0, id2.length() -2) != 0) DIE("Mismatched pairs ", id1, " ", id2);
+      if (id1.compare(0, id1.length() - 2, id2, 0, id2.length() - 2) != 0) DIE("Mismatched pairs ", id1, " ", id2);
       if (id1[id1.length() - 1] != '1' || id2[id2.length() - 1] != '2') DIE("Mismatched pair numbers ", id1, " ", id2);
 
       bool is_merged = 0;
@@ -277,20 +268,19 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
       // use start_i to offset inequal lengths which can be very different but still overlap near the end.  250 vs 178..
       int16_t len = (rc_seq2.length() < seq1.length()) ? rc_seq2.length() : seq1.length();
-      int16_t start_i = ((len == (int16_t) seq1.length()) ? 0 : seq1.length() - len);
+      int16_t start_i = ((len == (int16_t)seq1.length()) ? 0 : seq1.length() - len);
       int16_t found_i = -1;
       int16_t best_i = -1;
       int16_t best_mm = len;
       double best_perror = -1.0;
 
       // slide along seq1
-      for (int16_t i = 0; i < len - MIN_OVERLAP + EXTRA_TEST_OVERLAP; i++) { // test less overlap than MIN_OVERLAP
+      for (int16_t i = 0; i < len - MIN_OVERLAP + EXTRA_TEST_OVERLAP; i++) {  // test less overlap than MIN_OVERLAP
         if (abort_merge) break;
-        int16_t overlap = len-i;
+        int16_t overlap = len - i;
         int16_t this_max_mismatch = MAX_MISMATCHES + (EXTRA_MISMATCHES_PER_1000 * overlap / 1000);
-        int16_t error_max_mismatch = this_max_mismatch * 4 / 3 + 1; // 33% higher
-        if (fast_count_mismatches(seq1.c_str() + start_i + i, rc_seq2.c_str(), overlap, error_max_mismatch)
-                                  > error_max_mismatch)
+        int16_t error_max_mismatch = this_max_mismatch * 4 / 3 + 1;  // 33% higher
+        if (fast_count_mismatches(seq1.c_str() + start_i + i, rc_seq2.c_str(), overlap, error_max_mismatch) > error_max_mismatch)
           continue;
         int16_t matches = 0, mismatches = 0, bothNs = 0, Ncount = 0;
         int16_t overlapChecked = 0;
@@ -306,13 +296,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
               if (bothNs++) {
                 abort_merge++;
                 num_ambiguous++;
-                break; // do not match multiple Ns in the same position -- 1 is okay
+                break;  // do not match multiple Ns in the same position -- 1 is okay
               }
             }
           } else {
             mismatches++;
             if (ps == 'N') {
-              mismatches++; // N still counts as a mismatch
+              mismatches++;  // N still counts as a mismatch
               Ncount++;
               quals1[start_i + i + j] = qual_offset;
               assert(rev_quals2[j] - qual_offset < Q2PerrorSize);
@@ -320,7 +310,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
               perror += Q2Perror[rev_quals2[j] - qual_offset];
             } else if (rs == 'N') {
               Ncount++;
-              mismatches++; // N still counts as a mismatch
+              mismatches++;  // N still counts as a mismatch
               rev_quals2[j] = qual_offset;
               assert(quals1[start_i + i + j] - qual_offset < Q2PerrorSize);
               assert(quals1[start_i + i + j] - qual_offset >= 0);
@@ -338,9 +328,9 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
                     "(phred+64 vs. phred+33)");
 
               // sum perror as the difference in q score perrors
-              uint8_t diffq = (q1 > q2) ? q1-q2 : q2-q1;
+              uint8_t diffq = (q1 > q2) ? q1 - q2 : q2 - q1;
               if (diffq <= 2) {
-                perror += 0.5; // cap at flipping a coin when both quality scores are close
+                perror += 0.5;  // cap at flipping a coin when both quality scores are close
               } else {
                 assert(diffq < Q2PerrorSize);
                 perror += Q2Perror[diffq];
@@ -350,14 +340,14 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
           if (Ncount > 3) {
             abort_merge++;
             num_ambiguous++;
-            break; // do not match reads with many Ns
+            break;  // do not match reads with many Ns
           }
           if (mismatches > error_max_mismatch) break;
         }
         int16_t match_thres = overlap - this_max_mismatch;
         if (match_thres < MIN_OVERLAP) match_thres = MIN_OVERLAP;
-        if (matches >= match_thres && overlapChecked == overlap &&
-            mismatches <= this_max_mismatch && perror/overlap <= MAX_PERROR) {
+        if (matches >= match_thres && overlapChecked == overlap && mismatches <= this_max_mismatch &&
+            perror / overlap <= MAX_PERROR) {
           if (best_i < 0 && found_i < 0) {
             best_i = i;
             best_mm = mismatches;
@@ -370,7 +360,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
             best_perror = -1.0;
             break;
           }
-        } else if (overlapChecked == overlap && mismatches <= error_max_mismatch && perror/overlap <= MAX_PERROR * 4 / 3) {
+        } else if (overlapChecked == overlap && mismatches <= error_max_mismatch && perror / overlap <= MAX_PERROR * 4 / 3) {
           // lower threshold for detection of an ambigious overlap
           found_i = i;
           if (best_i >= 0) {
@@ -386,19 +376,19 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
       if (best_i >= 0 && !abort_merge) {
         int16_t i = best_i;
-        int16_t overlap = len-i;
+        int16_t overlap = len - i;
         // pick the base with the highest quality score for the overlapped region
-        for(int16_t j = 0 ; j < overlap ; j++) {
+        for (int16_t j = 0; j < overlap; j++) {
           if (seq1[start_i + i + j] == rc_seq2[j]) {
             // match boost quality up to the limit
-            uint16_t newQual = quals1[start_i+i+j] + rev_quals2[j] - qual_offset;
-            quals1[start_i+i+j] = ((newQual > MAX_MATCH_QUAL) ? MAX_MATCH_QUAL : newQual);
+            uint16_t newQual = quals1[start_i + i + j] + rev_quals2[j] - qual_offset;
+            quals1[start_i + i + j] = ((newQual > MAX_MATCH_QUAL) ? MAX_MATCH_QUAL : newQual);
             assert(quals1[start_i + i + j] >= quals1[start_i + i + j]);
             // FIXME: this fails for a CAMISIM generated dataset. I don't even know what this is checking...
-            //assert(quals1[start_i + i + j] >= rev_quals2[j]);
+            // assert(quals1[start_i + i + j] >= rev_quals2[j]);
           } else {
             uint8_t newQual;
-            if (quals1[start_i+i+j] < rev_quals2[j]) {
+            if (quals1[start_i + i + j] < rev_quals2[j]) {
               // use rev base and discount quality
               newQual = rev_quals2[j] - quals1[start_i + i + j] + qual_offset;
               seq1[start_i + i + j] = rc_seq2[j];
@@ -419,7 +409,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
         is_merged = true;
         num_merged++;
 
-        int read_len = seq1.length(); // caculate new merged length
+        int read_len = seq1.length();  // caculate new merged length
         if (max_read_len < read_len) max_read_len = read_len;
         merged_len += read_len;
         overlap_len += overlap;
@@ -453,61 +443,51 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     }
     auto prog_done = progbar.set_done();
     wrote_all_files_fut = when_all(wrote_all_files_fut, prog_done);
-    
+
     tot_num_merged += num_merged;
     tot_num_ambiguous += num_ambiguous;
     tot_max_read_len = std::max(tot_max_read_len, max_read_len);
     tot_bytes_read += bytes_read;
-    
+
     // start the collective reductions
     // delay the summary output for when they complete
-    auto fut_reductions = when_all(
-            upcxx::reduce_one(num_pairs, op_fast_add, 0),
-            upcxx::reduce_one(num_merged, op_fast_add, 0),
-            upcxx::reduce_one(num_ambiguous, op_fast_add, 0),
-            upcxx::reduce_one(merged_len, op_fast_add, 0),
-            upcxx::reduce_one(overlap_len, op_fast_add, 0),
-            upcxx::reduce_one(max_read_len, op_fast_max, 0)
-    );
-    fut_summary = when_all(fut_summary, fut_reductions).then([reads_fname, bytes_read] (
-            int64_t all_num_pairs, 
-            int64_t all_num_merged, 
-            int64_t all_num_ambiguous, 
-            int64_t all_merged_len,
-            int64_t all_overlap_len,
-            int all_max_read_len) {
-        SLOG_VERBOSE("Merged reads in file ", reads_fname, ":\n");
-        SLOG_VERBOSE("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
-        SLOG_VERBOSE("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
-        SLOG_VERBOSE("  average merged length ", (double) all_merged_len / all_num_merged, "\n");
-        SLOG_VERBOSE("  average overlap length ", (double) all_overlap_len / all_num_merged, "\n");
-        SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
-        SLOG_VERBOSE("Total bytes read ", bytes_read, "\n");
-    });
+    auto fut_reductions = when_all(upcxx::reduce_one(num_pairs, op_fast_add, 0), upcxx::reduce_one(num_merged, op_fast_add, 0),
+                                   upcxx::reduce_one(num_ambiguous, op_fast_add, 0), upcxx::reduce_one(merged_len, op_fast_add, 0),
+                                   upcxx::reduce_one(overlap_len, op_fast_add, 0), upcxx::reduce_one(max_read_len, op_fast_max, 0));
+    fut_summary = when_all(fut_summary, fut_reductions)
+                      .then([reads_fname, bytes_read](int64_t all_num_pairs, int64_t all_num_merged, int64_t all_num_ambiguous,
+                                                      int64_t all_merged_len, int64_t all_overlap_len, int all_max_read_len) {
+                        SLOG_VERBOSE("Merged reads in file ", reads_fname, ":\n");
+                        SLOG_VERBOSE("  merged ", perc_str(all_num_merged, all_num_pairs), " pairs\n");
+                        SLOG_VERBOSE("  ambiguous ", perc_str(all_num_ambiguous, all_num_pairs), " ambiguous pairs\n");
+                        SLOG_VERBOSE("  average merged length ", (double)all_merged_len / all_num_merged, "\n");
+                        SLOG_VERBOSE("  average overlap length ", (double)all_overlap_len / all_num_merged, "\n");
+                        SLOG_VERBOSE("  max read length ", all_max_read_len, "\n");
+                        SLOG_VERBOSE("Total bytes read ", bytes_read, "\n");
+                      });
 
     num_reads += num_pairs * 2;
     ri++;
   }
   merge_time.initiate_exit_reduction();
- 
-  
+
   // finish all file writing and report
   dump_reads_t.start();
   wrote_all_files_fut.wait();
-  for(auto sh_of : all_outputs) {
-      wrote_all_files_fut = when_all(wrote_all_files_fut, sh_of->report_timings());
+  for (auto sh_of : all_outputs) {
+    wrote_all_files_fut = when_all(wrote_all_files_fut, sh_of->report_timings());
   }
   wrote_all_files_fut.wait();
-  
+
   dump_reads_t.stop();
   elapsed_write_io_t = dump_reads_t.get_elapsed();
   dump_reads_t.done();
 
   summary_promise.fulfill_anonymous(1);
   fut_summary.wait();
-  
+
   // merged files will now be used exclusively
-  FastqReaders::close_all(); 
+  FastqReaders::close_all();
   FastqReaders::open_all(merged_reads_fname_list);
 
   timer.initate_exit_barrier();

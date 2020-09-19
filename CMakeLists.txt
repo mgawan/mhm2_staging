@@ -55,7 +55,7 @@ set(MHMXX_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(MHMXX_BINARY_DIR ${PROJECT_BINARY_DIR})
 
 # include modules
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules ${PROJECT_SOURCE_DIR}/upcxx-utils/cmake/Modules)
 
 # check compiler and set appropriate linker flags
 include(CheckCCompilerFlag)

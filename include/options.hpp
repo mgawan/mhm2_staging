@@ -43,23 +43,22 @@
 */
 
 #include <iostream>
-#include <vector>
-#include <string>
 #include <sstream>
-
+#include <string>
+#include <vector>
 
 #include "version.h"
 
 using std::cout;
 using std::endl;
-using std::vector;
 using std::string;
+using std::vector;
 
 class Options {
-  vector<string> splitter(string in_pattern, string& content);
+  vector<string> splitter(string in_pattern, string &content);
 
   template <typename T>
-  string vec_to_str(const vector<T> &vec, const string &delimiter=",") {
+  string vec_to_str(const vector<T> &vec, const string &delimiter = ",") {
     std::ostringstream oss;
     for (auto elem : vec) {
       oss << elem;
@@ -73,11 +72,10 @@ class Options {
   void get_restart_options();
 
   void setup_output_dir();
-  
+
   void setup_log_file();
 
-public:
-
+ public:
   vector<string> reads_fnames;
   vector<string> paired_fnames;
   vector<unsigned> kmer_lens = {};
@@ -86,9 +84,9 @@ public:
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store_mb = 0; // per rank - default to use 1% of node memory
+  int max_kmer_store_mb = 0;  // per rank - default to use 1% of node memory
   int max_rpcs_in_flight = 100;
-  bool use_heavy_hitters = false; // only enable when files are localized
+  bool use_heavy_hitters = false;  // only enable when files are localized
   bool force_bloom = false;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
@@ -100,7 +98,7 @@ public:
   bool dump_gfa = false;
   bool show_progress = false;
   string pin_by = "cpu";
-  int ranks_per_gpu = 0; // autodetect
+  int ranks_per_gpu = 0;  // autodetect
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS
   string kmer_depths_fname;
@@ -117,6 +115,4 @@ public:
   void cleanup();
 
   bool load(int argc, char **argv);
-  
 };
-
