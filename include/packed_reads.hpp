@@ -90,7 +90,7 @@ public:
     // set next five bits to represent quality (from 0 to 32). This doesn't cover the full quality range (only up to 32)
     // but it's all we need since once quality is greater than the qual_thres (20), we treat the base as high quality
     packed_read = new unsigned char [seq.length()];
-    for (int i = 0; i < seq.length(); i++) {
+    for (unsigned i = 0; i < seq.length(); i++) {
       switch (seq[i]) {
         case 'A': packed_read[i] = 0; break;
         case 'C': packed_read[i] = 1; break;
@@ -130,14 +130,18 @@ class PackedReads {
   vector<std::unique_ptr<PackedRead>> packed_reads;
   // this is only used when we need to know the actual name of the original reads
   vector<string> read_id_idx_to_str;
+  unsigned max_read_len = 0;
+  uint64_t index = 0;
+  unsigned qual_offset;
   string fname;
-  int max_read_len = 0;
-  int64_t index = 0;
-  int qual_offset;
   bool str_ids;
 
 public:
-  PackedReads(int qual_offset, const string &fname, bool str_ids=false): qual_offset(qual_offset), fname(fname), str_ids(str_ids) {}
+  PackedReads(int qual_offset, const string &fname, bool str_ids=false)
+          : qual_offset(qual_offset)
+          , fname(fname)
+          , str_ids(str_ids) 
+          {}
 
   bool get_next_read(string &id, string &seq, string &quals) {
     if (index == packed_reads.size()) return false;
@@ -155,7 +159,7 @@ public:
     return fname;
   }
 
-  int get_max_read_len() {
+  unsigned get_max_read_len() {
     return max_read_len;
   }
 
@@ -166,7 +170,7 @@ public:
   void add_read(const string &read_id, const string &seq, const string &quals) {
     packed_reads.push_back(std::make_unique<PackedRead>(read_id, seq, quals, qual_offset));
     if (str_ids) read_id_idx_to_str.push_back(read_id);
-    max_read_len = max(max_read_len, (int)seq.length());
+    max_read_len = max(max_read_len, (unsigned) seq.length());
   }
 
   void load_reads() {
@@ -174,7 +178,7 @@ public:
     // first estimate the number of records
     size_t tot_bytes_read = 0;
     int64_t num_records = 0;
-    FastqReader fqr(fname);
+    FastqReader &fqr = FastqReaders::get(fname);
     string id, seq, quals;
     for (num_records = 0; num_records < 10000; num_records++) {
       size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
@@ -194,13 +198,13 @@ public:
       progbar.update(tot_bytes_read);
       packed_reads.push_back(std::make_unique<PackedRead>(id, seq, quals, qual_offset));
       if (str_ids) read_id_idx_to_str.push_back(id);
-      max_read_len = max(max_read_len, (int)seq.length());
+      max_read_len = max(max_read_len, (unsigned)seq.length());
     }
     progbar.done();
     upcxx::barrier();
     auto all_estimated_records = upcxx::reduce_one(estimated_records, upcxx::op_fast_add, 0).wait();
     auto all_num_records = upcxx::reduce_one(packed_reads.size(), upcxx::op_fast_add, 0).wait();
-    SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, ")\n");
+    SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, ") max_read=", max_read_len, "\n");
   }
 
 };

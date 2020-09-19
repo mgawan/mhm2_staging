@@ -50,6 +50,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <cmath>
 #include <upcxx/upcxx.hpp>
 
 using namespace std;
@@ -72,7 +73,6 @@ using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
-ofstream _logstream;
 bool _verbose = false;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
@@ -117,6 +117,7 @@ static StageTimers stage_timers = {
 };
 
 template<int MAX_K>
+
 void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads*> packed_reads_list, Contigs &ctgs,
                 double &num_kmers_factor, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
@@ -129,6 +130,7 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
 #endif
 
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
+
   string contigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
   if (options->restart && file_exists(contigs_fname)) {
     ctgs.load_contigs(contigs_fname);
@@ -137,9 +139,10 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
+    // use the max among all ranks
     my_num_kmers = upcxx::reduce_all(my_num_kmers, upcxx::op_max).wait();
-    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
-                                         options->force_bloom);
+    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight, 
+                                         options->force_bloom, options->use_heavy_hitters);
     barrier();
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dynamic_min_depth, options->dmin_thres,
                   ctgs, kmer_dht, num_kmers_factor);
@@ -193,10 +196,11 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
 }
 
 template <int MAX_K>
+
 void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
                  int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = chrono::high_resolution_clock::now();
-  int scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
+  unsigned scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
   bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
@@ -267,7 +271,7 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
     packed_reads->load_reads();
   }
   stage_timers.cache_reads->stop();
-  int rlen_limit = 0;
+  unsigned rlen_limit = 0;
   for (auto packed_reads : packed_reads_list) {
     rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
   }
@@ -362,7 +366,7 @@ int main(int argc, char **argv) {
       SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                   KNORM, "\n");
     }
-    int rlen_limit = 0;
+    unsigned rlen_limit = 0;
     for (auto packed_reads : packed_reads_list) {
       rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
     }
@@ -371,7 +375,8 @@ int main(int argc, char **argv) {
     chrono::duration<double> init_t_elapsed = chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-         get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+
+    get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3;
     int ins_avg = 0;
@@ -422,13 +427,16 @@ int main(int argc, char **argv) {
 #endif
     
     // scaffolding loops
+    if (options->dump_gfa) {
+      if (options->scaff_kmer_lens.size()) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
+      else options->scaff_kmer_lens.push_back(options->kmer_lens[0]);
+    }
     if (options->scaff_kmer_lens.size()) {
       if (!max_kmer_len) {
         if (options->max_kmer_len) max_kmer_len = options->max_kmer_len;
         else max_kmer_len = options->scaff_kmer_lens.front();
       }
-      if (options->dump_gfa) options->scaff_kmer_lens.push_back(options->scaff_kmer_lens.back());
-      for (int i = 0; i < options->scaff_kmer_lens.size(); ++i) {
+      for (unsigned i = 0; i < options->scaff_kmer_lens.size(); ++i) {
         auto scaff_kmer_len = options->scaff_kmer_lens[i];
         auto max_k = (scaff_kmer_len / 32 + 1) * 32;
 
@@ -463,6 +471,7 @@ int main(int argc, char **argv) {
     }
 
     // cleanup
+    FastqReaders::close_all(); // needed to cleanup any open files in this singleton
     auto fin_start_t = chrono::high_resolution_clock::now();
     for (auto packed_reads : packed_reads_list) {
       delete packed_reads;
@@ -537,6 +546,7 @@ int main(int argc, char **argv) {
   _dbgstream.flush();
   while(close_dbg());
 #endif
+
   barrier();
   upcxx::finalize();
   return 0;

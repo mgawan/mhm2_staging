@@ -249,7 +249,7 @@ string get_consensus_seq(const vector<string> &seqs, int max_len) {
   static char bases[5] = {'A', 'C', 'G', 'T', 'N'};
   auto base_freqs = new int[max_len][4]();
   for (auto seq : seqs) {
-    for (int i = 0; i < seq.size(); i++) {
+    for (size_t i = 0; i < seq.size(); i++) {
       switch (seq[i]) {
         case 'A': base_freqs[i][0]++; break;
         case 'C': base_freqs[i][1]++; break;
@@ -292,7 +292,7 @@ static string get_splint_edge_seq(int kmer_len, Edge *edge) {
       continue;
     }
     int rstart = gap_read.gap_start - (kmer_len - 1);
-    if (seq.length() < gap_size + rstart) {
+    if ((int) seq.length() < gap_size + rstart) {
       //WARN("seq length is less than sub string access with rstart ", rstart, ", gap ", gap_size, "\n",
       //     gap_read.read_name, " ", seq);
       continue;
@@ -329,14 +329,14 @@ static string get_span_edge_seq(int kmer_len, Edge *edge, bool tail) {
     } else {
       if ((edge->end2 == 3 && gap_read.orient == '+') || (edge->end2 == 5 && gap_read.orient == '-'))
         gap_seq = revcomp(gap_seq);
-      if (gap_read.gap_start + kmer_len < gap_seq.size()) gap_seq.erase(gap_read.gap_start + kmer_len);
+      if (gap_read.gap_start + kmer_len < (int) gap_seq.size()) gap_seq.erase(gap_read.gap_start + kmer_len);
       // pad the front of the gap sequence with Ns to make them all the same length
       string offset_padding(1 + _graph->max_read_len - kmer_len - gap_read.gap_start, 'N');
       gap_seq = offset_padding + gap_seq;
       //DBG_SPANS(buf, gap_seq, "\n");
     }
     seqs.push_back(gap_seq);
-    if (gap_seq.size() > max_len) max_len = gap_seq.size();
+    if ((int) gap_seq.size() > max_len) max_len = gap_seq.size();
   }
   if (seqs.empty()) {
     if (tail) {
@@ -382,12 +382,12 @@ static std::pair<int, int> min_hamming_dist(const string &s1, const string &s2, 
   return {min_dist, expected_overlap};
 }
 
-static void parse_reads(int kmer_len, const vector<PackedReads*> &packed_reads_list) {
+static void parse_reads(unsigned kmer_len, const vector<PackedReads*> &packed_reads_list) {
   BarrierTimer timer(__FILEFUNC__);
 
   int64_t num_seqs_added = 0;
   int64_t num_reads = 0;
-  int max_read_len = 0;
+  unsigned max_read_len = 0;
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
     string id, seq, quals;
@@ -541,7 +541,7 @@ static bool merge_end(Vertex *curr_v, const vector<cid_t> &nb_cids, vector<vecto
   // gather a vector of merged paths (there can be more than one because of forks)
   vector<vector<NbPair*> > all_next_nbs = {};
   // attempt to merge all neighbors as overlaps
-  for (int i = 0; i < nbs.size(); i++) {
+  for (size_t i = 0; i < nbs.size(); i++) {
     NbPair *nb = &nbs[i];
     DBG_BUILD("\t", nb->vertex->cid, " gap ", nb->edge->gap, " len ", nb->vertex->clen, " depth ", nb->vertex->depth, "\n");
     if (i == 0) {

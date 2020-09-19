@@ -77,6 +77,28 @@ using std::pair;
 #define HASH_TABLE std::unordered_map
 #endif
 
+inline size_t estimate_hashtable_memory(size_t num_elements, size_t element_size) {
+    // get the hashtable load factor
+    HASH_TABLE<char,char> tmp;
+    double max_load_factor = tmp.max_load_factor();
+    
+    // apply the load factor
+    size_t expanded_num_elements = num_elements / max_load_factor + 1;
+    
+    // get the next power of two
+    --expanded_num_elements;
+    expanded_num_elements |= expanded_num_elements >> 1;
+    expanded_num_elements |= expanded_num_elements >> 2;
+    expanded_num_elements |= expanded_num_elements >> 4;
+    expanded_num_elements |= expanded_num_elements >> 8;
+    expanded_num_elements |= expanded_num_elements >> 16;
+    expanded_num_elements |= expanded_num_elements >> 32;
+    ++expanded_num_elements;
+
+    size_t num_buckets = expanded_num_elements * max_load_factor; 
+    
+    return expanded_num_elements * element_size + num_buckets * 8;
+}
 
 inline string revcomp(const string &seq) {
   string seq_rc = "";
@@ -139,109 +161,16 @@ inline void switch_orient(int &start, int &stop, int &len) {
   stop = len - tmp;
 }
 
-// FIXME: this is copied from upcxx-utils, DistributedIO branch. It's temporary until Rob finishes his distributed IO implementation
-template <typename T, typename BinaryOp>
-future<> tmp_reduce_prefix_ring(const T *src, T *dst, size_t count, BinaryOp &op, const upcxx::team &team = upcxx::world(),
-                                bool return_final_to_first = false) {
-  if (team.from_world(rank_me(), upcxx::rank_n()) == upcxx::rank_n())
-    throw std::runtime_error("reduce_prefix called outside of given team");  // not of this team
-  DBG("reduce_prefix(src=", src, ", dst=", dst, ", count=", count, ", team.rank_n()=", team.rank_n(),
-      ", return_final_to_first=", return_final_to_first, "\n");
-  using ShPromise = std::shared_ptr<upcxx::promise<>>;
-  using Data = std::tuple<const T *, T *, size_t, ShPromise>;
-  using DistData = upcxx::dist_object<Data>;
-  using ShDistData = std::shared_ptr<DistData>;
-
-  ShPromise my_prom = std::make_shared<upcxx::promise<>>();
-  upcxx::future<> ret_fut = my_prom->get_future();
-
-  if (team.rank_me() == 0) {
-    // first is special case of copy without op
-    for (size_t i = 0; i < count; i++) dst[i] = src[i];
-
-    if (return_final_to_first) {
-      // make ready for the rpc but do not fulfill my_prom yet
-      ret_fut = upcxx::make_future();
-    } else {
-      // make ready
-      my_prom->fulfill_anonymous(1);
-    }
-
-    // special case
-    if (team.rank_n() == 1) {
-      if (return_final_to_first) my_prom->fulfill_anonymous(1);
-      return ret_fut;
-    }
-  }
-
-  // create a distributed object holding the data and promise
-  ShDistData sh_dist_data = std::make_shared<DistData>(std::make_tuple(src, dst, count, my_prom), team);
-  upcxx::intrank_t next_rank = team.rank_me() + 1;
-  if (return_final_to_first || next_rank != team.rank_n()) {
-    // send rpc to the next rank when my prefix is ready
-    ret_fut = ret_fut.then([next_rank, dst, count, sh_dist_data, &op, &team]() -> future<> {
-      //DBG("mydst is ready:", dst, ", next_rank=", next_rank, "\n");
-      upcxx::rpc_ff(
-          team, next_rank % team.rank_n(),
-          [&op](DistData &dist_data, upcxx::view<T> prev_prefix, bool just_copy) {
-            DBG("Got here: count=", prev_prefix.size(), ", just_copy=", just_copy, "\n");
-            const T *mysrc;
-            T *mydst;
-            size_t mycount;
-            std::shared_ptr<upcxx::promise<>> myprom;
-            std::tie(mysrc, mydst, mycount, myprom) = *dist_data;
-            assert(mycount == prev_prefix.size());
-            if (just_copy) {
-              for (size_t i = 0; i < mycount; i++) {
-                mydst[i] = prev_prefix[i];
-              }
-            } else {
-              for (size_t i = 0; i < mycount; i++) {
-                mydst[i] = op(prev_prefix[i], mysrc[i]);
-              }
-            }
-            myprom->fulfill_anonymous(1);  // mydst is ready
-          },
-          *sh_dist_data, upcxx::make_view(dst, dst + count), next_rank == team.rank_n());
-      return upcxx::make_future();
-    });
-  } else {
-    // keep the scope of the DistData object until ready
-    ret_fut = ret_fut.then([sh_dist_data]() {
-      /* noop */
-    });
-  }
-
-  if (team.rank_me() == 0 && return_final_to_first) {
-    // wait on my_prom to be fulfilled by an rpc from the last rank of the team
-    // and keep the scope of the DistData object until ready
-    ret_fut = my_prom->get_future().then([sh_dist_data]() {
-      /* noop */
-    });
-  }
-
-  return ret_fut;
-};
-
 inline void dump_single_file(const string &fname, const string &out_str, bool append=false) {
   BarrierTimer timer(__FILEFUNC__);
   SLOG_VERBOSE("Writing ", fname, "\n");
+  SWARN("This is not the most efficient way to write a file anymore...\n");
   auto fut_tot_bytes_written = upcxx::reduce_one(out_str.size(), upcxx::op_fast_add, 0);
   upcxx_utils::dist_ofstream of(fname, append);
   of << out_str;
   of.close();
   SLOG_VERBOSE("Successfully wrote ", get_size_str(fut_tot_bytes_written.wait()), " bytes to ", fname, "\n");
   assert(rank_me() || of.get_last_known_tellp() == fut_tot_bytes_written.wait());
-}
-
-template <typename T>
-inline string vec_to_str(const vector<T> &vec, const string &delimiter = ",") {
-  std::ostringstream oss;
-  for (auto elem : vec) {
-    oss << elem;
-    if (elem != vec.back()) oss << delimiter;
-  }
-  return oss.str();
 }
 
 inline vector<string> get_dir_entries(const string &dname, const string &prefix) {
@@ -266,8 +195,21 @@ inline std::string &left_trim(std::string &str) {
   return str;
 }
 
+inline int pin_clear() {
+  cpu_set_t cpu_set;
+  CPU_ZERO(&cpu_set);
+  for (unsigned i = 0; i < sizeof(cpu_set_t) * 8; i++) {
+    CPU_SET(i, &cpu_set);
+  }
+  if (sched_setaffinity(getpid(), sizeof(cpu_set), &cpu_set) == -1) {
+    if (errno == 3) WARN("%s, pid: %d", strerror(errno), getpid());
+    return -1;
+  }
+  return 0;
+}
+
 inline string get_proc_pin() {
-  ifstream f("/proc/" + to_string(getpid()) + "/status");
+  ifstream f("/proc/self/status");
   string line;
   string prefix = "Cpus_allowed_list:";
   while (getline(f, line)) {
@@ -388,5 +330,103 @@ inline void pin_numa() {
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());
   pin_proc(my_cpu_list);
-  SLOG("Pinning to NUMA domains: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
+  SLOG("Pinning to ", numa_nodes_to_use, " NUMA domains each with ", cores_per_numa_node, " cores, ", hdw_threads_per_numa_node, " cpus: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
 }
+
+
+// temporary until it is properly within upcxx_utils
+#include <thread>
+#include <memory>
+#include <functional>
+#include <deque>
+
+namespace upcxx_utils {
+
+    /*
+     * TODO #include <future> // for std::async
+     * requires removal of using namespace std across the board
+     * templates must be in header files
+     * and std::future makes calls to upcxx::future ambiguous (same with promise)
+     * 
+
+    template <typename F, typename... Ts>
+    inline auto reallyAsync(F&& f, Ts&&... params) {
+        return std::async(std::launch::async, std::forward<F>(f),
+                    std::forward<Ts>(params)...);
+    }
+
+    template<typename Func, typename... Args>
+    auto execute_async(Func&& func, Args&&... args) {
+        auto t_start = Timer::now();
+        auto sh_prom = make_shared< upcxx::promise <> > ();
+        const upcxx::persona &persona = upcxx::current_persona();
+        DBG("Starting async sh_prom=", sh_prom.get(), "\n");
+        
+        auto returning_func = 
+        [t_start, sh_prom, &persona] (Func&& f, Args&& ... a) {
+            auto ret = f(a...);
+            duration_seconds sec = Timer::now() - t_start;
+            DBG("Completed running async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                                
+            // fulfill only in calling persona
+            persona.lpc_ff([t_start, sh_prom]() {
+                duration_seconds sec = Timer::now() - t_start;
+                DBG_VERBOSE("Fulfilling promised async sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                sh_prom->fulfill_anonymous(1);
+            });
+            
+            sec = Timer::now() - t_start;
+            DBG_VERBOSE("Returning async result sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+            return ret;
+        };
+        auto async_fut = reallyAsync(returning_func, args...);
+
+        return sh_prom->get_future().then(
+                [t_start, sh_prom, &persona, async_fut]() {
+                    assert(persona.active_with_caller());
+                    
+                    duration_seconds sec = Timer::now() - t_start;
+                    DBG_VERBOSE("Waiting for completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                    
+                    async_fut.wait(); // should be noop but there could be a short race between lpc and returning the value
+                    assert(async_fut.valid());
+                    
+                    sec = Timer::now() - t_start;
+                    DBG("Returning completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
+                    return async_fut.get();
+                });
+    }
+    */
+    
+    // Func no argument returned or given lambda - void()
+
+    template<typename Func>
+    upcxx::future<> execute_in_new_thread(upcxx::persona &persona, Func func) {
+        assert(persona.active_with_caller());
+        shared_ptr< upcxx::promise<> > sh_prom = make_shared< upcxx::promise<> > ();
+
+        shared_ptr<std::thread> sh_run = make_shared<std::thread>(
+                [&persona, func, sh_prom] {
+                    func();
+
+                    // fulfill only in calling persona
+                    persona.lpc_ff([&persona, sh_prom]() {
+                        assert(persona.active_with_caller());
+                        sh_prom->fulfill_anonymous(1);
+                    });
+                });
+        auto fut_finished = sh_prom->get_future().then( // keep sh_prom and sh_run alive until complete
+                [&persona, sh_prom, sh_run] () {
+                    assert(persona.active_with_caller());
+                    sh_run->join();
+                });
+        return fut_finished;
+    }
+
+    template<typename Func>
+    upcxx::future<> execute_in_new_thread(Func func) {
+        return execute_in_new_thread(upcxx::current_persona(), func);
+    }
+    
+
+};

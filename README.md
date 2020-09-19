@@ -69,7 +69,7 @@ by sourcing one of these environments:
 
 To use these with the build.sh script, simply run as, e.g.:
 
-`MHMXX_BUILD_ENV=.env-cori-knl-gnu.sh ./build.sh Release`
+`MHMXX_BUILD_ENV=.env-cori-knl/gnu.sh ./build.sh Release`
 
 It is recommended to use either PrgEnv-gnu or PrgEnv-cray. Builds with the Intel compiler run very slowly and currently there seems to be some bug that causes the execution to hang. This is not present with the other compilers.
 

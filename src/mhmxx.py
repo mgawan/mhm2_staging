@@ -102,7 +102,6 @@ def get_hdw_cores_per_node():
     _defaultCores = cores
     return cores
 
-
 def get_job_id():
     """Query the environment for a job"""
     for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'COBALT_JOBID', 'LOAD_STEP_ID', 'LBS_JOBID']:
@@ -252,6 +251,10 @@ def get_job_desc():
     return get_job_id() + " (" + get_job_name() + ")"
 
 
+def get_job_desc():
+    return get_job_id() + " (" + get_job_name() + ")"
+
+
 def which(file_name):
     if os.path.exists(file_name) and os.access(file_name, os.X_OK):
         return file_name
@@ -391,8 +394,7 @@ def main():
 
     print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
     print("Executed as:" + " ".join(sys.argv))
-    print("Setting GASNET_COLL_SCRATCH_SIZE=4M")
-    runenv = dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M")
+    runenv = dict(os.environ)
 
     mhmxx_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
     if not (os.path.exists(mhmxx_lib_path)):

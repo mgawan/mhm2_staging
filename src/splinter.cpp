@@ -87,7 +87,7 @@ struct AlnStats {
 // gets all the alns for a single read
 static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
   string start_read_id = "";
-  for (; i < alns.size(); i++) {
+  for (; i < (int64_t) alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
@@ -192,15 +192,15 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   ProgressBar progbar(alns.size(), "Adding edges to graph from splints");
   int64_t aln_i = 0;
   int64_t num_splints = 0;
-  while (aln_i < alns.size()) {
+  while (aln_i < (int64_t) alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
     get_alns_for_read(alns, aln_i, alns_for_read, &stats.nalns, &stats.unaligned);
     t_get_alns.stop();
     progbar.update(aln_i);
-    for (int i = 0; i < alns_for_read.size(); i++) {
+    for (int i = 0; i < (int) alns_for_read.size(); i++) {
       auto aln = &alns_for_read[i];
-      for (int j = i + 1; j < alns_for_read.size(); j++) {
+      for (int j = i + 1; j < (int) alns_for_read.size(); j++) {
         progress();
         auto other_aln = &alns_for_read[j];
         if (other_aln->read_id != aln->read_id) DIE("Mismatched read ids: ", other_aln->read_id, " != ", aln->read_id, "\n");

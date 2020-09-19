@@ -4,6 +4,7 @@ variables:
   APPLICATION: mhmxx
   TEST_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:latest
   RELEASE_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:$CI_BUILD_REF_NAME
+  HULK_UPCXX_VER: 2020.3.8
 
 
 stages:
@@ -141,7 +142,7 @@ HULK:build:
     - git submodule sync
     - git submodule update
     - BASE=/work/gitlab-ci
-    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-2020.03
+    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
@@ -160,7 +161,7 @@ HULK:build:
     - echo "Checking for cmake, Berkeley UPC and UPC++"
     - which cmake && cmake --version
     - echo "Checking or building upcxx"
-    - which upcxx || ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL
+    - which upcxx || UPCXXVER=${HULK_UPCXX_VER} ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL
     - upcxx --version
     - echo "Building all flavors"
     - mkdir -p ${SCRATCH}/runs
@@ -192,7 +193,7 @@ HULK:validation:
     - set -e
     - set -x
     - BASE=/work/gitlab-ci
-    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-2020.03
+    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
@@ -217,7 +218,7 @@ HULK:accuracy:
     - git submodule sync
     - git submodule update
     - BASE=/work/gitlab-ci
-    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-2020.03
+    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
