@@ -127,3 +127,40 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
        get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
   barrier();
 }
+
+
+
+
+#define __MACRO_CONTIGGING__(KMER_LEN, MODIFIER) \
+  MODIFIER void contigging<KMER_LEN>(int, int, int, vector<PackedReads*>, Contigs &, \
+                double &, int &, int &, int &, shared_ptr<Options>); 
+
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in contigging.hpp
+// template instantiations each happen in src/CMakeLists via contigging-extern-template.in.cpp
+
+
+__MACRO_CONTIGGING__(32, extern template);
+
+
+#if MAX_BUILD_KMER >= 64
+
+__MACRO_CONTIGGING__(64, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 96
+
+__MACRO_CONTIGGING__(96, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 128
+
+__MACRO_CONTIGGING__(128, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 160
+
+__MACRO_CONTIGGING__(160, extern template);
+
+#endif
+
