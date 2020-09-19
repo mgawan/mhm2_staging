@@ -1,1 +1,1 @@
-export MHMXX_CMAKE_EXTRAS="MAKE_CXX_COMPILER=$(which clang++)"
+export MHMXX_CMAKE_EXTRAS="-DCMAKE_CXX_COMPILER=$(which clang++)"
