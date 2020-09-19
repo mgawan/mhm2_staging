@@ -90,7 +90,7 @@ list(APPEND TGTS $<TARGET_OBJECTS:hash_funcs>)
 
 set(EXTERN_TEMPLATE_FILES)
 foreach(KMER_LENGTH ${MHMXX_KMER_LENGTHS})
-  foreach(TEMPLATE "kmer_dht" "kcount" "kmer")
+  foreach(TEMPLATE "kmer_dht" "kcount" "kmer" "klign")
     set(TEMPLATE_FILE "${TEMPLATE}-extern-template-${KMER_LENGTH}")
     configure_file("${TEMPLATE}-extern-template.in.cpp" "${TEMPLATE_FILE}.cpp" @ONLY)
     list(APPEND EXTERN_TEMPLATE_FILES ${TEMPLATE_FILE})
@@ -113,6 +113,7 @@ endforeach()
 add_executable(mhmxx main.cpp ${TGTS})
 
 if(ENABLE_CUDA)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR})
     include_directories("adept-sw")
     add_subdirectory(adept-sw)
     set_property(TARGET mhmxx PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # just to be sure. It should be off in parent dir
