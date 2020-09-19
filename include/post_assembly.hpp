@@ -90,3 +90,38 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
   SLOG(KBLUE, "_________________________", KNORM, "\n");
 }
 
+
+
+
+#define __MACRO_POST_ASSEMBLY__(KMER_LEN, MODIFIER) \
+  MODIFIER void post_assembly<KMER_LEN>(int, Contigs &, shared_ptr<Options>, int); 
+
+// Reduce compile time by instantiating templates of common types
+// extern template declarations are in post_assembly.hpp
+// template instantiations each happen in src/CMakeLists via post_assembly-extern-template.in.cpp
+
+
+__MACRO_POST_ASSEMBLY__(32, extern template);
+
+
+#if MAX_BUILD_KMER >= 64
+
+__MACRO_POST_ASSEMBLY__(64, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 96
+
+__MACRO_POST_ASSEMBLY__(96, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 128
+
+__MACRO_POST_ASSEMBLY__(128, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 160
+
+__MACRO_POST_ASSEMBLY__(160, extern template);
+
+#endif
+

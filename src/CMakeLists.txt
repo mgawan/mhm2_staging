@@ -88,9 +88,10 @@ set(TGTS)
 add_library(hash_funcs OBJECT hash_funcs.c)
 list(APPEND TGTS $<TARGET_OBJECTS:hash_funcs>)
 
+# build all the extern template souce code instantiation explosion
 set(EXTERN_TEMPLATE_FILES)
 foreach(KMER_LENGTH ${MHMXX_KMER_LENGTHS})
-  foreach(TEMPLATE "kmer_dht" "kcount" "kmer" "klign" "scaffolding" "contigging")
+  foreach(TEMPLATE "kmer_dht" "kcount" "kmer" "klign" "scaffolding" "contigging" "post_assembly")
     set(TEMPLATE_FILE "${TEMPLATE}-extern-template-${KMER_LENGTH}")
     configure_file("${TEMPLATE}-extern-template.in.cpp" "${TEMPLATE_FILE}.cpp" @ONLY)
     list(APPEND EXTERN_TEMPLATE_FILES ${TEMPLATE_FILE})
