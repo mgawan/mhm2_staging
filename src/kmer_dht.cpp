@@ -40,84 +40,85 @@
  form.
 */
 
-#include "kcount.hpp"
-
-#include <iostream>
-#include <math.h>
-#include <algorithm>
-#include <stdarg.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <upcxx/upcxx.hpp>
-
-#include "upcxx_utils/log.hpp"
-#include "upcxx_utils/progress_bar.hpp"
-#include "upcxx_utils/timers.hpp"
-#include "upcxx_utils/mem_profile.hpp"
-
-#include "utils.hpp"
 #include "kmer_dht.hpp"
-#include "packed_reads.hpp"
-#include "contigs.hpp"
 
-using namespace std;
-using namespace upcxx;
-using namespace upcxx_utils;
-
-
-
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list) {
-  BarrierTimer timer(__FILEFUNC__);
-  int64_t num_kmers = 0;
-  int64_t num_reads = 0;
-  int64_t tot_num_reads = 0;
-  for (auto packed_reads : packed_reads_list) {
-    tot_num_reads += packed_reads->get_local_num_reads();
-    packed_reads->reset();
-    string id, seq, quals;
-    ProgressBar progbar(packed_reads->get_local_num_reads(), "Scanning reads to estimate number of kmers");
-
-    for (int i = 0; i < 100000; i++) {
-      if (!packed_reads->get_next_read(id, seq, quals)) break;
-      progbar.update();
-      // do not read the entire data set for just an estimate
-      if (seq.length() < kmer_len) continue;
-      num_kmers += seq.length() - kmer_len + 1;
-      num_reads++;
-    }
-    progbar.done();
-    barrier();
+  array<pair<char, int>, 4> ExtCounts::get_sorted() {
+    array<pair<char, int>, 4> counts = {make_pair('A', (int)count_A), make_pair('C', (int)count_C),
+                                        make_pair('G', (int)count_G), make_pair('T', (int)count_T)};
+    sort(std::begin(counts), std::end(counts),
+         [](const auto &elem1, const auto &elem2) {
+           if (elem1.second == elem2.second) return elem1.first > elem2.first;
+           else return elem1.second > elem2.second;
+         });
+    return counts;
   }
-  DBG("This rank processed ", num_reads, " reads, and found ", num_kmers, " kmers\n");
-  auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto all_tot_num_reads = reduce_one(tot_num_reads, op_fast_add, 0).wait();
-  auto all_num_kmers = reduce_all(num_kmers, op_fast_add).wait();
 
-  SLOG_VERBOSE("Processed ", perc_str(all_num_reads, all_tot_num_reads), " reads, and estimated a maximum of ",
-               all_num_kmers * (all_tot_num_reads / all_num_reads), " kmers\n");
-  return num_reads > 0 ? num_kmers * tot_num_reads / num_reads : 0;
-}
+  bool ExtCounts::is_zero() {
+    if (count_A + count_C + count_G + count_T == 0) return true;
+    return false;
+  }
+
+  void ExtCounts::inc(char ext, int count) {
+    switch (ext) {
+      case 'A':
+        count += count_A;
+        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'C':
+        count += count_C;
+        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'G':
+        count += count_G;
+        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'T':
+        count += count_T;
+        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+    }
+  }
+
+  char ExtCounts::get_ext(uint16_t count) {
+    auto sorted_counts = get_sorted();
+    int top_count = sorted_counts[0].second;
+    int runner_up_count = sorted_counts[1].second;
+    // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
+    int dmin_dyn = max((int)((1.0 - _dynamic_min_depth) * count), _dmin_thres);
+    if (top_count < dmin_dyn) return 'X';
+    if (runner_up_count >= dmin_dyn) return 'F';
+    return sorted_counts[0].first;
+    /*
+    // FIXME: this is not very helpful. With qual_cutoff = 20) it increases ctgy & coverage a little bit, but at a cost
+    // of increased msa. We really need to try both low q (qual cutoff 10) and hi q, as we do with localassm.
+    double dmin_dyn = max(2.0, LASSM_MIN_EXPECTED_DEPTH * count);
+    if ((top_count < dmin_dyn && runner_up_count > 0) || (top_count >= dmin_dyn && runner_up_count >= dmin_dyn)) return 'F';
+    return sorted_counts[0].first;
+    */
+  }
+  
 
 
-__MACRO_KCOUNT__(32, template);
+__MACRO_KMER_DHT__(32, template);
 
 #if MAX_BUILD_KMER >= 64
 
-__MACRO_KCOUNT__(64,  template);
+__MACRO_KMER_DHT__(64,  template);
 
 #endif
 #if MAX_BUILD_KMER >= 96
 
-__MACRO_KCOUNT__(96,  template);
+__MACRO_KMER_DHT__(96,  template);
 
 #endif
 #if MAX_BUILD_KMER >= 128
 
-__MACRO_KCOUNT__(128,  template);
+__MACRO_KMER_DHT__(128,  template);
 
 #endif
 #if MAX_BUILD_KMER >= 160
 
-__MACRO_KCOUNT__(160,  template);
+__MACRO_KMER_DHT__(160,  template);
 
 #endif
+

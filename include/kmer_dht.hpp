@@ -113,60 +113,13 @@ struct ExtCounts {
   ext_count_t count_G;
   ext_count_t count_T;
 
-  array<pair<char, int>, 4> get_sorted() {
-    array<pair<char, int>, 4> counts = {make_pair('A', (int)count_A), make_pair('C', (int)count_C),
-                                        make_pair('G', (int)count_G), make_pair('T', (int)count_T)};
-    sort(std::begin(counts), std::end(counts),
-         [](const auto &elem1, const auto &elem2) {
-           if (elem1.second == elem2.second) return elem1.first > elem2.first;
-           else return elem1.second > elem2.second;
-         });
-    return counts;
-  }
+  array<pair<char, int>, 4> get_sorted();
 
-  bool is_zero() {
-    if (count_A + count_C + count_G + count_T == 0) return true;
-    return false;
-  }
+  bool is_zero();
 
-  void inc(char ext, int count) {
-    switch (ext) {
-      case 'A':
-        count += count_A;
-        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'C':
-        count += count_C;
-        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'G':
-        count += count_G;
-        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'T':
-        count += count_T;
-        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-    }
-  }
+  void inc(char ext, int count);
 
-  char get_ext(uint16_t count) {
-    auto sorted_counts = get_sorted();
-    int top_count = sorted_counts[0].second;
-    int runner_up_count = sorted_counts[1].second;
-    // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
-    int dmin_dyn = max((int)((1.0 - _dynamic_min_depth) * count), _dmin_thres);
-    if (top_count < dmin_dyn) return 'X';
-    if (runner_up_count >= dmin_dyn) return 'F';
-    return sorted_counts[0].first;
-    /*
-    // FIXME: this is not very helpful. With qual_cutoff = 20) it increases ctgy & coverage a little bit, but at a cost
-    // of increased msa. We really need to try both low q (qual cutoff 10) and hi q, as we do with localassm.
-    double dmin_dyn = max(2.0, LASSM_MIN_EXPECTED_DEPTH * count);
-    if ((top_count < dmin_dyn && runner_up_count > 0) || (top_count >= dmin_dyn && runner_up_count >= dmin_dyn)) return 'F';
-    return sorted_counts[0].first;
-    */
-  }
+  char get_ext(uint16_t count);
 
 };
 
@@ -683,4 +636,32 @@ public:
   }
 
 };
+
+
+#define __MACRO_KMER_DHT__(KMER_LEN, MODIFIER) \
+    MODIFIER class KmerDHT<KMER_LEN>; \
+  
+__MACRO_KMER_DHT__(32, extern template);
+
+#if MAX_BUILD_KMER >= 64
+
+__MACRO_KMER_DHT__(64, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 96
+
+__MACRO_KMER_DHT__(96, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 128
+
+__MACRO_KMER_DHT__(128, extern template);
+
+#endif
+#if MAX_BUILD_KMER >= 160
+
+__MACRO_KMER_DHT__(160, extern template);
+
+#endif
+
 

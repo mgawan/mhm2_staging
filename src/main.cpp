@@ -62,6 +62,7 @@ using namespace std;
 #include "kmer.hpp"
 #include "contigs.hpp"
 #include "alignments.hpp"
+#include "kcount.hpp"
 #include "kmer_dht.hpp"
 
 #ifdef ENABLE_GPUS
@@ -79,10 +80,6 @@ bool _verbose = false;
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
                  vector<PackedReads*> &packed_reads_list, bool checkpoint);
 uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list);
-template<int MAX_K>
-void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads*> &packed_reads_list,
-                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                   double &num_kmers_factor);
 template<int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 template<int MAX_K>

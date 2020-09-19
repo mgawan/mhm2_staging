@@ -85,7 +85,19 @@ include_directories("ssw")
 add_subdirectory(ssw)
 
 set(TGTS)
-foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options)
+add_library(hash_funcs OBJECT hash_funcs.c)
+list(APPEND TGTS $<TARGET_OBJECTS:hash_funcs>)
+
+set(EXTERN_TEMPLATE_FILES)
+foreach(KMER_LEN ${MHMXX_KMER_LENGTHS})
+endforeach()
+
+
+foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options kmer kcount kmer_dht 
+            merge_reads dbjg_traversal klign cgraph build_ctg_graph
+            walk_ctg_graph spanner splinter localassm histogrammer aln_depths
+            ${EXTERN_TEMPLATE_FILES}
+        )
   add_library(${tgt} OBJECT ${tgt}.cpp)
   if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
     target_link_libraries(${tgt} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
@@ -93,11 +105,7 @@ foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options)
   list(APPEND TGTS $<TARGET_OBJECTS:${tgt}>)
 endforeach()
 
-add_executable(mhmxx
-    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp
-    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp aln_depths.cpp
-    ${TGTS}
-)
+add_executable(mhmxx main.cpp ${TGTS})
 
 if(ENABLE_CUDA)
     include_directories("adept-sw")
