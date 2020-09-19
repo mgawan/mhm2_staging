@@ -32,7 +32,7 @@ Cori:build:
     - echo "Establishing variables"
     - export MHMXX_SOURCE=$(pwd)
     - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
-    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHA}
+    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export INSTALL_PREFIX=${SCRATCH}/install
     - export BUILD_PREFIX=${SCRATCH}/build
     - export RUN_PREFIX=${SCRATCH}/runs
@@ -80,7 +80,7 @@ Cori:validation:
     - echo "Establishing variables"
     - export MHMXX_SOURCE=$(pwd)
     - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
-    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHA}
+    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export INSTALL_PREFIX=${SCRATCH}/install
     - export BUILD_PREFIX=${SCRATCH}/build
     - export RUN_PREFIX=${SCRATCH}/runs
@@ -108,7 +108,7 @@ Cori:accuracy:
     - echo "Establishing variables"
     - export MHMXX_SOURCE=$(pwd)
     - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
-    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHA}
+    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export INSTALL_PREFIX=${SCRATCH}/install
     - export BUILD_PREFIX=${SCRATCH}/build
     - export RUN_PREFIX=${SCRATCH}/runs
@@ -145,7 +145,7 @@ HULK:build:
     - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
-    - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
+    - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
@@ -196,7 +196,7 @@ HULK:validation:
     - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
-    - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
+    - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - echo "Validating all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
@@ -221,7 +221,7 @@ HULK:accuracy:
     - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
-    - export SCRATCH=$BASE/scratch/mhmxx-inst-${CI_COMMIT_SHA}
+    - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - echo "Running accuracy tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
