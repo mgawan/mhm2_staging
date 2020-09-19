@@ -103,7 +103,9 @@ find_package(CpuArch
   COMPONENTS
   OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
 
-LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
+if (NOT APPLE)
+  LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
+endif()
 
 option(MHMXX_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
 foreach(_ARCH ${CpuArch_FEATURES})

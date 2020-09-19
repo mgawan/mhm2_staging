@@ -297,7 +297,11 @@ using std::ostringstream;
         io_t.start();
         if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
         // tell the OS this file will be accessed sequentially
+#if defined(__APPLE__) && defined(__MACH__)
+        // TODO
+#else
         posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);    
+#endif
         SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
         double fseek_t = io_t.get_elapsed_since_start();
         io_t.stop();
