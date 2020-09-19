@@ -157,7 +157,7 @@ message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L$
 
 # Build options
 if (NOT MAX_BUILD_KMER)
-  set(MAX_BUILD_KMER 32 CACHE STRING "The maximum kmer allowed to use (must be multiple of 32)")
+  set(MAX_BUILD_KMER 160 CACHE STRING "The maximum kmer allowed to use (must be multiple of 32)")
 endif()
 math(EXPR TEST_MAX_KMER_SIZE "((${MAX_BUILD_KMER} + 31) / 32) * 32")
 if (NOT ${MAX_BUILD_KMER} EQUAL ${TEST_MAX_KMER_SIZE})

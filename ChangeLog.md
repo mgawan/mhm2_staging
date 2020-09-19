@@ -3,6 +3,14 @@
 
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhmxx)
 
+### 0.1.4 2020-09-18
+   * Incorporated a 3 tier aggregating store to allow scaling on 1000s of nodes Issue #4
+   * Fixed stall on summit with over 200 node Issue #34
+   * Improved reading of multiple input files Issue #38
+   * Fixed error when writing to a lagging filesystem Issue #26 #15
+   * Various bug fixes Issues #27 #29 #31 #36
+   * Included compile support for MacOSX
+
 ### 0.1.3 2020-08-20
    * Added support for GPU in alignments with CUDA-enabled detection and build
       * major refactor of adept-sw for better performance and ease of building
