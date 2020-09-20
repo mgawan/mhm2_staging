@@ -209,11 +209,12 @@ HULK:build:
     - echo "Purging any old tests"
     - ls -td ${BASE}/scratch/mhmxx-inst-* | tail -n +8 | xargs  rm -rf '{}' ';' || /bin/true
     - df -h
+    - FAILED=""
     - echo "Checking for cmake, Berkeley UPC and UPC++"
-    - which cmake && cmake --version
+    - which cmake && cmake --version || FAILED="${FAILED} cmake not found"
     - echo "Checking or building upcxx"
-    - which upcxx || UPCXXVER=${HULK_UPCXX_VER} ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL
-    - upcxx --version
+    - which upcxx || UPCXXVER=${HULK_UPCXX_VER} ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL || FAILED="${FAILED} could not install upcxx"
+    - upcxx --version || FAILED="${FAILED} no upcxx was found"
     - echo "Building all flavors"
     - mkdir -p ${RUN_PREFIX}
     - export GASNET_BACKTRACE=1
@@ -222,18 +223,21 @@ HULK:build:
     - mkdir -p $SCRATCH/build
     - cd $SCRATCH/build
     - echo "Building Debug"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
-    - make -j 16 all install
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE} || FAILED="${FAILED} Could not configure Debug"
+    - make -j 16 all install || FAILED="${FAILED} Could not build Debug"
     - make clean
     - echo "Building RelWithDebInfo"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
-    - make -j 16 all install || echo "FAILED TO BUILD RelWithDebInfo"
+    - export UPCXX_CODEMODE=debug
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure RelWithDebInfo"
+    - make -j 16 all install || FAILED="${FAILED} Cuold not build RelWithDebInfo"
     - make clean
     - echo "Building Release"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
-    - make -j 16 all install
-    - echo FIXME cd -
-    - echo FIXME rm -rf $SCRATCH/build
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure Release"
+    - make -j 16 all install || FAILED="${FAILED} Could not build Release"
+    - echo "${FAILED}"
+    - [ -n "$FAILED" ]
+    - cd -
+    - rm -rf $SCRATCH/build
     - echo "Completed"
 
     
