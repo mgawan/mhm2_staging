@@ -104,16 +104,18 @@ Cori:validation:
     - export DBG=${INSTALL_PREFIX}-knl-dbg/bin/mhmxx.py
     - export REL=${INSTALL_PREFIX}-knl/bin/mhmxx.py
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
-    - export OPTS="-f ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
+    - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
     - export GASNET_BACKTRACE=1
-    - echo "Submitting job on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 = 456s  ...REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI} $OPTS -o rwdi && ${DBG} ${OPTS} --kmer-lens 63 -o dbg")
+    - echo "Submitting job on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
+    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI} $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG} ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg")
     - echo "Waiting for knl job $knl_job"
     - date
     - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
     - sacct=$(sacct -j $knl_job)
     - echo "$sacct"
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
+    - [ -n "$wasgood" ]
+    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
     - echo "Completed"
 
 Cori:accuracy:
@@ -142,25 +144,28 @@ Cori:accuracy:
     - echo "Testing accuracy"
     - export REL=${INSTALL_PREFIX}-knl/bin/mhmxx.py
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
-    - export OPTS="-f ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
-    - echo "Submitting job on 2 nodes roughly REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o rel")
-    - export OPTS="-f ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
-    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=20:00 --wrap="${REL} $OPTS -o rel-full")
+    - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
+    - echo "Submitting job... on 2 nodes is is roughly REL=170s"
+    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel")
+#    - echo "Submitting full arctic job on 15 nodes"
+#    - export OPTS="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
+#    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full")
     - echo "Waiting for knl job $knl_job"
     - date
     - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
     - sacct=$(sacct -j $knl_job)
     - echo "$sacct"
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ./rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
-    - echo "Waiting for knl job $knl_job2"
-    - date
-    - while sacct -j $knl_job2 -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
-    - sacct=$(sacct -j $knl_job2)
-    - echo "$sacct"
-    - wasgood=$(sacct -j $knl_job2 | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ./rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
+    - [ -n "$wasgood" ]
+    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
+#    - echo "Waiting for larger knl job $knl_job2"
+#    - date
+#    - while sacct -j $knl_job2 -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
+#    - sacct=$(sacct -j $knl_job2)
+#    - echo "$sacct"
+#    - wasgood=$(sacct -j $knl_job2 | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
+#    - [ -n "$wasgood" ]
+#    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
 
 
 
@@ -185,7 +190,13 @@ HULK:build:
     - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
+    - mkdir -p ${HIPMER_DATA}
     - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export RUN_PREFIX=${SCRATCH}/runs
+    - export GASNET_BACKTRACE=1
+    - echo "Verifing and/or downloading test arctic data set"
+    - [ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )
+    - [ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arctic_sample_0.fq.gz && mv gunzip arctic_sample_0.fq.gz && arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
@@ -204,17 +215,23 @@ HULK:build:
     - which upcxx || UPCXXVER=${HULK_UPCXX_VER} ./upcxx-utils/contrib/install_upcxx.sh $CI_INSTALL
     - upcxx --version
     - echo "Building all flavors"
-    - mkdir -p ${SCRATCH}/runs
+    - mkdir -p ${RUN_PREFIX}
     - export GASNET_BACKTRACE=1
     - export INSTALL_PREFIX=${SCRATCH}
-    - echo "Building debug"
     - rm -rf $SCRATCH/build
     - mkdir -p $SCRATCH/build
     - cd $SCRATCH/build
+    - echo "Building Debug"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
     - make -j 8 
     - make install
     - make clean
+    - echo "Building RelWithDebInfo"
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
+    - make -j 8
+    - make install
+    - make clean
+    - echo "Building Release"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
     - make -j 8
     - make install
@@ -237,6 +254,8 @@ HULK:validation:
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export RUN_PREFIX=${SCRATCH}/runs
+    - export GASNET_BACKTRACE=1
     - echo "Validating all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
@@ -244,7 +263,13 @@ HULK:validation:
     - pwd
     - date
     - upcxx --version
-    - inst=${SCRATCH}/mhmxx-dbg/bin
+    - reads=${HIPMER_DATA}/arctic_sample_0.fq 
+    - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
+    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v
+    - echo "TODO verify"
+    - echo "Starting debug build on with reduced workflow"
+    - ${INSTALL_PREFIX}/mhmxx-dbg  -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v
+    - echo "TODO verify"
     - echo "Completed"
 
 HULK:accuracy:
@@ -269,7 +294,10 @@ HULK:accuracy:
     - pwd
     - date
     - upcxx --version
-    - inst=${SCRATCH}/mhmxx-dbg/bin
+    - reads=${HIPMER_DATA}/arctic_sample_0.fq 
+    - echo "Starting Release mhmxx on Arctic $reads"
+    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v
+    - echo "TODO verify"
     - echo "Completed"
 
 after_script:
