@@ -149,7 +149,7 @@ Cori:accuracy:
     - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel")
     - echo "Submitting full arctic job on 15 nodes"
     - export OPTS="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
-    - #knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full")
+    - knl_job2=$(echo FIXME sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full")
     - echo "Waiting for knl job $knl_job"
     - date
     - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
