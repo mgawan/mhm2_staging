@@ -51,19 +51,19 @@ Cori:build:
     - cd $MHMXX_BUILD
     - echo "Building KNL GNU Debug"
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
-    - make -j 8 install
+    - make -j 12 all install
     - export MHMXX_BUILD=${BUILD_PREFIX}-knl-reldbg
     - mkdir -p ${MHMXX_BUILD}
     - cd $MHMXX_BUILD
     - echo "Building KNL GNU RelWithDebInfo"
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-reldbg -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
-    - make -j 8 install
+    - make -j 12 all install
     - export MHMXX_BUILD=${BUILD_PREFIX}-knl
     - mkdir -p ${MHMXX_BUILD}
     - cd $MHMXX_BUILD
     - echo "Building KNL GNU Release"
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
-    - make -j 8 install
+    - make -j 12 all install
     - echo "Loading Haswell modules for upcxx GNU"
     - source ${MHMXX_SOURCE}/.env-cori-haswell/gnu.sh
     - module list
@@ -72,7 +72,7 @@ Cori:build:
     - cd $MHMXX_BUILD
     - echo "Building Haswell GNU Release"
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
-    - make -j 8 install
+    - make -j 12 all install
     - echo "Done building"
 
 Cori:validation:
@@ -113,6 +113,7 @@ Cori:validation:
     - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
     - sacct=$(sacct -j $knl_job)
     - echo "$sacct"
+    - cat slurm-${knl_job}.out
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
@@ -155,6 +156,7 @@ Cori:accuracy:
     - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
     - sacct=$(sacct -j $knl_job)
     - echo "$sacct"
+    - cat slurm-${knl_job}.out
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
@@ -164,6 +166,7 @@ Cori:accuracy:
 #    - while sacct -j $knl_job2 -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
 #    - sacct=$(sacct -j $knl_job2)
 #    - echo "$sacct"
+#    - cat slurm-${knl_job}.out
 #    - wasgood=$(sacct -j $knl_job2 | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
 #    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job2 ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
 #    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
@@ -239,7 +242,7 @@ HULK:build:
     - echo "${FAILED}"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
     - cd -
-    - echo FIXME rm -rf $SCRATCH/build
+    - rm -rf $SCRATCH/build
     - echo "Completed"
 
     
@@ -257,6 +260,7 @@ HULK:validation:
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export RUN_PREFIX=${SCRATCH}/runs
+    - export INSTALL_PREFIX=${SCRATCH}
     - export GASNET_BACKTRACE=1
     - echo "Validating all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
