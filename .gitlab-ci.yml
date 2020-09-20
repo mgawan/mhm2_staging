@@ -114,7 +114,7 @@ Cori:validation:
     - sacct=$(sacct -j $knl_job)
     - echo "$sacct"
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-    - [ -n "$wasgood" ]
+    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
     - echo "Completed"
 
@@ -156,7 +156,7 @@ Cori:accuracy:
     - sacct=$(sacct -j $knl_job)
     - echo "$sacct"
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-    - [ -n "$wasgood" ]
+    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
 # FIXME submit and wait on knl_job2
 #    - echo "Waiting for larger knl job $knl_job2"
@@ -165,7 +165,7 @@ Cori:accuracy:
 #    - sacct=$(sacct -j $knl_job2)
 #    - echo "$sacct"
 #    - wasgood=$(sacct -j $knl_job2 | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-#    - [ -n "$wasgood" ]
+#    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job2 ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
 #    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
 
 
@@ -237,7 +237,7 @@ HULK:build:
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure Release"
     - make -j 16 all install || FAILED="${FAILED} Could not build Release"
     - echo "${FAILED}"
-    - echo $([ -n "$FAILED" ])
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
     - cd -
     - echo FIXME rm -rf $SCRATCH/build
     - echo "Completed"
@@ -265,13 +265,15 @@ HULK:validation:
     - pwd
     - date
     - upcxx --version
+    - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
-    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v
+    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "TODO verify"
     - echo "Starting debug build on with reduced workflow"
-    - ${INSTALL_PREFIX}/mhmxx-dbg  -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v
+    - ${INSTALL_PREFIX}/mhmxx-dbg  -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "TODO verify"
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
 HULK:accuracy:
@@ -296,10 +298,12 @@ HULK:accuracy:
     - pwd
     - date
     - upcxx --version
+    - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - echo "Starting Release mhmxx on Arctic $reads"
-    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v
+    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
     - echo "TODO verify"
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
 after_script:
