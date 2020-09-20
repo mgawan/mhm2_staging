@@ -226,9 +226,8 @@ HULK:build:
     - make -j 16 all install
     - make clean
     - echo "Building RelWithDebInfo"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE} || /bin/true
-    - echo FIXME make -j 16 all install
-    - echo FIXME make install
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
+    - make -j 16 all install || echo "FAILED TO BUILD RelWithDebInfo"
     - make clean
     - echo "Building Release"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
