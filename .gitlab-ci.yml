@@ -147,9 +147,9 @@ Cori:accuracy:
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
     - echo "Submitting job... on 2 nodes is is roughly REL=170s"
     - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel")
-#    - echo "Submitting full arctic job on 15 nodes"
-#    - export OPTS="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
-#    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full")
+    - echo "Submitting full arctic job on 15 nodes"
+    - export OPTS="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
+    - #knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full")
     - echo "Waiting for knl job $knl_job"
     - date
     - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
@@ -195,8 +195,8 @@ HULK:build:
     - export RUN_PREFIX=${SCRATCH}/runs
     - export GASNET_BACKTRACE=1
     - echo "Verifing and/or downloading test arctic data set"
-    - [ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )
-    - [ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arctic_sample_0.fq.gz && mv gunzip arctic_sample_0.fq.gz && arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )
+    - bash -c "[ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )"
+    - bash -c "[ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arctic_sample_0.fq.gz && mv gunzip arctic_sample_0.fq.gz && arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )"
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
