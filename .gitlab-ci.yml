@@ -196,7 +196,7 @@ HULK:build:
     - export GASNET_BACKTRACE=1
     - echo "Verifing and/or downloading test arctic data set"
     - bash -c "[ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )"
-    - bash -c "[ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arctic_sample_0.fq.gz && mv gunzip arctic_sample_0.fq.gz && arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )"
+    - bash -c "[ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arctic_sample_0.fq.gz && gunzip arctic_sample_0.fq.gz && mv arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )"
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
