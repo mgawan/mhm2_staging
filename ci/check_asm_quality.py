@@ -20,6 +20,14 @@ def get_qual_vals(fname):
             quals[key] = val
     return quals
     
+def which(file_name):
+    if os.path.exists(file_name) and os.access(file_name, os.X_OK):
+        return file_name
+    for path in os.environ["PATH"].split(os.pathsep):
+        full_path = os.path.join(path, file_name)
+        if os.path.exists(full_path) and os.access(full_path, os.X_OK):
+            return full_path
+    return None
 
 def main():
     argparser = argparse.ArgumentParser(add_help=False)
@@ -34,7 +42,15 @@ def main():
     # first, run metaquast on the assembly
     os.chdir(options.asm_dir)
     cmd = ['metaquast.py', '--fast', '-o', 'mq.out', '-r', options.refs, 'final_assembly.fasta']
-    print('Running metaquast...')
+    test_exec_mq = which('metaquast.py')
+    if not test_exec_mq:
+        test_exec_shifter = which('shifter')
+        # test_exec_docker = which('docker')
+        if test_exec_shifter:
+            shifter = ['shifter', '--image=robegan21/quast:latest']
+            shifter.extend(cmd)
+            cmd = shifter
+    print('Running metaquast...', cmd)
     subprocess.check_output(cmd, stderr=subprocess.STDOUT)
     new_quals = get_qual_vals('mq.out/combined_reference/report.txt')
     num_mismatches = 0
