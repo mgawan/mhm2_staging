@@ -158,6 +158,7 @@ Cori:accuracy:
     - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
     - [ -n "$wasgood" ]
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
+# FIXME submit and wait on knl_job2
 #    - echo "Waiting for larger knl job $knl_job2"
 #    - date
 #    - while sacct -j $knl_job2 -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
@@ -226,11 +227,12 @@ HULK:build:
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE} || FAILED="${FAILED} Could not configure Debug"
     - make -j 16 all install || FAILED="${FAILED} Could not build Debug"
     - make clean
-    - echo "Building RelWithDebInfo"
     - export UPCXX_CODEMODE=debug
+    - echo "Building RelWithDebInfo with UPCXX_CODEMODE=$UPCXX_CODEMODE"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure RelWithDebInfo"
     - make -j 16 all install || FAILED="${FAILED} Cuold not build RelWithDebInfo"
     - make clean
+    - unset UPCXX_CODEMODE
     - echo "Building Release"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure Release"
     - make -j 16 all install || FAILED="${FAILED} Could not build Release"
