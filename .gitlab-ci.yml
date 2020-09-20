@@ -237,7 +237,7 @@ HULK:build:
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure Release"
     - make -j 16 all install || FAILED="${FAILED} Could not build Release"
     - echo "${FAILED}"
-    - [ -n "$FAILED" ] || /bin/true
+    - echo $([ -n "$FAILED" ])
     - cd -
     - echo FIXME rm -rf $SCRATCH/build
     - echo "Completed"
