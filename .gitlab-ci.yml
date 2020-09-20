@@ -225,7 +225,7 @@ HULK:build:
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
     - make -j 8 
     - make install
-    - make clean
+    - make clean || /bin/true
     - echo "Building RelWithDebInfo"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
     - make -j 8
