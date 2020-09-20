@@ -223,21 +223,20 @@ HULK:build:
     - cd $SCRATCH/build
     - echo "Building Debug"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
-    - make -j 8 
-    - make install
-    - make clean || /bin/true
+    - make -j 16 all install
+    - echo FIXME make clean || /bin/true
     - echo "Building RelWithDebInfo"
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
-    - make -j 8
-    - make install
-    - make clean
+    - make -j 16 all install
+    - echo FIXME make install
+    - echo FIXME make clean
     - echo "Building Release"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
-    - make -j 8
-    - make install
-    - make clean
-    - cd -
-    - rm -rf $SCRATCH/build
+    - echo FIXME cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
+    - echo FIXME make -j 8
+    - echo FIXME make install
+    - echo FIXME make clean
+    - echo FIXME cd -
+    - echo FIXME rm -rf $SCRATCH/build
     - echo "Completed"
 
     
