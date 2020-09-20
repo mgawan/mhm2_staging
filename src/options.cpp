@@ -145,9 +145,7 @@ void Options::setup_output_dir() {
     // create the output directory and stripe it if not doing a restart
     if (restart) {
       if (access(output_dir.c_str(), F_OK) == -1) {
-        ostringstream oss;
-        oss << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir << " for restart does not exist" << endl;
-        throw std::runtime_error(oss.str());
+        SDIE("Output directory ", output_dir, " for restart does not exist");
       }
     } else {
       if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
@@ -156,10 +154,7 @@ void Options::setup_output_dir() {
           cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
                << " already exists. May overwrite existing files\n";
         } else {
-          ostringstream oss;
-          oss << KLRED << "ERROR: " << KNORM << " Could not create output directory " << output_dir << ": " << strerror(errno)
-              << endl;
-          throw std::runtime_error(oss.str());
+          SDIE("Could not create output directory ", output_dir, ": ", strerror(errno));
         }
       } else {
         // created the directory - now stripe it if possible
@@ -193,9 +188,7 @@ void Options::setup_output_dir() {
   }
   // all change to the output directory
   if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
-    ostringstream oss;
-    oss << KLRED << "Cannot change to output directory " << output_dir << ": " << strerror(errno) << KNORM << endl;
-    throw std::runtime_error(oss.str());
+    DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
   }
   upcxx::barrier();
 }
@@ -209,9 +202,7 @@ void Options::setup_log_file() {
            << endl;
       if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
     } else if (!file_exists("mhmxx.log") && restart) {
-      ostringstream oss;
-      oss << KLRED << "ERROR: " << KNORM << " Could not restart - missing mhmxx.log in this directory" << endl;
-      throw std::runtime_error(oss.str());
+      DIE("Could not restart - missing mhmxx.log in tis directory");
     }
   }
   upcxx::barrier();
@@ -350,15 +341,11 @@ bool Options::load(int argc, char **argv) {
 
   if (!upcxx::rank_me() && !restart && reads_fnames.empty()) {
     // FIXME: there appears to be no way to do exactly this with a validator or ->required()
-    ostringstream oss;
-    oss << KLRED << "Require read names if not restarting" << KNORM << endl;
-    throw std::runtime_error(oss.str());
+    DIE("Require read names if not restarting");
   }
 
   if (!upcxx::rank_me() && post_assm_only && ctgs_fname.empty()) {
-    ostringstream oss;
-    oss << KLRED << "For running only post assembly analysis, require --contigs (e.g. pass final_assembly.fasta)" << KNORM << endl;
-    throw std::runtime_error(oss.str());
+    DIE("For running only post assembly analysis, require --contigs (e.g. pass final_assembly.fasta)");
   }
 
   upcxx::barrier();

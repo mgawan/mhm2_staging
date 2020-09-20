@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
   auto start_t = std::chrono::high_resolution_clock::now();
   auto init_start_t = start_t;
   auto options = make_shared<Options>();
-  if (!options->load(argc, argv)) return 0;
+  if (!options->load(argc, argv)) return -1;
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
