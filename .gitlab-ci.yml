@@ -44,6 +44,7 @@ Cori:build:
     - mkdir -p ${SCRATCH} ${RUN_PREFIX}
     - exec >  >(tee -ia ${SCRATCH}/build.log)
     - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)    
+    - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"
     - lmstat -a -c $INTEL_LICENSE_FILE || /bin/true
     - echo "Loading KNL modules for upcxx on cori GNU"
     - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
@@ -101,7 +102,8 @@ Cori:validation:
     - module list
     - cd $SCRATCH
     - exec >  >(tee -ia ${SCRATCH}/validation.log)
-    - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)    
+    - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)   
+    - echo "Logging to ${SCRATCH}/validation.log and .err at $(date) on $(uname -n) in $(pwd)"     
     - inst=${INSTALL_PREFIX}-knl
     - echo "Testing builds on KNL - $inst"
     - export RWDI=${INSTALL_PREFIX}-knl-reldbg/bin/mhmxx.py
@@ -146,7 +148,8 @@ Cori:accuracy:
     - echo "Loading KNL modules for upcxx on cori"
     - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
     - exec >  >(tee -ia ${SCRATCH}/accuracy.log)
-    - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)    
+    - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)
+    - echo "Logging to ${SCRATCH}/accuracy.log and .err at $(date) on $(uname -n) in $(pwd)"    
     - module list
     - cd $SCRATCH
     - echo "Testing accuracy"
@@ -211,7 +214,8 @@ HULK:build:
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
     - exec >  >(tee -ia ${SCRATCH}/build.log)
-    - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)   
+    - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)
+    - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"  
     - export MHMXX_SOURCE=$(pwd)
     - env
     - uname -a
@@ -271,7 +275,8 @@ HULK:validation:
     - export INSTALL_PREFIX=${SCRATCH}
     - export GASNET_BACKTRACE=1
     - exec >  >(tee -ia ${SCRATCH}/validation.log)
-    - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)    
+    - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)
+    - echo "Logging to ${SCRATCH}/validation.log and .err at $(date) on $(uname -n) in $(pwd)"  
     - echo "Validating all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
@@ -281,11 +286,14 @@ HULK:validation:
     - upcxx --version
     - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
+    - export DBG=${INSTALL_PREFIX}/mhmxx-dbg/bin/mhmxx.py
+    - export RWDI=${INSTALL_PREFIX}/mhmxx-rwdi/bin/mhmxx.py
+    - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/mhmxx.py
     - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
-    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
-    - echo "TODO verify"
+    - ${RWDI} -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
+    - echo "TODO verify $(which metaquast.py || echo 'no metaquast') $(which docker || echo 'no docker')"
     - echo "Starting debug build on with reduced workflow"
-    - ${INSTALL_PREFIX}/mhmxx-dbg  -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
+    - ${DBG} -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "TODO verify"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
@@ -306,7 +314,8 @@ HULK:accuracy:
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - exec >  >(tee -ia ${SCRATCH}/accuracy.log)
-    - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)        
+    - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)
+    - echo "Logging to ${SCRATCH}/accuracy.log and .err at $(date) on $(uname -n) in $(pwd)"  
     - echo "Running accuracy tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
@@ -317,7 +326,7 @@ HULK:accuracy:
     - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - echo "Starting Release mhmxx on Arctic $reads"
-    - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
+    - ${REL} -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
     - echo "TODO verify"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
