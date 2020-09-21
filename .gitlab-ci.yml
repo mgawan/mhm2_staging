@@ -42,6 +42,8 @@ Cori:build:
     - echo "Cleaning out old installs"
     - find ${BASE} -maxdepth 1  -name 'mhmxx-*'  -mtime +4 -type d -exec rm -rf '{}' ';' || /bin/true
     - mkdir -p ${SCRATCH} ${RUN_PREFIX}
+    - exec >  >(tee -ia ${SCRATCH}/build.log)
+    - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)    
     - lmstat -a -c $INTEL_LICENSE_FILE || /bin/true
     - echo "Loading KNL modules for upcxx on cori GNU"
     - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
@@ -98,6 +100,8 @@ Cori:validation:
     - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
     - module list
     - cd $SCRATCH
+    - exec >  >(tee -ia ${SCRATCH}/validation.log)
+    - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)    
     - inst=${INSTALL_PREFIX}-knl
     - echo "Testing builds on KNL - $inst"
     - export RWDI=${INSTALL_PREFIX}-knl-reldbg/bin/mhmxx.py
@@ -107,15 +111,16 @@ Cori:validation:
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
     - export GASNET_BACKTRACE=1
     - echo "Submitting job on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI} $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG} ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg")
+    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI} $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG} ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
-    - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
-    - sacct=$(sacct -j $knl_job)
-    - echo "$sacct"
+    - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
+    - echo "sacct $sacct"
+    - sacct=$(sacct -j $knl_job -X -n)
+    - echo "sacct $sacct"
     - cat slurm-${knl_job}.out
-    - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
+    - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
+    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
     - echo "Completed"
 
@@ -140,6 +145,8 @@ Cori:accuracy:
     - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
     - echo "Loading KNL modules for upcxx on cori"
     - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - exec >  >(tee -ia ${SCRATCH}/accuracy.log)
+    - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)    
     - module list
     - cd $SCRATCH
     - echo "Testing accuracy"
@@ -147,30 +154,29 @@ Cori:accuracy:
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
     - echo "Submitting job... on 2 nodes is is roughly REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel")
+    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel && echo Good")
     - echo "Submitting full arctic job on 15 nodes"
     - export OPTS="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
-    - knl_job2=$(echo FIXME sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full")
+    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
-    - while sacct -j $knl_job -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
-    - sacct=$(sacct -j $knl_job)
-    - echo "$sacct"
+    - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
+    - echo "sacct $sacct"
+    - sacct=$(sacct -j $knl_job -X -n)
+    - echo "sacct $sacct"
     - cat slurm-${knl_job}.out
-    - wasgood=$(sacct -j $knl_job | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
+    - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
+    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
     - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
-# FIXME submit and wait on knl_job2
-#    - echo "Waiting for larger knl job $knl_job2"
-#    - date
-#    - while sacct -j $knl_job2 -o state -X -n | grep ING 2>/dev/null ; do sleep 120 ; date ; done
-#    - sacct=$(sacct -j $knl_job2)
-#    - echo "$sacct"
-#    - cat slurm-${knl_job}.out
-#    - wasgood=$(sacct -j $knl_job2 | grep -v JobID | grep -v -- --- | grep -v '0:0' || true)
-#    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job2 ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done; false ; fi
-#    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
-
+    - echo "Waiting for second job to finish ${knl_job2}"
+    - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job2 -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
+    - echo "sacct $sacct"
+    - sacct=$(sacct -j $knl_job2 -X -n)
+    - echo "sacct $sacct"
+    - cat slurm-${knl_job2}.out
+    - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
+    - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
+    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
 
 
 
@@ -204,11 +210,13 @@ HULK:build:
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
+    - exec >  >(tee -ia ${SCRATCH}/build.log)
+    - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)   
     - export MHMXX_SOURCE=$(pwd)
     - env
     - uname -a
     - pwd
-    - find . -type d -ls
+    - find * -type d -ls
     - date
     - echo "Purging any old tests"
     - ls -td ${BASE}/scratch/mhmxx-inst-* | tail -n +8 | xargs  rm -rf '{}' ';' || /bin/true
@@ -240,7 +248,7 @@ HULK:build:
     - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure Release"
     - make -j 16 all install || FAILED="${FAILED} Could not build Release"
     - echo "${FAILED}"
-    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - cd -
     - rm -rf $SCRATCH/build
     - echo "Completed"
@@ -262,6 +270,8 @@ HULK:validation:
     - export RUN_PREFIX=${SCRATCH}/runs
     - export INSTALL_PREFIX=${SCRATCH}
     - export GASNET_BACKTRACE=1
+    - exec >  >(tee -ia ${SCRATCH}/validation.log)
+    - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)    
     - echo "Validating all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
@@ -277,7 +287,7 @@ HULK:validation:
     - echo "Starting debug build on with reduced workflow"
     - ${INSTALL_PREFIX}/mhmxx-dbg  -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "TODO verify"
-    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
 HULK:accuracy:
@@ -295,6 +305,8 @@ HULK:accuracy:
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
     - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - exec >  >(tee -ia ${SCRATCH}/accuracy.log)
+    - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)        
     - echo "Running accuracy tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - env
     - df -h
@@ -307,7 +319,7 @@ HULK:accuracy:
     - echo "Starting Release mhmxx on Arctic $reads"
     - ${INSTALL_PREFIX}/mhmxx-rwdi -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
     - echo "TODO verify"
-    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 100) ; do echo "flush output $spam" ; done ; false ; fi
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
 after_script:
