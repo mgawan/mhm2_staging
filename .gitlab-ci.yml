@@ -107,14 +107,14 @@ Cori:validation:
     - FAILED=""   
     - inst=${INSTALL_PREFIX}-knl
     - echo "Testing builds on KNL - $inst"
-    - export RWDI=${INSTALL_PREFIX}-knl-reldbg/bin/mhmxx.py
-    - export DBG=${INSTALL_PREFIX}-knl-dbg/bin/mhmxx.py
-    - export REL=${INSTALL_PREFIX}-knl/bin/mhmxx.py
+    - export RWDI=${INSTALL_PREFIX}-knl-reldbg/bin/
+    - export DBG=${INSTALL_PREFIX}-knl-dbg/bin/
+    - export REL=${INSTALL_PREFIX}-knl/bin/
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
     - export GASNET_BACKTRACE=1
     - echo "Submitting job on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI} $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG} ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
+    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhmxx.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
@@ -124,7 +124,7 @@ Cori:validation:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py on rwdi"
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py on rwdi"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -156,14 +156,14 @@ Cori:accuracy:
     - cd $SCRATCH
     - FAILED=""
     - echo "Testing accuracy"
-    - export REL=${INSTALL_PREFIX}-knl/bin/mhmxx.py
+    - export REL=${INSTALL_PREFIX}-knl/bin/
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
     - echo "Submitting job... on 2 nodes is is roughly REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel && echo Good")
+    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rel && echo Good")
     - echo "Submitting full arctic job on 15 nodes"
-    - export OPTS="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
-    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL} $OPTS -o ${RUN_PREFIX}/rel-full && echo Good")
+    - export OPTS2="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
+    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL}/mhmxx.py $OPTS2 -o ${RUN_PREFIX}/rel-full && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
@@ -173,7 +173,7 @@ Cori:accuracy:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py"
+    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py"
     - echo "Waiting for second (full) job to finish ${knl_job2}"
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job2 -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
     - echo "sacct $sacct"
@@ -182,7 +182,7 @@ Cori:accuracy:
     - cat slurm-${knl_job2}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py (full)"
+    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py (full)"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -292,18 +292,18 @@ HULK:validation:
     - upcxx --version
     - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
-    - export DBG=${INSTALL_PREFIX}/mhmxx-dbg/bin/mhmxx.py
-    - export RWDI=${INSTALL_PREFIX}/mhmxx-rwdi/bin/mhmxx.py
-    - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/mhmxx.py
+    - export DBG=${INSTALL_PREFIX}/mhmxx-dbg/bin/
+    - export RWDI=${INSTALL_PREFIX}/mhmxx-rwdi/bin/
+    - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
     - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
-    - ${RWDI} -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
+    - ${RWDI}/mhmxx.py -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "Checking run metrics using $(which metaquast.py) $(metaquast.py --version)"
     - echo "verify rwdi results $(ls -la ${RUN_PREFIX}/rwdi)"
-    - ${INSTALL_PREFIX}-mhmxx-rwdi/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${INSTALL_PREFIX}-mhmxx-rwdi/share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for rwdi"
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${HIPMER_DATA}/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for rwdi"
     - echo "Starting debug build on with reduced workflow"
-    - ${DBG} -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
+    - ${DBG}/mhmxx.py -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "verify dbg results $(ls -la ${RUN_PREFIX}/dbg)"
-    - ${INSTALL_PREFIX}-mhmxx-dbg/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${INSTALL_PREFIX}-mhmxx-dbg/share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for dbg"
+    - ${DBG}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${HIPMER_DATA}/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for dbg"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -334,10 +334,11 @@ HULK:accuracy:
     - upcxx --version
     - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
+    - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
     - echo "Starting Release mhmxx on Arctic $reads"
-    - ${REL} -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
+    - ${REL}/mhmxx.py -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
     - echo "verify rel results $(ls -la ${RUN_PREFIX}/rel)"
-    - ${INSTALL_PREFIX}-mhmxx-rel/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${INSTALL_PREFIX}-mhmxx-rel/share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa  || FAILED="${FAILED} Could not run check_asm_quality.py for rel"
+    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${HIPMER_DATA}/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa  || FAILED="${FAILED} Could not run check_asm_quality.py for rel"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
