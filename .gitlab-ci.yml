@@ -219,6 +219,9 @@ HULK:build:
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
+    - chmod a+rx ${SCRATCH}
+    - chmod g+s ${SCRATCH}
+    - mkdir -p ${RUN_PREFIX}
     - exec >  >(tee -ia ${SCRATCH}/build.log)
     - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)
     - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"  
