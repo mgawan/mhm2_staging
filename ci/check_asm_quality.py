@@ -41,15 +41,23 @@ def main():
     quals = get_qual_vals(options.quals_fname)
     # first, run metaquast on the assembly
     os.chdir(options.asm_dir)
-    cmd = ['metaquast.py', '--fast', '-o', 'mq.out', '-r', options.refs, 'final_assembly.fasta']
+    pwd=os.getcwd()
+    cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', options.refs, '%s/final_assembly.fasta'%(pwd)]
     test_exec_mq = which('metaquast.py')
-    if not test_exec_mq:
-        test_exec_shifter = which('shifter')
-        # test_exec_docker = which('docker')
-        if test_exec_shifter:
-            shifter = ['shifter', '--image=robegan21/quast:latest']
-            shifter.extend(cmd)
-            cmd = shifter
+    test_exec_shifter = which('shifter')
+    test_exec_docker = which('docker')
+    if test_exec_shifter:
+        shifter = ['shifter', '--image=robegan21/quast:latest']
+        shifter.extend(cmd)
+        cmd = shifter
+    elif test_exec_docker:
+        user=os.getuid()
+        refpath=os.path.dirname(options.refs)
+        docker = ['docker', 'run', '-i', '--tty=false', '-a', 'STDIN', '-a', 'STDOUT', '-a', 'STDERR', '--user', '%s:%s' %(user,user), '--volume=%s:%s' % (refpath,refpath), '--volume=%s:%s' % (pwd,pwd), '--workdir=%s' % (pwd), 'robegan21/quast:latest']
+        docker.extend(cmd)
+        cmd = docker
+    elif not test_exec_mq:
+        sys.exit('ERROR: requires shifter, docker or metaquast.py in the path to check')
     print('Running metaquast...', cmd)
     subprocess.check_output(cmd, stderr=subprocess.STDOUT)
     new_quals = get_qual_vals('mq.out/combined_reference/report.txt')
