@@ -103,7 +103,8 @@ Cori:validation:
     - cd $SCRATCH
     - exec >  >(tee -ia ${SCRATCH}/validation.log)
     - exec 2> >(tee -ia ${SCRATCH}/validation.err >&2)   
-    - echo "Logging to ${SCRATCH}/validation.log and .err at $(date) on $(uname -n) in $(pwd)"     
+    - echo "Logging to ${SCRATCH}/validation.log and .err at $(date) on $(uname -n) in $(pwd)"
+    - FAILED=""   
     - inst=${INSTALL_PREFIX}-knl
     - echo "Testing builds on KNL - $inst"
     - export RWDI=${INSTALL_PREFIX}-knl-reldbg/bin/mhmxx.py
@@ -123,7 +124,8 @@ Cori:validation:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
+    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py on rwdi"
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
 Cori:accuracy:
@@ -152,6 +154,7 @@ Cori:accuracy:
     - echo "Logging to ${SCRATCH}/accuracy.log and .err at $(date) on $(uname -n) in $(pwd)"    
     - module list
     - cd $SCRATCH
+    - FAILED=""
     - echo "Testing accuracy"
     - export REL=${INSTALL_PREFIX}-knl/bin/mhmxx.py
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
@@ -170,8 +173,8 @@ Cori:accuracy:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
-    - echo "Waiting for second job to finish ${knl_job2}"
+    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py"
+    - echo "Waiting for second (full) job to finish ${knl_job2}"
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job2 -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
     - echo "sacct $sacct"
     - sacct=$(sacct -j $knl_job2 -X -n)
@@ -179,7 +182,9 @@ Cori:accuracy:
     - cat slurm-${knl_job2}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa
+    - ${INSTALL_PREFIX}-knl/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${ARCTIC}/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py (full)"
+    - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
+    - echo "Completed"
 
 
 
@@ -208,8 +213,9 @@ HULK:build:
     - export RUN_PREFIX=${SCRATCH}/runs
     - export GASNET_BACKTRACE=1
     - echo "Verifing and/or downloading test arctic data set"
-    - bash -c "[ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )"
-    - bash -c "[ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/arctic_sample_0.fq.gz && gunzip arctic_sample_0.fq.gz && mv arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )"
+    - export ARCTIC_URL=https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/
+    - bash -c "[ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO ${ARCTIC_URL}/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )"
+    - bash -c "[ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO ${ARCTIC_URL}/arctic_sample_0.fq.gz && gunzip arctic_sample_0.fq.gz && mv arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )"
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
@@ -291,10 +297,13 @@ HULK:validation:
     - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/mhmxx.py
     - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
     - ${RWDI} -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
-    - echo "TODO verify $(which metaquast.py || echo 'no metaquast') $(which docker || echo 'no docker')"
+    - echo "Checking run metrics using $(which metaquast.py) $(metaquast.py --version)"
+    - echo "verify rwdi results $(ls -la ${RUN_PREFIX}/rwdi)"
+    - ${INSTALL_PREFIX}-mhmxx-rwdi/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${INSTALL_PREFIX}-mhmxx-rwdi/share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for rwdi"
     - echo "Starting debug build on with reduced workflow"
     - ${DBG} -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
-    - echo "TODO verify"
+    - echo "verify dbg results $(ls -la ${RUN_PREFIX}/dbg)"
+    - ${INSTALL_PREFIX}-mhmxx-dbg/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${INSTALL_PREFIX}-mhmxx-dbg/share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for dbg"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -327,7 +336,8 @@ HULK:accuracy:
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - echo "Starting Release mhmxx on Arctic $reads"
     - ${REL} -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
-    - echo "TODO verify"
+    - echo "verify rel results $(ls -la ${RUN_PREFIX}/rel)"
+    - ${INSTALL_PREFIX}-mhmxx-rel/bin/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${INSTALL_PREFIX}-mhmxx-rel/share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa  || FAILED="${FAILED} Could not run check_asm_quality.py for rel"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
