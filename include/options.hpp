@@ -167,7 +167,7 @@ class Options {
           throw std::runtime_error(oss.str());
         }
       } else {
-        if (mkdir(output_dir.c_str(), S_IRWXU) == -1) {
+        if (mkdir(output_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */) == -1) {
           // could not create the directory
           if (errno == EEXIST) {
             cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
@@ -189,14 +189,14 @@ class Options {
 
             // ensure per_thread dir exists and has stripe 1
             string per_thread = output_dir + "/per_thread";
-            mkdir(per_thread.c_str(), S_IRWXU); // ignore any errors
+            mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */); // ignore any errors
             cmd = "lfs setstripe -c 1 " + per_thread;
             status = std::system(cmd.c_str());
             if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
               cout << "Set Lustre striping on the per_thread output directory\n";
             else
               cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
-            mkdir((per_thread + "/00000000").c_str(), S_IRWXU);
+            mkdir((per_thread + "/00000000").c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
           }
         }
       }
