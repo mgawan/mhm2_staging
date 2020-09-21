@@ -124,7 +124,7 @@ Cori:validation:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${RWDI}/../share/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py on rwdi"
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py on rwdi"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
