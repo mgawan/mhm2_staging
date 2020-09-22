@@ -54,6 +54,7 @@
 #include "kmer_dht.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/reduce_prefix.hpp"
 #include "utils.hpp"
 
 #define DBG_TRAVERSE DBG
@@ -517,21 +518,12 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
     connect_frags(kmer_len, kmer_dht, frag_elems, my_uutigs);
   }
   // now get unique ids for the uutigs
-  atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-  global_ptr<size_t> counter = nullptr;
-  if (!rank_me()) counter = new_<size_t>(0);
-  counter = broadcast(counter, 0).wait();
-  size_t my_counter = ad.fetch_add(counter, my_uutigs.size(), memory_order_relaxed).wait();
-  // wait until all ranks have updated the global counter
-  barrier();
-  if (!rank_me()) upcxx::delete_(counter);
-  ad.destroy();
-  // set the unique ids
-  int64_t cid = my_counter;
-  for (auto it = my_uutigs.begin(); it != my_uutigs.end(); ++it) {
-    it->id = cid;
-    cid++;
-  }
+  auto num_ctgs = my_uutigs.size();
+  auto fut = upcxx_utils::reduce_prefix(num_ctgs, upcxx::op_fast_add).then([num_ctgs, &my_uutigs](size_t my_prefix) {
+    auto my_counter = my_prefix - num_ctgs;  // get my start
+    for (auto it = my_uutigs.begin(); it != my_uutigs.end(); it++) it->id = my_counter++;
+  });
+  fut.wait();
   barrier();
 #ifdef DEBUG
   ProgressBar progbar(my_uutigs.size(), "Checking kmers in uutigs");

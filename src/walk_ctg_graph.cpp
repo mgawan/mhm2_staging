@@ -52,6 +52,7 @@
 #include "ssw.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/reduce_prefix.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "utils.hpp"
 
@@ -287,18 +288,12 @@ static void get_ctgs_from_walks(int max_kmer_len, int kmer_len, int break_scaff_
   gap_stats.print();
   // now get unique ids for all the contigs
   size_t num_ctgs = ctgs.size();
-  atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-  global_ptr<size_t> counter = nullptr;
-  if (!rank_me()) counter = new_<size_t>(0);
-  counter = broadcast(counter, 0).wait();
-  size_t my_counter = ad.fetch_add(counter, num_ctgs, memory_order_relaxed).wait();
-  // wait until all ranks have updated the global counter
+  auto fut = upcxx_utils::reduce_prefix(num_ctgs, upcxx::op_fast_add).then([num_ctgs, &ctgs](size_t my_prefix) {
+    auto my_counter = my_prefix - num_ctgs;  // get my start
+    for (auto it = ctgs.begin(); it != ctgs.end(); it++) it->id = my_counter++;
+  });
+  fut.wait();
   barrier();
-  if (!rank_me())
-  upcxx:
-    delete_(counter);
-  ad.destroy();
-  for (auto it = ctgs.begin(); it != ctgs.end(); it++) it->id = my_counter++;
 }
 
 static bool depth_match(double depth, double walk_depth) {
