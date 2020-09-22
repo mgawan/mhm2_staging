@@ -326,8 +326,8 @@ inline std::ostream& operator<<(std::ostream& out, const Kmer<MAX_K>& k) {
 
 #define __MACRO_KMER__(KMER_LEN, MODIFIER) \
   MODIFIER class Kmer<KMER_LEN>; \
-  MODIFIER class KmerHash<KMER_LEN>; \
-  MODIFIER class KmerEqual<KMER_LEN>;
+  MODIFIER struct KmerHash<KMER_LEN>; \
+  MODIFIER struct KmerEqual<KMER_LEN>;
 
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in kmer.hpp
