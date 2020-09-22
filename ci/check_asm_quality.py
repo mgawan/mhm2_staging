@@ -80,34 +80,59 @@ def main():
             d = 0
             thres = options.thres
             if val != new_quals[key]:
-                d = abs(float(val) - float(new_quals[key])) / max(float(val), float(new_quals[key]))
+                d_real = float(new_quals[key]) - float(val)
+                d_abs = abs(d_real)
+                d_max = max(float(val), float(new_quals[key]))
+                d = d_abs / d_max
                 if (key.startswith('# contigs') or key.startswith('# misassemblies') or key.startswith('# misassembled contigs') \
                     or key.startswith('# local misassemblies')) and d > thres and d < 4:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
                     d = 0
-                if key.startswith('Total length (>= 10000 bp)') and d > thres and abs(float(val) - float(new_quals[key])) < 20000:
+                if key.startswith('Total length (>= 10000 bp)') and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
-                if key.startswith('Total length (>= 25000 bp)') and d > thres and abs(float(val) - float(new_quals[key])) < 50000:
+                    thres = thres + 0.125 # + 12.5%
+                    if d_real > 0 or d_abs < 20000: # < 20k diff on 10k bp total
+                        d = 0
+                if key.startswith('Total length (>= 25000 bp)') and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
-                if key.startswith('Total length (>= 50000 bp)') and d > thres and abs(float(val) - float(new_quals[key])) < 100000:
+                    thres = thres + 0.075 # + 7.5%
+                    if d_real > 0 or d_abs < 50000: # < 50k diff on 25k bp total
+                        d = 0
+                if key.startswith('Total length (>= 50000 bp)') and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
-                if key.startswith("# N's per 100 kbp") and d > thres and d < 1.5: # < 1.5 per 100
+                    thres = thres + 0.075 # 7.5%
+                    if d_real > 0 or d_abs < 100000: # < 100k diff on 50k bp total
+                        d = 0
+                if key.startswith("# N's per 100 kbp") and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
-                if key.startswith("# indels per 100 kbp") and d > thres and ( d < 0.15 or float(new_quals[key]) < 1.5 ): # <15% or < 1.5 per 100
+                    thres = thres + 0.05 # 5%
+                    if d_real < 0 or d_abs < 3: # < 3 per 100k diff
+                        d = 0
+                if key.startswith("# indels per 100 kbp") and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
-                if key.startswith("Misassembled contigs length") and d > thres and d < 0.25: # <25%
+                    thres = thres + 0.05 # 5%
+                    if d_real < 0 or d_abs < 3: # < 3 per 100k diff
+                        d = 0
+                if key.startswith("Misassembled contigs length") and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
-                if key.startswith("# predicted rRNA genes") and d > thres and d < 0.05: # <5%
+                    thres = thres + 0.25 # + 25%
+                    if d_real < 0:
+                        d = 0
+                if key.startswith("# predicted rRNA genes") and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    d = 0
+                    thres = thres + 0.05 # + 5%
+                    if d_real > 0 or d_abs < 2: # < 2 diff
+                        d = 0
+                if key.startswith("# mismatches per 100 kbp") and d > thres:
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
+                    thres = thres + 0.05 # + 5%
+                    if d_real < 0 or d_abs < 2: # < 2 diff
+                        d = 0
+                if key.startswith("NA50") and d > thres:
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
+                    thres = thres + 0.025 # + 2.5%
             if d > thres:
-                print("MISMATCH:", key, val, "!=", new_quals[key], 'd = %.3f' % d)
+                print("MISMATCH:", key, val, "!=", new_quals[key], 'd = %.3f' % d, ' thres = %0.3f' % thres)
                 num_mismatches += 1
             #print(key, val, d)
     print("Comparison yielded", num_mismatches, "mismatches")
