@@ -35,6 +35,7 @@ def main():
     argparser.add_argument("--expected-quals", dest='quals_fname', type=str, required=True, help='File containing expected metaquast qualities')
     argparser.add_argument("--refs", dest='refs', type=str, required=True, help='Directory containing references for metaquast')
     argparser.add_argument("--thres", dest='thres', type=float, default=0.01, help='Threshold of minimum difference, fraction')
+    argparser.add_argument("--rna", action='store_true', default=False, help='Include rna predictions')
 
     options = argparser.parse_args()
 
@@ -43,6 +44,8 @@ def main():
     os.chdir(options.asm_dir)
     pwd=os.getcwd()
     cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', options.refs, '%s/final_assembly.fasta'%(pwd)]
+    if options.rna:
+        cmd.append('--rna-finding')
     test_exec_mq = which('metaquast.py')
     test_exec_shifter = which('shifter')
     test_exec_docker = which('docker')
@@ -83,6 +86,8 @@ def main():
                 num_mismatches += 1
             #print(key, val, d)
     print("Comparison yielded", num_mismatches, "mismatches")
+    if num_mismatches > 0: 
+        sys.exit("Detected %d mismatches!" % (num_mismatches)) # exit non-zero
     
 if __name__ == "__main__":
     main()

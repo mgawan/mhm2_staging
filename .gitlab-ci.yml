@@ -124,7 +124,10 @@ Cori:validation:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py on rwdi"
+    - if [ ! -f ${RUN_PREFIX}/rwdi/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rwdi" ; fi
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py on rwdi"
+    - if [ ! -f ${RUN_PREFIX}/dbg/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on dbg" ; fi
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || echo "Expected dit not pass check_asm_quality.py on dbg with reduced workflow"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -173,7 +176,8 @@ Cori:accuracy:
     - cat slurm-${knl_job}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${REL}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py"
+    - if [ ! -f ${RUN_PREFIX}/rel/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel" ; fi
+    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${REL}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py"
     - echo "Waiting for second (full) job to finish ${knl_job2}"
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job2 -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
     - echo "sacct $sacct"
@@ -182,7 +186,8 @@ Cori:accuracy:
     - cat slurm-${knl_job2}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${REL}/../share/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py (full)"
+    - if [ ! -f ${RUN_PREFIX}/rel-ful/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel-full" ; fi
+    - ${REL}/check_asm_quality.py --thres 0.025 --rna --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${REL}/../share/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py (full)"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -302,11 +307,13 @@ HULK:validation:
     - ${RWDI}/mhmxx.py -r $reads -o ${RUN_PREFIX}/rwdi --checkpoint=no -v || FAILED="${FAILED} Could not run rwdi"
     - echo "Checking run metrics using $(which metaquast.py) $(metaquast.py --version)"
     - echo "verify rwdi results $(ls -la ${RUN_PREFIX}/rwdi)"
-    - echo ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs {HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for rwdi"
-    - echo "Starting debug build on with reduced workflow"
+    - if [ ! -f ${RUN_PREFIX}/rwdi/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rwdi" ; fi
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py for rwdi"
+    - echo "Starting debug run on with reduced workflow"
     - ${DBG}/mhmxx.py -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run dbg"
     - echo "verify dbg results $(ls -la ${RUN_PREFIX}/dbg)"
-    - echo ${DBG}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${DBG}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} Could not run check_asm_quality.py for dbg"
+    - if [ ! -f ${RUN_PREFIX}/dbg/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on dbg" ; fi
+    - ${DBG}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${DBG}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || echo "Expected did not pass check_asm_quality.py for dbg with reduced workflow"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
@@ -344,7 +351,8 @@ HULK:accuracy:
     - echo "Starting Release mhmxx on Arctic $reads"
     - ${REL}/mhmxx.py -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
     - echo "verify rel results $(ls -la ${RUN_PREFIX}/rel)"
-    - echo ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${REL}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa  || FAILED="${FAILED} Could not run check_asm_quality.py for rel"
+    - if [ ! -f ${RUN_PREFIX}/rel/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel" ; fi
+    - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${REL}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa  || FAILED="${FAILED} Did not pass check_asm_quality.py for rel"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
 
