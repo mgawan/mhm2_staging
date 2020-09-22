@@ -82,18 +82,29 @@ def main():
             if val != new_quals[key]:
                 d = abs(float(val) - float(new_quals[key])) / max(float(val), float(new_quals[key]))
                 if (key.startswith('# contigs') or key.startswith('# misassemblies') or key.startswith('# misassembled contigs') \
-                    or key.startswith('# local misassemblies')) and d < 4:
+                    or key.startswith('# local misassemblies')) and d > thres and d < 4:
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
                     d = 0
-                if key.startswith('Total length (>= 10000 bp)') or key.startswith('Total length (>= 25000 bp)') \
-                   or key.startswith('Misassembled contigs length') or key.startswith('# indels per 100 kbp'):
-                    thres = 0.05
-                if key.startswith("# N's per 100 kbp") and d < 1.5:
+                if key.startswith('Total length (>= 10000 bp)') and d > thres and abs(float(val) - float(new_quals[key])) < 20000:
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
                     d = 0
-                if key.startswith("# indels per 100 kbp") and ( d < 0.15 or float(new_quals[key]) < 1.5 ): # <15% or < 1.5 per 100
+                if key.startswith('Total length (>= 25000 bp)') and d > thres and abs(float(val) - float(new_quals[key])) < 50000:
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
                     d = 0
-                if key.startswith("Misassembled contigs length") and d < 0.25: # <25%
+                if key.startswith('Total length (>= 50000 bp)') and d > thres and abs(float(val) - float(new_quals[key])) < 100000:
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
                     d = 0
-                if key.startswith("# predicted rRNA genes") and d < 0.05: # <5%
+                if key.startswith("# N's per 100 kbp") and d > thres and d < 1.5: # < 1.5 per 100
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
+                    d = 0
+                if key.startswith("# indels per 100 kbp") and d > thres and ( d < 0.15 or float(new_quals[key]) < 1.5 ): # <15% or < 1.5 per 100
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
+                    d = 0
+                if key.startswith("Misassembled contigs length") and d > thres and d < 0.25: # <25%
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
+                    d = 0
+                if key.startswith("# predicted rRNA genes") and d > thres and d < 0.05: # <5%
+                    print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
                     d = 0
             if d > thres:
                 print("MISMATCH:", key, val, "!=", new_quals[key], 'd = %.3f' % d)

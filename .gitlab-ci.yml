@@ -111,7 +111,7 @@ Cori:validation:
     - export DBG=${INSTALL_PREFIX}-knl-dbg/bin/
     - export REL=${INSTALL_PREFIX}-knl/bin/
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
-    - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
+    - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=yes"
     - export GASNET_BACKTRACE=1
     - echo "Submitting job on 3 nodes - on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
     - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhmxx.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
@@ -161,11 +161,11 @@ Cori:accuracy:
     - echo "Testing accuracy"
     - export REL=${INSTALL_PREFIX}-knl/bin/
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
-    - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=no"
+    - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq --checkpoint=no"
     - echo "Submitting job on 5 nodes... on 2 nodes is is roughly REL=170s"
     - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rel && echo Good")
     - echo "Submitting full arctic job on 15 nodes"
-    - export OPTS2="-r ${ARCTIC}/arctic_samples.fq -v --checkpoint=no"
+    - export OPTS2="-r ${ARCTIC}/arctic_samples.fq --checkpoint=no"
     - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL}/mhmxx.py $OPTS2 -o ${RUN_PREFIX}/rel-full && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
@@ -186,7 +186,7 @@ Cori:accuracy:
     - cat slurm-${knl_job2}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - if [ ! -f ${RUN_PREFIX}/rel-ful/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel-full" ; fi
+    - if [ ! -f ${RUN_PREFIX}/rel-full/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel-full" ; fi
     - ${REL}/check_asm_quality.py --thres 0.025 --rna --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${REL}/../share/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py (full)"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
@@ -349,7 +349,7 @@ HULK:accuracy:
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
     - echo "Starting Release mhmxx on Arctic $reads"
-    - ${REL}/mhmxx.py -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no -v || FAILED="${FAILED} Could nor run rel version"
+    - ${REL}/mhmxx.py -r $reads -o ${RUN_PREFIX}/rel --checkpoint=no || FAILED="${FAILED} Could nor run rel version"
     - echo "verify rel results $(ls -la ${RUN_PREFIX}/rel)"
     - if [ ! -f ${RUN_PREFIX}/rel/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel" ; fi
     - ${REL}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rel --expected-quals ${REL}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa  || FAILED="${FAILED} Did not pass check_asm_quality.py for rel"
