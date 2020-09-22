@@ -90,17 +90,17 @@ def main():
                     d = 0
                 if key.startswith('Total length (>= 0 bp)') and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    thres = thres + 0.05; # + 5%
+                    thres = thres + 0.05 # + 5%
                     if d_real > 0 or d_abs < 3000: # < 3k diff on 0k total
                         d = 0                    
                 if key.startswith('Total length (>= 1000 bp)') and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    thres = thres + 0.05; # + 5%
+                    thres = thres + 0.05 # + 5%
                     if d_real > 0 or d_abs < 3000: # < 3k diff on 1k total
                         d = 0
                 if key.startswith('Total length (>= 5000 bp)') and d > thres:
                     print("WARN: adjusted threshold: ", key, val, "!=", new_quals[key], 'd = %.3f' % d)
-                    thres = thres + 0.05; # + 5%
+                    thres = thres + 0.05 # + 5%
                     if d_real > 0 or d_abs < 10000: # < 10k diff on 5k total
                         d = 0    
                 if key.startswith('Total length (>= 10000 bp)') and d > thres:
