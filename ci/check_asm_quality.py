@@ -83,6 +83,8 @@ def main():
                 num_mismatches += 1
             #print(key, val, d)
     print("Comparison yielded", num_mismatches, "mismatches")
+    if num_mismatches > 0: 
+        sys.exit("Detected %d mismatches!" % (num_mismatches)) # exit non-zero
     
 if __name__ == "__main__":
     main()
