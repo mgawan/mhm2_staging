@@ -89,7 +89,7 @@ def main():
                     thres = 0.05
                 if key.startswith("# N's per 100 kbp") and d < 1.5:
                     d = 0
-                if key.startswith("# indels per 100 kbp") and ( d < 0.15 or new_quals[key] < 1.5 ): # <15% or < 1.5 per 100
+                if key.startswith("# indels per 100 kbp") and ( d < 0.15 or float(new_quals[key]) < 1.5 ): # <15% or < 1.5 per 100
                     d = 0
                 if key.startswith("Misassembled contigs length") and d < 0.25: # <25%
                     d = 0
