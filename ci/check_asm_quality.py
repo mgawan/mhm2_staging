@@ -14,6 +14,9 @@ def get_qual_vals(fname):
         for line in f.readlines():
             if line.startswith('All') or line.startswith('Assembly') or len(line) < 2:
                 continue
+            check_multi = line.find(' + ')
+            if check_multi > 0:
+                line = line[:check_multi]
             fields = line.split()
             val = fields[-1]
             key = line[:(len(line.strip()) - len(val))]
@@ -41,29 +44,34 @@ def main():
 
     quals = get_qual_vals(options.quals_fname)
     # first, run metaquast on the assembly
+    report_path = 'mq.out/combined_reference/report.txt'
+    report_exists = os.path.exists(options.asm_dir + "/" + report_path)
     os.chdir(options.asm_dir)
-    pwd=os.getcwd()
-    cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', options.refs, '%s/final_assembly.fasta'%(pwd)]
-    if options.rna:
-        cmd.append('--rna-finding')
-    test_exec_mq = which('metaquast.py')
-    test_exec_shifter = which('shifter')
-    test_exec_docker = which('docker')
-    if test_exec_shifter:
-        shifter = ['shifter', '--image=robegan21/quast:latest']
-        shifter.extend(cmd)
-        cmd = shifter
-    elif test_exec_docker:
-        user=os.getuid()
-        refpath=os.path.dirname(options.refs)
-        docker = ['docker', 'run', '-i', '--tty=false', '-a', 'STDIN', '-a', 'STDOUT', '-a', 'STDERR', '--user', '%s:%s' %(user,user), '--volume=%s:%s' % (refpath,refpath), '--volume=%s:%s' % (pwd,pwd), '--workdir=%s' % (pwd), 'robegan21/quast:latest']
-        docker.extend(cmd)
-        cmd = docker
-    elif not test_exec_mq:
-        sys.exit('ERROR: requires shifter, docker or metaquast.py in the path to check')
-    print('Running metaquast...', cmd)
-    subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-    new_quals = get_qual_vals('mq.out/combined_reference/report.txt')
+
+    if not report_exists:
+        pwd=os.getcwd()
+        cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', options.refs, '%s/final_assembly.fasta'%(pwd)]
+        if options.rna:
+            cmd.append('--rna-finding')
+        test_exec_mq = which('metaquast.py')
+        test_exec_shifter = which('shifter')
+        test_exec_docker = which('docker')
+        if test_exec_shifter:
+            shifter = ['shifter', '--image=robegan21/quast:latest']
+            shifter.extend(cmd)
+            cmd = shifter
+        elif test_exec_docker:
+            user=os.getuid()
+            refpath=os.path.dirname(options.refs)
+            docker = ['docker', 'run', '-i', '--tty=false', '-a', 'STDIN', '-a', 'STDOUT', '-a', 'STDERR', '--user', '%s:%s' %(user,user), '--volume=%s:%s' % (refpath,refpath), '--volume=%s:%s' % (pwd,pwd), '--workdir=%s' % (pwd), 'robegan21/quast:latest']
+            docker.extend(cmd)
+            cmd = docker
+        elif not test_exec_mq:
+            sys.exit('ERROR: requires shifter, docker or metaquast.py in the path to check')
+        print('Running metaquast...', cmd)
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+    
+    new_quals = get_qual_vals(report_path)
     num_mismatches = 0
     for key, val in quals.items():
         if key not in new_quals:
@@ -80,6 +88,12 @@ def main():
                    or key.startswith('Misassembled contigs length') or key.startswith('# indels per 100 kbp'):
                     thres = 0.05
                 if key.startswith("# N's per 100 kbp") and d < 1.5:
+                    d = 0
+                if key.startswith("# indels per 100 kbp") and ( d < 0.15 or new_quals[key] < 1.5 ): # <15% or < 1.5 per 100
+                    d = 0
+                if key.startswith("Misassembled contigs length") and d < 0.25: # <25%
+                    d = 0
+                if key.startswith("# predicted rRNA genes") and d < 0.05: # <5%
                     d = 0
             if d > thres:
                 print("MISMATCH:", key, val, "!=", new_quals[key], 'd = %.3f' % d)
