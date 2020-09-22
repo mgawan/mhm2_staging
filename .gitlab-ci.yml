@@ -127,7 +127,7 @@ Cori:validation:
     - if [ ! -f ${RUN_PREFIX}/rwdi/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rwdi" ; fi
     - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/rwdi --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py on rwdi"
     - if [ ! -f ${RUN_PREFIX}/dbg/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on dbg" ; fi
-    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${RWDI}/../share/good-arctic-sample0.txt --refs ${ARCTIC}/arcticsynth-refs.fa || echo "Expected dit not pass check_asm_quality.py on dbg with reduced workflow"
+    - ${RWDI}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${RWDI}/../share/good-arctic-sample0-k63.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py on dbg with reduced workflow k63"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; false ; fi
     - echo "Completed"
 
@@ -313,7 +313,7 @@ HULK:validation:
     - ${DBG}/mhmxx.py -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run dbg"
     - echo "verify dbg results $(ls -la ${RUN_PREFIX}/dbg)"
     - if [ ! -f ${RUN_PREFIX}/dbg/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on dbg" ; fi
-    - ${DBG}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${DBG}/../share/good-arctic-sample0.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || echo "Expected did not pass check_asm_quality.py for dbg with reduced workflow"
+    - ${DBG}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${DBG}/../share/good-arctic-sample0-k31k63.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || FAILED="${FAILED} did not pass check_asm_quality.py for dbg with reduced workflow k31k63"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; false ; fi
     - echo "Completed"
 
