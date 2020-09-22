@@ -103,8 +103,8 @@ enum PASS_TYPE { BLOOM_SET_PASS, BLOOM_COUNT_PASS, NO_BLOOM_PASS, CTG_BLOOM_SET_
 using ext_count_t = uint16_t;
 
 // global variables to avoid passing dist objs to rpcs
-static double _dynamic_min_depth = 0;
-static int _dmin_thres = 2.0;
+extern double _dynamic_min_depth;
+extern int _dmin_thres;
 
 struct ExtCounts {
   ext_count_t count_A;

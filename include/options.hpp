@@ -71,7 +71,6 @@ class Options {
 
   void get_restart_options();
 
-
   void setup_output_dir();
 
   void setup_log_file();

@@ -42,6 +42,9 @@
 
 #include "kmer_dht.hpp"
 
+double _dynamic_min_depth = 0;
+int _dmin_thres = 2.0;
+
 array<pair<char, int>, 4> ExtCounts::get_sorted() {
   array<pair<char, int>, 4> counts = {make_pair('A', (int)count_A), make_pair('C', (int)count_C), make_pair('G', (int)count_G),
                                       make_pair('T', (int)count_T)};
@@ -79,6 +82,7 @@ void ExtCounts::inc(char ext, int count) {
       break;
   }
 }
+
 
 char ExtCounts::get_ext(uint16_t count) {
   auto sorted_counts = get_sorted();

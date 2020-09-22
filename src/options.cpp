@@ -154,7 +154,10 @@ void Options::setup_output_dir() {
           cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
                << " already exists. May overwrite existing files\n";
         } else {
-          SDIE("Could not create output directory ", output_dir, ": ", strerror(errno));
+          ostringstream oss;
+          oss << KLRED << "ERROR: " << KNORM << " Could not create output directory " << output_dir << ": " << strerror(errno)
+              << endl;
+          throw std::runtime_error(oss.str());
         }
       } else {
         // created the directory - now stripe it if possible
@@ -181,16 +184,17 @@ void Options::setup_output_dir() {
       }
     }
   }
-  upcxx::barrier();
-  // after we change to the output directory, relative paths will be incorrect, so we need to fix them
-  for (auto &fname : reads_fnames) {
-    if (fname[0] != '/') fname = "../" + fname;
-  }
-  // all change to the output directory
-  if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
-    DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
-  }
-  upcxx::barrier();
+}
+upcxx::barrier();
+// after we change to the output directory, relative paths will be incorrect, so we need to fix them
+for (auto &fname : reads_fnames) {
+  if (fname[0] != '/') fname = "../" + fname;
+}
+// all change to the output directory
+if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
+  DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
+}
+upcxx::barrier();
 }
 
 void Options::setup_log_file() {
