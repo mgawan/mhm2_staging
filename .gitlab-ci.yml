@@ -186,7 +186,7 @@ Cori:accuracy:
     - cat slurm-${knl_job2}.out
     - wasgood=$(echo "${sacct}" | grep -v '0:0' || true)
     - if [ -z "$wasgood" ] ; then  true ; else  echo "knl job ${knl_job2} failed somehow - ${wasgood}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done; false ; fi
-    - if [ ! -f ${RUN_PREFIX}/rel-ful/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel-full" ; fi
+    - if [ ! -f ${RUN_PREFIX}/rel-full/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel-full" ; fi
     - ${REL}/check_asm_quality.py --thres 0.025 --rna --asm-dir ${RUN_PREFIX}/rel-full --expected-quals ${REL}/../share/good-arcticsynth.txt --refs ${ARCTIC}/arcticsynth-refs.fa || FAILED="${FAILED} Did not pass check_asm_quality.py (full)"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; for spam in $(seq 1 300) ; do echo "flush output $spam" ; done ; false ; fi
     - echo "Completed"
