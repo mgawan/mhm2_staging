@@ -179,22 +179,28 @@ void Options::setup_output_dir() {
             cout << "Set Lustre striping on the per_thread output directory\n";
           else
             cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
-          mkdir((per_thread + "/00000000").c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+          // this should avoid contention on the filesystem when ranks start racing to creating these top levels
+          for (int i = 0; i < rank_n(); i += 1000) {
+            char basepath[256];
+            sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
+            auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+            if (ret != 0) break;  // ignore any errors, just stop
+          }
         }
       }
     }
   }
-}
-upcxx::barrier();
-// after we change to the output directory, relative paths will be incorrect, so we need to fix them
-for (auto &fname : reads_fnames) {
-  if (fname[0] != '/') fname = "../" + fname;
-}
-// all change to the output directory
-if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
-  DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
-}
-upcxx::barrier();
+
+  upcxx::barrier();
+  // after we change to the output directory, relative paths will be incorrect, so we need to fix them
+  for (auto &fname : reads_fnames) {
+    if (fname[0] != '/') fname = "../" + fname;
+  }
+  // all change to the output directory
+  if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
+    DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
+  }
+  upcxx::barrier();
 }
 
 void Options::setup_log_file() {
