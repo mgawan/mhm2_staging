@@ -43,69 +43,58 @@
 */
 
 
-#include <array>
+#include <iostream>
+#include <fstream>
+#include <algorithm>
+#include <chrono>
 #include <string>
-#include <string_view>
-#include <vector>
-#include <memory>
+#include <math.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cmath>
+#include <upcxx/upcxx.hpp>
 
-using std::string;
-using std::string_view;
-using std::to_string;
-using std::vector;
-using std::max;
-using std::unique_ptr;
+#include "upcxx_utils.hpp"
+#include "options.hpp"
+#include "fastq.hpp"
+#include "packed_reads.hpp"
+#include "kmer.hpp"
+#include "contigs.hpp"
+#include "alignments.hpp"
+#include "kcount.hpp"
+#include "klign.hpp"
+#include "kmer_dht.hpp"
 
-class PackedRead {
-  static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
-  // read_id is not packed as it is already reduced to an index number
-  // the pair number is indicated in the read id - negative means pair 1, positive means pair 2
-  int64_t read_id;
-  // each cached read packs the nucleotide into 3 bits (ACGTN), and the quality score into 5 bits
-  unsigned char *packed_read;
-  // the read is not going to be larger than 65536 in length, but possibly larger than 256
-  uint16_t read_len;
-  // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
-  // 8+150+2=160 vs 13+300=313
+#ifdef ENABLE_GPUS
+#include <thread>
+#include "adept-sw/driver.hpp"
+#endif
 
-public:
+using namespace upcxx;
+using namespace upcxx_utils;
 
-  PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset);
+extern bool _verbose;
 
-  ~PackedRead();
+// Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
+                 vector<PackedReads*> &packed_reads_list, bool checkpoint);
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list);
+template<int MAX_K>
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
+void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
+               int qual_offset, Contigs &ctgs, Alns &alns);
+void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
+                        vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
+                        const string &graph_fname);
+pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
+                                     const string &dump_large_alns_fname="");
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths);
 
-  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset);
-  
+
+struct StageTimers {
+  IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm, *cgraph,
+    *dump_ctgs, *compute_kmer_depths;
 };
 
-class PackedReads {
-
-  vector<unique_ptr<PackedRead>> packed_reads;
-  // this is only used when we need to know the actual name of the original reads
-  vector<string> read_id_idx_to_str;
-  unsigned max_read_len = 0;
-  uint64_t index = 0;
-  unsigned qual_offset;
-  string fname;
-  bool str_ids;
-
-public:
-  PackedReads(int qual_offset, const string &fname, bool str_ids=false);
-
-  bool get_next_read(string &id, string &seq, string &quals);
-
-  void reset();
-
-  string get_fname();
-
-  unsigned get_max_read_len();
-
-  int64_t get_local_num_reads();
-
-  void add_read(const string &read_id, const string &seq, const string &quals);
-
-  void load_reads();
-  
-};
-
-
+extern StageTimers stage_timers;

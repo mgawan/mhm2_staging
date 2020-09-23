@@ -47,6 +47,7 @@
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
+#include "upcxx_utils/ofstream.hpp"
 
 #include "utils.hpp"
 #include "alignments.hpp"

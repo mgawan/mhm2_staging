@@ -159,8 +159,22 @@ message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L$
 if (NOT MAX_BUILD_KMER)
   set(MAX_BUILD_KMER 160 CACHE STRING "The maximum kmer allowed to use (must be multiple of 32)")
 endif()
-message(STATUS "Building ${PROJECT_NAME} with a maximum kmer size of ${MAX_BUILD_KMER}")
+math(EXPR TEST_MAX_KMER_SIZE "((${MAX_BUILD_KMER} + 31) / 32) * 32")
+if (NOT ${MAX_BUILD_KMER} EQUAL ${TEST_MAX_KMER_SIZE})
+  message(FATAL_ERROR "MAX_BUILD_KMER must be a multiple of 32.  MAX_BUILD_KMER=${MAX_BUILD_KMER} is not")
+endif()
 add_definitions(-DMAX_BUILD_KMER=${MAX_BUILD_KMER})
+
+# enumerate the kmer lengths that will be built
+set(MHMXX_KMER_LENGTHS)
+set(tmplen 32)
+while( NOT ${MAX_BUILD_KMER} LESS ${tmplen} )
+    set(MHMXX_KMER_LENGTHS ${MHMXX_KMER_LENGTHS} ${tmplen} )
+    math(EXPR tmplen "(${tmplen} + 32)")
+endwhile()
+
+message(STATUS "Building ${PROJECT_NAME} with a maximum kmer size of ${MAX_BUILD_KMER}: ${MHMXX_KMER_LENGTHS}")
+
 
 if(NOT APPLE)
   add_definitions(-D_XOPEN_SOURCE=700)
@@ -212,3 +226,5 @@ include_directories("zstr/src")
 
 add_subdirectory(src)
 install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhmxx-upcxx-run-summit)
+install(PROGRAMS ci/check_asm_quality.py ci/ci_asm_qual_test.sh DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(FILES ci/good-arctic-sample0.txt ci/good-arctic-sample0-k63.txt ci/good-arctic-sample0-k31k63.txt ci/good-arcticsynth.txt DESTINATION ${CMAKE_INSTALL_PREFIX}/share)

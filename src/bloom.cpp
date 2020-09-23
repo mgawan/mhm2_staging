@@ -1,25 +1,23 @@
-#pragma once
-
 /*
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
-
+ 
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
-
+ 
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
-
+ 
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
-
+ 
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
-
+ 
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +28,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
-
+ 
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -42,70 +40,74 @@
  form.
 */
 
+#include "bloom.hpp"
 
-#include <array>
-#include <string>
-#include <string_view>
 #include <vector>
-#include <memory>
+#include <cmath>
+#include <exception>
 
-using std::string;
-using std::string_view;
-using std::to_string;
-using std::vector;
-using std::max;
-using std::unique_ptr;
+#include "hash_funcs.h"
 
-class PackedRead {
-  static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
-  // read_id is not packed as it is already reduced to an index number
-  // the pair number is indicated in the read id - negative means pair 1, positive means pair 2
-  int64_t read_id;
-  // each cached read packs the nucleotide into 3 bits (ACGTN), and the quality score into 5 bits
-  unsigned char *packed_read;
-  // the read is not going to be larger than 65536 in length, but possibly larger than 256
-  uint16_t read_len;
-  // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
-  // 8+150+2=160 vs 13+300=313
+#include "upcxx_utils/log.hpp"
 
-public:
+using namespace upcxx_utils;
 
-  PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset);
+std::array<uint64_t, 2> bloom_hash(const std::pair<const uint8_t*, std::size_t> &data) {
+  std::array<uint64_t, 2> hashValue;
+  MurmurHash3_x64_128(data.first, data.second, 0, hashValue.data());
+  return hashValue;
+}
 
-  ~PackedRead();
+uint64_t nth_hash(uint8_t n, uint64_t hashA, uint64_t hashB, uint64_t filterSize) {
+  return (hashA + n * hashB) % filterSize;
+}
 
-  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset);
-  
-};
 
-class PackedReads {
 
-  vector<unique_ptr<PackedRead>> packed_reads;
-  // this is only used when we need to know the actual name of the original reads
-  vector<string> read_id_idx_to_str;
-  unsigned max_read_len = 0;
-  uint64_t index = 0;
-  unsigned qual_offset;
-  string fname;
-  bool str_ids;
+  void BloomFilter::init(uint64_t entries, double error) {
+    double num = log(error);
+    double denom = 0.480453013918201; // ln(2)^2
+    double bpe = -(num / denom);
 
-public:
-  PackedReads(int qual_offset, const string &fname, bool str_ids=false);
+    double dentries = (double)entries;
+    uint64_t num_bits = (uint64_t)(dentries * bpe);
+    num_hashes = (int)ceil(0.693147180559945 * bpe); // ln(2)
+    try {
+      m_bits.resize(num_bits, false);
+    } catch (std::exception &e) {
+      DIE(e.what(), " note: num bits is ", num_bits, " dentries is ", dentries, " bpe is ", bpe);
+    }
+    SLOG_VERBOSE("Rank 0 created bloom filter with ", num_bits, " bits and ", num_hashes, " hashes (", get_size_str(num_bits/8), ")\n");
+  }
 
-  bool get_next_read(string &id, string &seq, string &quals);
+  void BloomFilter::clear() {
+    std::vector<bool>().swap(m_bits);
+  }
 
-  void reset();
+  void BloomFilter::add(const std::pair<const uint8_t*, std::size_t> &data) {
+    auto hash_values = bloom_hash(data);
+    for (int n = 0; n < num_hashes; n++)
+      m_bits[nth_hash(n, hash_values[0], hash_values[1], m_bits.size())] = true;
+  }
 
-  string get_fname();
+  bool BloomFilter::possibly_contains(const std::pair<const uint8_t*, std::size_t> &data) const {
+    auto hash_values = bloom_hash(data);
+    for (int n = 0; n < num_hashes; n++)
+      if (!m_bits[nth_hash(n, hash_values[0], hash_values[1], m_bits.size())]) return false;
+    return true;
+  }
 
-  unsigned get_max_read_len();
+  size_t BloomFilter::estimate_num_items() const {
+    size_t bits_on = 0, m = m_bits.size(), k = num_hashes;
+    for (auto it = m_bits.begin(); it != m_bits.end(); it++) {
+        if (*it) bits_on++;
+    }
+    return (size_t) (- ((double) m/ (double) k) * log( 1.0 - ((double) bits_on / (double) m) ) + 0.5);
+  }
 
-  int64_t get_local_num_reads();
+  bool BloomFilter::is_initialized() const {
+    return m_bits.size() != 0;
+  }
 
-  void add_read(const string &read_id, const string &seq, const string &quals);
-
-  void load_reads();
-  
-};
 
 

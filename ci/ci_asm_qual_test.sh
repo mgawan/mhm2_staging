@@ -1,6 +1,6 @@
 #!/bin/bash
 
-mhmxx_dir=$1
+mhmxx_install_dir=$1
 
 refs=arcticsynth-refs.fa
 if [ ! -f "$refs" ]; then
@@ -15,5 +15,5 @@ fi
 
 rm -rf /dev/shm/test-as
 wd=`pwd`
-$mhmxx_dir/install/bin/mhmxx.py -r $reads -o /dev/shm/test-as --checkpoint=no
-$mhmxx_dir/ci/check_asm_quality.py --asm-dir /dev/shm/test-as --expected-quals $mhmxx_dir/ci/good-arctic-sample0.txt --refs $wd/$refs
+$mhmxx_install_dir/bin/mhmxx.py -r $reads -o /dev/shm/test-as --checkpoint=no
+$mhmxx_install_dir/bin/check_asm_quality.py --asm-dir /dev/shm/test-as --expected-quals $mhmxx_install_dir/share/good-arctic-sample0.txt --refs $mhmxx_install_dir/share/$refs

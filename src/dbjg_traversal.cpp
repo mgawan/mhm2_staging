@@ -53,6 +53,7 @@
 #include "upcxx_utils/progress_bar.hpp"
 
 #include "utils.hpp"
+#include "kcount.hpp"
 #include "kmer_dht.hpp"
 #include "contigs.hpp"
 
