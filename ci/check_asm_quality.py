@@ -47,11 +47,12 @@ def main():
     report_path = 'mq.out/combined_reference/report.txt'
     report_exists = os.path.exists(options.asm_dir + "/" + report_path)
     launch_dir = os.getcwd()
+    options.refs = os.path.abspath(options.refs)
     os.chdir(options.asm_dir)
 
     if not report_exists:
         pwd=os.getcwd()
-        cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', launch_dir + '/' + options.refs, '%s/final_assembly.fasta'%(pwd)]
+        cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', options.refs, '%s/final_assembly.fasta'%(pwd)]
         if options.rna:
             cmd.append('--rna-finding')
         orig_mq_cmd = cmd
