@@ -113,6 +113,7 @@ Cori:validation:
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=yes"
     - export GASNET_BACKTRACE=1
+
     - echo "Submitting job on 3 nodes - on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
     - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhmxx.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
     - echo "Waiting for knl job $knl_job"

@@ -4,22 +4,22 @@
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
  approvals from the U.S. Dept. of Energy).  All rights reserved."
- 
+
  Redistribution and use in source and binary forms, with or without modification,
  are permitted provided that the following conditions are met:
- 
+
  (1) Redistributions of source code must retain the above copyright notice, this
  list of conditions and the following disclaimer.
- 
+
  (2) Redistributions in binary form must reproduce the above copyright notice,
  this list of conditions and the following disclaimer in the documentation and/or
  other materials provided with the distribution.
- 
+
  (3) Neither the name of the University of California, Lawrence Berkeley National
  Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
  endorse or promote products derived from this software without specific prior
  written permission.
- 
+
  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -30,7 +30,7 @@
  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
- 
+
  You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
  to the features, functionality or performance of the source code ("Enhancements") to
  anyone; however, if you choose to make your Enhancements available either publicly,
@@ -42,19 +42,18 @@
  form.
 */
 
-
-
-#include <stdio.h>
 #include <stdint.h>
-#include <cassert>
-#include <cstring>
-#include <string>
+#include <stdio.h>
+
 #include <array>
-#include <vector>
-#include <functional>
-#include <cstdint>
 #include <bitset>
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <functional>
 #include <iostream>
+#include <string>
+#include <vector>
 #ifdef __APPLE__
 #include <machine/endian.h>
 #define H2BE htonll
@@ -78,14 +77,13 @@
  *  */
 extern const uint64_t TWIN_TABLE[256];
 
-template<int MAX_K>
+template <int MAX_K>
 class Kmer {
-
   inline static unsigned int k = 0;
   inline static const int N_LONGS = (MAX_K + 31) / 32;
   std::array<uint64_t, N_LONGS> longs;
 
-public:
+ public:
   // serialization has to be public
   UPCXX_SERIALIZED_FIELDS(longs);
 
@@ -94,7 +92,7 @@ public:
     longs.fill(0);
   }
 
-  Kmer(const Kmer& o) {
+  Kmer(const Kmer &o) {
     assert(Kmer::k > 0);
     longs = o.longs;
   }
@@ -104,13 +102,9 @@ public:
     set_kmer(s);
   }
 
-  static void set_k(unsigned int k) {
-    Kmer::k = k;
-  }
-  
-  static unsigned int get_k() {
-    return Kmer::k;
-  }
+  static void set_k(unsigned int k) { Kmer::k = k; }
+
+  static unsigned int get_k() { return Kmer::k; }
 
   static void get_kmers(unsigned kmer_len, std::string seq, std::vector<Kmer> &kmers) {
     // only need rank 0 to check
@@ -118,7 +112,7 @@ public:
     assert(kmer_len == Kmer::k);
     kmers.clear();
     if (seq.size() < Kmer::k) return;
-    for (auto & c : seq) c = toupper(c);
+    for (auto &c : seq) c = toupper(c);
     int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
     int lastLong = N_LONGS - 1;
     assert(lastLong >= 0 && lastLong < N_LONGS);
@@ -165,19 +159,19 @@ public:
         }
         // set remaining bits to 0
         kmers[i].longs[lastLong] &= endmask;
-//        for (int l = N_LONGS; l < N_LONGS; l++) {
-//          kmers[i].longs[l] = 0;
-//        }
+        //        for (int l = N_LONGS; l < N_LONGS; l++) {
+        //          kmers[i].longs[l] = 0;
+        //        }
       }
     }
   }
 
-  Kmer& operator=(const Kmer& o) {
+  Kmer &operator=(const Kmer &o) {
     if (this != &o) longs = o.longs;
     return *this;
   }
 
-  bool operator<(const Kmer& o) const {
+  bool operator<(const Kmer &o) const {
     for (size_t i = 0; i < N_LONGS; ++i) {
       if (longs[i] < o.longs[i]) return true;
       if (longs[i] > o.longs[i]) return false;
@@ -185,13 +179,9 @@ public:
     return false;
   }
 
-  bool operator==(const Kmer& o) const {
-    return longs == o.longs;
-  }
+  bool operator==(const Kmer &o) const { return longs == o.longs; }
 
-  bool operator!=(const Kmer& o) const {
-    return !(*this == o);
-  }
+  bool operator!=(const Kmer &o) const { return !(*this == o); }
 
   void set_kmer(const char *s) {
     size_t i, j, l;
@@ -210,23 +200,16 @@ public:
     }
   }
 
-  uint64_t hash() const {
-    return MurmurHash3_x64_64(reinterpret_cast<const void*>(longs.data()), N_LONGS * sizeof(uint64_t));
-  }
+  uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(uint64_t)); }
 
   Kmer revcomp() const {
     Kmer km(*this);
     for (size_t i = 0; i < N_LONGS; i++) {
       uint64_t v = longs[i];
-      km.longs[N_LONGS - 1 - i] =
-        (TWIN_TABLE[v & 0xFF] << 56) |
-        (TWIN_TABLE[(v >> 8) & 0xFF] << 48) |
-        (TWIN_TABLE[(v >> 16) & 0xFF] << 40) |
-        (TWIN_TABLE[(v >> 24) & 0xFF] << 32) |
-        (TWIN_TABLE[(v >> 32) & 0xFF] << 24) |
-        (TWIN_TABLE[(v >> 40) & 0xFF] << 16) |
-        (TWIN_TABLE[(v >> 48) & 0xFF] << 8) |
-        (TWIN_TABLE[(v >> 56)]);
+      km.longs[N_LONGS - 1 - i] = (TWIN_TABLE[v & 0xFF] << 56) | (TWIN_TABLE[(v >> 8) & 0xFF] << 48) |
+                                  (TWIN_TABLE[(v >> 16) & 0xFF] << 40) | (TWIN_TABLE[(v >> 24) & 0xFF] << 32) |
+                                  (TWIN_TABLE[(v >> 32) & 0xFF] << 24) | (TWIN_TABLE[(v >> 40) & 0xFF] << 16) |
+                                  (TWIN_TABLE[(v >> 48) & 0xFF] << 8) | (TWIN_TABLE[(v >> 56)]);
     }
     size_t shift = (Kmer::k % 32) ? 2 * (32 - (Kmer::k % 32)) : 0;
     uint64_t shiftmask = (Kmer::k % 32) ? (((1ULL << shift) - 1) << (64 - shift)) : 0ULL;
@@ -269,10 +252,22 @@ public:
       j = i % 32;
       l = i / 32;
       switch (((longs[l]) >> (2 * (31 - j))) & 0x03) {
-        case 0x00: *s = 'A'; ++s; break;
-        case 0x01: *s = 'C'; ++s; break;
-        case 0x02: *s = 'G'; ++s; break;
-        case 0x03: *s = 'T'; ++s; break;
+        case 0x00:
+          *s = 'A';
+          ++s;
+          break;
+        case 0x01:
+          *s = 'C';
+          ++s;
+          break;
+        case 0x02:
+          *s = 'G';
+          ++s;
+          break;
+        case 0x03:
+          *s = 'T';
+          ++s;
+          break;
       }
     }
     *s = '\0';
@@ -284,58 +279,47 @@ public:
     return std::string(buf);
   }
 
-  std::pair<const uint8_t*, int> get_bytes() const {
-    return {reinterpret_cast<const uint8_t*>(longs.data()), N_LONGS * sizeof(uint64_t)};
+  std::pair<const uint8_t *, int> get_bytes() const {
+    return {reinterpret_cast<const uint8_t *>(longs.data()), N_LONGS * sizeof(uint64_t)};
   }
-
 };
 
-
-template<int MAX_K>
+template <int MAX_K>
 struct KmerHash {
-  size_t operator()(const Kmer<MAX_K> &km) const {
-    return km.hash();
-  }
+  size_t operator()(const Kmer<MAX_K> &km) const { return km.hash(); }
 };
 
-template<int MAX_K>
+template <int MAX_K>
 struct KmerEqual {
-  size_t operator()(const Kmer<MAX_K> &k1, const Kmer<MAX_K> &k2) const {
-    return k1 == k2;
-  }
+  size_t operator()(const Kmer<MAX_K> &k1, const Kmer<MAX_K> &k2) const { return k1 == k2; }
 };
 
 // specialization of std::Hash
 
 namespace std {
 
-  template<int MAX_K>
-  struct hash<Kmer<MAX_K>> {
-    typedef std::size_t result_type;
-    result_type operator()(Kmer<MAX_K> const& km) const {
-      return km.hash();
-    }
-  };
-}
+template <int MAX_K>
+struct hash<Kmer<MAX_K>> {
+  typedef std::size_t result_type;
+  result_type operator()(Kmer<MAX_K> const &km) const { return km.hash(); }
+};
+}  // namespace std
 
-template<int MAX_K>
-inline std::ostream& operator<<(std::ostream& out, const Kmer<MAX_K>& k) {
+template <int MAX_K>
+inline std::ostream &operator<<(std::ostream &out, const Kmer<MAX_K> &k) {
   return out << k.to_string();
 };
 
-
 #define __MACRO_KMER__(KMER_LEN, MODIFIER) \
-  MODIFIER class Kmer<KMER_LEN>; \
-  MODIFIER struct KmerHash<KMER_LEN>; \
+  MODIFIER class Kmer<KMER_LEN>;           \
+  MODIFIER struct KmerHash<KMER_LEN>;      \
   MODIFIER struct KmerEqual<KMER_LEN>;
 
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in kmer.hpp
 // template instantiations each happen in src/CMakeLists via kmer-extern-template.in.cpp
 
-
 __MACRO_KMER__(32, extern template);
-
 
 #if MAX_BUILD_KMER >= 64
 
@@ -357,4 +341,3 @@ __MACRO_KMER__(128, extern template);
 __MACRO_KMER__(160, extern template);
 
 #endif
-

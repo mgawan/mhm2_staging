@@ -42,22 +42,21 @@
  form.
 */
 
-
 #include <map>
-
 #include <upcxx/upcxx.hpp>
+
 #include "upcxx_utils/timers.hpp"
 
+using std::shared_ptr;
 using std::string;
 using std::to_string;
-using std::shared_ptr;
 
 using upcxx::rank_me;
 using upcxx::rank_n;
 
 using upcxx_utils::IntermittentTimer;
 
-#define INT_CEIL(numerator, denominator) (((numerator) - 1) / (denominator) + 1)
+#define INT_CEIL(numerator, denominator) (((numerator)-1) / (denominator) + 1)
 #define BUF_SIZE 2047
 
 class FastqReader {
@@ -73,23 +72,22 @@ class FastqReader {
   bool first_file;
   IntermittentTimer io_t;
   upcxx::future<> open_fut;
-  
+
   inline static double overall_io_t = 0;
 
   static void rtrim(string &s);
 
   bool get_fq_name(string &header);
-  
+
   int64_t get_fptr_for_next_record(int64_t offset);
 
-public:
-
-  FastqReader() = delete; // no default constructor
+ public:
+  FastqReader() = delete;  // no default constructor
   FastqReader(const string &_fname, bool wait = false);
-    
+
   // this happens within a separate thread
   void continue_open(int fd = -1);
-    
+
   ~FastqReader();
 
   string get_fname();
@@ -102,33 +100,30 @@ public:
   double static get_io_time();
 
   void reset();
-
 };
 
 class FastqReaders {
-    // singleton class to hold as set of fastq readers open and re-usable
-    using ShFastqReader = shared_ptr<FastqReader>;
-    std::unordered_map<string, ShFastqReader> readers;
+  // singleton class to hold as set of fastq readers open and re-usable
+  using ShFastqReader = shared_ptr<FastqReader>;
+  std::unordered_map<string, ShFastqReader> readers;
 
-    FastqReaders();
-    
-public:
-    static FastqReaders &getInstance();
-    
-    static FastqReader &open(const string fname);
-    
-    template<typename Container>
-    static void open_all(Container &fnames) {
-        for(string &fname : fnames) {
-            open(fname);
-        }
+  FastqReaders();
+
+ public:
+  static FastqReaders &getInstance();
+
+  static FastqReader &open(const string fname);
+
+  template <typename Container>
+  static void open_all(Container &fnames) {
+    for (string &fname : fnames) {
+      open(fname);
     }
+  }
 
-    static FastqReader &get(const string fname);
-    
-    static void close(const string fname);
-    
-    static void close_all();
-    
+  static FastqReader &get(const string fname);
+
+  static void close(const string fname);
+
+  static void close_all();
 };
-

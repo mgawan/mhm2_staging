@@ -1,6 +1,5 @@
 #pragma once
 
-
 /*
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
@@ -45,13 +44,12 @@
 
 #include "main.hpp"
 
-
 template <int MAX_K>
 void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int max_expected_ins_size) {
   auto loop_start_t = std::chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Post processing", KNORM, "\n\n");
-  vector<PackedReads*> packed_reads_list;
+  vector<PackedReads *> packed_reads_list;
   for (auto const &reads_fname : options->reads_fnames) {
     packed_reads_list.push_back(new PackedReads(options->qual_offset, reads_fname, true));
   }
@@ -90,19 +88,13 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
   SLOG(KBLUE, "_________________________", KNORM, "\n");
 }
 
-
-
-
-#define __MACRO_POST_ASSEMBLY__(KMER_LEN, MODIFIER) \
-  MODIFIER void post_assembly<KMER_LEN>(int, Contigs &, shared_ptr<Options>, int); 
+#define __MACRO_POST_ASSEMBLY__(KMER_LEN, MODIFIER) MODIFIER void post_assembly<KMER_LEN>(int, Contigs &, shared_ptr<Options>, int);
 
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in post_assembly.hpp
 // template instantiations each happen in src/CMakeLists via post_assembly-extern-template.in.cpp
 
-
 __MACRO_POST_ASSEMBLY__(32, extern template);
-
 
 #if MAX_BUILD_KMER >= 64
 
@@ -124,4 +116,3 @@ __MACRO_POST_ASSEMBLY__(128, extern template);
 __MACRO_POST_ASSEMBLY__(160, extern template);
 
 #endif
-

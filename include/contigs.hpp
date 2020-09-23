@@ -42,14 +42,13 @@
  form.
 */
 
-
 //#include <iostream>
-#include <vector>
 #include <array>
 #include <string>
+#include <vector>
 
-using std::vector;
 using std::string;
+using std::vector;
 
 #define nTNF 136
 
@@ -70,11 +69,9 @@ struct Contig {
 };
 
 class Contigs {
-
   vector<Contig> contigs;
 
-public:
-
+ public:
   Contigs() {}
 
   void clear();
@@ -85,27 +82,19 @@ public:
 
   size_t size();
 
-  auto begin() {
-    return contigs.begin();
-  }
+  auto begin() { return contigs.begin(); }
 
-  auto end() {
-    return contigs.end();
-  }
+  auto end() { return contigs.end(); }
 
   void print_stats(unsigned min_ctg_len);
 
   void dump_contigs(const string &fname, unsigned min_ctg_len);
 
   void load_contigs(const string &ctgs_fname);
-  
+
 #ifdef USE_KMER_DEPTHS
-  void dump_kmer_depths(const string &fname) {
+  void dump_kmer_depths(const string &fname) {}
 
-  }
-
-  void load_kmer_depths(const string &ctgs_fname) {
-  }
+  void load_kmer_depths(const string &ctgs_fname) {}
 #endif
 };
-

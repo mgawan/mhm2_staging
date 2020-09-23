@@ -45,7 +45,6 @@
 using namespace upcxx;
 using namespace upcxx_utils;
 
-
 // global variables to avoid passing dist objs to rpcs
 int64_t _num_dropped_seed_to_ctgs = 0;
 
@@ -53,7 +52,7 @@ int64_t _num_dropped_seed_to_ctgs = 0;
 // extern template declarations are in kmer.hpp
 // template instantiations each happen in src/CMakeLists via kmer-extern-template.in.cpp
 
-/*    
+/*
 
 #define FA(KMER_LEN) \
     template \

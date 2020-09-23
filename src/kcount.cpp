@@ -42,31 +42,29 @@
 
 #include "kcount.hpp"
 
-#include <iostream>
+#include <fcntl.h>
 #include <math.h>
-#include <algorithm>
 #include <stdarg.h>
 #include <unistd.h>
-#include <fcntl.h>
+
+#include <algorithm>
+#include <iostream>
 #include <upcxx/upcxx.hpp>
 
-#include "upcxx_utils/log.hpp"
-#include "upcxx_utils/progress_bar.hpp"
-#include "upcxx_utils/timers.hpp"
-#include "upcxx_utils/mem_profile.hpp"
-
-#include "utils.hpp"
+#include "contigs.hpp"
 #include "kmer_dht.hpp"
 #include "packed_reads.hpp"
-#include "contigs.hpp"
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/mem_profile.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
+#include "utils.hpp"
 
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
-
-
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list) {
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &packed_reads_list) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_reads = 0;
@@ -98,14 +96,13 @@ uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_read
   return num_reads > 0 ? num_kmers * tot_num_reads / num_reads : 0;
 }
 
-
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in kcount.hpp
 // template instantiations each happen in src/CMakeLists via kcount-extern-template.in.cpp
 
 /*
  * This is called in kcount-extern-template.in.cpp
- * 
+ *
 __MACRO_KCOUNT__(32, template);
 
 #if MAX_BUILD_KMER >= 64

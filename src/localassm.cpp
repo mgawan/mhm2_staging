@@ -40,27 +40,22 @@
  form.
 */
 
-
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <upcxx/upcxx.hpp>
 
+#include "alignments.hpp"
+#include "contigs.hpp"
+#include "kmer_dht.hpp"
+#include "packed_reads.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
-
 #include "utils.hpp"
-
-#include "contigs.hpp"
-#include "alignments.hpp"
-#include "packed_reads.hpp"
-#include "kmer_dht.hpp"
-
 
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
-
 
 enum class AlnStatus { NO_ALN, OVERLAPS_CONTIG, EXTENDS_CONTIG };
 
@@ -74,48 +69,49 @@ class ReadsToCtgsDHT {
   using reads_to_ctgs_map_t = HASH_TABLE<string, vector<CtgInfo> >;
   dist_object<reads_to_ctgs_map_t> reads_to_ctgs_map;
 
-  size_t get_target_rank(const string &read_id) {
-    return std::hash<string>{}(read_id) % rank_n();
-  }
+  size_t get_target_rank(const string &read_id) { return std::hash<string>{}(read_id) % rank_n(); }
 
-public:
+ public:
   ReadsToCtgsDHT(int64_t initial_size)
-    : reads_to_ctgs_map({}) {
+      : reads_to_ctgs_map({}) {
     reads_to_ctgs_map->reserve(initial_size);
   }
 
   void add(const string &read_id, int64_t cid, char orient, char side) {
-    CtgInfo ctg_info = { .cid = cid, .orient = orient, .side = side };
-    rpc(get_target_rank(read_id),
+    CtgInfo ctg_info = {.cid = cid, .orient = orient, .side = side};
+    rpc(
+        get_target_rank(read_id),
         [](dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id, CtgInfo ctg_info) {
           const auto it = reads_to_ctgs_map->find(read_id);
-          if (it == reads_to_ctgs_map->end()) reads_to_ctgs_map->insert({read_id, {ctg_info}});
-          else it->second.push_back(ctg_info);
-        }, reads_to_ctgs_map, read_id, ctg_info).wait();
+          if (it == reads_to_ctgs_map->end())
+            reads_to_ctgs_map->insert({read_id, {ctg_info}});
+          else
+            it->second.push_back(ctg_info);
+        },
+        reads_to_ctgs_map, read_id, ctg_info)
+        .wait();
   }
 
-  int64_t get_num_mappings() {
-    return reduce_one(reads_to_ctgs_map->size(), op_fast_add, 0).wait();
-  }
+  int64_t get_num_mappings() { return reduce_one(reads_to_ctgs_map->size(), op_fast_add, 0).wait(); }
 
   vector<CtgInfo> get_ctgs(string &read_id) {
-    return upcxx::rpc(get_target_rank(read_id),
-                      [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id) -> vector<CtgInfo> {
-                        const auto it = reads_to_ctgs_map->find(read_id);
-                        if (it == reads_to_ctgs_map->end()) return {};
-                        return it->second;
-                      }, reads_to_ctgs_map, read_id).wait();
+    return upcxx::rpc(
+               get_target_rank(read_id),
+               [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id) -> vector<CtgInfo> {
+                 const auto it = reads_to_ctgs_map->find(read_id);
+                 if (it == reads_to_ctgs_map->end()) return {};
+                 return it->second;
+               },
+               reads_to_ctgs_map, read_id)
+        .wait();
   }
-
 };
-
 
 struct ReadSeq {
   string read_id;
   string seq;
   string quals;
 };
-
 
 struct CtgWithReads {
   int64_t cid;
@@ -125,52 +121,51 @@ struct CtgWithReads {
   vector<ReadSeq> reads_right;
 };
 
-
 class CtgsWithReadsDHT {
-
   using ctgs_map_t = HASH_TABLE<int64_t, CtgWithReads>;
   dist_object<ctgs_map_t> ctgs_map;
   ctgs_map_t::iterator ctgs_map_iter;
 
-  size_t get_target_rank(int64_t cid) {
-    return std::hash<int64_t>{}(cid) % rank_n();
-  }
+  size_t get_target_rank(int64_t cid) { return std::hash<int64_t>{}(cid) % rank_n(); }
 
-public:
-
+ public:
   CtgsWithReadsDHT(int64_t num_ctgs)
-    : ctgs_map({}) {
+      : ctgs_map({}) {
     // pad the local ctg count a bit for this estimate
     ctgs_map->reserve(num_ctgs * 1.2);
   }
 
   void add_ctg(Contig &ctg) {
-    rpc(get_target_rank(ctg.id),
+    rpc(
+        get_target_rank(ctg.id),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
           const auto it = ctgs_map->find(cid);
           if (it != ctgs_map->end()) DIE("Found duplicate ctg ", cid);
-          CtgWithReads ctg_with_reads = { .cid = cid, .seq = seq, .depth = depth, .reads_left = {}, .reads_right = {} };
-          ctgs_map->insert({cid, ctg_with_reads });
-        }, ctgs_map, ctg.id, ctg.seq, ctg.depth).wait();
+          CtgWithReads ctg_with_reads = {.cid = cid, .seq = seq, .depth = depth, .reads_left = {}, .reads_right = {}};
+          ctgs_map->insert({cid, ctg_with_reads});
+        },
+        ctgs_map, ctg.id, ctg.seq, ctg.depth)
+        .wait();
   }
 
   void add_read(int64_t cid, char side, ReadSeq read_seq) {
-    rpc(get_target_rank(cid),
+    rpc(
+        get_target_rank(cid),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
           const auto it = ctgs_map->find(cid);
           if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
-          if (side == 'L') it->second.reads_left.push_back({read_id, seq, quals});
-          else it->second.reads_right.push_back({read_id, seq, quals});
-        }, ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals).wait();
+          if (side == 'L')
+            it->second.reads_left.push_back({read_id, seq, quals});
+          else
+            it->second.reads_right.push_back({read_id, seq, quals});
+        },
+        ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals)
+        .wait();
   }
 
-  int64_t get_num_ctgs() {
-    return reduce_one(ctgs_map->size(), op_fast_add, 0).wait();
-  }
+  int64_t get_num_ctgs() { return reduce_one(ctgs_map->size(), op_fast_add, 0).wait(); }
 
-  int64_t get_local_num_ctgs() {
-    return ctgs_map->size();
-  }
+  int64_t get_local_num_ctgs() { return ctgs_map->size(); }
 
   CtgWithReads *get_first_local_ctg() {
     ctgs_map_iter = ctgs_map->begin();
@@ -187,7 +182,6 @@ public:
     return ctg;
   }
 };
-
 
 struct MerFreqs {
   // how many times this kmer has occurred: don't need to count beyond 65536
@@ -226,13 +220,12 @@ struct MerFreqs {
       mer_bases[i].rating = mer_bases[i].get_base_rating(seq_depth);
     }
     // sort bases in descending order of quality
-    sort(mer_bases, mer_bases + sizeof(mer_bases) / sizeof(mer_bases[0]),
-         [](const auto &elem1, const auto &elem2) -> bool {
-           if (elem1.rating != elem2.rating) return elem1.rating > elem2.rating;
-           if (elem1.nvotes_hi_q != elem2.nvotes_hi_q) return elem1.nvotes_hi_q > elem2.nvotes_hi_q;
-           if (elem1.nvotes != elem2.nvotes) return elem1.nvotes > elem2.nvotes;
-           return true;
-         });
+    sort(mer_bases, mer_bases + sizeof(mer_bases) / sizeof(mer_bases[0]), [](const auto &elem1, const auto &elem2) -> bool {
+      if (elem1.rating != elem2.rating) return elem1.rating > elem2.rating;
+      if (elem1.nvotes_hi_q != elem2.nvotes_hi_q) return elem1.nvotes_hi_q > elem2.nvotes_hi_q;
+      if (elem1.nvotes != elem2.nvotes) return elem1.nvotes > elem2.nvotes;
+      return true;
+    });
     int top_rating = mer_bases[0].rating;
     int runner_up_rating = mer_bases[1].rating;
     if (top_rating < runner_up_rating) DIE("top_rating ", top_rating, " < ", runner_up_rating, "\n");
@@ -242,20 +235,23 @@ struct MerFreqs {
     count = 0;
     // no extension (base = 0) if the runner up is close to the top rating
     // except, if rating is 7 (best quality), then all bases of rating 7 are forks
-    if (top_rating > LASSM_RATING_THRES) {         // must have at least minViable bases
-      if (top_rating <= 3) {    // must be uncontested
+    if (top_rating > LASSM_RATING_THRES) {  // must have at least minViable bases
+      if (top_rating <= 3) {                // must be uncontested
         if (runner_up_rating == 0) ext = top_rated_base;
       } else if (top_rating < 6) {
         if (runner_up_rating < 3) ext = top_rated_base;
       } else if (top_rating == 6) {  // viable and fair hiQ support
         if (runner_up_rating < 4) ext = top_rated_base;
-      } else {                     // strongest rating trumps
+      } else {  // strongest rating trumps
         if (runner_up_rating < 7) {
           ext = top_rated_base;
         } else {
-          if (mer_bases[2].rating == 7 || mer_bases[0].nvotes == mer_bases[1].nvotes) ext = 'F';
-          else if (mer_bases[0].nvotes > mer_bases[1].nvotes) ext = mer_bases[0].base;
-          else if (mer_bases[1].nvotes > mer_bases[0].nvotes) ext = mer_bases[1].base;
+          if (mer_bases[2].rating == 7 || mer_bases[0].nvotes == mer_bases[1].nvotes)
+            ext = 'F';
+          else if (mer_bases[0].nvotes > mer_bases[1].nvotes)
+            ext = mer_bases[0].base;
+          else if (mer_bases[1].nvotes > mer_bases[0].nvotes)
+            ext = mer_bases[1].base;
         }
       }
     }
@@ -266,13 +262,11 @@ struct MerFreqs {
       }
     }
   }
-
 };
-
 
 using MerMap = HASH_TABLE<string, MerFreqs>;
 
-static void process_reads(unsigned kmer_len, vector<PackedReads*> &packed_reads_list, ReadsToCtgsDHT &reads_to_ctgs,
+static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads_list, ReadsToCtgsDHT &reads_to_ctgs,
                           CtgsWithReadsDHT &ctgs_dht) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_reads = 0;
@@ -311,11 +305,9 @@ static void process_reads(unsigned kmer_len, vector<PackedReads*> &packed_reads_
                " reads that map to contigs\n");
 }
 
-
 static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStatus &best_start_status, AlnStatus &best_end_status,
                                   int64_t &num_alns_found, int64_t &num_alns_invalid) {
-
-  auto classify_aln = [](int runaligned, int cunaligned) ->AlnStatus {
+  auto classify_aln = [](int runaligned, int cunaligned) -> AlnStatus {
     if (runaligned > cunaligned && cunaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::EXTENDS_CONTIG;
     if (runaligned <= cunaligned && runaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::OVERLAPS_CONTIG;
     return AlnStatus::NO_ALN;
@@ -327,7 +319,7 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
   string start_read_id = "";
   int best_aln_score = 0;
   best_aln.read_id = "";
-  for (; i < (int64_t) alns.size(); i++) {
+  for (; i < (int64_t)alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
@@ -354,7 +346,6 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
   }
 }
 
-
 void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int insert_stddev) {
   auto pair_overlap = [](Aln &aln, int min_pair_len) -> bool {
     // make sure that the mate won't overlap the same contig
@@ -373,7 +364,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
   int64_t aln_i = 0;
   AlnStatus start_status, end_status;
   ProgressBar progbar(alns.size(), "Getting read-to-contig mappings from alignments");
-  while (aln_i < (int64_t) alns.size()) {
+  while (aln_i < (int64_t)alns.size()) {
     progress();
     Aln aln;
     t_get_alns.start();
@@ -395,9 +386,12 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
       // indicate the other pair number
       int len = aln.read_id.length();
       assert(len > 1);
-      if (aln.read_id[len - 1] == '1') aln.read_id[len - 1] = '2';
-      else if (aln.read_id[len - 1] == '2') aln.read_id[len - 1] = '1';
-      else DIE("Bad pair number ", (int)aln.read_id[len - 1], " in read: ", aln.read_id);
+      if (aln.read_id[len - 1] == '1')
+        aln.read_id[len - 1] = '2';
+      else if (aln.read_id[len - 1] == '2')
+        aln.read_id[len - 1] = '1';
+      else
+        DIE("Bad pair number ", (int)aln.read_id[len - 1], " in read: ", aln.read_id);
       reads_to_ctgs.add(aln.read_id, aln.cid, aln.orient == '+' ? '-' : '+', aln.orient == '+' ? 'R' : 'L');
       num_proj++;
     }
@@ -413,7 +407,6 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
   SLOG_VERBOSE("Added ", reads_to_ctgs.get_num_mappings(), " mappings\n");
 }
 
-
 static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__);
   // process the local ctgs and insert into the distributed hash table
@@ -428,7 +421,6 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
   SLOG_VERBOSE("Added ", ctgs_dht.get_num_ctgs(), " contigs\n");
 }
 
-
 static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
                        int64_t &excess_reads) {
   int num_reads = 0;
@@ -440,7 +432,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
       break;
     }
     progress();
-    if (mer_len >= (int) read_seq.seq.length()) continue;
+    if (mer_len >= (int)read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
       // skip mers that contain Ns
@@ -452,7 +444,7 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
         it = mers_ht.find(mer);
       }
       int ext_pos = start + mer_len;
-      assert(ext_pos < (int) read_seq.seq.length());
+      assert(ext_pos < (int)read_seq.seq.length());
       char ext = read_seq.seq[ext_pos];
       if (ext == 'N') continue;
       int qual = read_seq.quals[ext_pos] - qual_offset;
@@ -496,11 +488,10 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, i
   return walk_result;
 }
 
-
-static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads, int max_mer_len, int kmer_len,
-                              int qual_offset, int walk_len_limit, array<int64_t, 3> &term_counts,
-                              int64_t &num_walks, int64_t &max_walk_len, int64_t &sum_ext, IntermittentTimer &count_mers_timer,
-                              IntermittentTimer &walk_mers_timer, int64_t &excess_reads) {
+static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads, int max_mer_len, int kmer_len, int qual_offset,
+                              int walk_len_limit, array<int64_t, 3> &term_counts, int64_t &num_walks, int64_t &max_walk_len,
+                              int64_t &sum_ext, IntermittentTimer &count_mers_timer, IntermittentTimer &walk_mers_timer,
+                              int64_t &excess_reads) {
   int min_mer_len = LASSM_MIN_KMER_LEN;
   max_mer_len = min(max_mer_len, (int)seq.length());
   // iteratively walk starting from kmer_size, increasing mer size on a fork (F) or repeat (R),
@@ -526,18 +517,20 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
     char walk_result = walk_mers(mers_ht, mer, walk, mer_len, walk_len_limit);
     walk_mers_timer.stop();
     int walk_len = walk.length();
-    if (walk_len > (int) longest_walk.length()) longest_walk = walk;
+    if (walk_len > (int)longest_walk.length()) longest_walk = walk;
     if (walk_result == 'X') {
       term_counts[0]++;
       // walk reaches a dead-end, downshift, unless we were upshifting
       if (shift == LASSM_SHIFT_SIZE) break;
       shift = -LASSM_SHIFT_SIZE;
     } else {
-      if (walk_result == 'F') term_counts[1]++;
-      else term_counts[2]++;
+      if (walk_result == 'F')
+        term_counts[1]++;
+      else
+        term_counts[2]++;
       // otherwise walk must end with a fork or repeat, so upshift
       if (shift == -LASSM_SHIFT_SIZE) break;
-      if (mer_len > (int) seq.length()) break;
+      if (mer_len > (int)seq.length()) break;
       shift = LASSM_SHIFT_SIZE;
     }
   }
@@ -549,17 +542,16 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
   return longest_walk;
 }
 
-
 static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_avg, int insert_stddev, int max_kmer_len,
                         int kmer_len, int qual_offset) {
   BarrierTimer timer(__FILEFUNC__);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
   int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0,
-    excess_reads = 0;
+          excess_reads = 0;
   array<int64_t, 3> term_counts = {0};
   IntermittentTimer count_mers_timer(__FILENAME__ + string(":") + "count_mers"),
-    walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
+      walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
     progress();
@@ -571,9 +563,9 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       max_num_reads = max(max_num_reads, (int64_t)ctg->reads_right.size());
       DBG("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
       // have to do right first because the contig needs to be revcomped for the left
-      string right_walk = iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset,
-                                          walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
-                                          count_mers_timer, walk_mers_timer, excess_reads);
+      string right_walk =
+          iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset, walk_len_limit, term_counts,
+                          num_walks, max_walk_len, sum_ext, count_mers_timer, walk_mers_timer, excess_reads);
       if (!right_walk.empty()) ctg->seq += right_walk;
     }
     if (ctg->reads_left.size()) {
@@ -582,9 +574,9 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       max_num_reads = max(max_num_reads, (int64_t)ctg->reads_left.size());
       string seq_rc = revcomp(ctg->seq);
       DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
-      string left_walk = iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset,
-                                         walk_len_limit, term_counts, num_walks, max_walk_len, sum_ext,
-                                         count_mers_timer, walk_mers_timer, excess_reads);
+      string left_walk =
+          iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset, walk_len_limit, term_counts,
+                          num_walks, max_walk_len, sum_ext, count_mers_timer, walk_mers_timer, excess_reads);
       if (!left_walk.empty()) {
         left_walk = revcomp(left_walk);
         ctg->seq.insert(0, left_walk);
@@ -596,10 +588,9 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   count_mers_timer.done_all();
   walk_mers_timer.done_all();
   barrier();
-  SLOG_VERBOSE("Walk terminations: ",
-               reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
-               reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ",
-               reduce_one(term_counts[2], op_fast_add, 0).wait(), " R\n");
+  SLOG_VERBOSE("Walk terminations: ", reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
+               reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ", reduce_one(term_counts[2], op_fast_add, 0).wait(),
+               " R\n");
   auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto tot_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
   auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
@@ -618,8 +609,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
     SLOG_VERBOSE("Average walk length ", tot_sum_ext / tot_num_walks, ", max walk length ", tot_max_walk_len, "\n");
 }
 
-
-void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
+void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
@@ -635,4 +625,3 @@ void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_read
   // extend contigs using locally mapped reads
   extend_ctgs(ctgs_dht, ctgs, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset);
 }
-

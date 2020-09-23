@@ -418,18 +418,18 @@ class KmerCtgDHT {
              bool compute_cigar, int ranks_per_gpu = 0)
       : kmer_map({})
       , kmer_store(kmer_map)
-      , ssw_aligner(aln_scoring.match, aln_scoring.mismatch, aln_scoring.gap_opening, aln_scoring.gap_extending,
-                    aln_scoring.ambiguity)
       , num_alns(0)
       , num_perfect_alns(0)
       , num_overlaps(0)
       , ctg_seq_bytes_fetched(0)
-      , alns(&alns)
+      , ssw_aligner(aln_scoring.match, aln_scoring.mismatch, aln_scoring.gap_opening, aln_scoring.gap_extending,
+                    aln_scoring.ambiguity)
       , kernel_alns({})
       , ctg_seqs({})
       , read_seqs({})
       , active_kernel_fut(make_future())
       , aln_cpu_bypass_timer("klign.cpp:CPU_BSW-bypass")
+      , alns(&alns)
       , kmer_len(kmer_len) {
     this->aln_scoring = aln_scoring;
     ssw_filter.report_cigar = compute_cigar;
@@ -827,8 +827,8 @@ int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<
 }
 
 template <int MAX_K>
-static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &packed_reads_list, int seed_space,
-                            bool compute_cigar) {
+double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &packed_reads_list, int seed_space,
+                     bool compute_cigar) {
   BarrierTimer timer(__FILEFUNC__);
   SLOG_VERBOSE("Using a seed space of ", seed_space, "\n");
   int64_t tot_num_kmers = 0;
@@ -912,7 +912,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads 
   auto tot_excess_alns_reads = num_excess_alns_reads_fut.wait();
   if (num_excess_alns_reads)
     SLOG_VERBOSE("Dropped ", tot_excess_alns_reads, " reads because of alignments in excess of ", KLIGN_MAX_ALNS_PER_READ, "\n");
-
+  auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
   if (num_overlaps) SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");
   auto tot_num_reads_aligned = tot_num_reads_aligned_fut.wait();
   SLOG_VERBOSE("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");

@@ -40,26 +40,26 @@
  form.
 */
 
-#include <iostream>
-#include <fstream>
-#include <algorithm>
-#include <chrono>
-#include <string>
+#include <fcntl.h>
 #include <math.h>
 #include <stdarg.h>
 #include <unistd.h>
-#include <fcntl.h>
+
+#include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <string>
 #include <upcxx/upcxx.hpp>
 
-#include "upcxx_utils/log.hpp"
-#include "upcxx_utils/progress_bar.hpp"
-#include "upcxx_utils/flat_aggr_store.hpp"
-#include "upcxx_utils/timers.hpp"
-#include "upcxx_utils/ofstream.hpp"
-
-#include "utils.hpp"
-#include "contigs.hpp"
 #include "alignments.hpp"
+#include "contigs.hpp"
+#include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/log.hpp"
+#include "upcxx_utils/ofstream.hpp"
+#include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/timers.hpp"
+#include "utils.hpp"
 
 using namespace std;
 using namespace upcxx_utils;
@@ -78,16 +78,14 @@ class CtgsDepths {
   int edge_base_len;
   HASH_TABLE<int64_t, CtgBaseDepths>::iterator ctgs_depths_iter;
 
-  size_t get_target_rank(int64_t cid) {
-    return std::hash<int64_t>{}(cid) % upcxx::rank_n();
-  }
+  size_t get_target_rank(int64_t cid) { return std::hash<int64_t>{}(cid) % upcxx::rank_n(); }
 
  public:
-  CtgsDepths(int edge_base_len) : ctgs_depths({}), edge_base_len(edge_base_len) {}
+  CtgsDepths(int edge_base_len)
+      : ctgs_depths({})
+      , edge_base_len(edge_base_len) {}
 
-  int64_t get_num_ctgs() {
-    return upcxx::reduce_one(ctgs_depths->size(), upcxx::op_fast_add, 0).wait();
-  }
+  int64_t get_num_ctgs() { return upcxx::reduce_one(ctgs_depths->size(), upcxx::op_fast_add, 0).wait(); }
 
   void add_ctg(CtgBaseDepths &ctg) {
     upcxx::rpc(
@@ -138,7 +136,7 @@ class CtgsDepths {
 
   std::pair<double, double> get_depth(int64_t cid) {
     auto target_rank = get_target_rank(cid);
-    //DBG_VERBOSE("Sending rpc to ", target_rank, " for cid=", cid, "\n");
+    // DBG_VERBOSE("Sending rpc to ", target_rank, " for cid=", cid, "\n");
     return upcxx::rpc(
                target_rank,
                [](ctgs_depths_map_t &ctgs_depths, int64_t cid, int edge_base_len) -> pair<double, double> {
@@ -146,13 +144,13 @@ class CtgsDepths {
                  if (it == ctgs_depths->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto ctg_base_depths = &it->second;
                  double avg_depth = 0;
-                 for (int i = edge_base_len; i < (int) ctg_base_depths->base_counts.size() - edge_base_len; i++) {
+                 for (int i = edge_base_len; i < (int)ctg_base_depths->base_counts.size() - edge_base_len; i++) {
                    avg_depth += ctg_base_depths->base_counts[i];
                  }
                  size_t clen = ctg_base_depths->base_counts.size() - 2 * edge_base_len;
                  avg_depth /= clen;
                  double sum_sqs = 0;
-                 for (int i = edge_base_len; i < (int) ctg_base_depths->base_counts.size() - edge_base_len; i++) {
+                 for (int i = edge_base_len; i < (int)ctg_base_depths->base_counts.size() - edge_base_len; i++) {
                    sum_sqs += pow((double)ctg_base_depths->base_counts[i] - avg_depth, 2.0);
                  }
                  double var_depth = sum_sqs / clen;
@@ -162,7 +160,6 @@ class CtgsDepths {
                ctgs_depths, cid, edge_base_len)
         .wait();
   }
-
 };
 
 void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths) {
@@ -238,19 +235,18 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   if (fname == "" && use_kmer_depths) SLOG_VERBOSE("Skipping contig depths calculations and output\n");
   // get string to dump
   shared_ptr<upcxx_utils::dist_ofstream> sh_of;
-  if (fname != "")
-      sh_of = make_shared<upcxx_utils::dist_ofstream>(fname);
-  
-  if (!upcxx::rank_me() && sh_of)
-      *sh_of << "contigName\tcontigLen\ttotalAvgDepth\tavg_depth\tvar_depth\n";
+  if (fname != "") sh_of = make_shared<upcxx_utils::dist_ofstream>(fname);
+
+  if (!upcxx::rank_me() && sh_of) *sh_of << "contigName\tcontigLen\ttotalAvgDepth\tavg_depth\tvar_depth\n";
   // FIXME: the depths need to be in the same order as the contigs in the final_assembly.fasta file. This is an inefficient
   // way of ensuring that
   for (auto &ctg : ctgs) {
-    if ((int) ctg.seq.length() < min_ctg_len) continue;
+    if ((int)ctg.seq.length() < min_ctg_len) continue;
     auto [avg_depth, var_depth] = ctgs_depths.get_depth(ctg.id);
     if (fname != "") {
       assert(sh_of);
-      *sh_of << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth << "\n";
+      *sh_of << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth
+             << "\n";
     }
     // it seems that using aln depths improves the ctgy at the cost of an increase in msa
     if (!use_kmer_depths) ctg.depth = avg_depth;
@@ -260,6 +256,6 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   if (fname != "") {
     assert(sh_of);
     DBG("Prepared contig depths for '", fname, "\n");
-    sh_of->close(); // sync and print stats
+    sh_of->close();  // sync and print stats
   }
 }

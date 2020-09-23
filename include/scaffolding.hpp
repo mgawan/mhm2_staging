@@ -45,7 +45,6 @@
 #include <chrono>
 
 #include "main.hpp"
-
 #include "upcxx_utils/timers.hpp"
 
 using namespace upcxx;
@@ -61,8 +60,10 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
   unsigned scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
   bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
   SLOG(KBLUE, "_________________________", KNORM, "\n");
-  if (gfa_iter) SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
-  else SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
+  if (gfa_iter)
+    SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
+  else
+    SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
   bool is_debug = false;
 #ifdef DEBUG
   is_debug = true;
@@ -78,7 +79,7 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
     int seed_space = KLIGN_SEED_SPACE;
     if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 1;
     double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
-                                                 ctgs, alns, seed_space, rlen_limit, false, 0, options->ranks_per_gpu);
+                                                   ctgs, alns, seed_space, rlen_limit, false, 0, options->ranks_per_gpu);
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
 #ifdef DEBUG
@@ -113,20 +114,14 @@ void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedRea
   barrier();
 }
 
-
-
-
 #define __MACRO_SCAFFOLDING__(KMER_LEN, MODIFIER) \
-  MODIFIER void scaffolding<KMER_LEN>(int, int, int, vector<PackedReads *>, Contigs &, \
-                 int &, int &, int &, shared_ptr<Options>); 
+  MODIFIER void scaffolding<KMER_LEN>(int, int, int, vector<PackedReads *>, Contigs &, int &, int &, int &, shared_ptr<Options>);
 
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in scaffolding.hpp
 // template instantiations each happen in src/CMakeLists via scaffolding-extern-template.in.cpp
 
-
 __MACRO_SCAFFOLDING__(32, extern template);
-
 
 #if MAX_BUILD_KMER >= 64
 
@@ -148,4 +143,3 @@ __MACRO_SCAFFOLDING__(128, extern template);
 __MACRO_SCAFFOLDING__(160, extern template);
 
 #endif
-

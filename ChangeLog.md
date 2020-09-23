@@ -10,6 +10,7 @@ This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bit
    * Fixed error when writing to a lagging filesystem Issue #26 #15
    * Various bug fixes Issues #27 #29 #31 #36
    * Included compile support for MacOSX
+   * Reformatted the code
 
 ### 0.1.3 2020-08-20
    * Added support for GPU in alignments with CUDA-enabled detection and build

@@ -42,18 +42,17 @@
  form.
 */
 
-
-#include <string>
-#include <vector>
 #include <memory>
 #include <ostream>
+#include <string>
+#include <vector>
 
+using std::make_shared;
+using std::ostream;
+using std::shared_ptr;
 using std::string;
 using std::to_string;
 using std::vector;
-using std::shared_ptr;
-using std::make_shared;
-using std::ostream;
 
 #include "utils.hpp"
 
@@ -70,9 +69,8 @@ using std::ostream;
 
 using cid_t = int64_t;
 
-
-enum class Dirn {FORWARD, BACKWARD};
-enum class Orient {NORMAL, REVCOMP};
+enum class Dirn { FORWARD, BACKWARD };
+enum class Orient { NORMAL, REVCOMP };
 
 inline string dirn_str(Dirn dirn) { return (dirn == Dirn::FORWARD ? "forward" : "backward"); }
 
@@ -85,7 +83,7 @@ struct GapRead {
   // used for resolving positive splints
   int gap_start;
   // used for resolving positive spans
-  //int rstart, rstop;
+  // int rstart, rstop;
   char orient;
   cid_t cid;
 
@@ -93,9 +91,12 @@ struct GapRead {
 
   GapRead() {}
 
-  //GapRead(const string &read_name, int gap_start, int rstart, int rstop, int orient, cid_t cid) {
+  // GapRead(const string &read_name, int gap_start, int rstart, int rstop, int orient, cid_t cid) {
   GapRead(const string &read_name, int gap_start, int orient, cid_t cid)
-      : read_name(read_name), gap_start(gap_start), orient(orient), cid(cid) {}
+      : read_name(read_name)
+      , gap_start(gap_start)
+      , orient(orient)
+      , cid(cid) {}
 
   bool operator==(const GapRead &other) const;
 };
@@ -116,19 +117,17 @@ struct CidPair {
 extern const CidPair NULL_CIDS;
 
 namespace std {
-  template <>
-  struct hash<CidPair> {
-    std::size_t operator()(const CidPair& cids) const {
-      return (std::hash<cid_t>()(cids.cid1) ^ (std::hash<cid_t>()(cids.cid2) << 1));
-    }
-  };
-}
+template <>
+struct hash<CidPair> {
+  std::size_t operator()(const CidPair &cids) const {
+    return (std::hash<cid_t>()(cids.cid1) ^ (std::hash<cid_t>()(cids.cid2) << 1));
+  }
+};
+}  // namespace std
 
-
-enum class EdgeType {SPLINT, SPAN};
+enum class EdgeType { SPLINT, SPAN };
 
 string edge_type_str(EdgeType edge_type);
-
 
 struct Edge {
   // the cids of the vertices connected by this edge. Note that the largest number cid is always first
@@ -155,11 +154,11 @@ struct Edge {
   UPCXX_SERIALIZED_FIELDS(cids, end1, end2, gap, support, aln_len, aln_score, edge_type, seq, mismatch_error, conflict_error,
                           excess_error, short_aln, gap_reads
 #ifdef TNF_PATH_RESOLUTION
-                          , tnf_prob
+                          ,
+                          tnf_prob
 #endif
-                          );
+  );
 };
-
 
 struct Vertex {
   cid_t cid;
@@ -175,8 +174,8 @@ struct Vertex {
   vector<cid_t> end3;
   // the merged series of nbs
   // FIXME: when using spans make sure these are valid
-  vector<vector<cid_t> > end5_merged;
-  vector<vector<cid_t> > end3_merged;
+  vector<vector<cid_t>> end5_merged;
+  vector<vector<cid_t>> end3_merged;
 #ifdef TNF_PATH_RESOLUTION
   // the tnf distribution for this vertex
   tnf_t tnf;
@@ -193,7 +192,6 @@ struct Vertex {
                           walk_score, walk_rank, walk_i);
 };
 
-
 class CtgGraph {
  private:
   using vertex_map_t = upcxx::dist_object<HASH_TABLE<cid_t, Vertex>>;
@@ -202,8 +200,8 @@ class CtgGraph {
   vertex_map_t vertices;
   edge_map_t edges;
   reads_map_t read_seqs;
-  HASH_TABLE<cid_t, shared_ptr<Vertex> > vertex_cache;
-  HASH_TABLE<CidPair, shared_ptr<Edge> > edge_cache;
+  HASH_TABLE<cid_t, shared_ptr<Vertex>> vertex_cache;
+  HASH_TABLE<CidPair, shared_ptr<Edge>> edge_cache;
 
   struct VertexDepthInfo {
     cid_t cid;
@@ -242,7 +240,7 @@ class CtgGraph {
   int64_t get_local_num_edges(void);
 
   shared_ptr<Vertex> get_vertex(cid_t cid);
-  
+
   int get_vertex_clen(cid_t cid);
 
   shared_ptr<Vertex> get_local_vertex(cid_t cid);
@@ -250,7 +248,7 @@ class CtgGraph {
   void set_vertex_visited(cid_t cid);
 
   void update_vertex_walk(cid_t cid, int walk_score, int walk_i);
-  
+
   Vertex *get_first_local_vertex();
 
   Vertex *get_next_local_vertex();
@@ -258,17 +256,17 @@ class CtgGraph {
   void add_vertex(Vertex &v, const string &seq);
 
   void add_vertex_nb(cid_t cid, cid_t nb, char end);
-  
+
   string get_vertex_seq(upcxx::global_ptr<char> seq_gptr, int64_t seq_len);
-  
+
   shared_ptr<Edge> get_edge(cid_t cid1, cid_t cid2);
-  
+
   Edge *get_first_local_edge();
 
   Edge *get_next_local_edge();
 
   void add_or_update_edge(Edge &edge);
-  
+
   void purge_error_edges(int64_t *mismatched, int64_t *conflicts, int64_t *empty_spans);
 
   int64_t purge_excess_edges();
@@ -278,16 +276,16 @@ class CtgGraph {
   int64_t purge_short_aln_edges();
 
   void add_pos_gap_read(const string &read_name);
-  
+
   bool update_read_seq(const string &read_name, const string &seq);
-  
+
   string get_read_seq(const string &read_name);
 
   size_t get_num_read_seqs(bool all = false);
 
   int get_other_end(shared_ptr<Vertex> v1, shared_ptr<Vertex> v2, shared_ptr<Edge> edge = nullptr);
-  
-  int get_other_end_local(Vertex* v1, shared_ptr<Vertex> v2, shared_ptr<Edge> edge  = nullptr);
+
+  int get_other_end_local(Vertex *v1, shared_ptr<Vertex> v2, shared_ptr<Edge> edge = nullptr);
 
   void clear_caches();
 
@@ -295,12 +293,10 @@ class CtgGraph {
 
   shared_ptr<Edge> get_edge_cached(cid_t cid1, cid_t cid2);
 
-  void print_stats(int min_ctg_print_len, string graph_fname="");
+  void print_stats(int min_ctg_print_len, string graph_fname = "");
 #ifdef TNF_PATH_RESOLUTION
   void compute_edge_tnfs();
 #endif
 
   void print_gfa2(const string &gfa_fname, int min_ctg_print_len);
-  
 };
-

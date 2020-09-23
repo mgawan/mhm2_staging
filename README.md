@@ -62,7 +62,7 @@ Run with `-h` to see the various options.
 
 To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the upcxx module and the cmake module.
 
-All six permuations of gnu, cray and intel environments on haswell and knl hardware are supported
+All six permuations of gnu, cray and intel environments on haswell and knl hardware are available (but only gnu has been widely tested)
 by sourcing one of these environments:
 
 `.env-cori-haswell/cray.sh  .env-cori-haswell/gnu.sh  .env-cori-haswell/intel.sh  .env-cori-knl/cray.sh  .env-cori-knl/gnu.sh  .env-cori-knl/intel.sh`

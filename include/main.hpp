@@ -42,32 +42,33 @@
  form.
 */
 
-
-#include <iostream>
-#include <fstream>
-#include <algorithm>
-#include <chrono>
-#include <string>
+#include <fcntl.h>
 #include <math.h>
 #include <stdarg.h>
 #include <unistd.h>
-#include <fcntl.h>
+
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <fstream>
+#include <iostream>
+#include <string>
 #include <upcxx/upcxx.hpp>
 
-#include "upcxx_utils.hpp"
-#include "options.hpp"
-#include "fastq.hpp"
-#include "packed_reads.hpp"
-#include "kmer.hpp"
-#include "contigs.hpp"
 #include "alignments.hpp"
+#include "contigs.hpp"
+#include "fastq.hpp"
 #include "kcount.hpp"
 #include "klign.hpp"
+#include "kmer.hpp"
 #include "kmer_dht.hpp"
+#include "options.hpp"
+#include "packed_reads.hpp"
+#include "upcxx_utils.hpp"
 
 #ifdef ENABLE_GPUS
 #include <thread>
+
 #include "adept-sw/driver.hpp"
 #endif
 
@@ -78,23 +79,22 @@ extern bool _verbose;
 
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
-                 vector<PackedReads*> &packed_reads_list, bool checkpoint);
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads*> &packed_reads_list);
-template<int MAX_K>
+                 vector<PackedReads *> &packed_reads_list, bool checkpoint);
+uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &packed_reads_list);
+template <int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
-void localassm(int max_kmer_len, int kmer_len, vector<PackedReads*> &packed_reads_list, int insert_avg, int insert_stddev,
+void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
                         vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
                         const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
-                                     const string &dump_large_alns_fname="");
+                                     const string &dump_large_alns_fname = "");
 void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths);
-
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm, *cgraph,
-    *dump_ctgs, *compute_kmer_depths;
+      *dump_ctgs, *compute_kmer_depths;
 };
 
 extern StageTimers stage_timers;
