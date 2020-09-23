@@ -16,4 +16,4 @@ fi
 rm -rf /dev/shm/test-as
 wd=`pwd`
 $mhmxx_install_dir/bin/mhmxx.py -r $reads -o /dev/shm/test-as --checkpoint=no
-$mhmxx_install_dir/bin/check_asm_quality.py --asm-dir /dev/shm/test-as --expected-quals $mhmxx_install_dir/share/good-arctic-sample0.txt --refs $mhmxx_install_dir/share/$refs
+$mhmxx_install_dir/bin/check_asm_quality.py --asm-dir /dev/shm/test-as --expected-quals $mhmxx_install_dir/share/good-arctic-sample0.txt --refs $refs
