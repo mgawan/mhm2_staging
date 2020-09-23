@@ -1,4 +1,4 @@
-MetaHipMer (*MHM*) is a *de novo* metagenome short-read assembler. This document is for version 2, which is written entirely in
+MetaHipMer (*MHM*) is a *de novo* metagenome short-read assembler. This document is for version 2 (MHM2), which is written entirely in
 [UPC++](https://upcxx.lbl.gov) and runs efficiently on both single servers and on multinode supercomputers, where it can scale up to
 coassemble terabase-sized metagenomes. More information about MHM can be found in:
 
@@ -8,16 +8,16 @@ coassemble terabase-sized metagenomes. More information about MHM can be found i
 
 # Building and Installing
 
-MHM depends on UPC++, with the C++17 standard, and CMake. GPU builds require CUDA.
+MHM2 depends on UPC++, with the C++17 standard, and CMake. GPU builds require CUDA.
 
-A script, `build.sh`, is provided for building and installing `mhm`. 
+A script, `build.sh`, is provided for building and installing MHM2.
 
-Before building MHM, ensure that either the UPC++ compiler wrapper, `upcxx` is in your `PATH`, or set the `MHMXX_BUILD_ENV`
+Before building MHM2, ensure that either the UPC++ compiler wrapper, `upcxx` is in your `PATH`, or set the `MHM2_BUILD_ENV`
 environment variable to point to a script that loads the appropriate environment, for example, on
 [NERSC's Cori supercomputer](https://docs.nersc.gov/systems/cori/), you would set the following for the gnu compiler on the KNL
 partition:
 
-`export MHMXX_BUILD_ENV=.env-cori-knl/gnu.sh`
+`export MHM2_BUILD_ENV=.env-cori-knl/gnu.sh`
 
 There are several scripts provided for different build choices on NERC's Cori computer and the
 [Summit supercomputer at OLCF](https://www.olcf.ornl.gov/summit/.), in directories that start with `.env-`. You do not need to use
@@ -42,11 +42,11 @@ information, but is a lot faster (although still up to 2x slower than the releas
 `./build.sh ReleaseWithDebug`
 
 The `./build.sh` script will install the binaries by default into the `install/bin` subdirectory in the repository root
-directory. To set a different install directory, set the environment variable `MHMXX_INSTALL_PATH`, e.g.:
+directory. To set a different install directory, set the environment variable `MHM2_INSTALL_PATH`, e.g.:
 
-`MHMXX_INSTALL_PATH=/usr/local/share/mhmxx ./build.sh Release`
+`MHM2_INSTALL_PATH=/usr/local/share/mhm2 ./build.sh Release`
 
-Once mhmxx has been built once, you can rebuild with
+Once MHM2 has been built once, you can rebuild with
 
 `./build.sh`
 
@@ -61,7 +61,7 @@ to start from scratch. If you run this, then the next call to `build.sh` should 
 By default, the build occurs within the root of the repository, in a subdirectory called `.build`. This is created automatically by
 the `build.sh` script.
 
-The MHM build uses `cmake`, which you can call directly, instead of through the `build.sh` script, e.g.:
+The MHM2 build uses `cmake`, which you can call directly, instead of through the `build.sh` script, e.g.:
 
 ```
 mkdir -p .build
@@ -76,11 +76,11 @@ You'll need to first set the environment, e.g.:
 
 # Running
 
-To execute MHM, run the `mhmxx.py` script located at `install/bin`. Most parameters have sensible defaults, so it is possible to run
+To execute MHM2, run the `mhm2.py` script located at `install/bin`. Most parameters have sensible defaults, so it is possible to run
 with only the read FASTQ files specified, e.g. to run with two interleaved reads files, `lib1.fastq` and `lib2.fastq`, you could
 execute: 
 
-`mhmxx.py -r lib1.fastq,lib2.fastq`
+`mhm2.py -r lib1.fastq,lib2.fastq`
 
 A list of all the command line options can be found by running with `-h`. Some of these have a short form (a single dash with a
 single character and a long form, starting with a double-dash). In the list [below](#basic-options), where both a short form and a
@@ -92,9 +92,9 @@ By default, the run will generate files in the output directory (see the [output
 will include the following files:
 
 - `final_assembly.fasta`: the contigs for the assembly, in FASTA format.
-- `mhmxx.log`: a log file containing details about the run, including various quality statistics, details about the assembly process
+- `mhm2.log`: a log file containing details about the run, including various quality statistics, details about the assembly process
   and timing information.
-- `mhmxx.config`: a configuration file containing all the options used for the run.
+- `mhm2.config`: a configuration file containing all the options used for the run.
 - `per_thread`: a subdirectory containing per-process files that record memory usage and debugging information in Debug mode.
 
 In addition, many more files may be generated according to which command-line options are specified. These are described in detail
@@ -132,15 +132,15 @@ files `lib1_1.fastq`, `lib1_2.fastq` and `lib2_1.fastq`, `lib2_2.fastq`, the opt
 **`-i, --insert INT:INT`**
 
 The insert size for paired reads: the first integer is the average insert size for the paired reads, and the second integer is the
-standard deviation of the insert sizes. MHM will automatically attempt to compute these values so this parameter is usually not
-necessary. However, there are certain cases where it may be useful, for example, if MHM prints a warning about being unable to
-compute the insert size because of the nature of the reads, or if only doing scaffolding. MHM will also compare its computed value
+standard deviation of the insert sizes. MHM2 will automatically attempt to compute these values so this parameter is usually not
+necessary. However, there are certain cases where it may be useful, for example, if MHM2 prints a warning about being unable to
+compute the insert size because of the nature of the reads, or if only doing scaffolding. MHM2 will also compare its computed value
 to any option set on the command line and print a warning if the two differ significantly; this is useful for confirming assumptions
 about the insert sise distribution.
 
 **`-k, --kmer-lens INT,INT,...`**
 
-The *k*-mer lengths used for the contigging rounds. MHM performs one or more contigging rounds, each of which performs *k*-mer counting,
+The *k*-mer lengths used for the contigging rounds. MHM2 performs one or more contigging rounds, each of which performs *k*-mer counting,
 followed by a deBruijn graph traversal, then alignment and local assembly to extend the contigs. Typically, multiple rounds are used
 with increasing values of *k* - the shorter values are useful for low abundance genomes, whereas the longer *k* values are useful for
 resolving repeats. This option defaults to `-k 21,33,55,77,99`, which is fine for reads of length 150. For shorter or longer reads, it
@@ -149,7 +149,7 @@ reducing the number of rounds, although this will likely reduce the quality of t
 
 **`-s, --scaff-kmer-lens INT,INT,...`**
 
-The *k*-mer lengths used for the scaffolding rounds. In MHM, the contigging rounds are followed by one or more scaffolding
+The *k*-mer lengths used for the scaffolding rounds. In MHM2, the contigging rounds are followed by one or more scaffolding
 rounds. These rounds usually proceed from a high *k* to a low one, i.e. the reverse ordering of contigging. This option defaults to
 `-s 99,33`. More rounds may improve contiguity but will likely increase misassemblies. To disable scaffolding altogether, set this
 value to 0, i.e. `-s 0`.
@@ -163,7 +163,7 @@ The minimum length for contigs to be included in the final assembly, `final_asse
 
 The name for the output directory. If not specified, it will be set to a default value of the following form:
 
-`mhmxx-run-<READS_FNAME1>-n<PROCS>-N<NODES>-YYMMDDhhmmss`
+`mhm2-run-<READS_FNAME1>-n<PROCS>-N<NODES>-YYMMDDhhmmss`
 
 where `<READS_FNAME1>` is the name of the first reads file, `PROCS` is the number of processes and `NODES` is the number of
 nodes. The final part is the date when the run was started: `YY` is the year, `MM` is the number of the month, `DD` is the day of
@@ -171,13 +171,13 @@ the month, `hh` is the hour of day, `mm` is the minute and `ss` is the second. B
 same time, with the same parameters, they could both end up running in the same output directory, which will lead to corrupted
 results.
 
-If the output directory is created by MHM (either as the default or when passed as a parameter), it will automatically be striped in
-the most effective way on a Lustre filesystem. If using a pre-existing directory that was not created by MHM, the user should ensure
+If the output directory is created by MHM2 (either as the default or when passed as a parameter), it will automatically be striped in
+the most effective way on a Lustre filesystem. If using a pre-existing directory that was not created by MHM2, the user should ensure
 that on Lustre filesystems it is adequately striped.
 
-If the output directory already exists, files produced by a previous run of MHM can be overwritten, depending on whether or not this
-is a restart of a previous run. If there is an existing log file (`mhmxx.log`), it will be renamed with the date before the new one
-is written as `mhmxx.log`, so log information about previous runs will always be retained.
+If the output directory already exists, files produced by a previous run of MHM2 can be overwritten, depending on whether or not this
+is a restart of a previous run. If there is an existing log file (`mhm2.log`), it will be renamed with the date before the new one
+is written as `mhm2.log`, so log information about previous runs will always be retained.
 
 **`--checkpoint BOOL`**
 
@@ -189,17 +189,17 @@ default and can be disabled by passing `--checkpoint=false`.
 
 **`--restart BOOL`** <a name="restart"></a>
 
-If set to true, MHM will attempt to restart a run from an existing directory. The output directory option must be specified and must
+If set to true, MHM2 will attempt to restart a run from an existing directory. The output directory option must be specified and must
 contain a previous checkpointed run. The restart will use the same options as the previous run, and will load the most recent
 checkpointed contigs file in order to resume. This defaults to false.
 
 **`--post-asm-align BOOL`**
 
-If set to true. MHM will align the original reads to the final assembly and report the results in a file, `final_assembly.sam`, in [SAM format](https://samtools.github.io/hts-specs/SAMv1.pdf). This defaults to false.
+If set to true. MHM2 will align the original reads to the final assembly and report the results in a file, `final_assembly.sam`, in [SAM format](https://samtools.github.io/hts-specs/SAMv1.pdf). This defaults to false.
 
 **`--post-asm-abd BOOL`**
 
-If set to true, MHM will compute the abundances (depths) for the contigs in the final assembly and write the results to the file,
+If set to true, MHM2 will compute the abundances (depths) for the contigs in the final assembly and write the results to the file,
 `final_assembly_depths.txt`. The format of this file is the same as that used by
 [MetaBAT](https://bitbucket.org/berkeleylab/metabat/), and so can be used together with the `final_assembly.fasta` for post-assembly
 binning, e.g.:
@@ -214,30 +214,30 @@ If set to true, this requires an existing directory containing a full run (i.e. 
 execute any specified post-assembly options (`--post-asm-align` or `--post-asm-abd`) on that assembly without any other steps. This
 provides a convenient means to run alignment and/or abundance calculations on an already completed assembly. By default this
 post-assembly analysis will use the `final_assembly.fasta` file in the output directory, but any FASTA file could be used, including
-those not generated by MHM (see the `--contigs` [option](#contigs-file) in the advanced options section below). This defaults to
+those not generated by MHM2 (see the `--contigs` [option](#contigs-file) in the advanced options section below). This defaults to
 false. 
 
 **`--write-gfa BOOL`**
 
-If set to true, MHM will output an assembly graph in the [GFA2 format](https://github.com/GFA-spec/GFA-spec/blob/master/GFA2.md) in
+If set to true, MHM2 will output an assembly graph in the [GFA2 format](https://github.com/GFA-spec/GFA-spec/blob/master/GFA2.md) in
 file, `final_assembly.gfa`. This represents the assembly graph formed by aligning the reads to the final contigs and using those
 alignments to infer edges between the contigs. This defaults to false.
 
 **`-Q, --quality-offset INT`**
 
-The *phred* encoding offset. In most cases, MHM will be able to detect this offset from analyzing the reads file, so it usually does
+The *phred* encoding offset. In most cases, MHM2 will be able to detect this offset from analyzing the reads file, so it usually does
 not need to be explicitly set.
 
 **`--progress BOOL`**
 
 If true, many time-consuming stages will be shown updating with a simple progress bar. The progress bar output will not be written
-into the log file, `mhmxx.log`.
+into the log file, `mhm2.log`.
 
 **`-v, --verbose BOOL`**
 
-If true, MMHM will produce verbose output, which prints out a lot of additional information about timing of the run and the various
+If true, MMHM2 will produce verbose output, which prints out a lot of additional information about timing of the run and the various
 computations that are being performed. This defaults to false. All of the information seen in verbose mode will always be written to
-the log file, `mhmxx.log`.
+the log file, `mhm2.log`.
 
 **`--config CONFIG_FILE_NAME`** <a name="config-file"></a> 
 
@@ -246,8 +246,8 @@ If this is specified, the options will be loaded from a config file. The file is
 `key = value`
 
 where `key` is the name of an option and `value` is the value of the option. All blank lines and lines beginning with a semi-colon
-will be ignored. When the config file is not specified as an option, MHM always writes out all the options in the file
-`mhmxx.config`. 
+will be ignored. When the config file is not specified as an option, MHM2 always writes out all the options in the file
+`mhm2.config`. 
 
 Even when options are loaded from a config file, they can still be overridden by options on the command line. For example, if the
 config file, `test.config`, contains the line:
@@ -256,9 +256,9 @@ config file, `test.config`, contains the line:
 
 but the command line is:
 
-`mhmxx.py --config test.config -k 45,63`
+`mhm2.py --config test.config -k 45,63`
 
-then MHM will run with *k*-mer lengths of 45 and 63.
+then MHM2 will run with *k*-mer lengths of 45 and 63.
 
 
 ## Advanced options <a name="advanced-options"></a>
@@ -284,13 +284,13 @@ generated during a checkpointed run can be used, so it is possible to restart at
 The maximum *k*-mer length used in contigging. This is usually derived from the parameters, and so only needs to be specified if the
 restart is only scaffolding rounds, and no contigging rounds, e.g.
 
-`mhmxx.py -o outdir -r reads.fq -c scaff-contigs-33.fasta --max-kmer-len 99`
+`mhm2.py -o outdir -r reads.fq -c scaff-contigs-33.fasta --max-kmer-len 99`
 							  
 **`--prev-kmer-len K`**
 
 The *k*-mer length in the previous contigging round. Only needed if restarting in contigging, e.g.
 
-`mhmxx.py -o outdir -r reads.fq -c contigs-77.fasta --max-prev-kmer-len 55`
+`mhm2.py -o outdir -r reads.fq -c contigs-77.fasta --max-prev-kmer-len 55`
 
 ### Tuning assembly quality
 
@@ -333,8 +333,8 @@ for specific configurations of CPU/GPUs. This defaults to 0 if there are no GPUs
 
 **`--force-bloom BOOL`**
 
-Always use bloom filters when analyzing *k*-mers. Bloom filters reduce memory usage and MHM determines if they are necessary by
-computing the available memory before doing the *k*-mer analysis. However, it is possible to force MHM to always use as little
+Always use bloom filters when analyzing *k*-mers. Bloom filters reduce memory usage and MHM2 determines if they are necessary by
+computing the available memory before doing the *k*-mer analysis. However, it is possible to force MHM2 to always use as little
 memory as possible by setting this option to true. It defaults to false.
 
 **`--pin STRING`**
@@ -346,13 +346,13 @@ meaning don't restrict the processes. By default, it restricts to `cpu`.
 **`--shared-heap INT`**
 
 Set the shared heap size used by the UPC++ runtime, as a percentage of the available memory. This is automatically set and should
-never need to be adjusted. However, there may be some rare cases on certain hardware where this needs to be adjusted to enable MHM
+never need to be adjusted. However, there may be some rare cases on certain hardware where this needs to be adjusted to enable MHM2
 to run without memory errors. This defaults to 10%.
 
 **`--procs INT`**
 
-Set the number of processes for MHM to run with. By default, MHM automatically detects the number of available processes and runs on
-all of them. This setting allows a user to run MHM on a subset of available processors, which may be desirable if running on a
+Set the number of processes for MHM2 to run with. By default, MHM2 automatically detects the number of available processes and runs on
+all of them. This setting allows a user to run MHM2 on a subset of available processors, which may be desirable if running on a
 server that is running other applications. 
 
 
