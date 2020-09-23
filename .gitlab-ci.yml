@@ -305,8 +305,8 @@ HULK:validation:
     - export RWDI=${INSTALL_PREFIX}/mhmxx-rwdi/bin/
     - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
     - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
-    - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; done
-    - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; done
+    - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; fi
+    - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
     - ${RWDI}/ci_asm_qual_test.sh || FAILED="${FAILED} Could not run ci_asm_qual_test"
     - if [ ! -f ./test-arctic-sample0/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta for rwdi in test-arctic-sample0" ; fi
     - mv test-arctic-sample0 ${RUN_PREFIX}/rwdi-test-arctic-sample0
@@ -351,8 +351,8 @@ HULK:accuracy:
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
     - echo "Starting Release mhmxx on Arctic $reads"
-    - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; done
-    - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; done
+    - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; fi
+    - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
     - ${REL}/ci_asm_qual_test.sh || FAILED="${FAILED} Could not run ci_asm_qual_test"
     - if [ ! -f ./test-arctic-sample0/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel" ; fi
     - mv test-arctic-sample0 ${RUN_PREFIX}/rel-test-arctic-sample0
