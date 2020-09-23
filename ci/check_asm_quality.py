@@ -46,8 +46,7 @@ def main():
     # first, run metaquast on the assembly
     report_path = 'mq.out/combined_reference/report.txt'
     report_exists = os.path.exists(options.asm_dir + "/" + report_path)
-    launch_dir = os.getcwd()
-    options.refs = os.path.abspath(options.refs)
+    options.refs = os.path.realpath(options.refs)
     os.chdir(options.asm_dir)
 
     if not report_exists:
