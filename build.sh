@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-if [ -n "$MHMXX_BUILD_ENV" ]; then
-    source $MHMXX_BUILD_ENV
+if [ -n "$MHM2_BUILD_ENV" ]; then
+    source $MHM2_BUILD_ENV
 fi
 
 set -e
@@ -10,9 +10,9 @@ SECONDS=0
 
 rootdir=`pwd`
 
-INSTALL_PATH=${MHMXX_INSTALL_PATH:=$rootdir/install}
+INSTALL_PATH=${MHM2_INSTALL_PATH:=$rootdir/install}
 
-rm -rf $INSTALL_PATH/bin/mhmxx
+rm -rf $INSTALL_PATH/bin/mhm2
 
 if [ "$1" == "clean" ]; then
     rm -rf .build/*
@@ -25,7 +25,7 @@ else
     if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
         rm -rf *
         rm -rf $INSTALL_PATH/cmake
-        cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH $MHMXX_CMAKE_EXTRAS
+        cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH $MHM2_CMAKE_EXTRAS
     fi
     make -j install
 fi
