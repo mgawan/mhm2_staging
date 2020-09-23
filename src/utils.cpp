@@ -42,57 +42,53 @@
 
 #include "utils.hpp"
 
-
-
-
+#include <dirent.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
-#include <cstdlib>
-#include <unistd.h>
 #include <utility>
-#include <algorithm>
-#include <sstream>
-#include <dirent.h>
 
 #include "upcxx_utils/log.hpp"
-#include "upcxx_utils/timers.hpp"
 #include "upcxx_utils/ofstream.hpp"
+#include "upcxx_utils/timers.hpp"
 
 using namespace upcxx_utils;
 
+using std::min;
+using std::pair;
 using std::string;
 using std::string_view;
 using std::to_string;
-using std::min;
 using std::vector;
-using std::pair;
 
 size_t estimate_hashtable_memory(size_t num_elements, size_t element_size) {
-    // get the hashtable load factor
-    HASH_TABLE<char,char> tmp;
-    double max_load_factor = tmp.max_load_factor();
-    
-    // apply the load factor
-    size_t expanded_num_elements = num_elements / max_load_factor + 1;
-    
-    // get the next power of two
-    --expanded_num_elements;
-    expanded_num_elements |= expanded_num_elements >> 1;
-    expanded_num_elements |= expanded_num_elements >> 2;
-    expanded_num_elements |= expanded_num_elements >> 4;
-    expanded_num_elements |= expanded_num_elements >> 8;
-    expanded_num_elements |= expanded_num_elements >> 16;
-    expanded_num_elements |= expanded_num_elements >> 32;
-    ++expanded_num_elements;
+  // get the hashtable load factor
+  HASH_TABLE<char, char> tmp;
+  double max_load_factor = tmp.max_load_factor();
 
-    size_t num_buckets = expanded_num_elements * max_load_factor; 
-    
-    return expanded_num_elements * element_size + num_buckets * 8;
+  // apply the load factor
+  size_t expanded_num_elements = num_elements / max_load_factor + 1;
+
+  // get the next power of two
+  --expanded_num_elements;
+  expanded_num_elements |= expanded_num_elements >> 1;
+  expanded_num_elements |= expanded_num_elements >> 2;
+  expanded_num_elements |= expanded_num_elements >> 4;
+  expanded_num_elements |= expanded_num_elements >> 8;
+  expanded_num_elements |= expanded_num_elements >> 16;
+  expanded_num_elements |= expanded_num_elements >> 32;
+  ++expanded_num_elements;
+
+  size_t num_buckets = expanded_num_elements * max_load_factor;
+
+  return expanded_num_elements * element_size + num_buckets * 8;
 }
 
 string revcomp(const string &seq) {
@@ -105,11 +101,18 @@ string revcomp(const string &seq) {
       case 'G': seq_rc += 'C'; break;
       case 'T': seq_rc += 'A'; break;
       case 'N': seq_rc += 'N'; break;
-      case 'U': case 'R': case 'Y': case 'K': case 'M': case 'S': case 'W': case 'B': case 'D': case 'H': case 'V':
-        seq_rc += 'N';
-        break;
-      default:
-        DIE("Illegal char '", seq[i], "' in revcomp of '", seq, "'");
+      case 'U':
+      case 'R':
+      case 'Y':
+      case 'K':
+      case 'M':
+      case 'S':
+      case 'W':
+      case 'B':
+      case 'D':
+      case 'H':
+      case 'V': seq_rc += 'N'; break;
+      default: DIE("Illegal char '", seq[i], "' in revcomp of '", seq, "'");
     }
   }
   return seq_rc;
@@ -117,35 +120,42 @@ string revcomp(const string &seq) {
 
 char comp_nucleotide(char ch) {
   switch (ch) {
-      case 'A': return 'T';
-      case 'C': return 'G';
-      case 'G': return 'C';
-      case 'T': return 'A';
-      case 'N': return 'N';
-      case '0': return '0';
-      case 'U': case 'R': case 'Y': case 'K': case 'M': case 'S': case 'W': case 'B': case 'D': case 'H': case 'V':
-        return 'N';
-      default:
-        DIE("Illegal char '", ch, "' in comp nucleotide");
+    case 'A': return 'T';
+    case 'C': return 'G';
+    case 'G': return 'C';
+    case 'T': return 'A';
+    case 'N': return 'N';
+    case '0': return '0';
+    case 'U':
+    case 'R':
+    case 'Y':
+    case 'K':
+    case 'M':
+    case 'S':
+    case 'W':
+    case 'B':
+    case 'D':
+    case 'H':
+    case 'V': return 'N';
+    default: DIE("Illegal char '", ch, "' in comp nucleotide");
   }
   return 0;
 }
 
 int hamming_dist(string_view s1, string_view s2, bool require_equal_len) {
-  if (require_equal_len && s2.size() != s1.size())//abs((int)(s2.size() - s1.size())) > 1)
+  if (require_equal_len && s2.size() != s1.size())  // abs((int)(s2.size() - s1.size())) > 1)
     DIE("Hamming distance substring lengths don't match, ", s1.size(), ", ", s2.size(), "\n");
   int d = 0;
   int min_size = min(s1.size(), s2.size());
-  for (int i = 0; i < min_size; i++)
-    d += (s1[i] != s2[i]);
+  for (int i = 0; i < min_size; i++) d += (s1[i] != s2[i]);
   return d;
 }
 
 string get_merged_reads_fname(string reads_fname) {
   // always relative to the current working directory
   if (reads_fname.find(':') != string::npos) {
-      // remove the first pair, if it exists
-      reads_fname = reads_fname.substr(reads_fname.find(':'));
+    // remove the first pair, if it exists
+    reads_fname = reads_fname.substr(reads_fname.find(':'));
   }
   return upcxx_utils::remove_file_ext(get_basename(reads_fname)) + "-merged.fastq";
 }
@@ -321,8 +331,8 @@ void pin_numa() {
       num_cpus++;
     }
   }
-  SLOG("On node 0, found a total of ", num_cpus, " hardware threads with ", hdw_threads_per_core,
-       " threads per core on ", numa_node_list.size(), " NUMA domains\n");
+  SLOG("On node 0, found a total of ", num_cpus, " hardware threads with ", hdw_threads_per_core, " threads per core on ",
+       numa_node_list.size(), " NUMA domains\n");
   // pack onto numa nodes
   int hdw_threads_per_numa_node = num_cpus / numa_node_list.size();
   int cores_per_numa_node = hdw_threads_per_numa_node / hdw_threads_per_core;
@@ -333,5 +343,6 @@ void pin_numa() {
   vector<int> my_cpu_list = numa_node_list[my_numa_node].second;
   sort(my_cpu_list.begin(), my_cpu_list.end());
   pin_proc(my_cpu_list);
-  SLOG("Pinning to ", numa_nodes_to_use, " NUMA domains each with ", cores_per_numa_node, " cores, ", hdw_threads_per_numa_node, " cpus: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
+  SLOG("Pinning to ", numa_nodes_to_use, " NUMA domains each with ", cores_per_numa_node, " cores, ", hdw_threads_per_numa_node,
+       " cpus: process 0 on node 0 is pinned to cpus ", get_proc_pin(), "\n");
 }
