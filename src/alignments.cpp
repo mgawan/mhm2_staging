@@ -151,7 +151,7 @@ void Alns::dump_single_file_alns(const string fname, bool as_sam_format, Contigs
 
   if (!upcxx::rank_me()) {
     // program information
-    of << "@PG\tID:MHM2\tPN:MHM2\tVN:" << string(MHMXX_VERSION) << "\n";
+    of << "@PG\tID:MHM2\tPN:MHM2\tVN:" << string(MHM2_VERSION) << "\n";
   }
   all_done = when_all(all_done, of.flush_collective());
 

@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
     SLOG(KBLUE "_________________________", KNORM, "\n");
     memory_tracker.stop();
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - start_t;
-    SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), " for ", MHMXX_VERSION, "\n");
+    SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), " for ", MHM2_VERSION, "\n");
   }
   // post processing
   if (options->post_assm_aln || options->post_assm_only || options->post_assm_abundances) {

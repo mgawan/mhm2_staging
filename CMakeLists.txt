@@ -38,21 +38,21 @@
  # sublicense such enhancements or derivative works thereof, in binary and source code
  # form.
 
-# The name of our project is "MHMxx". CMakeLists files in this project can
-# refer to the root source directory of the project as ${MHMXX_SOURCE_DIR} and
-# to the root binary directory of the project as ${MHMXX_BINARY_DIR}
+# The name of our project is "MHM2". CMakeLists files in this project can
+# refer to the root source directory of the project as ${MHM2_SOURCE_DIR} and
+# to the root binary directory of the project as ${MHM2_BINARY_DIR}
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
-project(MHMxx)
+project(MHM2)
 
 message(STATUS "Building ${CMAKE_PROJECT_NAME} with CMake ${CMAKE_VERSION}")
 #----------------------------------------------------------------------------------------#
 #   project specification
 #----------------------------------------------------------------------------------------#
-file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/VERSION MHMXX_BASE_VERSION)
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/VERSION MHM2_BASE_VERSION)
 
 # use PROJECT_SOURCE_DIR, not CMAKE_SOURCE_DIR
-set(MHMXX_SOURCE_DIR ${PROJECT_SOURCE_DIR})
-set(MHMXX_BINARY_DIR ${PROJECT_BINARY_DIR})
+set(MHM2_SOURCE_DIR ${PROJECT_SOURCE_DIR})
+set(MHM2_BINARY_DIR ${PROJECT_BINARY_DIR})
 
 # include modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules ${PROJECT_SOURCE_DIR}/upcxx-utils/cmake/Modules)
@@ -107,10 +107,10 @@ if (NOT APPLE)
   LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
 endif()
 
-option(MHMXX_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
+option(MHM2_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
 foreach(_ARCH ${CpuArch_FEATURES})
   check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
-  if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug" AND NOT MHMXX_DEBUG_VECTORS)
+  if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug" AND NOT MHM2_DEBUG_VECTORS)
     message("NOT enabling -m${_ARCH} compile option in this Debug build")
   else()
     if (HAVE_C_OPT_${_ARCH})
@@ -166,14 +166,14 @@ endif()
 add_definitions(-DMAX_BUILD_KMER=${MAX_BUILD_KMER})
 
 # enumerate the kmer lengths that will be built
-set(MHMXX_KMER_LENGTHS)
+set(MHM2_KMER_LENGTHS)
 set(tmplen 32)
 while( NOT ${MAX_BUILD_KMER} LESS ${tmplen} )
-    set(MHMXX_KMER_LENGTHS ${MHMXX_KMER_LENGTHS} ${tmplen} )
+    set(MHM2_KMER_LENGTHS ${MHM2_KMER_LENGTHS} ${tmplen} )
     math(EXPR tmplen "(${tmplen} + 32)")
 endwhile()
 
-message(STATUS "Building ${PROJECT_NAME} with a maximum kmer size of ${MAX_BUILD_KMER}: ${MHMXX_KMER_LENGTHS}")
+message(STATUS "Building ${PROJECT_NAME} with a maximum kmer size of ${MAX_BUILD_KMER}: ${MHM2_KMER_LENGTHS}")
 
 
 if(NOT APPLE)
@@ -189,7 +189,7 @@ CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
 
 # set version
 include_directories(include)
-GET_GIT_VERSION(MHMXX)
+GET_GIT_VERSION(MHM2)
 
 # add upcxx-utils
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/upcxx-utils/CMakeLists.txt")
@@ -215,7 +215,7 @@ if(UPCXX_UTILS_AS_SUBMODULE OR NOT UPCXX_UTILS_FOUND)
   add_subdirectory(upcxx-utils)
   set(UPCXX_UTILS_FOUND TRUE)
   set(UPCXX_UTILS_DIR upcxx-utils)
-  add_dependencies(MHMXX_VERSION UPCXX_UTILS_VERSION)
+  add_dependencies(MHM2_VERSION UPCXX_UTILS_VERSION)
 else()
   message(STATUS "Found existing upcxx-utils install: ${UPCXX_UTILS_FOUND} at ${UPCXX_UTILS_DIR}")
 endif()
@@ -225,6 +225,6 @@ message(STATUS "added upcxx_utils (${UPCXX_UTILS_VERSION})")
 include_directories("zstr/src")
 
 add_subdirectory(src)
-install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhmxx-upcxx-run-summit)
+install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhm2-upcxx-run-summit)
 install(PROGRAMS ci/check_asm_quality.py ci/ci_asm_qual_test.sh DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(FILES ci/good-arctic-sample0.txt ci/good-arctic-sample0-k63.txt ci/good-arctic-sample0-k31k63.txt ci/good-arcticsynth.txt DESTINATION ${CMAKE_INSTALL_PREFIX}/share)

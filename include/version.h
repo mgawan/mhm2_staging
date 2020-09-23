@@ -46,10 +46,10 @@
 extern "C" {
 #endif
 
-extern const char *MHMXX_VERSION;
-extern const char *MHMXX_VERSION_DATE;
-extern const char *MHMXX_BUILD_DATE;
-extern const char *MHMXX_BRANCH;
+extern const char *MHM2_VERSION;
+extern const char *MHM2_VERSION_DATE;
+extern const char *MHM2_BUILD_DATE;
+extern const char *MHM2_BRANCH;
 
 #define MAX_BUILD_KMER_STR "Maximum kmer len=MAX_BUILD_KMER"
 

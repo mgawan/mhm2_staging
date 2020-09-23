@@ -17,4 +17,4 @@ module load upcxx-gpu
 module list
 
 export OMP_NUM_THREADS=1
-export MHMXX_CMAKE_EXTRAS="-DCMAKE_CXX_COMPILER=icpc -DCMAKE_C_COMPILER=icc"
+export MHM2_CMAKE_EXTRAS="-DCMAKE_CXX_COMPILER=icpc -DCMAKE_C_COMPILER=icc"

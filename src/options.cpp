@@ -82,9 +82,9 @@ bool Options::extract_previous_lens(vector<unsigned> &lens, unsigned k) {
 }
 
 void Options::get_restart_options() {
-  // read existing mhmxx.log and get most recent completed stage
-  ifstream log_file("mhmxx.log");
-  if (!log_file.good()) SDIE("Cannot open previous log file mhmxx.log");
+  // read existing mhm2.log and get most recent completed stage
+  ifstream log_file("mhm2.log");
+  if (!log_file.good()) SDIE("Cannot open previous log file mhm2.log");
   string last_stage;
   while (log_file) {
     char buf[1000];
@@ -95,7 +95,7 @@ void Options::get_restart_options() {
     else if (line.find("Completed scaffolding") != string::npos)
       last_stage = line;
     if (line.find("Finished in") != string::npos) {
-      SDIE("Found the end of the previous run in mhmxx.log, cannot restart");
+      SDIE("Found the end of the previous run in mhm2.log, cannot restart");
       upcxx::barrier();
     }
   }
@@ -205,21 +205,21 @@ void Options::setup_output_dir() {
 
 void Options::setup_log_file() {
   if (!upcxx::rank_me()) {
-    // check to see if mhmxx.log exists. If so, and not restarting, rename it
-    if (file_exists("mhmxx.log") && !restart) {
-      string new_log_fname = "mhmxx-" + get_current_time(true) + ".log";
-      cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhmxx.log exists. Renaming to " << output_dir << "/" << new_log_fname
+    // check to see if mhm2.log exists. If so, and not restarting, rename it
+    if (file_exists("mhm2.log") && !restart) {
+      string new_log_fname = "mhm2-" + get_current_time(true) + ".log";
+      cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhm2.log exists. Renaming to " << output_dir << "/" << new_log_fname
            << endl;
-      if (rename("mhmxx.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhmxx.log: ", strerror(errno));
-    } else if (!file_exists("mhmxx.log") && restart) {
-      DIE("Could not restart - missing mhmxx.log in tis directory");
+      if (rename("mhm2.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhm2.log: ", strerror(errno));
+    } else if (!file_exists("mhm2.log") && restart) {
+      DIE("Could not restart - missing mhm2.log in tis directory");
     }
   }
   upcxx::barrier();
 }
 
 Options::Options() {
-  output_dir = string("mhmxx-run-<reads_fname[0]>-n") + to_string(upcxx::rank_n()) + "-N" +
+  output_dir = string("mhm2-run-<reads_fname[0]>-n") + to_string(upcxx::rank_n()) + "-N" +
                to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
 }
 Options::~Options() {
@@ -236,9 +236,9 @@ void Options::cleanup() {
 }
 
 bool Options::load(int argc, char **argv) {
-  // MHMXX version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
-  string full_version_str = "MHMXX version " + string(MHMXX_VERSION) + "-" + string(MHMXX_BRANCH) + " with upcxx-utils " +
-                            string(UPCXX_UTILS_VERSION) + " built on " + string(MHMXX_BUILD_DATE);
+  // MHM2 version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
+  string full_version_str = "MHM2 version " + string(MHM2_VERSION) + "-" + string(MHM2_BRANCH) + " with upcxx-utils " +
+                            string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
   app.add_option("-r, --reads", reads_fnames, "Files containing merged and unmerged reads in FASTQ format (comma separated).")
       ->delimiter(',')
@@ -362,16 +362,16 @@ bool Options::load(int argc, char **argv) {
 
   if (!*output_dir_opt) {
     string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
-    output_dir = "mhmxx-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
+    output_dir = "mhm2-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
                  to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
     output_dir_opt->default_val(output_dir);
   }
 
   if (restart) {
     // this mucking about is to ensure we don't get multiple failures messages if the config file does not parse
-    if (!upcxx::rank_me()) app.parse_config(output_dir + "/mhmxx.config");
+    if (!upcxx::rank_me()) app.parse_config(output_dir + "/mhm2.config");
     upcxx::barrier();
-    if (upcxx::rank_me()) app.parse_config(output_dir + "/mhmxx.config");
+    if (upcxx::rank_me()) app.parse_config(output_dir + "/mhm2.config");
   }
 
   // make sure we only use defaults for kmer lens if none of them were set by the user
@@ -408,8 +408,8 @@ bool Options::load(int argc, char **argv) {
   auto logger_t = chrono::high_resolution_clock::now();
   if (upcxx::local_team().rank_me() == 0) {
     // open 1 log per node
-    // rank0 has mhmxx.log in rundir, all others have logs in per_thread
-    init_logger("mhmxx.log", verbose, rank_me());
+    // rank0 has mhm2.log in rundir, all others have logs in per_thread
+    init_logger("mhm2.log", verbose, rank_me());
   }
 
   barrier();
@@ -445,7 +445,7 @@ bool Options::load(int argc, char **argv) {
 #endif
   if (!upcxx::rank_me()) {
     // write out configuration file for restarts
-    ofstream ofs("mhmxx.config");
+    ofstream ofs("mhm2.config");
     ofs << app.config_to_str(true, true);
   }
   upcxx::barrier();

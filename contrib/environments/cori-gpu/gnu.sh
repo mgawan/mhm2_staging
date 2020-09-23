@@ -23,4 +23,4 @@ module load upcxx-gpu
 module list
 
 export OMP_NUM_THREADS=1
-export MHMXX_CMAKE_EXTRAS="-DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc"
+export MHM2_CMAKE_EXTRAS="-DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc"

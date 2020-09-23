@@ -1,16 +1,20 @@
-# ChangeLog.md for MetaHipMer version 2 (aka mhmxx)
+# ChangeLog.md for MetaHipMer version 2 (aka MHM2 or mhm2)
 
 
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhmxx)
 
-### 0.1.4 2020-09-18
+### 0.1.4 2020-09-25
+   * Updated documentation
    * Incorporated a 3 tier aggregating store to allow scaling on 1000s of nodes Issue #4
-   * Fixed stall on summit with over 200 node Issue #34
-   * Improved reading of multiple input files Issue #38
-   * Fixed error when writing to a lagging filesystem Issue #26 #15
-   * Various bug fixes Issues #27 #29 #31 #36
-   * Included compile support for MacOSX
-   * Reformatted the code
+   * Fixed stall on summit with over 200 node - Issue #34
+   * Improved reading of multiple input files - Issue #38
+   * Greatly improved CI testing, including quality tests - Issue #22
+   * Fixed error when writing to a lagging filesystem - Issues #26 #15
+   * Various bug fixes - Issues #27 #29 #31 #36
+   * Included build support for MacOSX (not tested)
+   * Various cosmetic - Issues #38 #40 #42
+      * Renamed from MHMXX to MHM2 - Issue #18
+      * Reformatted the entire code base
 
 ### 0.1.3 2020-08-20
    * Added support for GPU in alignments with CUDA-enabled detection and build
