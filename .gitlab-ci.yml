@@ -47,7 +47,7 @@ Cori:build:
     - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"
     - lmstat -a -c $INTEL_LICENSE_FILE || /bin/true
     - echo "Loading KNL modules for upcxx on cori GNU"
-    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - source ${MHMXX_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - module list
     - export MHMXX_BUILD=${BUILD_PREFIX}-knl-dbg
     - mkdir -p ${MHMXX_BUILD}
@@ -68,7 +68,7 @@ Cori:build:
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
     - make -j 12 all install
     - echo "Loading Haswell modules for upcxx GNU"
-    - source ${MHMXX_SOURCE}/.env-cori-haswell/gnu.sh
+    - source ${MHMXX_SOURCE}/contrib/environments/cori-haswell/gnu.sh
     - module list
     - export MHMXX_BUILD=${BUILD_PREFIX}-haswell
     - mkdir -p ${MHMXX_BUILD}
@@ -98,7 +98,7 @@ Cori:validation:
     - export RUN_PREFIX=${SCRATCH}/runs
     - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
     - echo "Loading KNL modules for upcxx on cori"
-    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - source ${MHMXX_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - module list
     - cd $SCRATCH
     - exec >  >(tee -ia ${SCRATCH}/validation.log)
@@ -152,7 +152,7 @@ Cori:accuracy:
     - export RUN_PREFIX=${SCRATCH}/runs
     - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
     - echo "Loading KNL modules for upcxx on cori"
-    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - source ${MHMXX_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - exec >  >(tee -ia ${SCRATCH}/accuracy.log)
     - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)
     - echo "Logging to ${SCRATCH}/accuracy.log and .err at $(date) on $(uname -n) in $(pwd)"    

@@ -11,7 +11,7 @@ https://bitbucket.org/berkeleylab/upcxx/wiki/Home
 
 To build, first set your environment:
 
-`export MHMXX_BUILD_ENV=.env-cori-knl/gnu.sh`
+`export MHMXX_BUILD_ENV=contrib/environments/cori-knl/gnu.sh`
 
 and then simply run:
 
@@ -44,7 +44,7 @@ You can also use cmake directly:
 
 You'll need to first set the environment, e.g.:
 
-`source .env-cori-knl/gnu.sh`
+`source contrib/environments/cori-knl/gnu.sh`
 
 
 ## Running
@@ -65,11 +65,11 @@ To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need th
 All six permuations of gnu, cray and intel environments on haswell and knl hardware are available (but only gnu has been widely tested)
 by sourcing one of these environments:
 
-`.env-cori-haswell/cray.sh  .env-cori-haswell/gnu.sh  .env-cori-haswell/intel.sh  .env-cori-knl/cray.sh  .env-cori-knl/gnu.sh  .env-cori-knl/intel.sh`
+`contrib/environments/cori-haswell/cray.sh  contrib/environments/cori-haswell/gnu.sh  contrib/environments/cori-haswell/intel.sh  contrib/environments/cori-knl/cray.sh  contrib/environments/cori-knl/gnu.sh  contrib/environments/cori-knl/intel.sh`
 
 To use these with the build.sh script, simply run as, e.g.:
 
-`MHMXX_BUILD_ENV=.env-cori-knl/gnu.sh ./build.sh Release`
+`MHMXX_BUILD_ENV=contrib/environments/cori-knl/gnu.sh ./build.sh Release`
 
 It is recommended to use either PrgEnv-gnu or PrgEnv-cray. Builds with the Intel compiler run very slowly and currently there seems to be some bug that causes the execution to hang. This is not present with the other compilers.
 
