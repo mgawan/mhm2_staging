@@ -48,11 +48,13 @@
 #include <fstream>
 #include <chrono>
 #include <stdarg.h>
+#include <algorithm>
 #include <upcxx/upcxx.hpp>
 
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/three_tier_aggr_store.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "upcxx_utils/mem_profile.hpp"
 
@@ -211,20 +213,26 @@ class KmerDHT {
   dist_object<BloomFilter> bloom_filter1;
   // the second bloom filer stores only kmers that are above the repeat depth, and is used for correctly sizing the kmer hash table
   dist_object<BloomFilter> bloom_filter2;
+#ifndef FLAT_AGGR_STORE
+  ThreeTierAggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
+  ThreeTierAggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
+#else
   FlatAggrStore<Kmer<MAX_K>, dist_object<BloomFilter>&, dist_object<BloomFilter>&> kmer_store_bloom;
   FlatAggrStore<KmerAndExt, dist_object<KmerMap>&, dist_object<BloomFilter>&> kmer_store;
+#endif
   int64_t max_kmer_store_bytes;
-  int max_rpcs_in_flight;
   int64_t initial_kmer_dht_reservation;
   int64_t my_num_kmers;
+  int max_rpcs_in_flight;
   int64_t bloom1_cardinality;
+  double estimated_error_rate;
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
   bool use_bloom;
 
 public:
 
-  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom)
+  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
     : kmers({})
     , bloom_filter1({})
     , bloom_filter2({})
@@ -234,33 +242,41 @@ public:
     , initial_kmer_dht_reservation(0)
     , my_num_kmers(my_num_kmers)
     , max_rpcs_in_flight(max_rpcs_in_flight)
-    , bloom1_cardinality(0) {
+    , bloom1_cardinality(0)
+    , estimated_error_rate(0.0) {
 
     // main purpose of the timer here is to track memory usage
     BarrierTimer timer(__FILEFUNC__);
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
-    auto my_adjusted_num_kmers = my_num_kmers * num_kmers_factor;
-    double required_space = 2.0 * my_adjusted_num_kmers * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+    double adjustment_factor = num_kmers_factor;
+    // adjustment estimate should not exceed 85% of the raw count
+    if (adjustment_factor > 0.85) adjustment_factor = 0.85;
+    auto my_adjusted_num_kmers = my_num_kmers * adjustment_factor;
+    double required_space = estimate_hashtable_memory(my_adjusted_num_kmers, sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+    auto free_mem = get_free_mem();
+    auto lowest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_min).wait();
+    auto highest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_max).wait();
     SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ",
-                 get_size_str(required_space), " per node, and there is ", get_size_str(get_free_mem()),
-                 " available on node0\n");
+                 get_size_str(required_space), " per node (", my_adjusted_num_kmers, " kmers per rank), and there is ", get_size_str(lowest_free_mem),
+                 " to ", get_size_str(highest_free_mem), " available on the nodes\n");
     if (force_bloom) {
       use_bloom = true;
       SLOG_VERBOSE("Using bloom (--force-bloom set)\n");
     } else {
-      if (get_free_mem() < required_space ) {
+      if (lowest_free_mem * 0.80 < required_space ) {
         use_bloom = true;
-        SLOG_VERBOSE("Insufficient memory available: enabling bloom filters\n");
+        SLOG_VERBOSE("Insufficient memory available: enabling bloom filters assuming 80% of free mem is available for hashtables\n");
       } else {
         use_bloom = false;
         SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
       }
     }
 
-    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight);
-    else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
+    if (use_bloom) kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
+    else kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
+
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
@@ -291,11 +307,15 @@ public:
   void clear() {
     kmers->clear();
     KmerMap().swap(*kmers);
+    clear_stores();
+  }
+  
+  void clear_stores() {
+    kmer_store_bloom.clear();
+    kmer_store.clear();
   }
 
   ~KmerDHT() {
-    kmer_store_bloom.clear();
-    kmer_store.clear();
     clear();
   }
 
@@ -464,13 +484,17 @@ public:
   }
 
   double get_num_kmers_factor() {
-    if (use_bloom) return (double)bloom_filter1->estimate_num_items() / my_num_kmers * 1.5;
+    if (use_bloom && bloom_filter1->is_initialized()) return (double)bloom_filter1->estimate_num_items() / my_num_kmers * 1.5;
     // add in some slop so as not to get too close to the resize threshold
     return (double)kmers->size() / my_num_kmers * 1.5;
   }
 
   int64_t get_local_num_kmers(void) {
     return kmers->size();
+  }
+  
+  double get_estimated_error_rate() {
+      return estimated_error_rate;
   }
 
   upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) {
@@ -550,7 +574,7 @@ public:
 
     barrier();
     // two bloom false positive rates applied
-    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 1000);
+    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 20000);
     auto node0_cores = upcxx::local_team().rank_n();
     double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
     SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved),
@@ -563,8 +587,11 @@ public:
 
   void flush_updates() {
     BarrierTimer timer(__FILEFUNC__);
-    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) kmer_store_bloom.flush_updates();
-    else kmer_store.flush_updates();
+    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
+        kmer_store_bloom.flush_updates();
+    } else {
+        kmer_store.flush_updates();
+    }
   }
 
   void purge_kmers(int threshold) {
@@ -583,6 +610,8 @@ public:
     auto all_num_purged = reduce_one(num_purged, op_fast_add, 0).wait();
     SLOG_VERBOSE("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers below frequency threshold of ",
                  threshold, "\n");
+    estimated_error_rate = 1.0 - pow( 1.0 - (double)all_num_purged / (double)num_prior_kmers, 1.0 / (double)Kmer<MAX_K>::get_k());
+    SLOG_VERBOSE("Estimated per-base error rate from purge: ", estimated_error_rate, "\n");
   }
 
   /*

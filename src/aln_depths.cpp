@@ -71,9 +71,9 @@ struct CtgBaseDepths {
 
 class CtgsDepths {
  private:
-  int edge_base_len;
   using ctgs_depths_map_t = upcxx::dist_object<HASH_TABLE<int64_t, CtgBaseDepths>>;
   ctgs_depths_map_t ctgs_depths;
+  int edge_base_len;
   HASH_TABLE<int64_t, CtgBaseDepths>::iterator ctgs_depths_iter;
 
   size_t get_target_rank(int64_t cid) {
@@ -144,13 +144,13 @@ class CtgsDepths {
                  if (it == ctgs_depths->end()) DIE("could not fetch vertex ", cid, "\n");
                  auto ctg_base_depths = &it->second;
                  double avg_depth = 0;
-                 for (int i = edge_base_len; i < ctg_base_depths->base_counts.size() - edge_base_len; i++) {
+                 for (int i = edge_base_len; i < (int) ctg_base_depths->base_counts.size() - edge_base_len; i++) {
                    avg_depth += ctg_base_depths->base_counts[i];
                  }
                  size_t clen = ctg_base_depths->base_counts.size() - 2 * edge_base_len;
                  avg_depth /= clen;
                  double sum_sqs = 0;
-                 for (int i = edge_base_len; i < ctg_base_depths->base_counts.size() - edge_base_len; i++) {
+                 for (int i = edge_base_len; i < (int) ctg_base_depths->base_counts.size() - edge_base_len; i++) {
                    sum_sqs += pow((double)ctg_base_depths->base_counts[i] - avg_depth, 2.0);
                  }
                  double var_depth = sum_sqs / clen;
@@ -235,17 +235,20 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
                perc_str(reduce_one(num_bad_alns, op_fast_add, 0).wait(), all_num_alns), " low quality alns\n");
   if (fname == "" && use_kmer_depths) SLOG_VERBOSE("Skipping contig depths calculations and output\n");
   // get string to dump
-  string out_str = "";
-  if (!upcxx::rank_me()) out_str = "contigName\tcontigLen\ttotalAvgDepth\tavg_depth\tvar_depth\n";
+  shared_ptr<upcxx_utils::dist_ofstream> sh_of;
+  if (fname != "")
+      sh_of = make_shared<upcxx_utils::dist_ofstream>(fname);
+  
+  if (!upcxx::rank_me() && sh_of)
+      *sh_of << "contigName\tcontigLen\ttotalAvgDepth\tavg_depth\tvar_depth\n";
   // FIXME: the depths need to be in the same order as the contigs in the final_assembly.fasta file. This is an inefficient
   // way of ensuring that
   for (auto &ctg : ctgs) {
-    if (ctg.seq.length() < min_ctg_len) continue;
+    if ((int) ctg.seq.length() < min_ctg_len) continue;
     auto [avg_depth, var_depth] = ctgs_depths.get_depth(ctg.id);
     if (fname != "") {
-      ostringstream oss;
-      oss << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth << "\n";
-      out_str += oss.str();
+      assert(sh_of);
+      *sh_of << "Contig" << ctg.id << "\t" << ctg.seq.length() << "\t" << avg_depth << "\t" << avg_depth << "\t" << var_depth << "\n";
     }
     // it seems that using aln depths improves the ctgy at the cost of an increase in msa
     if (!use_kmer_depths) ctg.depth = avg_depth;
@@ -253,7 +256,8 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   }
   barrier();
   if (fname != "") {
-    DBG("Prepared contig depths for '", fname, "' with ", out_str.size(), " bytes\n");
-    dump_single_file(fname, out_str);
+    assert(sh_of);
+    DBG("Prepared contig depths for '", fname, "\n");
+    sh_of->close(); // sync and print stats
   }
 }

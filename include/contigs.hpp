@@ -136,14 +136,14 @@ public:
     return contigs.end();
   }
 
-  void print_stats(int min_ctg_len) {
+  void print_stats(unsigned min_ctg_len) {
     BarrierTimer timer(__FILEFUNC__);
     int64_t tot_len = 0, max_len = 0;
     double tot_depth = 0;
-    vector<pair<int, int64_t>> length_sums({ {1, 0}, {5, 0}, {10, 0}, {25, 0}, {50, 0}});
+    vector<pair<unsigned, uint64_t>> length_sums({ {1, 0}, {5, 0}, {10, 0}, {25, 0}, {50, 0}});
     int64_t num_ctgs = 0;
     int64_t num_ns = 0;
-    vector<int> lens;
+    vector<unsigned> lens;
     lens.reserve(contigs.size());
     for (auto ctg : contigs) {
       auto len = ctg.seq.length();
@@ -210,19 +210,19 @@ public:
     }
   }
 
-  void dump_contigs(const string &fname, int min_ctg_len) {
+  void dump_contigs(const string &fname, unsigned min_ctg_len) {
     BarrierTimer timer(__FILEFUNC__);
-    string fasta = "";
+    dist_ofstream of(fname);
     for (auto it = contigs.begin(); it != contigs.end(); ++it) {
       auto ctg = it;
       if (ctg->seq.length() < min_ctg_len) continue;
-      fasta += ">Contig" + to_string(ctg->id) + " " + to_string(ctg->depth) + "\n";
+      of << ">Contig" << to_string(ctg->id) << " " << to_string(ctg->depth) << "\n";
       string rc_uutig = revcomp(ctg->seq);
       string seq = (rc_uutig < ctg->seq ? rc_uutig : ctg->seq);
       //for (int64_t i = 0; i < ctg->seq.length(); i += 50) fasta += ctg->seq.substr(i, 50) + "\n";
-      fasta += ctg->seq + "\n";
+      of << ctg->seq << "\n";
     }
-    dump_single_file(fname, fasta);
+    of.close(); // sync and output stats
 #ifdef DEBUG
     // two important things here.  
     // 1: touch and test the load_contigs code when debugging
@@ -268,7 +268,7 @@ public:
     // these can be equal if the contigs are very long and there are many ranks so this one doesn't get even a full contig
     ctgs_file.seekg(start_offset);
     while (!ctgs_file.eof()) {
-      if (ctgs_file.tellg() >= stop_offset) break;
+      if ((size_t) ctgs_file.tellg() >= stop_offset) break;
       getline(ctgs_file, cname);
       if (cname == "") break;
       getline(ctgs_file, seq);

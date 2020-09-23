@@ -50,7 +50,8 @@
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
-#include "upcxx_utils/flat_aggr_store.hpp"
+#include "upcxx_utils/three_tier_aggr_store.hpp"
+#include "upcxx_utils/limit_outstanding.hpp"
 
 #include "utils.hpp"
 #include "ssw.hpp"
@@ -120,15 +121,17 @@ class KmerCtgDHT {
   using kmer_map_t = dist_object<HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>>;
   kmer_map_t kmer_map;
 
+#ifndef FLAT_AGGR_STORE
+  ThreeTierAggrStore<KmerAndCtgLoc, kmer_map_t&> kmer_store;
+#else
   FlatAggrStore<KmerAndCtgLoc, kmer_map_t &> kmer_store;
+#endif
 
   int64_t num_alns;
   int64_t num_perfect_alns;
   int64_t num_overlaps;
 
   int64_t ctg_seq_bytes_fetched;
-
-  Alns *alns;
 
   // default aligner and filter
   StripedSmithWaterman::Aligner ssw_aligner;
@@ -150,6 +153,8 @@ class KmerCtgDHT {
   future<> active_kernel_fut;
   IntermittentTimer aln_cpu_bypass_timer;
 
+
+  Alns *alns;
 
   int get_cigar_length(const string &cigar) {
     // check that cigar string length is the same as the sequence, but only if the sequence is included
@@ -406,7 +411,7 @@ class KmerCtgDHT {
 #endif
 
  public:
-  int kmer_len;
+  unsigned kmer_len;
 
   // aligner construction: SSW internal defaults are 2 2 3 1
 
@@ -520,6 +525,7 @@ class KmerCtgDHT {
   void flush_add_kmers() {
     BarrierTimer timer(__FILEFUNC__);
     kmer_store.flush_updates();
+    kmer_store.clear();
   }
 
   void clear_aln_bufs() {
@@ -612,7 +618,7 @@ class KmerCtgDHT {
     for (auto &elem : *kmer_map) {
       auto ctg_loc = &elem.second;
       out_buf << elem.first << " " << elem.second.size() << " " << ctg_loc->clen << " " << ctg_loc->pos_in_ctg << " "
-              << ctg_loc->is_rc << endl;
+              << ctg_loc->is_rc << "\n";
       i++;
       if (!(i % 1000)) {
         dump_file << out_buf.str();
@@ -690,7 +696,7 @@ class KmerCtgDHT {
 };
 
 template<int MAX_K>
-static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, int min_ctg_len) {
+static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, unsigned min_ctg_len) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
@@ -704,7 +710,7 @@ static void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs
     CtgLoc ctg_loc = { .cid = ctg->id, .seq_gptr = seq_gptr, .clen = (int)ctg->seq.length() };
     Kmer<MAX_K>::get_kmers(kmer_ctg_dht.kmer_len, ctg->seq, kmers);
     num_kmers += kmers.size();
-    for (int i = 0; i < kmers.size(); i++) {
+    for (unsigned i = 0; i < kmers.size(); i++) {
       ctg_loc.pos_in_ctg = i;
       kmer_ctg_dht.add_kmer(kmers[i], ctg_loc);
       progress();
@@ -752,13 +758,17 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
   get_ctgs_timer.start();
-  future<> fut_chain = make_future();
+  //future<> fut_chain = make_future();
   // fetch ctgs for each set of kmers from target ranks
+  auto lranks = local_team().rank_n();
+  auto nnodes = rank_n() / lranks;
   for (int i = 0; i < rank_n(); i++) {
+    // stagger by rank_me, round robin by node
+    auto target_rank = ((i%nnodes)*lranks + i/nnodes + rank_me()) % rank_n(); 
     progress();
     // skip targets that have no ctgs - this should reduce communication at scale
-    if (kmer_lists[i].empty()) continue;
-    auto fut = kmer_ctg_dht.get_ctgs_with_kmers(i, kmer_lists[i]).then(
+    if (kmer_lists[target_rank].empty()) continue;
+    auto fut = kmer_ctg_dht.get_ctgs_with_kmers(target_rank, kmer_lists[target_rank]).then(
       [&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
         // iterate through the kmers, each one has an associated ctg location
         for (auto &kmer_ctg_loc : kmer_ctg_locs) {
@@ -782,9 +792,11 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
           }
         }
       });
-    fut_chain = when_all(fut_chain, fut);
+    upcxx_utils::limit_outstanding_futures(fut, std::max(nnodes*2, lranks*4)).wait();
+    //fut_chain = when_all(fut_chain, fut);
   }
-  fut_chain.wait();
+  //fut_chain.wait();
+  upcxx_utils::flush_outstanding_futures();
   get_ctgs_timer.stop();
   delete[] kmer_lists;
   kmer_read_map.clear();
@@ -852,7 +864,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads*
       ReadRecord *read_record = new ReadRecord(read_id, read_seq, quals);
       read_records.push_back(read_record);
       bool filled = false;
-      for (int i = 0; i < kmers.size(); i += seed_space) {
+      for (int i = 0; i < (int) kmers.size(); i += seed_space) {
         Kmer<MAX_K> kmer = kmers[i];
         Kmer<MAX_K> kmer_rc = kmer.revcomp();
         bool is_rc = false;

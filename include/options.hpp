@@ -44,6 +44,8 @@
 
 
 #include <iostream>
+#include <sstream>
+#include <string>
 #include <regex>
 #include <sys/stat.h>
 #include <upcxx/upcxx.hpp>
@@ -74,8 +76,18 @@ class Options {
     return split_content;
   }
 
-  bool extract_previous_lens(vector<unsigned> &lens, int k) {
-    for (int i = 0; i < lens.size(); i++) {
+  template <typename T>
+  string vec_to_str(const vector<T> &vec, const string &delimiter=",") {
+    std::ostringstream oss;
+    for (auto elem : vec) {
+      oss << elem;
+      if (elem != vec.back()) oss << delimiter;
+    }
+    return oss.str();
+  }
+
+  bool extract_previous_lens(vector<unsigned> &lens, unsigned k) {
+    for (size_t i = 0; i < lens.size(); i++) {
       if (lens[i] == k) {
         lens.erase(lens.begin(), lens.begin() + i + 1);
         return true;
@@ -103,7 +115,7 @@ class Options {
     if (!last_stage.empty()) {
       auto fields = split(last_stage, ' ');
       string stage_type = fields[3];
-      int k = std::stoi(fields[7]);
+      unsigned k = std::stoi(fields[7]);
       if (stage_type == "contig") {
         if (k == kmer_lens.back()) {
           max_kmer_len = kmer_lens.back();
@@ -114,17 +126,17 @@ class Options {
           if (!extract_previous_lens(kmer_lens, k))
             SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
           prev_kmer_len = k;
-		}
+        }
         ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-	  } else if (stage_type == "scaffolding") {
+      } else if (stage_type == "scaffolding") {
         max_kmer_len = kmer_lens.back();
         kmer_lens = {};
         if (k == scaff_kmer_lens.front()) {
-		  ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-		} else {
-		  if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
-		  ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
-		}
+	  ctgs_fname = "contigs-" + to_string(k) + ".fasta";
+	} else {
+	  if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
+	  ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+	}
         if (!extract_previous_lens(scaff_kmer_lens, k))
 		  SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
       } else {
@@ -230,8 +242,9 @@ public:
   vector<unsigned> scaff_kmer_lens = {};
   int qual_offset = 33;
   bool verbose = false;
-  int max_kmer_store_mb = 50;
+  int max_kmer_store_mb = 0; // per rank - default to use 1% of node memory
   int max_rpcs_in_flight = 100;
+  bool use_heavy_hitters = false; // only enable when files are localized
   bool force_bloom = false;
   double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
@@ -254,6 +267,19 @@ public:
   string output_dir = "mhmxx-run-<reads_fname[0]>-n" + to_string(upcxx::rank_n()) + "-N" +
       to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
   bool restart = false;
+
+  ~Options() {
+      flush_logger();
+      cleanup();
+  }
+
+  void cleanup() {
+      // cleanup and close loggers that Options opened in load
+      close_logger();
+#ifdef DEBUG
+      close_dbg();
+#endif
+  }
 
   bool load(int argc, char **argv) {
     //MHMXX version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
@@ -300,11 +326,14 @@ public:
                    "Absolute mininimum depth threshold for DeBruijn graph traversal")
                    ->capture_default_str() ->check(CLI::Range(1, 100));
     app.add_option("--max-kmer-store", max_kmer_store_mb,
-                   "Maximum size for kmer store in MB")
-                   ->capture_default_str() ->check(CLI::Range(1, 1000));
+                   "Maximum size for kmer store in MB per rank. 0 for auto 1% memory")
+                   ->capture_default_str() ->check(CLI::Range(0, 1000));
     app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight,
                    "Maximum number of RPCs in flight, per process (0 = unlimited)")
                    ->capture_default_str() ->check(CLI::Range(0, 10000));
+    app.add_flag("--use-heavy-hitters", use_heavy_hitters,
+                   "Activate the Heavy Hitter Streaming Store")
+                   ->capture_default_str();
     app.add_option("--min-ctg-print-len", min_ctg_print_len,
                    "Minimum length required for printing a contig in the final assembly")
                    ->capture_default_str() ->check(CLI::Range(0, 100000));
@@ -424,12 +453,18 @@ public:
         scaff_kmer_lens_opt->default_str( to_string(scaff_kmer_lens[0]) + " " + to_string(scaff_kmer_lens[1]));
       } 
     } else if (scaff_kmer_lens.size() == 1 && scaff_kmer_lens[0] == 0) {
-        // disable scaffolding rounds
-        scaff_kmer_lens.clear();
+      // disable scaffolding rounds
+      scaff_kmer_lens.clear();
     }
 
     setup_output_dir();
     setup_log_file();
+        
+    if (max_kmer_store_mb == 0) {
+        // use 1% of the minimum available memory
+        max_kmer_store_mb = get_free_mem()/1024/1024/100;
+        max_kmer_store_mb = upcxx::reduce_all(max_kmer_store_mb/local_team().rank_n(), upcxx::op_fast_min).wait();        
+    }
 
     auto logger_t = chrono::high_resolution_clock::now();
     if (upcxx::local_team().rank_me() == 0) {
@@ -478,15 +513,5 @@ public:
     return true;
   }
 
-  virtual ~Options() {
-      cleanup();
-  }
-  void cleanup() {
-      // cleanup and close loggers that Options opened in load
-      close_logger();
-#ifdef DEBUG
-      close_dbg();
-#endif
-  }
 };
 

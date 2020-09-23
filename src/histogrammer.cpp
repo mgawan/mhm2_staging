@@ -143,11 +143,14 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   progbar.done();
 
   if (!dump_large_alns_fname.empty()) {
-    string out_str = (!upcxx::rank_me() ? "#cid clen aln_start aln_stop\n" : "");
-    for (auto large_alns_ctg : large_alns) {
-      out_str += large_alns_ctg + "\n";
+    upcxx_utils::dist_ofstream outf(dump_large_alns_fname);
+    if (!upcxx::rank_me()) {
+      outf << "#cid clen aln_start aln_stop\n";
     }
-    dump_single_file(dump_large_alns_fname, out_str);
+    for (auto large_alns_ctg : large_alns) {
+      outf << large_alns_ctg + "\n";
+    }
+    outf.close(); // syncs and write stats
   }
 
   auto all_num_overlap_rejected = reduce_one(num_overlap_rejected, op_fast_add, 0).wait();

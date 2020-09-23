@@ -268,7 +268,7 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
 // gets all the alns for a single read
 static void get_all_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read) {
   string start_read_id = "";
-  for (; i < alns.size(); i++) {
+  for (; i < (int64_t) alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
@@ -354,7 +354,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   int read_len = 0;
   Aln prev_best_aln = { .read_id = "" };
   string read_status = "", type_status = "", prev_read_status = "", prev_type_status = "";
-  while (aln_i < alns.size()) {
+  while (aln_i < (int64_t) alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
     get_all_alns_for_read(alns, aln_i, alns_for_read);
@@ -425,7 +425,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
       string ctg2 = "Contig" + to_string(edge->cids.cid2) + "." + to_string(edge->end2);
       string link = (ctg1 < ctg2 ? ctg1 + "<=>" + ctg2 : ctg2 + "<=>" + ctg1);
 #ifdef DUMP_LINKS
-      links_file << "SPAN\t" << link << "\t0|" << edge->support << "\t" << edge->gap << "\t" << mean_gap_estimate << endl;
+      links_file << "SPAN\t" << link << "\t0|" << edge->support << "\t" << edge->gap << "\t" << mean_gap_estimate << "\n";
 #endif
     }
   }

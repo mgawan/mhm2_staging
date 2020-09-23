@@ -180,23 +180,28 @@ public:
 
     // FIXME: first, all ranks must dump contig info to the file, for every contig:
     // @SQ	SN:Contig0	LN:887
-
-    string sq_str = "";
+    dist_ofstream of(fname);
+    future<> all_done;
     for (auto &ctg : *ctgs) {
-      sq_str += "@SQ\tSN:Contig" + to_string(ctg.id) + "\tLN:" + to_string(ctg.seq.length()) + "\n";
+      of << "@SQ\tSN:Contig" << to_string(ctg.id) << "\tLN:" << to_string(ctg.seq.length()) << "\n";
     }
-    //dump_single_file(fname + ".sq", sq_str);
-    dump_single_file(fname, sq_str);
+    all_done = of.flush_collective();
+    
     if (!upcxx::rank_me()) {
       // program information
-      out_str += "@PG\tID:MHM2\tPN:MHM2\tVN:" + string(MHMXX_VERSION) + "\n";
+      of << "@PG\tID:MHM2\tPN:MHM2\tVN:" << string(MHMXX_VERSION) << "\n";
     }
+    all_done = when_all(all_done, of.flush_collective());
+    
     for (auto aln : alns) {
-      if (!as_sam_format) out_str += aln.to_string() + "\n";
-      else out_str += aln.sam_string + "\n";
+      if (!as_sam_format) 
+          of << aln.to_string() << "\n";
+      else 
+          of << aln.sam_string << "\n";
     }
-    dump_single_file(fname, out_str, /*append*/true);
-    //dump_single_file(fname + ".noseq", out_str);
+    all_done = when_all(all_done, of.close_async());
+    all_done.wait();
+    of.report_timings().wait();
   }
 
   int calculate_unmerged_rlen() {
