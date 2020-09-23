@@ -411,8 +411,8 @@ make -j all install</code></pre>
 <h1 id="running">Running</h1>
 <p>To execute MHM2, run the <code>mhm2.py</code> script located at <code>install/bin</code>. Most parameters have sensible defaults, so it is possible to run with only the read FASTQ files specified, e.g. to run with two interleaved reads files, <code>lib1.fastq</code> and <code>lib2.fastq</code>, you could execute:</p>
 <p><code>mhm2.py -r lib1.fastq,lib2.fastq</code></p>
-<p>A list of all the command line options can be found by running with <code>-h</code>. Some of these have a short form (a single dash with a single character and a long form, starting with a double-dash). In the list <a href="#basic-options">below</a>, where both a short form and a long form exist, they are separated by a comma. The type of the option is indicated as one of <code>STRING</code> (a string of characters), <code>INT</code> (an integer), <code>FLOAT</code> (a floating point value) or <code>BOOL</code> (a boolean flag). For <code>BOOL</code>, the option can be given as <code>true</code>, <code>false</code>, <code>yes</code>, <code>no</code>, <code>0</code>, <code>1</code>, or omitted altogether, in which case the option will be <code>true</code>.</p>
-<p>By default, the run will generate files in the output directory (see the <a href="#output-dir">output</a> option below). At a minimum, this will include the following files:</p>
+<p>A list of all the command line options can be found by running with <code>-h</code>. Some of these have a short form (a single dash with a single character and a long form, starting with a double-dash). In the options described below, where both a short form and a long form exist, they are separated by a comma. The type of the option is indicated as one of <code>STRING</code> (a string of characters), <code>INT</code> (an integer), <code>FLOAT</code> (a floating point value) or <code>BOOL</code> (a boolean flag). For <code>BOOL</code>, the option can be given as <code>true</code>, <code>false</code>, <code>yes</code>, <code>no</code>, <code>0</code>, <code>1</code>, or omitted altogether, in which case the option will be <code>true</code>.</p>
+<p>By default, the run will generate files in the output directory (see the <code>--output</code> option below). At a minimum, this will include the following files:</p>
 <ul>
 <li><code>final_assembly.fasta</code>: the contigs for the assembly, in FASTA format.</li>
 <li><code>mhm2.log</code>: a log file containing details about the run, including various quality statistics, details about the assembly process and timing information.</li>
@@ -420,15 +420,15 @@ make -j all install</code></pre>
 <li><code>per_thread</code>: a subdirectory containing per-process files that record memory usage and debugging information in Debug mode.</li>
 </ul>
 <p>In addition, many more files may be generated according to which command-line options are specified. These are described in detail below where relevant.</p>
-<h2 id="basic-options">Basic options <a name="basic-options"></a></h2>
+<h2 id="basic-options">Basic options</h2>
 <p>These are the most commonly used options.</p>
 <p><strong><code>-r, --reads STRING,STRING,...</code></strong></p>
-<p>A collection of names of files containing reads in FASTQ format. Multiple files must be comma-separated, without spaces. If the files contain paired-reads, these should be interleaved. For paired reads in separate files, use the <a href="#paired-reads"><code>-p</code> option</a>. Either this or the <code>-p</code> option are required. For long lists of read files, they can be set in a <a href="#config-file">configuration file</a>, to avoid having to type them in on the command line.</p>
+<p>A collection of names of files containing reads in FASTQ format. Multiple files must be comma-separated, without spaces. If the files contain paired-reads, these should be interleaved. For paired reads in separate files, use the <code>-p</code> option. Either this or the <code>-p</code> option are required. For long lists of read files, they can be set in a configuration file, to avoid having to type them in on the command line.</p>
 <p>When running on a <a href="https://lustre.org/">Lustre</a> file system (such as on NERSC’s Cori), it is recommended that all input files be <a href="https://wiki.lustre.org/Configuring_Lustre_File_Striping">striped</a> to ensure adequate I/O performance. Usually this means striping a directory and then moving files into it, e.g. for a file <code>reads.fastq</code>:</p>
 <pre><code>mkdir data
 lfs setstripe -c -1 data
 mv reads.fastq data</code></pre>
-<p><strong><code>-p, --paired-reads STRING,STRING,...</code></strong> <a name="paired-reads"></a></p>
+<p><strong><code>-p, --paired-reads STRING,STRING,...</code></strong></p>
 <p>File names for paired reads in FASTQ format contained in separate files. For each library, the file containing the reads for the first pairs must be followed by the file containing the reads for the second pairs, e.g. for two libraries with separate paired reads files <code>lib1_1.fastq</code>, <code>lib1_2.fastq</code> and <code>lib2_1.fastq</code>, <code>lib2_2.fastq</code>, the option should be specified as:</p>
 <p><code>-p lib1_1.fastq,lib1_2.fastq,lib2_1.fastq,lib2_2.fastq</code></p>
 <p><strong><code>-i, --insert INT:INT</code></strong></p>
@@ -446,8 +446,8 @@ mv reads.fastq data</code></pre>
 <p>If the output directory is created by MHM2 (either as the default or when passed as a parameter), it will automatically be striped in the most effective way on a Lustre filesystem. If using a pre-existing directory that was not created by MHM2, the user should ensure that on Lustre filesystems it is adequately striped.</p>
 <p>If the output directory already exists, files produced by a previous run of MHM2 can be overwritten, depending on whether or not this is a restart of a previous run. If there is an existing log file (<code>mhm2.log</code>), it will be renamed with the date before the new one is written as <code>mhm2.log</code>, so log information about previous runs will always be retained.</p>
 <p><strong><code>--checkpoint BOOL</code></strong></p>
-<p>If set to true, this will checkpoint the run by saving intermediate files that can later be used to restart the run (see the <a href="#restart">restart</a> option below). The contigs at the end of each contigging round are saved in a FASTA file, called <code>contigs-&lt;k&gt;.fasta</code>, where <em>k</em> is the <em>k</em>-mer value of the contigging round. At the end of each scaffolding round, the contigs will be saved in a FASTA file, <code>scaff-contigs-&lt;k&gt;.fasta</code>, where <em>k</em> is the <em>k</em>-mer value of the scaffolding round. Checkpointing is on by default and can be disabled by passing <code>--checkpoint=false</code>.</p>
-<p><strong><code>--restart BOOL</code></strong> <a name="restart"></a></p>
+<p>If set to true, this will checkpoint the run by saving intermediate files that can later be used to restart the run (see the <code>--restart</code> option below. The contigs at the end of each contigging round are saved in a FASTA file, called <code>contigs-&lt;k&gt;.fasta</code>, where <em>k</em> is the <em>k</em>-mer value of the contigging round. At the end of each scaffolding round, the contigs will be saved in a FASTA file, <code>scaff-contigs-&lt;k&gt;.fasta</code>, where <em>k</em> is the <em>k</em>-mer value of the scaffolding round. Checkpointing is on by default and can be disabled by passing <code>--checkpoint=false</code>.</p>
+<p><strong><code>--restart BOOL</code></strong></p>
 <p>If set to true, MHM2 will attempt to restart a run from an existing directory. The output directory option must be specified and must contain a previous checkpointed run. The restart will use the same options as the previous run, and will load the most recent checkpointed contigs file in order to resume. This defaults to false.</p>
 <p><strong><code>--post-asm-align BOOL</code></strong></p>
 <p>If set to true. MHM2 will align the original reads to the final assembly and report the results in a file, <code>final_assembly.sam</code>, in <a href="https://samtools.github.io/hts-specs/SAMv1.pdf">SAM format</a>. This defaults to false.</p>
@@ -456,7 +456,7 @@ mv reads.fastq data</code></pre>
 <p><code>metabat2 -i final_assembly.fasta -a final_assembly_depths.txt -o bins_dir/bin</code></p>
 <p>This defaults to false.</p>
 <p><strong><code>--post-asm-only BOOL</code></strong></p>
-<p>If set to true, this requires an existing directory containing a full run (i.e. with a <code>final_assembly.fasta</code> file), and it will execute any specified post-assembly options (<code>--post-asm-align</code> or <code>--post-asm-abd</code>) on that assembly without any other steps. This provides a convenient means to run alignment and/or abundance calculations on an already completed assembly. By default this post-assembly analysis will use the <code>final_assembly.fasta</code> file in the output directory, but any FASTA file could be used, including those not generated by MHM2 (see the <code>--contigs</code> <a href="#contigs-file">option</a> in the advanced options section below). This defaults to false.</p>
+<p>If set to true, this requires an existing directory containing a full run (i.e. with a <code>final_assembly.fasta</code> file), and it will execute any specified post-assembly options (<code>--post-asm-align</code> or <code>--post-asm-abd</code>) on that assembly without any other steps. This provides a convenient means to run alignment and/or abundance calculations on an already completed assembly. By default this post-assembly analysis will use the <code>final_assembly.fasta</code> file in the output directory, but any FASTA file could be used, including those not generated by MHM2 (see the <code>--contigs</code> in the advanced options section below). This defaults to false.</p>
 <p><strong><code>--write-gfa BOOL</code></strong></p>
 <p>If set to true, MHM2 will output an assembly graph in the <a href="https://github.com/GFA-spec/GFA-spec/blob/master/GFA2.md">GFA2 format</a> in file, <code>final_assembly.gfa</code>. This represents the assembly graph formed by aligning the reads to the final contigs and using those alignments to infer edges between the contigs. This defaults to false.</p>
 <p><strong><code>-Q, --quality-offset INT</code></strong></p>
@@ -465,7 +465,7 @@ mv reads.fastq data</code></pre>
 <p>If true, many time-consuming stages will be shown updating with a simple progress bar. The progress bar output will not be written into the log file, <code>mhm2.log</code>.</p>
 <p><strong><code>-v, --verbose BOOL</code></strong></p>
 <p>If true, MMHM2 will produce verbose output, which prints out a lot of additional information about timing of the run and the various computations that are being performed. This defaults to false. All of the information seen in verbose mode will always be written to the log file, <code>mhm2.log</code>.</p>
-<p><strong><code>--config CONFIG_FILE_NAME</code></strong> <a name="config-file"></a></p>
+<p><strong><code>--config CONFIG_FILE_NAME</code></strong></p>
 <p>If this is specified, the options will be loaded from a config file. The file is of the format:</p>
 <p><code>key = value</code></p>
 <p>where <code>key</code> is the name of an option and <code>value</code> is the value of the option. All blank lines and lines beginning with a semi-colon will be ignored. When the config file is not specified as an option, MHM2 always writes out all the options in the file <code>mhm2.config</code>.</p>
@@ -474,12 +474,12 @@ mv reads.fastq data</code></pre>
 <p>but the command line is:</p>
 <p><code>mhm2.py --config test.config -k 45,63</code></p>
 <p>then MHM2 will run with <em>k</em>-mer lengths of 45 and 63.</p>
-<h2 id="advanced-options">Advanced options <a name="advanced-options"></a></h2>
+<h2 id="advanced-options">Advanced options</h2>
 <p>These are additional options for tuning performance or the quality of the output, or selecting precisely how to restart a run. Most users will not need any of these options.</p>
 <h3 id="restarting-runs">Restarting runs</h3>
 <p>Although the <code>--restart</code> option provides for simple restarts of previous runs, it is possible to restart at very specific points, with new options, e.g. restarting scaffolding with different <em>k</em>-mer values, set using the <code>-s</code> option.</p>
 <p>The relevant options are listed below.</p>
-<p><strong><code>-c, --contigs STRING</code></strong> <a name="contigs-file"></a></p>
+<p><strong><code>-c, --contigs STRING</code></strong></p>
 <p>The file name containing contigs in FASTA format that are to be used as the most recent checkpoint for a restart. Any contigs file generated during a checkpointed run can be used, so it is possible to restart at any stage.</p>
 <p><strong><code>--max-kmer-len INT</code></strong></p>
 <p>The maximum <em>k</em>-mer length used in contigging. This is usually derived from the parameters, and so only needs to be specified if the restart is only scaffolding rounds, and no contigging rounds, e.g.</p>
