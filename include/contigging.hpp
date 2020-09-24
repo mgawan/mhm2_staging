@@ -75,8 +75,8 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
                                          options->force_bloom, options->use_heavy_hitters);
     barrier();
-    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dynamic_min_depth, options->dmin_thres,
-                  ctgs, kmer_dht, num_kmers_factor);
+    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dmin_thres, ctgs, kmer_dht,
+                  num_kmers_factor);
     stage_timers.analyze_kmers->stop();
     barrier();
     stage_timers.dbjg_traversal->start();

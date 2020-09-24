@@ -162,7 +162,7 @@ class CtgsDepths {
   }
 };
 
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths) {
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len) {
   BarrierTimer timer(__FILEFUNC__);
   int edge_base_len = (min_ctg_len >= 75 ? 75 : 0);
   CtgsDepths ctgs_depths(edge_base_len);
@@ -232,7 +232,9 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   auto all_num_alns = reduce_one(alns.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Dropped ", perc_str(reduce_one(num_bad_overlaps, op_fast_add, 0).wait(), all_num_alns), " bad overlaps and ",
                perc_str(reduce_one(num_bad_alns, op_fast_add, 0).wait(), all_num_alns), " low quality alns\n");
-  if (fname == "" && use_kmer_depths) SLOG_VERBOSE("Skipping contig depths calculations and output\n");
+#ifdef USE_KMER_DEPTHS
+  if (fname == "") SLOG_VERBOSE("Skipping contig depths calculations and output\n");
+#endif
   // get string to dump
   shared_ptr<upcxx_utils::dist_ofstream> sh_of;
   if (fname != "") sh_of = make_shared<upcxx_utils::dist_ofstream>(fname);
@@ -249,7 +251,9 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
              << "\n";
     }
     // it seems that using aln depths improves the ctgy at the cost of an increase in msa
-    if (!use_kmer_depths) ctg.depth = avg_depth;
+#ifndef USE_KMER_DEPTHS
+    ctg.depth = avg_depth;
+#endif
     upcxx::progress();
   }
   barrier();

@@ -90,10 +90,8 @@ class Options {
   int max_rpcs_in_flight = 100;
   bool use_heavy_hitters = false;  // only enable when files are localized
   bool force_bloom = false;
-  double dynamic_min_depth = 0.9;
   int dmin_thres = 2.0;
   bool checkpoint = true;
-  bool use_kmer_depths = false;
   bool post_assm_aln = false;
   bool post_assm_abundances = false;
   bool post_assm_only = false;
