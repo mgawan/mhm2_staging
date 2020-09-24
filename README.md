@@ -1,80 +1,14 @@
-# MetaHipmer 2 - MHM2 #
 
-MHM2 is a UPC++ version of [MetaHipMer](https://sites.google.com/lbl.gov/exabiome/downloads?authuser=0).
+# MetaHipMer2 - MHM2 #
 
-This code relies on UPC++, which can be obtained from
+[MetaHipMer (*MHM*)](https://sites.google.com/lbl.gov/exabiome/downloads?authuser=0) is a *de novo* metagenome short-read assembler. This is version 2 (MHM2), which is written entirely in
+[UPC++](https://upcxx.lbl.gov) and runs efficiently on both single servers and on multinode supercomputers, where it can scale up to
+coassemble terabase-sized metagenomes. More information about MetaHipMer can be found under the [ExaBiome Project](https://sites.google.com/lbl.gov/exabiome) 
+of the [Exascale Computing Project](https://www.exascaleproject.org) an several publiciations:
 
-https://bitbucket.org/berkeleylab/upcxx/wiki/Home
+- [E. Georganas et al., "Extreme Scale De Novo Metagenome Assembly," SC18: International Conference for High Performance Computing, Networking, Storage and Analysis, Dallas, TX, USA, 2018, pp. 122-13.](https://ieeexplore.ieee.org/document/8665813)
+- [Hofmeyr, S., Egan, R., Georganas, E. et al. Terabase-scale metagenome coassembly with MetaHipMer. Sci Rep 10, 10689 (2020).](https://www.nature.com/articles/s41598-020-67416-5#citeas)
 
+Information about building, installing and running MHM2 can be found in the [user guide](docs/mhm2_guide.html)
 
-## Building
-
-To build, first set your environment:
-
-`export MHM2_BUILD_ENV=contrib/environments/cori-knl/gnu.sh`
-
-and then simply run:
-
-`./build.sh Release`
-
-or:
-
-`./build.sh Debug`
-
-The script will install the binaries by default into the `install/bin` subdirectory in the repository root directory. To set a different install 
-directory, set the environment variable `MHM2_INSTALL_PATH`, e.g.:
-
-`MHM2_INSTALL_PATH=$SCRATCH/MHM2-install ./build.sh Release`
-
-Once MHM2 has been built once, you can rebuild with
-
-`./build.sh`
-
-and it will build using the previously chosen setting (Release or Debug)
-
-You can also run
-
-`./build.sh clean`
-
-to really start from scratch.
-
-You can also use cmake directly:
-
-`mkdir -p build && cd build && cmake -DCMAKE_INSTALL_PREFIX=path-to-install .. && make -j all install`
-
-You'll need to first set the environment, e.g.:
-
-`source contrib/environments/cori-knl/gnu.sh`
-
-
-## Running
-
-
-A typical command line to run is:
-
-`mhm2.py -r <READS_lib1.fastq>,<READS_lib2.fastq>`
-
-This will create a new output directory that contains the results. Note that MHM2 requires interleaved paired reads.
-
-Run with `-h` to see the various options.
-
-## Cori notes:
-
-To build and run on [Cori](https://docs.nersc.gov/systems/cori/), you'll need the upcxx module and the cmake module.
-
-All six permuations of gnu, cray and intel environments on haswell and knl hardware are available (but only gnu has been widely tested)
-by sourcing one of these environments:
-
-`contrib/environments/cori-haswell/cray.sh  contrib/environments/cori-haswell/gnu.sh  contrib/environments/cori-haswell/intel.sh  contrib/environments/cori-knl/cray.sh  contrib/environments/cori-knl/gnu.sh  contrib/environments/cori-knl/intel.sh`
-
-To use these with the build.sh script, simply run as, e.g.:
-
-`MHM2_BUILD_ENV=contrib/environments/cori-knl/gnu.sh ./build.sh Release`
-
-It is recommended to use either PrgEnv-gnu or PrgEnv-cray. Builds with the Intel compiler run very slowly and currently there seems to be some bug that causes the execution to hang. This is not present with the other compilers.
-
-It is recommended to stripe all input files on the Lustre file system to ensure adequate I/O performance, e.g.
-
-`lfs setstripe -c -1 reads.fastq`
-
-The output directory (created using the `-o` parameter) is automatically striped.
+Information about the latest release can be found in the [release notes](RELEASE.md)

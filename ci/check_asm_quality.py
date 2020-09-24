@@ -46,6 +46,7 @@ def main():
     # first, run metaquast on the assembly
     report_path = 'mq.out/combined_reference/report.txt'
     report_exists = os.path.exists(options.asm_dir + "/" + report_path)
+    options.refs = os.path.realpath(options.refs)
     os.chdir(options.asm_dir)
 
     if not report_exists:
@@ -53,6 +54,7 @@ def main():
         cmd = ['metaquast.py', '--fast', '-o', '%s/mq.out'%(pwd), '-r', options.refs, '%s/final_assembly.fasta'%(pwd)]
         if options.rna:
             cmd.append('--rna-finding')
+        orig_mq_cmd = cmd
         test_exec_mq = which('metaquast.py')
         test_exec_shifter = which('shifter')
         test_exec_docker = which('docker')
@@ -68,9 +70,20 @@ def main():
             cmd = docker
         elif not test_exec_mq:
             sys.exit('ERROR: requires shifter, docker or metaquast.py in the path to check')
-        print('Running metaquast...', cmd)
-        subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-    
+        while True:
+            print('Running metaquast:', cmd)
+            try:
+                subprocess.check_output(cmd)#, stderr=subprocess.STDOUT)
+                break
+            except (subprocess.CalledProcessError):
+                if cmd == orig_mq_cmd:
+                    raise
+                elif test_exec_docker and test_exec_mq:
+                    print('Docker failed, trying fallback to metaquast.py directly')
+                    cmd = orig_mq_cmd
+                else:
+                    raise
+            
     new_quals = get_qual_vals(report_path)
     num_mismatches = 0
     for key, val in quals.items():
