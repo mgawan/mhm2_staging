@@ -192,9 +192,12 @@ void Options::setup_output_dir() {
   }
 
   upcxx::barrier();
-  // after we change to the output directory, relative paths will be incorrect, so we need to fix them
+  // after we change to the output directory, relative paths could be incorrect, so make sure we have the correct path of the
+  // reads files
+  char cwd_str[FILENAME_MAX];
+  if (!getcwd(cwd_str, FILENAME_MAX)) SDIE("Cannot get current working directory: ", strerror(errno));
   for (auto &fname : reads_fnames) {
-    if (fname[0] != '/') fname = "../" + fname;
+    if (fname[0] != '/') fname = string(cwd_str) + "/" + fname;
   }
   // all change to the output directory
   if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
@@ -311,9 +314,8 @@ bool Options::load(int argc, char **argv) {
                "Use kmer depths for scaffolding decisions instead of alignment depths (the default)")
       ->capture_default_str();
   app.add_flag("--restart", restart, "Restart in previous directory where a run failed")->capture_default_str();
-  app.add_flag("--pin", pin_by,
-               "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
-               "or NUMA domains (cpu, core, numa, none) - default is cpu ")
+  app.add_flag("--pin", pin_by, "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
+                                "or NUMA domains (cpu, core, numa, none) - default is cpu ")
       ->capture_default_str()
       ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
   app.add_flag("--post-asm-align", post_assm_aln, "Align reads to final assembly")->capture_default_str();
