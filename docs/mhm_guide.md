@@ -183,10 +183,10 @@ is written as `mhm2.log`, so log information about previous runs will always be 
 **`--checkpoint BOOL`**
 
 If set to true, this will checkpoint the run by saving intermediate files that can later be used to restart the run (see the
-[restart](#restart) option below). The contigs at the end of each contigging round are saved in a FASTA file, called
-`contigs-<k>.fasta`, where *k* is the *k*-mer value of the contigging round. At the end of each scaffolding round, the contigs will
-be saved in a FASTA file, `scaff-contigs-<k>.fasta`, where *k* is the *k*-mer value of the scaffolding round. Checkpointing is on by
-default and can be disabled by passing `--checkpoint=false`.
+[restart](#restart) option below). The intermediate files are FASTA files of contigs, and they are saved at three points: halfway
+through each contigging round (file name `uutigs-<k>.fasta`), at the end of each contigging round (`contigs-<k>.fasta`) and at the
+end of each scaffolding round (`scaff-contigs-<k>.fasta`), where the `<k>` value is the *k*-mer size for that round. Checkpointing
+is on by default and can be disabled by passing `--checkpoint=false`.
 
 **`--restart BOOL`** <a name="restart"></a>
 
@@ -283,9 +283,10 @@ generated during a checkpointed run can be used, so it is possible to restart at
 **`--max-kmer-len INT`**
 
 The maximum *k*-mer length used in contigging. This is usually derived from the parameters, and so only needs to be specified if the
-restart is only scaffolding rounds, and no contigging rounds, e.g.
+restart is only scaffolding rounds, and no contigging rounds. For example, the following command will restart after the scaffolding
+round with `k=99` and will run run two more scaffolding rounds with `k=55` and `k=21`:
 
-`mhm2.py -o outdir -r reads.fq -c scaff-contigs-33.fasta --max-kmer-len 99`
+`mhm2.py -o outdir -r reads.fq -c scaff-contigs-99.fasta --max-kmer-len 99 -s 55,21`
 							  
 **`--prev-kmer-len K`**
 
