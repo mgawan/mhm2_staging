@@ -327,19 +327,24 @@ def print_err_msgs(err_msgs):
     err_msgs.append('==============================================')
     if len(_output_dir) == 0:
         _output_dir = os.getcwd() + "/"
-    elif _output_dir[0] != '/':
-        _output_dir = os.getcwd() + "/" + _output_dir
-    print_red("Check " + _output_dir + "err.log for details")
-    # keep track of all msg copies so we don't print duplicates
-    seen_msgs = {}
-    with open(_output_dir + 'err.log', 'a') as f:
+        # we have not yet entered the output directory, so this is a failure of the command line
+        # and we need to dump all the error messages to the console
         for msg in err_msgs:
-            clean_msg = msg.strip()
-            #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
-            if clean_msg not in seen_msgs:
-                f.write(clean_msg + '\n')
-                f.flush()
-                seen_msgs[clean_msg] = True
+            print(msg.strip())
+    else:
+        if _output_dir[0] != '/':
+            _output_dir = os.getcwd() + "/" + _output_dir
+        print_red("Check " + _output_dir + "err.log for details")
+        # keep track of all msg copies so we don't print duplicates
+        seen_msgs = {}
+        with open(_output_dir + 'err.log', 'a') as f:
+            for msg in err_msgs:
+                clean_msg = msg.strip()
+                #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
+                if clean_msg not in seen_msgs:
+                    f.write(clean_msg + '\n')
+                    f.flush()
+                    seen_msgs[clean_msg] = True
 
 
 def main():
@@ -377,7 +382,7 @@ def main():
         options.procs = num_nodes * get_job_cores_per_node()
 
     cmd = ['upcxx-run', '-n', str(options.procs), '-N', str(num_nodes)]
-    
+
     # special spawner for summit -- executes jsrun and picks up job size from the environment!
     if 'LMOD_SYSTEM_NAME' in os.environ and os.environ['LMOD_SYSTEM_NAME'] == "summit":
         print("This is Summit - executing custom script mhm2-upcxx-run-summit to spawn the job")
@@ -385,10 +390,10 @@ def main():
         cmd = [mhm2_binary_path + "-upcxx-run-summit"]
         if 'UPCXX_RUN_SUMMIT_OPTS' in os.environ:
             cmd.extend(os.environ['UPCXX_RUN_SUMMIT_OPTS'].split())
-        
+
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
         cmd.extend(['-shared-heap', options.shared_heap]) # both upcxx-run and upcxx-run-summit support this
-        
+
     cmd.extend(['--', mhm2_binary_path])
     cmd.extend(unknown_options)
 
@@ -449,13 +454,15 @@ def main():
             _err_thread.join()
             if _proc.returncode < 0:
                 _proc.returncode *= -1
-            if _proc.returncode > 128:
+            if _proc.returncode > 128 and _proc.returncode != 255:
                 _proc.returncode -= 128
             if _proc.returncode not in [0, 15] or not status:
                 signame = ''
                 if _proc.returncode <= len(SIGNAMES) and _proc.returncode > 0:
                     signame = ' (' + SIGNAMES[_proc.returncode - 1] + ')'
-                print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame)
+                if _proc.returncode != 255:
+                    # 255 is the return code from the CLI parser, so we don't want to print this
+                    print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame, rc)
                 signals_found = {}
                 for err_msg in err_msgs:
                     for signame in SIGNAMES:
@@ -467,7 +474,7 @@ def main():
                     if signame in signals_found:
                         print_red("  Found ", signals_found[signame], " occurences of ", signame)
 
-                err_msgs.append("ERROR: subprocess terminated with return code " + str(_proc.returncode) + " " + signame)
+                #err_msgs.append("ERROR: subprocess terminated with return code " + str(_proc.returncode) + " " + signame)
                 print_err_msgs(err_msgs)
                 if completed_round and options.auto_resume:
                     print_red('Trying to restart with output directory ', _output_dir)

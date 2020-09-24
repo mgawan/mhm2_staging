@@ -39,7 +39,7 @@ nodes).
 An alternative to the pure debug version is the "release" debug version, which still captures a reasonable amount of debugging
 information, but is a lot faster (although still up to 2x slower than the release version):
 
-`./build.sh ReleaseWithDebug`
+`./build.sh RelWithDebInfo`
 
 The `./build.sh` script will install the binaries by default into the `install/bin` subdirectory in the repository root
 directory. To set a different install directory, set the environment variable `MHM2_INSTALL_PATH`, e.g.:
@@ -50,7 +50,7 @@ Once MHM2 has been built once, you can rebuild with
 
 `./build.sh`
 
-and it will build using the previously chosen setting (`Release`, `Debug`, or `ReleaseWithDebug`).
+and it will build using the previously chosen setting (`Release`, `Debug`, or `RelWithDebInfo`).
 
 You can also run
 
@@ -86,7 +86,8 @@ A list of all the command line options can be found by running with `-h`. Some o
 single character and a long form, starting with a double-dash). In the list [below](#basic-options), where both a short form and a
 long form exist, they are separated by a comma. The type of the option is indicated as one of `STRING` (a string of characters), `INT` (an
 integer), `FLOAT` (a floating point value) or `BOOL` (a boolean flag). For `BOOL`, the option can be given as `true`, `false`,
-`yes`, `no`, `0`, `1`, or omitted altogether, in which case the option will be `true`.
+`yes`, `no`, `0`, `1`, or omitted altogether, in which case the option will be `true`, and if an option is specfied, the `=` must be used,
+e.g. `mhm2.py --checkpoint=false`
 
 By default, the run will generate files in the output directory (see the [output](#output-dir) option below). At a minimum, this
 will include the following files:
