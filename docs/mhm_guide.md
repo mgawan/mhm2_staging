@@ -159,7 +159,6 @@ value to 0, i.e. `-s 0`.
 
 The minimum length for contigs to be included in the final assembly, `final_assembly.fasta`. This defaults to 500.
 
-<a name="output-dir"></a>
 **`-o, --output STRING`** 
 
 The name for the output directory. If not specified, it will be set to a default value of the following form:

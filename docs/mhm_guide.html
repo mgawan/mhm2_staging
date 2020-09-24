@@ -439,7 +439,7 @@ mv reads.fastq data</code></pre>
 <p>The <em>k</em>-mer lengths used for the scaffolding rounds. In MHM2, the contigging rounds are followed by one or more scaffolding rounds. These rounds usually proceed from a high <em>k</em> to a low one, i.e. the reverse ordering of contigging. This option defaults to <code>-s 99,33</code>. More rounds may improve contiguity but will likely increase misassemblies. To disable scaffolding altogether, set this value to 0, i.e. <code>-s 0</code>.</p>
 <p><strong><code>--min-ctg-print-len INT</code></strong></p>
 <p>The minimum length for contigs to be included in the final assembly, <code>final_assembly.fasta</code>. This defaults to 500.</p>
-<p><a name="output-dir"></a> <strong><code>-o, --output STRING</code></strong></p>
+<p><strong><code>-o, --output STRING</code></strong></p>
 <p>The name for the output directory. If not specified, it will be set to a default value of the following form:</p>
 <p><code>mhm2-run-&lt;READS_FNAME1&gt;-n&lt;PROCS&gt;-N&lt;NODES&gt;-YYMMDDhhmmss</code></p>
 <p>where <code>&lt;READS_FNAME1&gt;</code> is the name of the first reads file, <code>PROCS</code> is the number of processes and <code>NODES</code> is the number of nodes. The final part is the date when the run was started: <code>YY</code> is the year, <code>MM</code> is the number of the month, <code>DD</code> is the day of the month, <code>hh</code> is the hour of day, <code>mm</code> is the minute and <code>ss</code> is the second. Be warned that if two runs are started at exactly the same time, with the same parameters, they could both end up running in the same output directory, which will lead to corrupted results.</p>
