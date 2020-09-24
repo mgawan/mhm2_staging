@@ -93,8 +93,8 @@ pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, in
 void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths);
 
 struct StageTimers {
-  IntermittentTimer *merge_reads, *cache_reads, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm, *cgraph,
-      *dump_ctgs, *compute_kmer_depths;
+  IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
+      *cgraph, *dump_ctgs, *compute_kmer_depths;
 };
 
 extern StageTimers stage_timers;

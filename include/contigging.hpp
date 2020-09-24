@@ -64,10 +64,8 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
 
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-  string contigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
-  if (options->restart && file_exists(contigs_fname)) {
-    ctgs.load_contigs(contigs_fname);
-  } else {
+  string uutigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
+  if (options->ctgs_fname != uutigs_fname) {
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
@@ -86,7 +84,7 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     stage_timers.dbjg_traversal->stop();
     if (is_debug || options->checkpoint) {
       stage_timers.dump_ctgs->start();
-      ctgs.dump_contigs(contigs_fname, 0);
+      ctgs.dump_contigs(uutigs_fname, 0);
       stage_timers.dump_ctgs->stop();
     }
   }

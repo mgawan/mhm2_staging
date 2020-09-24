@@ -81,62 +81,61 @@ bool Options::extract_previous_lens(vector<unsigned> &lens, unsigned k) {
   return false;
 }
 
-void Options::get_restart_options() {
-  // read existing mhm2.log and get most recent completed stage
-  ifstream log_file("mhm2.log");
-  if (!log_file.good()) SDIE("Cannot open previous log file mhm2.log");
-  string last_stage;
-  while (log_file) {
-    char buf[1000];
-    log_file.getline(buf, 999);
-    string line(buf);
-    if (line.find("Completed contig") != string::npos)
-      last_stage = line;
-    else if (line.find("Completed scaffolding") != string::npos)
-      last_stage = line;
-    if (line.find("Finished in") != string::npos) {
-      SDIE("Found the end of the previous run in mhm2.log, cannot restart");
-      upcxx::barrier();
-    }
-  }
-  if (!last_stage.empty()) {
-    auto fields = split(last_stage, ' ');
-    string stage_type = fields[3];
-    unsigned k = std::stoi(fields[7]);
-    if (stage_type == "contig") {
-      if (k == kmer_lens.back()) {
-        max_kmer_len = kmer_lens.back();
-        kmer_lens = {};
-        stage_type = "scaffolding";
-        k = scaff_kmer_lens[0];
-      } else {
-        if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
-        prev_kmer_len = k;
-      }
-      ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-    } else if (stage_type == "scaffolding") {
+bool Options::find_restart(string stage_type, int k) {
+  string new_ctgs_fname(stage_type + "-" + to_string(k) + ".fasta");
+  if (!file_exists(new_ctgs_fname)) return false;
+  if (stage_type == "contigs") {
+    if (k == kmer_lens.back() && stage_type == "contigs") {
       max_kmer_len = kmer_lens.back();
       kmer_lens = {};
-      if (k == scaff_kmer_lens.front()) {
-        ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-      } else {
-        if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
-        ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
-      }
-      if (!extract_previous_lens(scaff_kmer_lens, k))
-        SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
+      stage_type = "scaff-contigs";
+      k = scaff_kmer_lens[0];
     } else {
-      SDIE("Invalid previous stage ", stage_type, " in line '", last_stage, "', could not restart");
+      if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+      prev_kmer_len = k;
     }
-    SLOG("\n*** Restarting from previous run at stage ", stage_type,
-         " k = ", (stage_type == "contig" ? kmer_lens[0] : scaff_kmer_lens[0]), " ***\n\n");
-    SLOG(KLBLUE, "Restart options:\n", "  kmer-lens =              ", vec_to_str(kmer_lens), "\n",
-         "  scaff-kmer-lens =        ", vec_to_str(scaff_kmer_lens), "\n", "  prev-kmer-len =          ", prev_kmer_len, "\n",
-         "  max-kmer-len =           ", max_kmer_len, "\n", "  contigs =                ", ctgs_fname, KNORM, "\n");
-    if (!upcxx::rank_me() && !file_exists(ctgs_fname))
-      SDIE("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
+    ctgs_fname = new_ctgs_fname;
+  } else if (stage_type == "uutigs") {
+    if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+    kmer_lens.insert(kmer_lens.begin(), k);
+    prev_kmer_len = k;
+    ctgs_fname = new_ctgs_fname;
+  } else if (stage_type == "scaff-contigs") {
+    max_kmer_len = kmer_lens.back();
+    kmer_lens = {};
+    if (k == scaff_kmer_lens.front()) {
+      ctgs_fname = "contigs-" + to_string(k) + ".fasta";
+    } else {
+      if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
+      ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+    }
+    if (!extract_previous_lens(scaff_kmer_lens, k))
+      SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
   } else {
-    SLOG("No previously completed stage found, restarting from the beginning\n");
+    SDIE("Invalid previous stage '", stage_type, "' k ", k, ", could not restart");
+  }
+  SLOG(KLBLUE, "Restart options:\n", "  kmer-lens =              ", vec_to_str(kmer_lens), "\n",
+       "  scaff-kmer-lens =        ", vec_to_str(scaff_kmer_lens), "\n", "  prev-kmer-len =          ", prev_kmer_len, "\n",
+       "  max-kmer-len =           ", max_kmer_len, "\n", "  contigs =                ", ctgs_fname, KNORM, "\n");
+  if (!upcxx::rank_me() && !file_exists(ctgs_fname))
+    SDIE("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
+  return true;
+}
+
+void Options::get_restart_options() {
+  // check directory for most recent contigs file dump
+  bool found = false;
+  for (auto it = scaff_kmer_lens.rbegin(); it != scaff_kmer_lens.rend(); ++it) {
+    if ((found = find_restart("scaff-contigs", *it)) == true) break;
+  }
+  if (!found) {
+    for (auto it = kmer_lens.rbegin(); it != kmer_lens.rend(); ++it) {
+      if ((found = find_restart("contigs", *it)) == true) break;
+      if ((found = find_restart("uutigs", *it)) == true) break;
+    }
+  }
+  if (!found) {
+    SWARN("No previously completed stage found, restarting from the beginning\n");
   }
 }
 

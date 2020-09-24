@@ -216,7 +216,7 @@ void Contigs::load_contigs(const string &ctgs_fname) {
     return f.tellg();
   };
 
-  SLOG_VERBOSE("Loading fasta file ", ctgs_fname, "\n");
+  SLOG_VERBOSE("Loading contigs from fasta file ", ctgs_fname, "\n");
   BarrierTimer timer(__FILEFUNC__);
   contigs.clear();
   string line;
@@ -252,6 +252,6 @@ void Contigs::load_contigs(const string &ctgs_fname) {
   }
   progbar.done();
   barrier();
-  SLOG_VERBOSE("Found ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs\n");
-  SLOG_VERBOSE("Total length ", reduce_one(tot_len, op_fast_add, 0).wait(), "\n");
+  SLOG_VERBOSE("Loaded ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs (",
+               get_size_str(reduce_one(tot_len, op_fast_add, 0).wait()), ") from ", ctgs_fname, "\n");
 }

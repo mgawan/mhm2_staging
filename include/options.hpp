@@ -75,6 +75,8 @@ class Options {
 
   void setup_log_file();
 
+  bool find_restart(string stage_type, int k);
+
  public:
   vector<string> reads_fnames;
   vector<string> paired_fnames;
