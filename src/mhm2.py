@@ -463,7 +463,7 @@ def main():
                     signame = ' (' + SIGNAMES[_proc.returncode - 1] + ')'
                 if _proc.returncode != 255:
                     # 255 is the return code from the CLI parser, so we don't want to print this
-                    print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame, rc)
+                    print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame)
                 signals_found = {}
                 for err_msg in err_msgs:
                     for signame in SIGNAMES:
