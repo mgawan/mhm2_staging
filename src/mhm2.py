@@ -407,14 +407,15 @@ def main():
     if not (os.path.exists(mhm2_lib_path)):
         die("Cannot find mhm2 lib install in '", mhm2_lib_path, "'")
 
-    if which('nvcc'):
-        # FIXME: this ugly hack is because we need to load a shared library on Cori GPU nodes,
-        # which can't be done with the craype environment. Not needed anywhere else :(
-        # The intel library path is only needed for the intel compiler. Sigh.
-        runenv['LD_LIBRARY_PATH'] = mhm2_lib_path + ':/usr/lib64/slurmpmi/:/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/'
-        print('Setting LD_LIBRARY_PATH=' + runenv['LD_LIBRARY_PATH'])
+    # This should no longer be necessary with the static GPU build fixes of df8cc23, leaving here in case problems reoccur
+    #if which('nvcc'):
+    #    # FIXME: this ugly hack is because we need to load a shared library on Cori GPU nodes,
+    #    # which can't be done with the craype environment. Not needed anywhere else :(
+    #    # The intel library path is only needed for the intel compiler. Sigh.
+    #    runenv['LD_LIBRARY_PATH'] = mhm2_lib_path + ':/usr/lib64/slurmpmi/:/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/'
+    #    print('Setting LD_LIBRARY_PATH=' + runenv['LD_LIBRARY_PATH'])
 
-    restating = False
+    restarting = False
     err_msgs = []
     while True:
         print(str(datetime.datetime.now()) + ' ' + 'executing:\n', ' '.join(cmd))
@@ -526,8 +527,6 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    # remove the .py from this script as the mhm2 wrapper needs to be excecuted for proper environment variable detection
-    sys.argv[0] = os.path.splitext(sys.argv[0])[0]
     status = 1
     try:
         status = main()

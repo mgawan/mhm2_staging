@@ -24,8 +24,14 @@ int main(int argc, char **argv) {
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
   auto init_start_t = start_t;
+  // keep the exact command line arguments before options may have modified anything
+  string executed = argv[0];
+  executed += ".py"; // assume the python wrapper was actually called
+  for (int i = 1; i < argc; i++) executed = executed + " " + argv[i];
   auto options = make_shared<Options>();
   if (!options->load(argc, argv)) return -1;
+  SLOG_VERBOSE("Executed as: ", executed, "\n");
+  
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
