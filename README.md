@@ -1,4 +1,3 @@
-
 # MetaHipMer2 - MHM2 #
 
 [MetaHipMer (*MHM*)](https://sites.google.com/lbl.gov/exabiome/downloads?authuser=0) is a *de novo* metagenome short-read assembler. This is version 2 (MHM2), which is written entirely in
@@ -11,4 +10,5 @@ of the [Exascale Computing Project](https://www.exascaleproject.org) and in seve
 
 Information about building, installing and running MHM2 can be found in the [user guide](docs/mhm_guide.md)
 
-Information about the latest release can be found in the [release notes](ChangeLog.md)
+Information about the latest release can be found in the  and the [change log](ChangeLog.md)
+
