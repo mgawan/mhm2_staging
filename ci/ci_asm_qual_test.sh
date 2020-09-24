@@ -1,9 +1,9 @@
 #!/bin/bash
 
-mhmxx_install_dir=$(dirname $(dirname $(realpath $0) ) )
-if [ -n "$1" ] || [ ! -x ${mhmxx_install_dir}/bin/ci_asm_qual_test.sh ]
+mhm2_install_dir=$(dirname $(dirname $(realpath $0) ) )
+if [ -n "$1" ] || [ ! -x ${mhm2_install_dir}/bin/ci_asm_qual_test.sh ]
 then
-  mhmxx_install_dir=$(realpath $1)
+  mhm2_install_dir=$(realpath $1)
 fi
 
 refs=arcticsynth-refs.fa
@@ -20,5 +20,5 @@ fi
 wd=`pwd`
 test_dir=$wd/test-arctic-sample0
 rm -rf $test_dir
-$mhmxx_install_dir/bin/mhmxx.py -r $reads -o $test_dir --checkpoint=no
-$mhmxx_install_dir/bin/check_asm_quality.py --asm-dir $test_dir --expected-quals $mhmxx_install_dir/share/good-arctic-sample0.txt --refs $wd/$refs
+$mhm2_install_dir/bin/mhm2.py -r $reads -o $test_dir --checkpoint=no
+$mhm2_install_dir/bin/check_asm_quality.py --asm-dir $test_dir --expected-quals $mhm2_install_dir/share/good-arctic-sample0.txt --refs $wd/$refs

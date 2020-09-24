@@ -364,10 +364,10 @@ def main():
         print("--auto-resume is enabled: will try to restart if run fails")
 
     check_exec('upcxx-run', '-h', 'UPC++')
-    # expect mhmxx to be in same directory as mhmxx.py
-    mhmxx_binary_path = os.path.split(sys.argv[0])[0] + '/mhmxx'
-    if not (os.path.exists(mhmxx_binary_path) or which(mhmxx_binary_path)):
-        die("Cannot find binary mhmxx in '", mhmxx_binary_path, "'")
+    # expect mhm2 to be in same directory as mhm2.py
+    mhm2_binary_path = os.path.split(sys.argv[0])[0] + '/mhm2'
+    if not (os.path.exists(mhm2_binary_path) or which(mhm2_binary_path)):
+        die("Cannot find binary mhm2 in '", mhm2_binary_path, "'")
 
     #cores_per_node = int(options.procs_per_node)
     #if cores_per_node == 0:
@@ -380,33 +380,33 @@ def main():
     
     # special spawner for summit -- executes jsrun and picks up job size from the environment!
     if 'LMOD_SYSTEM_NAME' in os.environ and os.environ['LMOD_SYSTEM_NAME'] == "summit":
-        print("This is Summit - executing custom script mhmxx-upcxx-run-summit to spawn the job")
-        # expect mhmxx-upcxx-run-summit to be in same directory as mhmxx.py too
-        cmd = [mhmxx_binary_path + "-upcxx-run-summit"]
+        print("This is Summit - executing custom script mhm2-upcxx-run-summit to spawn the job")
+        # expect mhm2-upcxx-run-summit to be in same directory as mhm2.py too
+        cmd = [mhm2_binary_path + "-upcxx-run-summit"]
         if 'UPCXX_RUN_SUMMIT_OPTS' in os.environ:
             cmd.extend(os.environ['UPCXX_RUN_SUMMIT_OPTS'].split())
         
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
         cmd.extend(['-shared-heap', options.shared_heap]) # both upcxx-run and upcxx-run-summit support this
         
-    cmd.extend(['--', mhmxx_binary_path])
+    cmd.extend(['--', mhm2_binary_path])
     cmd.extend(unknown_options)
 
-    print("Executing mhmxx under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
+    print("Executing mhm2 under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
     print("Executed as:" + " ".join(sys.argv))
     print("Setting GASNET_COLL_SCRATCH_SIZE=4M")
     # it appears that this is still needed
     runenv = dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M")
 
-    mhmxx_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
-    if not (os.path.exists(mhmxx_lib_path)):
-        die("Cannot find mhmxx lib install in '", mhmxx_lib_path, "'")
+    mhm2_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
+    if not (os.path.exists(mhm2_lib_path)):
+        die("Cannot find mhm2 lib install in '", mhm2_lib_path, "'")
 
     if which('nvcc'):
         # FIXME: this ugly hack is because we need to load a shared library on Cori GPU nodes,
         # which can't be done with the craype environment. Not needed anywhere else :(
         # The intel library path is only needed for the intel compiler. Sigh.
-        runenv['LD_LIBRARY_PATH'] = mhmxx_lib_path + ':/usr/lib64/slurmpmi/:/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/'
+        runenv['LD_LIBRARY_PATH'] = mhm2_lib_path + ':/usr/lib64/slurmpmi/:/opt/intel/compilers_and_libraries_2019.3.199/linux/compiler/lib/intel64_lin/'
         print('Setting LD_LIBRARY_PATH=' + runenv['LD_LIBRARY_PATH'])
 
     restating = False
@@ -519,7 +519,7 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    # remove the .py from this script as the mhmxx wrapper needs to be excecuted for proper environment variable detection
+    # remove the .py from this script as the mhm2 wrapper needs to be excecuted for proper environment variable detection
     sys.argv[0] = os.path.splitext(sys.argv[0])[0]
     status = 1
     try:
@@ -528,7 +528,7 @@ if __name__ == "__main__":
         raise
     except:
         e = sys.exc_info()[0]
-        print_red("\n", "\nCaught an exception %s in mhmxx.py!\n\n" % e)
+        print_red("\n", "\nCaught an exception %s in mhm2.py!\n\n" % e)
         traceback.print_exc(file=sys.stderr)
     finally:
         exit_all(status)

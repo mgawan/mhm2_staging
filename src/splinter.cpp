@@ -40,29 +40,24 @@
  form.
 */
 
-
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <regex>
 #include <upcxx/upcxx.hpp>
 
+#include "alignments.hpp"
+#include "contigs.hpp"
+#include "ctg_graph.hpp"
+#include "fastq.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "utils.hpp"
-
-#include "ctg_graph.hpp"
-#include "contigs.hpp"
-#include "alignments.hpp"
-#include "fastq.hpp"
 
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
-
 static CtgGraph *_graph = nullptr;
-
-
 
 struct AlnStats {
   int64_t nalns, unaligned, short_alns, containments, circular, bad_overlaps;
@@ -70,24 +65,23 @@ struct AlnStats {
   void print() {
     int64_t tot_nalns = reduce_one(nalns, op_fast_add, 0).wait();
     SLOG_VERBOSE(setprecision(2), fixed, "Processed ", tot_nalns, " alignments:\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    unaligned:          ",
-                 perc_str(reduce_one(unaligned, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    containments:       ",
-                 perc_str(reduce_one(containments, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    short alns:         ",
-                 perc_str(reduce_one(short_alns, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    circular:           ",
-                 perc_str(reduce_one(circular, op_fast_add, 0).wait(), tot_nalns), "\n");
-    SLOG_VERBOSE(setprecision(2), fixed, "    bad overlaps:       ",
-                 perc_str(reduce_one(bad_overlaps, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed,
+                 "    unaligned:          ", perc_str(reduce_one(unaligned, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed,
+                 "    containments:       ", perc_str(reduce_one(containments, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed,
+                 "    short alns:         ", perc_str(reduce_one(short_alns, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed,
+                 "    circular:           ", perc_str(reduce_one(circular, op_fast_add, 0).wait(), tot_nalns), "\n");
+    SLOG_VERBOSE(setprecision(2), fixed,
+                 "    bad overlaps:       ", perc_str(reduce_one(bad_overlaps, op_fast_add, 0).wait(), tot_nalns), "\n");
   }
 };
-
 
 // gets all the alns for a single read
 static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read, int64_t *nalns, int64_t *unaligned) {
   string start_read_id = "";
-  for (; i < (int64_t) alns.size(); i++) {
+  for (; i < (int64_t)alns.size(); i++) {
     Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
@@ -102,8 +96,8 @@ static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read
     int unaligned_right = min(aln.rlen - aln.rstop, aln.clen - aln.cstop);
     if (unaligned_left > KLIGN_UNALIGNED_THRES || unaligned_right > KLIGN_UNALIGNED_THRES) {
       (*unaligned)++;
-//      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
-//          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");
+      //      DBG("unaligned ", aln.read_id, " ", aln.rstart, " ", aln.rstop, " ", aln.rlen, " ",
+      //          aln.cid, " ", aln.cstart, " ", aln.cstop, " ", aln.clen, " ", aln.orient, " ", aln.score1, " ", aln.score2, "\n");
     } else {
       alns_for_read.push_back(aln);
     }
@@ -112,7 +106,6 @@ static void get_alns_for_read(Alns &alns, int64_t &i, vector<Aln> &alns_for_read
   }
 }
 
-
 static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
   struct AlnCoords {
     int start, stop;
@@ -120,12 +113,14 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
 
   auto get_aln_coords = [](const Aln *aln) -> AlnCoords {
     // get contig start and end positions in read coordinate set
-    return { .start = aln->rstart - aln->cstart, .stop = aln->rstop + (aln->clen - aln->cstop) };
+    return {.start = aln->rstart - aln->cstart, .stop = aln->rstop + (aln->clen - aln->cstop)};
   };
 
   auto is_contained = [](const AlnCoords &ctg1, const AlnCoords &ctg2) -> bool {
-    if (ctg1.start >= ctg2.start && ctg1.stop <= ctg2.stop) return true;
-    else return false;
+    if (ctg1.start >= ctg2.start && ctg1.stop <= ctg2.stop)
+      return true;
+    else
+      return false;
   };
 
   AlnCoords ctg1 = get_aln_coords(aln1);
@@ -166,15 +161,26 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
     return false;
   }
   char orient1 = aln1->orient;
-  CidPair cids = { .cid1 = aln1->cid, .cid2 = aln2->cid };
+  CidPair cids = {.cid1 = aln1->cid, .cid2 = aln2->cid};
   if (aln1->cid < aln2->cid) {
     swap(end1, end2);
     swap(cids.cid1, cids.cid2);
     orient1 = aln2->orient;
   }
-  Edge edge = { .cids = cids, .end1 = end1, .end2 = end2, .gap = gap, .support = 1, .aln_len = min_aln_len,
-                .aln_score = min_aln_score, .edge_type = EdgeType::SPLINT, .seq = "",
-                .mismatch_error = false, .conflict_error = false, .excess_error = false, .short_aln = false, .gap_reads = {}};
+  Edge edge = {.cids = cids,
+               .end1 = end1,
+               .end2 = end2,
+               .gap = gap,
+               .support = 1,
+               .aln_len = min_aln_len,
+               .aln_score = min_aln_score,
+               .edge_type = EdgeType::SPLINT,
+               .seq = "",
+               .mismatch_error = false,
+               .conflict_error = false,
+               .excess_error = false,
+               .short_aln = false,
+               .gap_reads = {}};
   if (edge.gap > 0) {
     edge.gap_reads = vector<GapRead>{GapRead(aln1->read_id, gap_start, orient1, cids.cid1)};
     _graph->add_pos_gap_read(aln1->read_id);
@@ -182,7 +188,6 @@ static bool add_splint(const Aln *aln1, const Aln *aln2, AlnStats &stats) {
   _graph->add_or_update_edge(edge);
   return true;
 }
-
 
 void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   BarrierTimer timer(__FILEFUNC__);
@@ -192,15 +197,15 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   ProgressBar progbar(alns.size(), "Adding edges to graph from splints");
   int64_t aln_i = 0;
   int64_t num_splints = 0;
-  while (aln_i < (int64_t) alns.size()) {
+  while (aln_i < (int64_t)alns.size()) {
     vector<Aln> alns_for_read;
     t_get_alns.start();
     get_alns_for_read(alns, aln_i, alns_for_read, &stats.nalns, &stats.unaligned);
     t_get_alns.stop();
     progbar.update(aln_i);
-    for (int i = 0; i < (int) alns_for_read.size(); i++) {
+    for (int i = 0; i < (int)alns_for_read.size(); i++) {
       auto aln = &alns_for_read[i];
-      for (int j = i + 1; j < (int) alns_for_read.size(); j++) {
+      for (int j = i + 1; j < (int)alns_for_read.size(); j++) {
         progress();
         auto other_aln = &alns_for_read[j];
         if (other_aln->read_id != aln->read_id) DIE("Mismatched read ids: ", other_aln->read_id, " != ", aln->read_id, "\n");
@@ -214,5 +219,3 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph) {
   stats.print();
   SLOG_VERBOSE("Found ", reduce_one(num_splints, op_fast_add, 0).wait(), " splints\n");
 }
-
-

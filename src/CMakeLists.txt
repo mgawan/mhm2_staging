@@ -41,12 +41,12 @@
 cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
 
 if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
-  message(STATUS "mhmxx is using the UPCXX::upcxx library interface: ${UPCXX_LIBRARIES}")
+  message(STATUS "MHM2 is using the UPCXX::upcxx library interface: ${UPCXX_LIBRARIES}")
   find_package(UPCXX)
 else()
   find_program(UPCXX_EXEC upcxx)
   set(CMAKE_CXX_COMPILER ${UPCXX_EXEC})
-  message(STATUS "mhmxx is using upcxx directly as the UPCXX::upcxx library interface is not available in this low version of cmake: ${CMAKE_VERSION}"    )
+  message(STATUS "MHM2 is using upcxx directly as the UPCXX::upcxx library interface is not available in this low version of cmake: ${CMAKE_VERSION}"    )
   unset(UPCXX_LIBRARIES)
 endif()
 
@@ -85,7 +85,25 @@ include_directories("ssw")
 add_subdirectory(ssw)
 
 set(TGTS)
-foreach(tgt fastq)
+add_library(hash_funcs OBJECT hash_funcs.c)
+list(APPEND TGTS $<TARGET_OBJECTS:hash_funcs>)
+
+# build all the extern template souce code instantiation explosion
+set(EXTERN_TEMPLATE_FILES)
+foreach(KMER_LENGTH ${MHM2_KMER_LENGTHS})
+  foreach(TEMPLATE "kmer_dht" "kcount" "kmer" "klign" "scaffolding" "contigging" "post_assembly")
+    set(TEMPLATE_FILE "${TEMPLATE}-extern-template-${KMER_LENGTH}")
+    configure_file("${TEMPLATE}-extern-template.in.cpp" "${TEMPLATE_FILE}.cpp" @ONLY)
+    list(APPEND EXTERN_TEMPLATE_FILES ${TEMPLATE_FILE})
+  endforeach()
+endforeach()
+
+
+foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options kmer kcount kmer_dht 
+            merge_reads dbjg_traversal klign cgraph build_ctg_graph
+            walk_ctg_graph spanner splinter localassm histogrammer aln_depths
+            ${EXTERN_TEMPLATE_FILES}
+        )
   add_library(${tgt} OBJECT ${tgt}.cpp)
   if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
     target_link_libraries(${tgt} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
@@ -93,35 +111,32 @@ foreach(tgt fastq)
   list(APPEND TGTS $<TARGET_OBJECTS:${tgt}>)
 endforeach()
 
-add_executable(mhmxx
-    main.cpp merge_reads.cpp kcount.cpp dbjg_traversal.cpp hash_funcs.c klign.cpp cgraph.cpp build_ctg_graph.cpp
-    walk_ctg_graph.cpp spanner.cpp splinter.cpp localassm.cpp histogrammer.cpp aln_depths.cpp
-    ${TGTS}
-)
+add_executable(mhm2 main.cpp ${TGTS})
 
 if(ENABLE_CUDA)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR})
     include_directories("adept-sw")
     add_subdirectory(adept-sw)
-    set_property(TARGET mhmxx PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # just to be sure. It should be off in parent dir
-    target_link_libraries(mhmxx
+    set_property(TARGET mhm2 PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # just to be sure. It should be off in parent dir
+    target_link_libraries(mhm2
         Threads::Threads
         SSW_LIBRARY
         ${ZLIB_LIBRARIES}
         ${UPCXX_LIBRARIES}
         ${UPCXX_UTILS_LIBRARIES}
-        MHMXX_VERSION_LIB
+        MHM2_VERSION_LIB
         ADEPT_SW_LIBRARY_static)
 
 else()
-    target_link_libraries(mhmxx
+    target_link_libraries(mhm2
         Threads::Threads
         SSW_LIBRARY
         ${ZLIB_LIBRARIES}
         ${UPCXX_LIBRARIES}
         ${UPCXX_UTILS_LIBRARIES}
-        MHMXX_VERSION_LIB)
+        MHM2_VERSION_LIB)
 endif()
 
-install(TARGETS mhmxx DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(TARGETS mhm2 DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
-install(PROGRAMS mhmxx.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+install(PROGRAMS mhm2.py DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

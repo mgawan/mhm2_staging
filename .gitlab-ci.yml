@@ -1,7 +1,7 @@
 variables:
   GIT_STRATEGY: fetch
   REGISTRY: registry.gitlab.com
-  APPLICATION: mhmxx
+  APPLICATION: mhm2
   TEST_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:latest
   RELEASE_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:$CI_BUILD_REF_NAME
   HULK_UPCXX_VER: 2020.3.8
@@ -30,9 +30,9 @@ Cori:build:
     - pwd
     - date
     - echo "Establishing variables"
-    - export MHMXX_SOURCE=$(pwd)
-    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
-    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export MHM2_SOURCE=$(pwd)
+    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhm2-${USER}
+    - export SCRATCH=${BASE}/mhm2-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export INSTALL_PREFIX=${SCRATCH}/install
     - export BUILD_PREFIX=${SCRATCH}/build
     - export RUN_PREFIX=${SCRATCH}/runs
@@ -40,41 +40,41 @@ Cori:build:
     - mkdir -p ${BASE}
     - rm -rf ${SCRATCH}
     - echo "Cleaning out old installs"
-    - find ${BASE} -maxdepth 1  -name 'mhmxx-*'  -mtime +4 -type d -exec rm -rf '{}' ';' || /bin/true
+    - find ${BASE} -maxdepth 1  -name 'mhm*'  -mtime +4 -type d -exec rm -rf '{}' ';' || /bin/true
     - mkdir -p ${SCRATCH} ${RUN_PREFIX}
     - exec >  >(tee -ia ${SCRATCH}/build.log)
     - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)    
     - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"
     - lmstat -a -c $INTEL_LICENSE_FILE || /bin/true
     - echo "Loading KNL modules for upcxx on cori GNU"
-    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - source ${MHM2_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - module list
-    - export MHMXX_BUILD=${BUILD_PREFIX}-knl-dbg
-    - mkdir -p ${MHMXX_BUILD}
-    - cd $MHMXX_BUILD
+    - export MHM2_BUILD=${BUILD_PREFIX}-knl-dbg
+    - mkdir -p ${MHM2_BUILD}
+    - cd $MHM2_BUILD
     - echo "Building KNL GNU Debug"
-    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE}
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-dbg -DCMAKE_BUILD_TYPE=Debug ${MHM2_SOURCE}
     - make -j 12 all install
-    - export MHMXX_BUILD=${BUILD_PREFIX}-knl-reldbg
-    - mkdir -p ${MHMXX_BUILD}
-    - cd $MHMXX_BUILD
+    - export MHM2_BUILD=${BUILD_PREFIX}-knl-reldbg
+    - mkdir -p ${MHM2_BUILD}
+    - cd $MHM2_BUILD
     - echo "Building KNL GNU RelWithDebInfo"
-    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-reldbg -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE}
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-reldbg -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHM2_SOURCE}
     - make -j 12 all install
-    - export MHMXX_BUILD=${BUILD_PREFIX}-knl
-    - mkdir -p ${MHMXX_BUILD}
-    - cd $MHMXX_BUILD
+    - export MHM2_BUILD=${BUILD_PREFIX}-knl
+    - mkdir -p ${MHM2_BUILD}
+    - cd $MHM2_BUILD
     - echo "Building KNL GNU Release"
-    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHM2_SOURCE}
     - make -j 12 all install
     - echo "Loading Haswell modules for upcxx GNU"
-    - source ${MHMXX_SOURCE}/.env-cori-haswell/gnu.sh
+    - source ${MHM2_SOURCE}/contrib/environments/cori-haswell/gnu.sh
     - module list
-    - export MHMXX_BUILD=${BUILD_PREFIX}-haswell
-    - mkdir -p ${MHMXX_BUILD}
-    - cd $MHMXX_BUILD
+    - export MHM2_BUILD=${BUILD_PREFIX}-haswell
+    - mkdir -p ${MHM2_BUILD}
+    - cd $MHM2_BUILD
     - echo "Building Haswell GNU Release"
-    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE}
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Release ${MHM2_SOURCE}
     - make -j 12 all install
     - echo "Done building"
 
@@ -90,15 +90,15 @@ Cori:validation:
     - date
     - export GASNET_BACKTRACE=1
     - echo "Establishing variables"
-    - export MHMXX_SOURCE=$(pwd)
-    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
-    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export MHM2_SOURCE=$(pwd)
+    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhm2-${USER}
+    - export SCRATCH=${BASE}/mhm2-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export INSTALL_PREFIX=${SCRATCH}/install
     - export BUILD_PREFIX=${SCRATCH}/build
     - export RUN_PREFIX=${SCRATCH}/runs
     - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
     - echo "Loading KNL modules for upcxx on cori"
-    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - source ${MHM2_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - module list
     - cd $SCRATCH
     - exec >  >(tee -ia ${SCRATCH}/validation.log)
@@ -113,8 +113,9 @@ Cori:validation:
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq -v --checkpoint=yes"
     - export GASNET_BACKTRACE=1
+
     - echo "Submitting job on 3 nodes - on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhmxx.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
+    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhm2.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhm2.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
@@ -143,15 +144,15 @@ Cori:accuracy:
     - date
     - export GASNET_BACKTRACE=1
     - echo "Establishing variables"
-    - export MHMXX_SOURCE=$(pwd)
-    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhmxx-${USER}
-    - export SCRATCH=${BASE}/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export MHM2_SOURCE=$(pwd)
+    - export BASE=${SCRATCH}/tmp/gitlab-runner-scratch-Cori-mhm2-${USER}
+    - export SCRATCH=${BASE}/mhm2-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export INSTALL_PREFIX=${SCRATCH}/install
     - export BUILD_PREFIX=${SCRATCH}/build
     - export RUN_PREFIX=${SCRATCH}/runs
     - echo "BASE=${BASE} SCRATCH=${SCRATCH}"
     - echo "Loading KNL modules for upcxx on cori"
-    - source ${MHMXX_SOURCE}/.env-cori-knl/gnu.sh
+    - source ${MHM2_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - exec >  >(tee -ia ${SCRATCH}/accuracy.log)
     - exec 2> >(tee -ia ${SCRATCH}/accuracy.err >&2)
     - echo "Logging to ${SCRATCH}/accuracy.log and .err at $(date) on $(uname -n) in $(pwd)"    
@@ -163,10 +164,10 @@ Cori:accuracy:
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq --checkpoint=no"
     - echo "Submitting job on 5 nodes... on 2 nodes is is roughly REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL}/mhmxx.py $OPTS -o ${RUN_PREFIX}/rel && echo Good")
+    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL}/mhm2.py $OPTS -o ${RUN_PREFIX}/rel && echo Good")
     - echo "Submitting full arctic job on 15 nodes"
     - export OPTS2="-r ${ARCTIC}/arctic_samples.fq --checkpoint=no"
-    - knl_job2=$(sbatch --parsable --job-name="CI-mhmxx-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL}/mhmxx.py $OPTS2 -o ${RUN_PREFIX}/rel-full && echo Good")
+    - knl_job2=$(sbatch --parsable --job-name="CI-mhm2-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL}/mhm2.py $OPTS2 -o ${RUN_PREFIX}/rel-full && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
@@ -210,11 +211,11 @@ HULK:build:
     - git submodule sync
     - git submodule update
     - BASE=/work/gitlab-ci
-    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
+    - CI_INSTALL=$BASE/ci-install-mhm2-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
     - mkdir -p ${HIPMER_DATA}
-    - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export SCRATCH=${BASE}/scratch/mhm2-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export RUN_PREFIX=${SCRATCH}/runs
     - export GASNET_BACKTRACE=1
     - echo "Verifing and/or downloading test arctic data set"
@@ -230,14 +231,14 @@ HULK:build:
     - exec >  >(tee -ia ${SCRATCH}/build.log)
     - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)
     - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"  
-    - export MHMXX_SOURCE=$(pwd)
+    - export MHM2_SOURCE=$(pwd)
     - env
     - uname -a
     - pwd
     - find * -type d -ls
     - date
     - echo "Purging any old tests"
-    - ls -td ${BASE}/scratch/mhmxx-inst-* | tail -n +8 | xargs  rm -rf '{}' ';' || /bin/true
+    - find ${BASE}/scratch -maxdepth 1  -name 'mhm*'  -mtime +4 -type d -exec rm -rf '{}' ';' || /bin/true
     - df -h
     - FAILED=""
     - echo "Checking for cmake, Berkeley UPC and UPC++"
@@ -253,17 +254,17 @@ HULK:build:
     - mkdir -p $SCRATCH/build
     - cd $SCRATCH/build
     - echo "Building Debug"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-dbg -DCMAKE_BUILD_TYPE=Debug ${MHMXX_SOURCE} || FAILED="${FAILED} Could not configure Debug"
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhm2-dbg -DCMAKE_BUILD_TYPE=Debug ${MHM2_SOURCE} || FAILED="${FAILED} Could not configure Debug"
     - make -j 16 all install || FAILED="${FAILED} Could not build Debug"
     - make clean
     - export UPCXX_CODEMODE=debug
     - echo "Building RelWithDebInfo with UPCXX_CODEMODE=$UPCXX_CODEMODE"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure RelWithDebInfo"
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhm2-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHM2_SOURCE} || FAILED="${FAILED} could not configure RelWithDebInfo"
     - make -j 16 all install || FAILED="${FAILED} Cuold not build RelWithDebInfo"
     - make clean
     - unset UPCXX_CODEMODE
     - echo "Building Release"
-    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhmxx-rel -DCMAKE_BUILD_TYPE=Release ${MHMXX_SOURCE} || FAILED="${FAILED} could not configure Release"
+    - cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}/mhm2-rel -DCMAKE_BUILD_TYPE=Release ${MHM2_SOURCE} || FAILED="${FAILED} could not configure Release"
     - make -j 16 all install || FAILED="${FAILED} Could not build Release"
     - echo "${FAILED}"
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; false ; fi
@@ -281,10 +282,10 @@ HULK:validation:
     - set -e
     - set -x
     - BASE=/work/gitlab-ci
-    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
+    - CI_INSTALL=$BASE/ci-install-mhm2-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
-    - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export SCRATCH=${BASE}/scratch/mhm2-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export RUN_PREFIX=${SCRATCH}/runs
     - export INSTALL_PREFIX=${SCRATCH}
     - export GASNET_BACKTRACE=1
@@ -301,17 +302,17 @@ HULK:validation:
     - cd ${SCRATCH}
     - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
-    - export DBG=${INSTALL_PREFIX}/mhmxx-dbg/bin/
-    - export RWDI=${INSTALL_PREFIX}/mhmxx-rwdi/bin/
-    - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
-    - echo "Starting RelWithDebInfo mhmxx on Arctic $reads"
+    - export DBG=${INSTALL_PREFIX}/mhm2-dbg/bin/
+    - export RWDI=${INSTALL_PREFIX}/mhm2-rwdi/bin/
+    - export REL=${INSTALL_PREFIX}/mhm2-rel/bin/
+    - echo "Starting RelWithDebInfo mhm2 on Arctic $reads"
     - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; fi
     - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
     - ${RWDI}/ci_asm_qual_test.sh || FAILED="${FAILED} Could not run ci_asm_qual_test"
     - if [ ! -f ./test-arctic-sample0/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta for rwdi in test-arctic-sample0" ; fi
     - mv test-arctic-sample0 ${RUN_PREFIX}/rwdi-test-arctic-sample0
     - echo "Starting debug run on with reduced workflow"
-    - ${DBG}/mhmxx.py -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run dbg"
+    - ${DBG}/mhm2.py -r $reads -o ${RUN_PREFIX}/dbg --kmer-lens 31,63 --checkpoint=no -v || FAILED="${FAILED} Could not run dbg"
     - echo "verify dbg results $(ls -la ${RUN_PREFIX}/dbg)"
     - if [ ! -f ${RUN_PREFIX}/dbg/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on dbg" ; fi
     - ${DBG}/check_asm_quality.py --asm-dir ${RUN_PREFIX}/dbg --expected-quals ${DBG}/../share/good-arctic-sample0-k31k63.txt --refs ${HIPMER_DATA}/arcticsynth-refs.fa || echo "WARN did not pass check_asm_quality.py for dbg with reduced workflow k31k63"
@@ -329,10 +330,10 @@ HULK:accuracy:
     - git submodule sync
     - git submodule update
     - BASE=/work/gitlab-ci
-    - CI_INSTALL=$BASE/ci-install-mhmxx-upcxx-${HULK_UPCXX_VER}
+    - CI_INSTALL=$BASE/ci-install-mhm2-upcxx-${HULK_UPCXX_VER}
     - export PATH=$CI_INSTALL/bin:/bin:/usr/bin:/usr/local/bin
     - export HIPMER_DATA=${BASE}/scratch/
-    - export SCRATCH=${BASE}/scratch/mhmxx-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
+    - export SCRATCH=${BASE}/scratch/mhm2-${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_NAME}-${CI_COMMIT_TAG}
     - export RUN_PREFIX=${SCRATCH}/runs
     - export INSTALL_PREFIX=${SCRATCH}
     - export GASNET_BACKTRACE=1
@@ -349,8 +350,8 @@ HULK:accuracy:
     - cd ${SCRATCH}
     - FAILED=""
     - reads=${HIPMER_DATA}/arctic_sample_0.fq 
-    - export REL=${INSTALL_PREFIX}/mhmxx-rel/bin/
-    - echo "Starting Release mhmxx on Arctic $reads"
+    - export REL=${INSTALL_PREFIX}/mhm2-rel/bin/
+    - echo "Starting Release mhm2 on Arctic $reads"
     - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; fi
     - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
     - ${REL}/ci_asm_qual_test.sh || FAILED="${FAILED} Could not run ci_asm_qual_test"

@@ -17,12 +17,12 @@ environment variable to point to a script that loads the appropriate environment
 [NERSC's Cori supercomputer](https://docs.nersc.gov/systems/cori/), you would set the following for the gnu compiler on the KNL
 partition:
 
-`export MHM2_BUILD_ENV=.env-cori-knl/gnu.sh`
+`export MHM2_BUILD_ENV=contrib/environments/cori-knl/gnu.sh`
 
 There are several scripts provided for different build choices on NERC's Cori computer and the
-[Summit supercomputer at OLCF](https://www.olcf.ornl.gov/summit/.), in directories that start with `.env-`. You do not need to use
+[Summit supercomputer at OLCF](https://www.olcf.ornl.gov/summit/.), in directories that start with `contrib/environments`. You do not need to use
 any scripts such as these when building on a Linux server, although you may want to create your own when setting up the build. On
-Cori, we recommend using either the gnu (`.env-cori-*/gnu.sh`) or cray (`.env-cori-*/cray.sh`) environments. Building with Intel is
+Cori, we recommend using either the gnu (`contrib/environments/cori-*/gnu.sh`) or cray (`contrib/environments/cori-*/cray.sh`) environments. Building with Intel is
 very slow.
 
 To build a release version (optimized for performance), execute:
@@ -72,7 +72,7 @@ make -j all install
 
 You'll need to first set the environment, e.g.:
 
-`source .env-cori-knl/gnu.sh`
+`source contrib/environments/cori-knl/gnu.sh`
 
 # Running
 

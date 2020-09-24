@@ -40,21 +40,22 @@
  form.
 */
 
-
-#include <iostream>
+#include <fcntl.h>
 #include <math.h>
-#include <algorithm>
 #include <stdarg.h>
 #include <unistd.h>
-#include <fcntl.h>
+
+#include <algorithm>
+#include <iostream>
 #include <upcxx/upcxx.hpp>
 
+#include "contigs.hpp"
+#include "kcount.hpp"
+#include "kmer_dht.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
-
+#include "upcxx_utils/reduce_prefix.hpp"
 #include "utils.hpp"
-#include "kmer_dht.hpp"
-#include "contigs.hpp"
 
 #define DBG_TRAVERSE DBG
 //#define DBG_TRAVERSE(...)
@@ -66,7 +67,7 @@ using namespace upcxx_utils;
 enum class Dirn { LEFT, RIGHT, NONE };
 #define DIRN_STR(d) ((d) == Dirn::LEFT ? "left" : (d) == Dirn::RIGHT ? "right" : "none")
 
-enum class WalkStatus { RUNNING = '-', DEADEND = 'X', FORK = 'F', CONFLICT = 'O', REPEAT = 'R', VISITED = 'V'};
+enum class WalkStatus { RUNNING = '-', DEADEND = 'X', FORK = 'F', CONFLICT = 'O', REPEAT = 'R', VISITED = 'V' };
 
 struct FragElem {
   global_ptr<FragElem> left_gptr, right_gptr;
@@ -76,8 +77,15 @@ struct FragElem {
   int64_t sum_depths;
   bool visited;
 
-  FragElem() : left_gptr(nullptr), right_gptr(nullptr), left_is_rc(false), right_is_rc(false), frag_seq(nullptr),
-               frag_len(0), sum_depths(0), visited(false) {}
+  FragElem()
+      : left_gptr(nullptr)
+      , right_gptr(nullptr)
+      , left_is_rc(false)
+      , right_is_rc(false)
+      , frag_seq(nullptr)
+      , frag_len(0)
+      , sum_depths(0)
+      , visited(false) {}
 };
 
 struct StepInfo {
@@ -128,7 +136,7 @@ static string gptr_str(global_ptr<FragElem> gptr) {
 }
 
 #ifdef DEBUG
-template<int MAX_K>
+template <int MAX_K>
 static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht, int kmer_len) {
   vector<Kmer<MAX_K>> kmers;
   Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
@@ -139,7 +147,7 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 }
 #endif
 
-template<int MAX_K>
+template <int MAX_K>
 static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext,
                                       global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
   auto kmer_rc = kmer.revcomp();
@@ -148,38 +156,45 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kme
     kmer = kmer_rc;
     is_rc = true;
   }
-  return rpc(kmer_dht->get_kmer_target_rank(kmer),
-             [](dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, bool revisit_allowed,
-                bool is_rc, global_ptr<FragElem> frag_elem_gptr) -> StepInfo {
-               KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
-               // this kmer doesn't exist, abort
-               if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND,};
-               char left = kmer_counts->left;
-               char right = kmer_counts->right;
-               if (left == 'X' || right == 'X') return {.walk_status = WalkStatus::DEADEND};
-               if (left == 'F' || right == 'F') return {.walk_status = WalkStatus::FORK};
-               if (is_rc) {
-                 left = comp_nucleotide(left);
-                 right = comp_nucleotide(right);
-                 swap(left, right);
-               }
-               // check for conflicts
-               if (prev_ext && ((dirn == Dirn::LEFT && prev_ext != right) || (dirn == Dirn::RIGHT && prev_ext != left)))
-                 return {.walk_status = WalkStatus::CONFLICT};
-               // if visited by another rank first
-               if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
-                 return {.walk_status = WalkStatus::VISITED, .count = 0, .left = 0, .right = 0,
-                         .visited_frag_elem_gptr = kmer_counts->uutig_frag};
-               // a repeat, abort (but allowed if traversing right after adding start kmer previously)
-               if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed)
-                 return {.walk_status = WalkStatus::REPEAT};
-               // mark as visited
-               kmer_counts->uutig_frag = frag_elem_gptr;
-               return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
-             }, kmer_dht, kmer, dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
+  return rpc(
+      kmer_dht->get_kmer_target_rank(kmer),
+      [](dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, bool revisit_allowed, bool is_rc,
+         global_ptr<FragElem> frag_elem_gptr) -> StepInfo {
+        KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
+        // this kmer doesn't exist, abort
+        if (!kmer_counts)
+          return {
+              .walk_status = WalkStatus::DEADEND,
+          };
+        char left = kmer_counts->left;
+        char right = kmer_counts->right;
+        if (left == 'X' || right == 'X') return {.walk_status = WalkStatus::DEADEND};
+        if (left == 'F' || right == 'F') return {.walk_status = WalkStatus::FORK};
+        if (is_rc) {
+          left = comp_nucleotide(left);
+          right = comp_nucleotide(right);
+          swap(left, right);
+        }
+        // check for conflicts
+        if (prev_ext && ((dirn == Dirn::LEFT && prev_ext != right) || (dirn == Dirn::RIGHT && prev_ext != left)))
+          return {.walk_status = WalkStatus::CONFLICT};
+        // if visited by another rank first
+        if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
+          return {.walk_status = WalkStatus::VISITED,
+                  .count = 0,
+                  .left = 0,
+                  .right = 0,
+                  .visited_frag_elem_gptr = kmer_counts->uutig_frag};
+        // a repeat, abort (but allowed if traversing right after adding start kmer previously)
+        if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) return {.walk_status = WalkStatus::REPEAT};
+        // mark as visited
+        kmer_counts->uutig_frag = frag_elem_gptr;
+        return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
+      },
+      kmer_dht, kmer, dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
 }
 
-template<int MAX_K>
+template <int MAX_K>
 static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer,
                                           global_ptr<FragElem> frag_elem_gptr, Dirn dirn, string &uutig, int64_t &sum_depths,
                                           WalkTermStats &walk_term_stats) {
@@ -189,7 +204,7 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
   bool revisit_allowed = (dirn == Dirn::LEFT ? false : true);
   if (dirn == Dirn::RIGHT) uutig += substr_view(kmer_str, 1, kmer_str.length() - 2);
   while (true) {
-    //progress();
+    // progress();
     auto step_info = get_next_step(kmer_dht, kmer, dirn, prev_ext, frag_elem_gptr, revisit_allowed).wait();
     revisit_allowed = false;
     if (step_info.walk_status != WalkStatus::RUNNING) {
@@ -217,9 +232,8 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
   }
 }
 
-template<int MAX_K>
-static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                            vector<global_ptr<FragElem>> &frag_elems) {
+template <int MAX_K>
+static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
   BarrierTimer timer(__FILEFUNC__);
   // allocate space for biggest possible uutig in global storage
   WalkTermStats walk_term_stats = {0};
@@ -234,8 +248,7 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer
     // don't start any new walk if this kmer has already been visited
     if (kmer_counts->uutig_frag) continue;
     // don't start walks on kmers without extensions on both sides
-    if (kmer_counts->left == 'X' || kmer_counts->left == 'F' || kmer_counts->right == 'X' || kmer_counts->right == 'F')
-      continue;
+    if (kmer_counts->left == 'X' || kmer_counts->left == 'F' || kmer_counts->right == 'X' || kmer_counts->right == 'F') continue;
     string uutig;
     int64_t sum_depths = 0;
     global_ptr<FragElem> frag_elem_gptr = new_<FragElem>();
@@ -261,8 +274,7 @@ static int64_t print_link_stats(int64_t num_links, int64_t num_overlaps, int64_t
   auto all_num_links = reduce_one(num_links, op_fast_add, 0).wait();
   auto all_num_overlaps = reduce_one(num_overlaps, op_fast_add, 0).wait();
   auto all_num_overlaps_rc = reduce_one(num_overlaps_rc, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Found ", all_num_links, " ", dirn_str, " links with ",
-               perc_str(all_num_overlaps, all_num_links), " overlaps and ",
+  SLOG_VERBOSE("Found ", all_num_links, " ", dirn_str, " links with ", perc_str(all_num_overlaps, all_num_links), " overlaps and ",
                perc_str(all_num_overlaps_rc, all_num_links), " revcomped overlaps\n");
   return all_num_links;
 }
@@ -313,14 +325,12 @@ static void set_link_status(Dirn dirn, global_ptr<FragElem> &nb_gptr, bool &is_r
   }
 }
 
-template<int MAX_K>
-static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                             vector<global_ptr<FragElem>> &frag_elems) {
+template <int MAX_K>
+static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
   BarrierTimer timer(__FILEFUNC__);
   // put all the uutigs found by this rank into my_uutigs
-  int64_t num_equal_links = 0, num_non_recip = 0, num_short = 0,
-          num_left_links = 0, num_left_overlaps = 0, num_left_overlaps_rc = 0,
-          num_right_links = 0, num_right_overlaps = 0, num_right_overlaps_rc = 0;
+  int64_t num_equal_links = 0, num_non_recip = 0, num_short = 0, num_left_links = 0, num_left_overlaps = 0,
+          num_left_overlaps_rc = 0, num_right_links = 0, num_right_overlaps = 0, num_right_overlaps_rc = 0;
   ProgressBar progbar(frag_elems.size(), "Cleaning fragment links");
   for (auto frag_elem_gptr : frag_elems) {
     progbar.update();
@@ -338,10 +348,10 @@ static void clean_frag_links(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
       frag_elem->right_gptr = nullptr;
       continue;
     }
-    set_link_status(Dirn::LEFT, frag_elem->left_gptr, frag_elem->left_is_rc, uutig, kmer_len,
-                    num_left_overlaps, num_left_overlaps_rc, num_non_recip);
-    set_link_status(Dirn::RIGHT, frag_elem->right_gptr, frag_elem->right_is_rc, uutig, kmer_len,
-                    num_right_overlaps, num_right_overlaps_rc, num_non_recip);
+    set_link_status(Dirn::LEFT, frag_elem->left_gptr, frag_elem->left_is_rc, uutig, kmer_len, num_left_overlaps,
+                    num_left_overlaps_rc, num_non_recip);
+    set_link_status(Dirn::RIGHT, frag_elem->right_gptr, frag_elem->right_is_rc, uutig, kmer_len, num_right_overlaps,
+                    num_right_overlaps_rc, num_non_recip);
   }
   progbar.done();
   barrier();
@@ -361,9 +371,8 @@ static global_ptr<FragElem> get_other_side_gptr(const FragElem &frag_elem, globa
   return frag_elem.left_gptr;
 }
 
-static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, global_ptr<FragElem> next_gptr,
-                            string &uutig, int64_t &depths, int64_t &walk_steps, int64_t &num_repeats,
-                            vector<FragElem*> &my_frag_elems_visited) {
+static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gptr, global_ptr<FragElem> next_gptr, string &uutig,
+                            int64_t &depths, int64_t &walk_steps, int64_t &num_repeats, vector<FragElem *> &my_frag_elems_visited) {
   if (!next_gptr) return true;
   global_ptr<FragElem> prev_gptr = frag_elem_gptr;
   FragElem prev_frag_elem = *frag_elem_gptr.local();
@@ -396,25 +405,36 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
     string next_frag_seq = get_frag_seq(next_frag_elem);
     string next_frag_seq_rc = revcomp(next_frag_seq);
     if (dirn == Dirn::NONE) {
-      if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) dirn = Dirn::RIGHT;
-      else if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) dirn = Dirn::LEFT;
+      if (is_overlap(uutig, next_frag_seq, kmer_len - 1))
+        dirn = Dirn::RIGHT;
+      else if (is_overlap(next_frag_seq, uutig, kmer_len - 1))
+        dirn = Dirn::LEFT;
       if (dirn == Dirn::NONE) {
-        if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) dirn = Dirn::RIGHT;
-        else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) dirn = Dirn::LEFT;
-        else DIE("No overlap");
+        if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1))
+          dirn = Dirn::RIGHT;
+        else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1))
+          dirn = Dirn::LEFT;
+        else
+          DIE("No overlap");
       }
       DBG_TRAVERSE(padding, "Direction is set to ", DIRN_STR(dirn), "\n");
     }
     if (dirn == Dirn::LEFT) {
       int slen = next_frag_seq.length() - kmer_len + 1;
       DBG_TRAVERSE(string(slen, ' '), uutig, "\n");
-      if (is_overlap(next_frag_seq, uutig, kmer_len - 1)) uutig.insert(0, substr_view(next_frag_seq, 0, slen));
-      else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1)) uutig.insert(0, substr_view(next_frag_seq_rc, 0, slen));
-      else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
+      if (is_overlap(next_frag_seq, uutig, kmer_len - 1))
+        uutig.insert(0, substr_view(next_frag_seq, 0, slen));
+      else if (is_overlap(next_frag_seq_rc, uutig, kmer_len - 1))
+        uutig.insert(0, substr_view(next_frag_seq_rc, 0, slen));
+      else
+        DIE("No valid overlap in dirn ", DIRN_STR(dirn));
     } else {
-      if (is_overlap(uutig, next_frag_seq, kmer_len - 1)) uutig += substr_view(next_frag_seq, kmer_len - 1);
-      else if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1)) uutig += substr_view(next_frag_seq_rc, kmer_len - 1);
-      else DIE("No valid overlap in dirn ", DIRN_STR(dirn));
+      if (is_overlap(uutig, next_frag_seq, kmer_len - 1))
+        uutig += substr_view(next_frag_seq, kmer_len - 1);
+      else if (is_overlap(uutig, next_frag_seq_rc, kmer_len - 1))
+        uutig += substr_view(next_frag_seq_rc, kmer_len - 1);
+      else
+        DIE("No valid overlap in dirn ", DIRN_STR(dirn));
     }
     DBG_TRAVERSE(uutig, "\n");
     depths += (next_frag_elem.sum_depths * (1.0 - (kmer_len - 1) / next_frag_elem.frag_len));
@@ -431,7 +451,7 @@ static bool walk_frags_dirn(unsigned kmer_len, global_ptr<FragElem> frag_elem_gp
   return true;
 }
 
-template<int MAX_K>
+template <int MAX_K>
 static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems,
                           Contigs &my_uutigs) {
   BarrierTimer timer(__FILEFUNC__);
@@ -445,7 +465,7 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
       num_prev_visited++;
       continue;
     }
-    vector<FragElem*> my_frag_elems_visited;
+    vector<FragElem *> my_frag_elems_visited;
     string uutig(frag_elem->frag_seq.local());
     int64_t depths = frag_elem->sum_depths;
     int64_t walk_steps = 1;
@@ -453,7 +473,7 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
                                    my_frag_elems_visited);
     if (walk_ok)
       walk_ok = walk_frags_dirn(kmer_len, frag_elem_gptr, frag_elem->right_gptr, uutig, depths, walk_steps, num_repeats,
-                        my_frag_elems_visited);
+                                my_frag_elems_visited);
     if (walk_ok) {
       num_steps += walk_steps;
       max_steps = max(walk_steps, max_steps);
@@ -471,8 +491,8 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
   auto all_num_drops = reduce_one(num_drops, op_fast_add, 0).wait();
   auto all_num_repeats = reduce_one(num_repeats, op_fast_add, 0).wait();
   auto all_num_uutigs = reduce_one(my_uutigs.size(), op_fast_add, 0).wait();
-  SLOG_VERBOSE("Constructed ", all_num_uutigs, " uutigs with ", (double)all_num_steps / all_num_uutigs,
-               " avg path length (max ", all_max_steps, "), dropped ", perc_str(all_num_drops, all_num_uutigs), " paths\n");
+  SLOG_VERBOSE("Constructed ", all_num_uutigs, " uutigs with ", (double)all_num_steps / all_num_uutigs, " avg path length (max ",
+               all_max_steps, "), dropped ", perc_str(all_num_drops, all_num_uutigs), " paths\n");
   auto all_num_prev_visited = reduce_one(num_prev_visited, op_fast_add, 0).wait();
   auto all_num_frags = reduce_one(frag_elems.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Skipped ", perc_str(all_num_prev_visited, all_num_frags), " already visited fragments, and found ",
@@ -485,7 +505,7 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
   }
 }
 
-template<int MAX_K>
+template <int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs) {
   BarrierTimer timer(__FILEFUNC__);
   {
@@ -498,21 +518,12 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
     connect_frags(kmer_len, kmer_dht, frag_elems, my_uutigs);
   }
   // now get unique ids for the uutigs
-  atomic_domain<size_t> ad({atomic_op::fetch_add, atomic_op::load});
-  global_ptr<size_t> counter = nullptr;
-  if (!rank_me()) counter = new_<size_t>(0);
-  counter = broadcast(counter, 0).wait();
-  size_t my_counter = ad.fetch_add(counter, my_uutigs.size(), memory_order_relaxed).wait();
-  // wait until all ranks have updated the global counter
-  barrier();
-  if (!rank_me()) upcxx::delete_(counter);
-  ad.destroy();
-  // set the unique ids
-  int64_t cid = my_counter;
-  for (auto it = my_uutigs.begin(); it != my_uutigs.end(); ++it) {
-    it->id = cid;
-    cid++;
-  }
+  auto num_ctgs = my_uutigs.size();
+  auto fut = upcxx_utils::reduce_prefix(num_ctgs, upcxx::op_fast_add).then([num_ctgs, &my_uutigs](size_t my_prefix) {
+    auto my_counter = my_prefix - num_ctgs;  // get my start
+    for (auto it = my_uutigs.begin(); it != my_uutigs.end(); it++) it->id = my_counter++;
+  });
+  fut.wait();
   barrier();
 #ifdef DEBUG
   ProgressBar progbar(my_uutigs.size(), "Checking kmers in uutigs");
@@ -525,8 +536,7 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
 }
 
 #define TDG_K(KMER_LEN) \
-    template \
-    void traverse_debruijn_graph<KMER_LEN>(unsigned kmer_len, dist_object<KmerDHT<KMER_LEN>> &kmer_dht, Contigs &my_uutigs)
+  template void traverse_debruijn_graph<KMER_LEN>(unsigned kmer_len, dist_object<KmerDHT<KMER_LEN>> &kmer_dht, Contigs &my_uutigs)
 
 TDG_K(32);
 #if MAX_BUILD_KMER >= 64

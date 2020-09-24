@@ -40,31 +40,29 @@
  form.
 */
 
-#include <iostream>
+#include <fcntl.h>
 #include <math.h>
-#include <algorithm>
 #include <stdarg.h>
 #include <unistd.h>
-#include <fcntl.h>
+
+#include <algorithm>
+#include <iostream>
 #include <upcxx/upcxx.hpp>
 
+#include "alignments.hpp"
+#include "contigs.hpp"
+#include "ctg_graph.hpp"
+#include "packed_reads.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
-
-#include "ctg_graph.hpp"
 #include "utils.hpp"
-#include "contigs.hpp"
-#include "alignments.hpp"
-#include "packed_reads.hpp"
-
 
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
 
-
-void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads*> &packed_reads_list,
+void build_ctg_graph(CtgGraph *graph, int insert_avg, int insert_stddev, int kmer_len, vector<PackedReads *> &packed_reads_list,
                      Contigs &ctgs, Alns &alns);
 void walk_graph(CtgGraph *graph, int max_kmer_len, int kmer_len, int break_scaff_Ns, Contigs &ctgs);
 

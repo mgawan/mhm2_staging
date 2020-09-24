@@ -40,21 +40,21 @@
  form.
 */
 
-#include <iostream>
 #include <math.h>
+
+#include <iostream>
 #include <upcxx/upcxx.hpp>
 
+#include "alignments.hpp"
 #include "upcxx_utils/log.hpp"
+#include "upcxx_utils/ofstream.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
-
 #include "utils.hpp"
-#include "alignments.hpp"
 
 using namespace std;
 using namespace upcxx;
 using namespace upcxx_utils;
-
 
 bool bad_alignment(Aln *aln) {
   if (aln->rstart > KLIGN_UNALIGNED_THRES) return true;
@@ -65,7 +65,7 @@ bool bad_alignment(Aln *aln) {
 }
 
 pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expected_ins_stddev, int max_expected_ins_size,
-                                     const string &dump_large_alns_fname="") {
+                                     const string &dump_large_alns_fname = "") {
   BarrierTimer timer(__FILEFUNC__);
   auto unmerged_rlen = alns.calculate_unmerged_rlen();
   ProgressBar progbar(alns.size(), "Processing alignments to compute insert size");
@@ -118,7 +118,7 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
           }
           auto insert_size = max(prev_cstop, aln.cstop) - min(prev_cstart, aln.cstart);
           if (max_expected_ins_size && insert_size >= max_expected_ins_size) {
-            //WARN("large insert size: ", insert_size, " prev: ", prev_aln->clen, " ",
+            // WARN("large insert size: ", insert_size, " prev: ", prev_aln->clen, " ",
             //     prev_aln->orient, " ", prev_aln->cstart, " ", prev_aln->cstop, " ", prev_cstart, " ", prev_cstop,
             //     " current ", aln.clen, " ", aln.orient, " ", aln.cstart, " ", aln.cstop);
             // the metaquast extensive misassembly minimum size is 1000
@@ -150,7 +150,7 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
     for (auto large_alns_ctg : large_alns) {
       outf << large_alns_ctg + "\n";
     }
-    outf.close(); // syncs and write stats
+    outf.close();  // syncs and write stats
   }
 
   auto all_num_overlap_rejected = reduce_one(num_overlap_rejected, op_fast_add, 0).wait();
@@ -166,8 +166,8 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   auto all_sum_insert_size = reduce_all(sum_insert_size, op_fast_add).wait();
   if (!all_num_valid_pairs) {
     if (expected_ins_avg) {
-      WARN("Could not find any suitable alignments for calculating the insert size. Using the parameters ",
-           expected_ins_avg, " ", expected_ins_stddev);
+      WARN("Could not find any suitable alignments for calculating the insert size. Using the parameters ", expected_ins_avg, " ",
+           expected_ins_stddev);
       return {expected_ins_avg, expected_ins_stddev};
     } else {
       DIE("Could not find any suitable alignments for calculating the insert size and no parameters are set.");
@@ -182,8 +182,8 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   auto all_max_insert_size = reduce_one(max_insert_size, op_fast_max, 0).wait();
   auto all_sum_sqs = reduce_all(sum_sqs, op_fast_add).wait();
   auto insert_stddev = sqrt(all_sum_sqs / all_num_valid_pairs);
-  SLOG_VERBOSE("Calculated insert size: average ", insert_avg, " stddev ", insert_stddev,
-               " min ", all_min_insert_size, " max ", all_max_insert_size, "\n");
+  SLOG_VERBOSE("Calculated insert size: average ", insert_avg, " stddev ", insert_stddev, " min ", all_min_insert_size, " max ",
+               all_max_insert_size, "\n");
   if (expected_ins_avg) {
     if (abs(insert_avg - expected_ins_avg) > 100)
       SWARN("Large difference in calculated (", insert_avg, ") vs expected (", expected_ins_avg, ") insert average sizes");
@@ -195,4 +195,3 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   }
   return {insert_avg, insert_stddev};
 }
-

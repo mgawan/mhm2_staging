@@ -42,19 +42,8 @@
  form.
 */
 
-#include <fcntl.h>
-#include <upcxx/upcxx.hpp>
-
-#include "version.h"
-
-#include "upcxx_utils/log.hpp"
-#include "upcxx_utils/progress_bar.hpp"
-#include "zstr.hpp"
-
 #include "contigs.hpp"
-
-
-using namespace upcxx_utils;
+#include "version.h"
 
 struct Aln {
   string read_id;
@@ -67,167 +56,34 @@ struct Aln {
   string sam_string;
 
   // writes out in the format meraligner uses
-  string to_string() {
-    ostringstream os;
-    os << read_id << "\t" << rstart + 1 << "\t" << rstop << "\t" << rlen << "\t"
-       << "Contig" << cid << "\t" << cstart + 1 << "\t" << cstop << "\t" << clen << "\t"
-       << (orient == '+' ? "Plus" : "Minus") << "\t" << score1 << "\t" << score2;
-    return os.str();
-  }
+  string to_string();
 };
 
-
 class Alns {
-
   vector<Aln> alns;
   int64_t num_dups;
 
-public:
+ public:
+  Alns();
 
-  Alns() : num_dups(0) {}
+  void clear();
 
-  void clear() {
-    alns.clear();
-    vector<Aln>().swap(alns);
-  }
+  void add_aln(Aln &aln);
 
-  void add_aln(Aln &aln) {
-#ifdef DEBUG
-    // check for duplicate alns to this read - do this backwards because only the most recent entries could be for this read
-    for (auto it = alns.rbegin(); it != alns.rend(); ++it) {
-      // we have no more entries for this read
-      if (it->read_id != aln.read_id) break;
-      // now check for equality
-      if (it->rstart == aln.rstart && it->rstop == aln.rstop && it->cstart == aln.cstart && it->cstop == aln.cstop) {
-        num_dups++;
-        return;
-      }
-    }
-#endif
-    alns.push_back(aln);
-  }
+  Aln &get_aln(int64_t i);
 
-  Aln &get_aln(int64_t i) {
-    return alns[i];
-  }
+  size_t size();
 
-  size_t size() {
-    return alns.size();
-  }
+  int64_t get_num_dups();
 
-  int64_t get_num_dups() {
-    return upcxx::reduce_one(num_dups, upcxx::op_fast_add, 0).wait();
-  }
+  inline auto begin() { return alns.begin(); }
+  inline auto end() { return alns.end(); };
 
-  auto begin() {
-    return alns.begin();
-  }
+  void dump_alns(string fname);
 
-  auto end() {
-    return alns.end();
-  }
+  void dump_single_file_alns(const string fname, bool as_sam_format = false, Contigs *ctgs = nullptr);
 
-  void dump_alns(string fname) {
-    get_rank_path(fname, rank_me());
-    zstr::ofstream f(fname);
-    ostringstream out_buf;
-    ProgressBar progbar(alns.size(), "Writing alns");
-    size_t bytes_written = 0;
-    int64_t i = 0;
-    for (auto aln : alns) {
-      out_buf << aln.to_string() << std::endl;
-      progbar.update();
-      i++;
-      if (!(i % 1000)) {
-        f << out_buf.str();
-        bytes_written += out_buf.str().length();
-        out_buf = ostringstream();
-      }
-    }
-    if (!out_buf.str().empty()) {
-      f << out_buf.str();
-      bytes_written += out_buf.str().length();
-    }
-    f.close();
-    progbar.done();
-    upcxx::barrier();
-  }
+  int calculate_unmerged_rlen();
 
-  void dump_single_file_alns(const string fname, bool as_sam_format=false, Contigs *ctgs=nullptr) {
-    BarrierTimer timer(__FILEFUNC__);
-
-    string out_str = "";
-
-    // FIXME: first, all ranks must dump contig info to the file, for every contig:
-    // @SQ	SN:Contig0	LN:887
-    dist_ofstream of(fname);
-    future<> all_done;
-    for (auto &ctg : *ctgs) {
-      of << "@SQ\tSN:Contig" << to_string(ctg.id) << "\tLN:" << to_string(ctg.seq.length()) << "\n";
-    }
-    all_done = of.flush_collective();
-    
-    if (!upcxx::rank_me()) {
-      // program information
-      of << "@PG\tID:MHM2\tPN:MHM2\tVN:" << string(MHMXX_VERSION) << "\n";
-    }
-    all_done = when_all(all_done, of.flush_collective());
-    
-    for (auto aln : alns) {
-      if (!as_sam_format) 
-          of << aln.to_string() << "\n";
-      else 
-          of << aln.sam_string << "\n";
-    }
-    all_done = when_all(all_done, of.close_async());
-    all_done.wait();
-    of.report_timings().wait();
-  }
-
-  int calculate_unmerged_rlen() {
-    BarrierTimer timer(__FILEFUNC__);
-    // get the unmerged read length - most common read length
-    HASH_TABLE<int, int64_t> rlens;
-    int64_t sum_rlens = 0;
-    for (auto &aln : alns) {
-      rlens[aln.rlen]++;
-      sum_rlens += aln.rlen;
-    }
-    auto all_sum_rlens = upcxx::reduce_all(sum_rlens, op_fast_add).wait();
-    auto all_nalns = upcxx::reduce_all(alns.size(), op_fast_add).wait();
-    auto avg_rlen = all_sum_rlens / all_nalns;
-    int most_common_rlen = avg_rlen;
-    int64_t max_count = 0;
-    for (auto &rlen : rlens) {
-      if (rlen.second > max_count) {
-        max_count = rlen.second;
-        most_common_rlen = rlen.first;
-      }
-    }
-    SLOG_VERBOSE("Computed unmerged read length as ", most_common_rlen, " with a count of ", max_count, " and average of ",
-                 avg_rlen, "\n");
-    return most_common_rlen;
-  }
-  
-  void sort_alns() {
-    BarrierTimer timer(__FILEFUNC__);
-    // sort the alns by name and then for the read from best score to worst - this is needed in later stages
-    std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
-        if (elem1.read_id == elem2.read_id) {
-          // sort by score, then contig len then last by cid to get a deterministic ordering
-          if (elem1.score1 == elem2.score1) {
-            if (elem1.clen == elem2.clen) return elem1.cid > elem2.cid;
-            return elem1.clen > elem2.clen;
-          }
-          return elem1.score1 > elem2.score1;
-        }
-        if (elem1.read_id.length() == elem2.read_id.length()) {
-          auto rlen = elem1.read_id.length();
-          auto cmp = elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2);
-          if (cmp == 0) return (elem1.read_id[rlen - 1] == '1');
-          return cmp > 0;
-        }
-        return elem1.read_id > elem2.read_id;
-      });
-  }
+  void sort_alns();
 };
