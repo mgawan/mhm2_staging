@@ -3,7 +3,7 @@
 
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhmxx)
 
-### 0.1.4 2020-09-25
+### 2.0.0 2020-09-25
    * Updated documentation
    * Incorporated a 3 tier aggregating store to allow scaling on 1000s of nodes Issue #4
    * Fixed stall on summit with over 200 node - Issue #34
