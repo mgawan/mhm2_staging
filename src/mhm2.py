@@ -445,7 +445,7 @@ def main():
                     # get rid of any leftover error logs if not restarting
                     try:
                         if not restarting:
-                            os.remove(_output_dir + 'err.log')
+                            os.rename(_output_dir + 'err.log', _output_dir + 'err.log' + str(datetime.datetime.now().isoformat()))
                     except:
                         pass
 
