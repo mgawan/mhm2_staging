@@ -65,6 +65,7 @@ void get_splints_from_alns(Alns &alns, CtgGraph *graph);
 
 static CtgGraph *_graph = nullptr;
 
+#ifdef CALC_TNF
 // return A C G T (0-3) or 4 if not a base
 static int base_to_number(const char base) {
   int num = 0;
@@ -180,6 +181,7 @@ static void compute_tnfs(Contigs &ctgs) {
   progbar.done();
   barrier();
 }
+#endif
 
 static void set_nbs() {
   BarrierTimer timer(__FILEFUNC__);

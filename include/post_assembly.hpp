@@ -82,7 +82,7 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
          "/final_assembly.sam", KNORM, "\n");
   }
   if (options->post_assm_abundances) {
-    compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->use_kmer_depths, options->reads_fnames);
+    compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->reads_fnames);
     SLOG(KBLUE, "Contig depths (abundances) can be found at ", options->output_dir, "/final_assembly_depths.txt", KNORM, "\n");
   }
   SLOG(KBLUE, "_________________________", KNORM, "\n");

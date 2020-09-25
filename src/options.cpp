@@ -81,62 +81,61 @@ bool Options::extract_previous_lens(vector<unsigned> &lens, unsigned k) {
   return false;
 }
 
-void Options::get_restart_options() {
-  // read existing mhm2.log and get most recent completed stage
-  ifstream log_file("mhm2.log");
-  if (!log_file.good()) SDIE("Cannot open previous log file mhm2.log");
-  string last_stage;
-  while (log_file) {
-    char buf[1000];
-    log_file.getline(buf, 999);
-    string line(buf);
-    if (line.find("Completed contig") != string::npos)
-      last_stage = line;
-    else if (line.find("Completed scaffolding") != string::npos)
-      last_stage = line;
-    if (line.find("Finished in") != string::npos) {
-      SDIE("Found the end of the previous run in mhm2.log, cannot restart");
-      upcxx::barrier();
-    }
-  }
-  if (!last_stage.empty()) {
-    auto fields = split(last_stage, ' ');
-    string stage_type = fields[3];
-    unsigned k = std::stoi(fields[7]);
-    if (stage_type == "contig") {
-      if (k == kmer_lens.back()) {
-        max_kmer_len = kmer_lens.back();
-        kmer_lens = {};
-        stage_type = "scaffolding";
-        k = scaff_kmer_lens[0];
-      } else {
-        if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
-        prev_kmer_len = k;
-      }
-      ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-    } else if (stage_type == "scaffolding") {
+bool Options::find_restart(string stage_type, int k) {
+  string new_ctgs_fname(stage_type + "-" + to_string(k) + ".fasta");
+  if (!file_exists(new_ctgs_fname)) return false;
+  if (stage_type == "contigs") {
+    if (k == kmer_lens.back() && stage_type == "contigs") {
       max_kmer_len = kmer_lens.back();
       kmer_lens = {};
-      if (k == scaff_kmer_lens.front()) {
-        ctgs_fname = "contigs-" + to_string(k) + ".fasta";
-      } else {
-        if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
-        ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
-      }
-      if (!extract_previous_lens(scaff_kmer_lens, k))
-        SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
+      stage_type = "scaff-contigs";
+      k = scaff_kmer_lens[0];
     } else {
-      SDIE("Invalid previous stage ", stage_type, " in line '", last_stage, "', could not restart");
+      if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+      prev_kmer_len = k;
     }
-    SLOG("\n*** Restarting from previous run at stage ", stage_type,
-         " k = ", (stage_type == "contig" ? kmer_lens[0] : scaff_kmer_lens[0]), " ***\n\n");
-    SLOG(KLBLUE, "Restart options:\n", "  kmer-lens =              ", vec_to_str(kmer_lens), "\n",
-         "  scaff-kmer-lens =        ", vec_to_str(scaff_kmer_lens), "\n", "  prev-kmer-len =          ", prev_kmer_len, "\n",
-         "  max-kmer-len =           ", max_kmer_len, "\n", "  contigs =                ", ctgs_fname, KNORM, "\n");
-    if (!upcxx::rank_me() && !file_exists(ctgs_fname))
-      SDIE("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
+    ctgs_fname = new_ctgs_fname;
+  } else if (stage_type == "uutigs") {
+    if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+    kmer_lens.insert(kmer_lens.begin(), k);
+    prev_kmer_len = k;
+    ctgs_fname = new_ctgs_fname;
+  } else if (stage_type == "scaff-contigs") {
+    max_kmer_len = kmer_lens.back();
+    kmer_lens = {};
+    if (k == scaff_kmer_lens.front()) {
+      ctgs_fname = "contigs-" + to_string(k) + ".fasta";
+    } else {
+      if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
+      ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
+    }
+    if (!extract_previous_lens(scaff_kmer_lens, k))
+      SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
   } else {
-    SLOG("No previously completed stage found, restarting from the beginning\n");
+    SDIE("Invalid previous stage '", stage_type, "' k ", k, ", could not restart");
+  }
+  SLOG(KLBLUE, "Restart options:\n", "  kmer-lens =              ", vec_to_str(kmer_lens), "\n",
+       "  scaff-kmer-lens =        ", vec_to_str(scaff_kmer_lens), "\n", "  prev-kmer-len =          ", prev_kmer_len, "\n",
+       "  max-kmer-len =           ", max_kmer_len, "\n", "  contigs =                ", ctgs_fname, KNORM, "\n");
+  if (!upcxx::rank_me() && !file_exists(ctgs_fname))
+    SDIE("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
+  return true;
+}
+
+void Options::get_restart_options() {
+  // check directory for most recent contigs file dump
+  bool found = false;
+  for (auto it = scaff_kmer_lens.rbegin(); it != scaff_kmer_lens.rend(); ++it) {
+    if ((found = find_restart("scaff-contigs", *it)) == true) break;
+  }
+  if (!found) {
+    for (auto it = kmer_lens.rbegin(); it != kmer_lens.rend(); ++it) {
+      if ((found = find_restart("contigs", *it)) == true) break;
+      if ((found = find_restart("uutigs", *it)) == true) break;
+    }
+  }
+  if (!found) {
+    SWARN("No previously completed stage found, restarting from the beginning\n");
   }
 }
 
@@ -243,91 +242,76 @@ bool Options::load(int argc, char **argv) {
   string full_version_str = "MHM2 version " + string(MHM2_VERSION) + "-" + string(MHM2_BRANCH) + " with upcxx-utils " +
                             string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
+  // basic options - see user guide
   app.add_option("-r, --reads", reads_fnames, "Files containing merged and unmerged reads in FASTQ format (comma separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
-  app.add_option("-p, --paired-reads", paired_fnames, "Pairs of files for the same insert in FASTQ format (comma separated).")
+  app.add_option("-p, --paired-reads", paired_fnames,
+                 "Pairs of files containing paired reads for the same insert in FASTQ format (comma separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
-  /*
-                 ->check([](const string &s) {
-                   if (s == "lala") return s;
-                   return string();
-                 });
-   */
-  app.add_option("-i, --insert", insert_size, "Insert size (average:stddev)")
+  app.add_option("-i, --insert", insert_size, "Insert size (average:stddev) (autodetected by default).")
       ->delimiter(':')
       ->expected(2)
       ->check(CLI::Range(1, 10000));
-  auto *kmer_lens_opt =
-      app.add_option("-k, --kmer-lens", kmer_lens, "kmer lengths (comma separated)")->delimiter(',')->capture_default_str();
-  app.add_option("--max-kmer-len", max_kmer_len, "Maximum kmer length (need to specify if only scaffolding)")
-      ->capture_default_str()
-      ->check(CLI::Range(0, 159));
-  app.add_option("--prev-kmer-len", prev_kmer_len,
-                 "Previous kmer length (need to specify if contigging and contig file is specified)")
-      ->capture_default_str()
-      ->check(CLI::Range(0, 159));
+  auto *kmer_lens_opt = app.add_option("-k, --kmer-lens", kmer_lens, "kmer lengths (comma separated) for contigging.")
+                            ->delimiter(',')
+                            ->capture_default_str();
   auto *scaff_kmer_lens_opt = app.add_option("-s, --scaff-kmer-lens", scaff_kmer_lens,
-                                             "kmer lengths for scaffolding (comma separated). 0 to disable scaffolding")
+                                             "kmer lengths (comma separated) for scaffolding (set to 0 to disable scaffolding).")
                                   ->delimiter(',')
                                   ->capture_default_str();
-  app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset")
-      ->capture_default_str()
-      ->check(CLI::IsMember({0, 33, 64}));
-  app.add_option("-c, --contigs", ctgs_fname, "File with contigs used for restart");
-  //                   ->check(CLI::ExistingFile);
-  app.add_option("--dynamic-min-depth", dynamic_min_depth,
-                 "Dynamic min. depth for DeBruijn graph traversal - set to 1.0 for a single genome")
-      ->capture_default_str()
-      ->check(CLI::Range(0.1, 1.0));
-  app.add_option("--min-depth-thres", dmin_thres, "Absolute mininimum depth threshold for DeBruijn graph traversal")
-      ->capture_default_str()
-      ->check(CLI::Range(1, 100));
-  app.add_option("--max-kmer-store", max_kmer_store_mb, "Maximum size for kmer store in MB per rank. 0 for auto 1% memory")
-      ->capture_default_str()
-      ->check(CLI::Range(0, 1000));
-  app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight, "Maximum number of RPCs in flight, per process (0 = unlimited)")
-      ->capture_default_str()
-      ->check(CLI::Range(0, 10000));
-  app.add_flag("--use-heavy-hitters", use_heavy_hitters, "Activate the Heavy Hitter Streaming Store")->capture_default_str();
-  app.add_option("--min-ctg-print-len", min_ctg_print_len, "Minimum length required for printing a contig in the final assembly")
+  app.add_option("--min-ctg-print-len", min_ctg_print_len, "Minimum length required for printing a contig in the final assembly.")
       ->capture_default_str()
       ->check(CLI::Range(0, 100000));
-  app.add_option("--break-scaff-Ns", break_scaff_Ns, "Number of Ns allowed before a scaffold is broken")
-      ->capture_default_str()
-      ->check(CLI::Range(0, 1000));
-  app.add_option("--ranks-per-gpu", ranks_per_gpu,
-                 "Override the automatic detction of ranks/gpu (i.e. local_team().rank_n() / devices).")
-      ->capture_default_str()
-      ->check(CLI::Range(0, (int)upcxx::local_team().rank_n() * 8));
-  auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory")->capture_default_str();
-  app.add_flag("--force-bloom", force_bloom, "Always use bloom filters")
-      ->default_val(force_bloom ? "true" : "false")
-      ->capture_default_str()
-      ->multi_option_policy();
-  app.add_flag("--checkpoint", checkpoint, "Checkpoint after each contig round")
+  auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory.")->capture_default_str();
+  app.add_flag("--checkpoint", checkpoint, "Enable checkpointing.")
       ->default_val(checkpoint ? "true" : "false")
       ->capture_default_str()
       ->multi_option_policy();
-  app.add_flag("--use-kmer-depths", use_kmer_depths,
-               "Use kmer depths for scaffolding decisions instead of alignment depths (the default)")
+  app.add_flag("--restart", restart,
+               "Restart in previous directory where a run failed (must specify the previous directory with -o).")
       ->capture_default_str();
-  app.add_flag("--restart", restart, "Restart in previous directory where a run failed")->capture_default_str();
-  app.add_flag("--pin", pin_by, "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
-                                "or NUMA domains (cpu, core, numa, none) - default is cpu ")
-      ->capture_default_str()
-      ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
   app.add_flag("--post-asm-align", post_assm_aln, "Align reads to final assembly")->capture_default_str();
-  app.add_flag("--post-asm-abd", post_assm_abundances, "Compute and output abundances for final assembly (used by MetaBAT)")
+  app.add_flag("--post-asm-abd", post_assm_abundances, "Compute and output abundances for final assembly (used by MetaBAT).")
       ->capture_default_str();
-  app.add_flag("--write-gfa", dump_gfa, "Dump scaffolding contig graphs in GFA2 format")->capture_default_str();
-  app.add_flag("--post-asm-only", post_assm_only, "Only run post assembly")->capture_default_str();
-  app.add_flag("--progress", show_progress, "Show progress")->capture_default_str();
-  app.add_flag("-v, --verbose", verbose, "Verbose output")->capture_default_str();
+  app.add_flag("--post-asm-only", post_assm_only, "Only run post assembly (alignment and/or abundances).")->capture_default_str();
+  app.add_flag("--write-gfa", dump_gfa, "Write scaffolding contig graphs in GFA2 format.")->capture_default_str();
+  app.add_option("-Q, --quality-offset", qual_offset, "Phred encoding offset (auto-detected by default).")
+      ->check(CLI::IsMember({0, 33, 64}));
+  app.add_flag("--progress", show_progress, "Show progress bars for operations.");
+  app.add_flag("-v, --verbose", verbose, "Verbose output: lots of detailed information (always available in the log).");
+  auto *cfg_opt = app.set_config("--config", "", "Load options from a configuration file.");
 
-  auto *cfg_opt = app.set_config("--config", "", "Load options from a configuration file");
-
+  // advanced options
+  // restarts
+  app.add_option("-c, --contigs", ctgs_fname, "FASTA file containing contigs used for restart.");
+  app.add_option("--max-kmer-len", max_kmer_len, "Maximum contigging kmer length for restart (only needed if not contigging).")
+      ->check(CLI::Range(0, 159));
+  app.add_option("--prev-kmer-len", prev_kmer_len,
+                 "Previous contigging kmer length for restart (needed if contigging and contig file is specified).")
+      ->check(CLI::Range(0, 159));
+  // quality tuning
+  app.add_option("--break-scaff-Ns", break_scaff_Ns, "Number of Ns allowed before a scaffold is broken.")
+      ->check(CLI::Range(0, 1000));
+  app.add_option("--min-depth-thres", dmin_thres, "Absolute mininimum depth threshold for DeBruijn graph traversal")
+      ->check(CLI::Range(1, 100));
+  // performance trade-offs
+  app.add_option("--max-kmer-store", max_kmer_store_mb, "Maximum size for kmer store in MB per rank (set to 0 for auto 1% memory).")
+      ->check(CLI::Range(0, 1000));
+  app.add_option("--max-rpcs-in-flight", max_rpcs_in_flight,
+                 "Maximum number of RPCs in flight, per process (set to 0 for unlimited).")
+      ->check(CLI::Range(0, 10000));
+  app.add_flag("--use-heavy-hitters", use_heavy_hitters, "Enable the Heavy Hitter Streaming Store (experimental).");
+  app.add_option("--ranks-per-gpu", ranks_per_gpu, "Number of processes multiplexed to each GPU (default depends on hardware).")
+      ->check(CLI::Range(0, (int)upcxx::local_team().rank_n() * 8));
+  auto *bloom_opt = app.add_flag("--force-bloom", force_bloom, "Always use bloom filters.")
+//      ->default_val(force_bloom ? "true" : "false")
+      ->multi_option_policy();
+  app.add_flag("--pin", pin_by,
+               "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
+               "or NUMA domains (cpu, core, numa, none).")
+      ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
   try {
     app.parse(argc, argv);
   } catch (const CLI::ParseError &e) {

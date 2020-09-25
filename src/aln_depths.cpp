@@ -72,11 +72,10 @@ struct CtgBaseDepths {
   CtgBaseDepths(int64_t cid, int num_read_groups, int clen)
       : cid(cid)
       , read_group_base_counts(num_read_groups) {
-    for(auto & base_count : read_group_base_counts)
-      base_count.resize(clen, 0);
+    for (auto &base_count : read_group_base_counts) base_count.resize(clen, 0);
   }
 
-  //UPCXX_SERIALIZED_FIELDS(cid, read_group_base_counts);
+  // UPCXX_SERIALIZED_FIELDS(cid, read_group_base_counts);
 };
 
 template <typename T>
@@ -207,8 +206,7 @@ class CtgsDepths {
   }
 };
 
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, bool use_kmer_depths,
-                        vector<string> &read_groups) {
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &read_groups) {
   BarrierTimer timer(__FILEFUNC__);
   int edge_base_len = (min_ctg_len >= 75 ? 75 : 0);
   CtgsDepths ctgs_depths(edge_base_len, read_groups.size());
@@ -278,7 +276,9 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
   auto all_num_alns = reduce_one(alns.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Dropped ", perc_str(reduce_one(num_bad_overlaps, op_fast_add, 0).wait(), all_num_alns), " bad overlaps and ",
                perc_str(reduce_one(num_bad_alns, op_fast_add, 0).wait(), all_num_alns), " low quality alns\n");
-  if (fname == "" && use_kmer_depths) SLOG_VERBOSE("Skipping contig depths calculations and output\n");
+#ifdef USE_KMER_DEPTHS
+  if (fname == "") SLOG_VERBOSE("Skipping contig depths calculations and output\n");
+#endif
   // get string to dump
   shared_ptr<upcxx_utils::dist_ofstream> sh_of;
   if (fname != "") sh_of = make_shared<upcxx_utils::dist_ofstream>(fname);
@@ -304,8 +304,10 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
       }
       *sh_of << "\n";
     }
-    // it seems that using aln depths improves the ctgy at the cost of an increase in msa
-    if (!use_kmer_depths) ctg.depth = rg_avg_vars[num_read_groups].avg;
+// it seems that using aln depths improves the ctgy at the cost of an increase in msa
+#ifndef USE_KMER_DEPTHS
+    ctg.depth = rg_avg_vars[num_read_groups].avg;
+#endif
     upcxx::progress();
   }
   barrier();

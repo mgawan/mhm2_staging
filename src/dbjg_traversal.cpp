@@ -477,8 +477,7 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
     if (walk_ok) {
       num_steps += walk_steps;
       max_steps = max(walk_steps, max_steps);
-      Contig contig = {0, uutig, (double)depths / (uutig.length() - kmer_len + 2)};
-      my_uutigs.add_contig(contig);
+      my_uutigs.add_contig({0, uutig, (double)depths / (uutig.length() - kmer_len + 2)});
       // the walk is successful, so set the visited for all the local elems
       for (auto &elem : my_frag_elems_visited) elem->visited = true;
     } else {

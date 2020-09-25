@@ -194,7 +194,7 @@ void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dis
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();
-#ifdef USE_KMER_DEPTH
+#ifdef USE_KMER_DEPTHS
   double tot_depth_diff = 0;
   double max_depth_diff = 0;
 #endif
@@ -213,7 +213,7 @@ void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dis
 #ifdef USE_KMER_DEPTHS
         uint16_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
         tot_depth_diff += (double)(kmer_depth - depth) / depth;
-        max_depth_diff = max(max_depth_diff, abs(kmer_depth - depth));
+        max_depth_diff = max(max_depth_diff, (double)abs(kmer_depth - depth));
         depth = kmer_depth;
 #endif
         kmer_dht->add_kmer(kmers[i], ctg->seq[i - 1], ctg->seq[i + kmer_len], depth);
@@ -238,12 +238,11 @@ void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dis
 
 template <int MAX_K>
 void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
-                   double dynamic_min_depth, int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht,
-                   double &num_kmers_factor) {
+                   int dmin_thres, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht, double &num_kmers_factor) {
   BarrierTimer timer(__FILEFUNC__);
   auto fut_has_contigs = upcxx::reduce_all(ctgs.size(), upcxx::op_fast_max).then([](size_t max_ctgs) { return max_ctgs > 0; });
 
-  _dynamic_min_depth = dynamic_min_depth;
+  _dynamic_min_depth = DYN_MIN_DEPTH;
   _dmin_thres = dmin_thres;
 
   if (kmer_dht->get_use_bloom()) {
@@ -292,7 +291,7 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
                                         dist_object<KmerDHT<KMER_LEN>> &kmer_dht)
 
 #define __ANALYZE_KMERS__(KMER_LEN, MODIFIER)                                                                     \
-  MODIFIER void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<PackedReads *> &, double, int, Contigs &, \
+  MODIFIER void analyze_kmers<KMER_LEN>(unsigned, unsigned, int, vector<PackedReads *> &, int, Contigs &, \
                                         dist_object<KmerDHT<KMER_LEN>> &, double &)
 
 #define __MACRO_KCOUNT__(KMER_LEN, MODIFIER) __ANALYZE_KMERS__(KMER_LEN, MODIFIER);

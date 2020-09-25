@@ -9,6 +9,7 @@ bool _verbose = false;
 StageTimers stage_timers = {
     .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
     .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
+    .load_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Load contigs", "Loading contigs"),
     .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
     .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
     .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
@@ -99,7 +100,11 @@ int main(int argc, char **argv) {
       rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
     }
 
-    if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
+    if (!options->ctgs_fname.empty()) {
+      stage_timers.load_ctgs->start();
+      ctgs.load_contigs(options->ctgs_fname);
+      stage_timers.load_ctgs->stop();
+    }
     std::chrono::duration<double> init_t_elapsed = std::chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",

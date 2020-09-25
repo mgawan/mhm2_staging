@@ -50,16 +50,19 @@
 using std::string;
 using std::vector;
 
+#ifdef TNF_PATH_RESOLUTION
 #define nTNF 136
-
 using tnf_t = std::array<double, nTNF>;
+#endif
 
 struct Contig {
   int64_t id;
   string seq;
   double depth;
+#ifdef TNF_PATH_RESOLUTION
   // histogram of teranucleotide frequencies for contig similarity check in cgraph walks
   tnf_t tnf;
+#endif
 
 #ifdef USE_KMER_DEPTHS
   vector<uint16_t> kmer_depths;
