@@ -240,6 +240,8 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - start_t;
     SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), " for ", MHM2_VERSION, "\n");
   }
+  FastqReaders::close_all();
+
   // post processing
   if (options->post_assm_aln || options->post_assm_only || options->post_assm_abundances) {
     int kmer_len = 33;
@@ -266,6 +268,7 @@ int main(int argc, char **argv) {
       default: DIE("Built for maximum kmer of ", MAX_BUILD_KMER, " not ", max_k); break;
     }
 #undef POST_ASSEMBLY
+    FastqReaders::close_all();
   }
 
 #ifdef DEBUG

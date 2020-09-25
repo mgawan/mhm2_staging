@@ -86,6 +86,10 @@ class Contigs {
 
   auto end() { return contigs.end(); }
 
+  auto begin() const { return contigs.begin(); }
+
+  auto end() const { return contigs.end(); }
+
   void print_stats(unsigned min_ctg_len);
 
   void dump_contigs(const string &fname, unsigned min_ctg_len);

@@ -187,7 +187,7 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
   read_status = "";
   // sort in order of highest to lowest aln scores
   sort(alns.begin(), alns.end(), [](auto &aln1, auto &aln2) { return aln1.score1 > aln2.score1; });
-  for (auto aln : alns) {
+  for (const auto & aln : alns) {
     // Assess alignment for completeness (do this before scaffold coordinate conversion!)
     // Important: Truncations are performed before reverse complementation
     // and apply to the end of the actual read
@@ -355,7 +355,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   int64_t num_pairs = 0;
   int64_t aln_i = 0;
   int read_len = 0;
-  Aln prev_best_aln = {.read_id = ""};
+  Aln prev_best_aln;
   string read_status = "", type_status = "", prev_read_status = "", prev_type_status = "";
   while (aln_i < (int64_t)alns.size()) {
     vector<Aln> alns_for_read;
@@ -363,7 +363,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
     get_all_alns_for_read(alns, aln_i, alns_for_read);
     t_get_alns.stop();
     progbar.update(aln_i);
-    Aln best_aln = {.read_id = ""};
+    Aln best_aln;
     if (get_best_span_aln(insert_avg, insert_stddev, alns_for_read, best_aln, read_status, type_status, &reject_5_trunc,
                           &reject_3_trunc, &reject_uninf)) {
       if (!prev_best_aln.read_id.empty()) {
