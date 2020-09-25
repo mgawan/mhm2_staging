@@ -125,14 +125,21 @@ class CtgsDepths {
                  CtgBaseDepths::read_group_base_count_t &rg_ctg = it->second.read_group_base_counts;
                  assert(read_group_id < rg_ctg.size());
                  auto &ctg_base_counts = rg_ctg[read_group_id];
-                 assert(aln_start >= 0 && aln_stop < ctg_base_counts.size());
+                 //DBG_VERBOSE("cid=", cid, " counting aln_start=", aln_start, " aln_stop=", aln_stop, " read_group_id=", read_group_id,
+                 //    " contig.size()=", ctg_base_counts.size(), "\n");
+                 assert(aln_start >= 0 && "Align start >= 0");
+                 assert(aln_stop < ctg_base_counts.size() && "Align stop < contig.size()");
                  for (int i = aln_start; i < aln_stop; i++) {
                    ctg_base_counts[i]++;
                  }
-#ifdef DOUBLE_COUNT_MERGED_REGION  // default false -- downstream counts would prefer this not to happen and count *insert*
-                                   // coverage, not read coverage
-                 // this is the merged region in a merged read - should be counted double
+#ifdef DOUBLE_COUNT_MERGED_REGION
+                 // disabled by default -- counts are "better" if this does not happen
+                 // instead, count *insert coverage* not *read coverage*
+                 // insert coverage should be closer to a Poisson distribution
+
+                 // this is the merged region in a merged read - will be counted double
                  if (aln_merge_start != -1 && aln_merge_stop != -1) {
+                   assert(aln_merge_start >= 0 && aln_merge_stop < ctg_base_counts.size());
                    for (int i = aln_merge_start; i < aln_merge_stop; i++) {
                      ctg_base_counts[i]++;
                    }
@@ -206,7 +213,8 @@ class CtgsDepths {
   }
 };
 
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &read_groups) {
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len,
+                        vector<string> &read_groups) {
   BarrierTimer timer(__FILEFUNC__);
   int edge_base_len = (min_ctg_len >= 75 ? 75 : 0);
   CtgsDepths ctgs_depths(edge_base_len, read_groups.size());
@@ -264,8 +272,12 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
         if (aln_cstart_merge >= aln_cstop_merge) aln_cstart_merge = -1;
       }
       // as per MetaBAT analysis, ignore the 75 bases at either end because they are likely to be in error
-      ctgs_depths.update_ctg_aln_depth(aln.cid, aln.read_group_id, ::max(aln.cstart, edge_base_len),
-                                       std::min(aln.cstop, aln.clen - edge_base_len), aln_cstart_merge, aln_cstop_merge);
+      auto adjusted_start = ::max(aln.cstart, edge_base_len);
+      auto adjusted_stop = ::min(aln.cstop, aln.clen - 1 - edge_base_len);
+      //DBG_VERBOSE("Sending update for ", aln.to_string(), " st=", adjusted_start, " end=", adjusted_stop, " edge_base_len=", edge_base_len,
+          "\n");
+      ctgs_depths.update_ctg_aln_depth(aln.cid, aln.read_group_id, adjusted_start, adjusted_stop, aln_cstart_merge,
+                                       aln_cstop_merge);
     } else {
       num_bad_overlaps++;
     }
