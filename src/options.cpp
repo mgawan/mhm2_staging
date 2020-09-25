@@ -340,9 +340,7 @@ bool Options::load(int argc, char **argv) {
     DIE("Require read names if not restarting");
   }
 
-  if (!upcxx::rank_me() && post_assm_only && ctgs_fname.empty()) {
-    DIE("For running only post assembly analysis, require --contigs (e.g. pass final_assembly.fasta)");
-  }
+  if (post_assm_only && ctgs_fname.empty()) ctgs_fname = "final_assembly.fasta";
 
   upcxx::barrier();
 
