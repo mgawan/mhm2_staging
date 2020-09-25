@@ -345,6 +345,7 @@ def check_err_msgs(err_msgs):
 
 def print_err_msgs(err_msgs, return_status):
     global _output_dir
+    check_err_msgs(err_msgs)
     err_msgs.append('==============================================')
     if len(_output_dir) == 0:
         _output_dir = os.getcwd() + "/"
@@ -364,7 +365,6 @@ def print_err_msgs(err_msgs, return_status):
         print_red("Check " + _output_dir + "err.log for details")
         # keep track of all msg copies so we don't print duplicates
         seen_msgs = {}
-        check_err_msgs(err_msgs)
         with open(_output_dir + 'err.log', 'a') as f:
             for msg in err_msgs:
                 clean_msg = msg.strip()
