@@ -275,7 +275,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
       auto adjusted_start = ::max(aln.cstart, edge_base_len);
       auto adjusted_stop = ::min(aln.cstop, aln.clen - 1 - edge_base_len);
       //DBG_VERBOSE("Sending update for ", aln.to_string(), " st=", adjusted_start, " end=", adjusted_stop, " edge_base_len=", edge_base_len,
-          "\n");
+      //    "\n");
       ctgs_depths.update_ctg_aln_depth(aln.cid, aln.read_group_id, adjusted_start, adjusted_stop, aln_cstart_merge,
                                        aln_cstop_merge);
     } else {
