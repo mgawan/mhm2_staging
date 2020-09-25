@@ -27,7 +27,7 @@ else
         rm -rf $INSTALL_PATH/cmake
         cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH $MHM2_CMAKE_EXTRAS
     fi
-    make -j install
+    make -j 12 install
 fi
 
 echo "Build took $((SECONDS))s"
