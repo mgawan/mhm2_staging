@@ -322,21 +322,49 @@ def capture_err(err_msgs):
             return
     _proc.wait()
 
-def print_err_msgs(err_msgs):
+def check_err_msgs(err_msgs):
+    warnings = []
+    errors = []
+    for msg in err_msgs:
+        msg = msg.strip()
+        if 'WARNING' in msg:
+            warnings.append(msg)
+        elif msg[:2] == '+ ':
+            # this is 'set -x' console echo of a command
+            pass
+        elif msg != '':
+            errors.append(msg)
+    if len(warnings) > 0:
+        print('There were', len(warnings), 'warnings:', file=sys.stderr)
+        for warning in list(collections.OrderedDict.fromkeys(warnings)):
+            sys.stderr.write(warning + '\n')
+    if len(errors) > 0:
+        print('There were', len(errors), 'errors:', file=sys.stderr)
+        for err in errors:
+            sys.stderr.write(err + '\n')
+
+def print_err_msgs(err_msgs, return_status):
     global _output_dir
     err_msgs.append('==============================================')
     if len(_output_dir) == 0:
         _output_dir = os.getcwd() + "/"
         # we have not yet entered the output directory, so this is a failure of the command line
         # and we need to dump all the error messages to the console
-        for msg in err_msgs:
-            print(msg.strip())
+        print_red("No output dir was created yet")
+        print_err_msgs(err_msgs, -1)
     else:
         if _output_dir[0] != '/':
             _output_dir = os.getcwd() + "/" + _output_dir
+        suspect_oom = None
+        if return_status != 0:
+            if return_status == 9: # SIGKILL
+                suspect_oom = "Got SIGKILLed"
+            err_msgs.append("Return status: %d\n" % (return_status))
+            print_red("MHM2 failed")
         print_red("Check " + _output_dir + "err.log for details")
         # keep track of all msg copies so we don't print duplicates
         seen_msgs = {}
+        check_err_msgs(err_msgs)
         with open(_output_dir + 'err.log', 'a') as f:
             for msg in err_msgs:
                 clean_msg = msg.strip()
@@ -345,7 +373,12 @@ def print_err_msgs(err_msgs):
                     f.write(clean_msg + '\n')
                     f.flush()
                     seen_msgs[clean_msg] = True
-
+                    if 'SIGBUS' in clean_msg or 'bound CqGetEvent GNI_RC_TRANSACTION_ERROR' in clean_msg or 'oom-kill' in clean_msg or 'bad_alloc' in clean_msg or 'SIGKILL' in clean_msg \
+                        or 'Cannot allocate memory' in clean_msg or 'mmap failed' in clean_msg:
+                        suspect_oom = clean_msg
+            if suspect_oom is not None:
+                f.write("Out of memory is suspected because of: %s\n" %(suspect_oom))
+                print_red("Out of memory is suspected based on the errors in err.log such as: ", suspect_oom, "\n")
 
 def main():
     global _orig_sighdlr
@@ -457,13 +490,14 @@ def main():
                 _proc.returncode *= -1
             if _proc.returncode > 128 and _proc.returncode != 255:
                 _proc.returncode -= 128
+            got_signal = None
             if _proc.returncode not in [0, 15] or not status:
                 signame = ''
                 if _proc.returncode <= len(SIGNAMES) and _proc.returncode > 0:
                     signame = ' (' + SIGNAMES[_proc.returncode - 1] + ')'
                 if _proc.returncode != 255:
                     # 255 is the return code from the CLI parser, so we don't want to print this
-                    print_red("\nERROR: subprocess terminated with return code ", _proc.returncode, signame)
+                    print_red("\nERROR: subprocess terminated with return code ", _proc.returncode)
                 signals_found = {}
                 for err_msg in err_msgs:
                     for signame in SIGNAMES:
@@ -474,9 +508,9 @@ def main():
                 for signame in SIGNAMES:
                     if signame in signals_found:
                         print_red("  Found ", signals_found[signame], " occurences of ", signame)
-
+                        got_signal = signame
                 #err_msgs.append("ERROR: subprocess terminated with return code " + str(_proc.returncode) + " " + signame)
-                print_err_msgs(err_msgs)
+                print_err_msgs(err_msgs, _proc.returncode)
                 if completed_round and options.auto_resume:
                     print_red('Trying to restart with output directory ', _output_dir)
                     restarting = True
@@ -490,27 +524,13 @@ def main():
                         print_red("No additional completed round. Could not restart, exiting...")
                     return signal.SIGABRT
             else:
-                warnings = []
-                errors = []
-                for msg in err_msgs:
-                    msg = msg.strip()
-                    if 'WARNING' in msg:
-                        warnings.append(msg)
-                    elif msg != '':
-                        errors.append(msg)
-                if len(warnings) > 0:
-                    print('There were', len(warnings), 'warnings:', file=sys.stderr)
-                    for warning in list(collections.OrderedDict.fromkeys(warnings)):
-                        sys.stderr.write(warning + '\n')
-                if len(errors) > 0:
-                    print('There were', len(errors), 'errors:', file=sys.stderr)
-                    for err in errors:
-                        sys.stderr.write(err + '\n')
+                print_err_msgs(err_msgs, _proc.returncode)
                 print('Overall time taken (including any restarts): %.2f s' % (time.time() - start_time))
                 break
         except:
+            print_red("Got an exception")
             traceback.print_tb(sys.exc_info()[2], limit=100)
-            print_err_msgs(err_msgs)
+            print_err_msgs(err_msgs, -1)
             if _proc:
                 try:
                     print_red("\nTerminating subprocess after exception: ", sys.exc_info(), "\n")

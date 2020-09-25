@@ -51,8 +51,14 @@ int main(int argc, char **argv) {
     for (auto const &reads_fname : options->reads_fnames) {
       tot_file_size += get_file_size(reads_fname);
     }
-    SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""), " is ",
+    SOUT("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""), " is ",
          get_size_str(tot_file_size), "\n");
+    auto nodes = upcxx::rank_n() / upcxx::local_team().rank_n();
+    auto total_free_mem = get_free_mem() * nodes;
+    if (total_free_mem < 3 * tot_file_size)
+      SWARN("There may not be enough memory in this job of ", nodes,
+            " nodes for this amount of data.\n\tTotal free memory is approx ", get_size_str(total_free_mem),
+            " and should be at least 3x the data size of ", get_size_str(tot_file_size), "\n");
   }
 #ifdef ENABLE_GPUS
   std::thread *init_gpu_thread = nullptr;
