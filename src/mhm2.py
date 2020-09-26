@@ -402,8 +402,8 @@ def main():
     argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
     #argparser.add_argument("--procs-per-node", default=0, help="Processes to spawn per node (default auto-detect cores)")
     argparser.add_argument("--procs", default=0, type=int, help="Total numer of processes")
-    argparser.add_argument("--trace-dir", default=".", help="Output directory for stacktrace")
-    argparser.add_argument("--stats-dir", default=".", help="Output directory for stacktrace")
+    argparser.add_argument("--trace-dir", default=None, help="Output directory for stacktrace")
+    argparser.add_argument("--stats-dir", default=None, help="Output directory for stacktrace")
 
     options, unknown_options = argparser.parse_known_args()
 
@@ -455,14 +455,14 @@ def main():
         runtime_vars = ''
     runtime_output_vars = ''
 
-    if options.stats_dir:
+    if options.stats_dir is not None:
         if not os.path.isdir(options.stats_dir):
             os.mkdir(options.stats_dir)
         runtime_vars += ' GASNET_STATSFILE="%s/stats.%%", ' % (os.path.realpath(options.stats_dir))
         runtime_vars += runtime_output_vars
         if os.environ.get("GASNET_STATSNODES") is None:
             runtime_vars += ' GASNET_STATSNODES="%s", ' % noderanks
-    if options.trace_dir:
+    if options.trace_dir is not None:
         if not os.path.isdir(options.trace_dir):
             os.mkdir(options.trace_dir)
         runtime_vars += ' GASNET_TRACEFILE="%s/trace.%%", ' % (os.path.realpath(options.trace_dir))
@@ -474,7 +474,7 @@ def main():
     # it appears that this GASNET_COLL_SCRATCH_SIZE  is still needed
     print("Setting GASNET_COLL_SCRATCH_SIZE=4M", runtime_vars)
     runenv = eval('dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M", %s MHM2_RUNTIME_PLACEHOLDER="")' % (runtime_vars))
-    print("Runtime environment: ", runenv)
+    #print("Runtime environment: ", runenv)
 
     mhm2_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
     if not (os.path.exists(mhm2_lib_path)):
