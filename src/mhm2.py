@@ -399,6 +399,8 @@ def main():
     argparser.add_argument("--shared-heap", default="10%", help="Shared heap as a percentage of memory")
     #argparser.add_argument("--procs-per-node", default=0, help="Processes to spawn per node (default auto-detect cores)")
     argparser.add_argument("--procs", default=0, type=int, help="Total numer of processes")
+    argparser.add_argument("--trace-dir", default=".", help="Output directory for stacktrace")
+    argparser.add_argument("--stats-dir", default=".", help="Output directory for stacktrace")
 
     options, unknown_options = argparser.parse_known_args()
 
@@ -436,9 +438,40 @@ def main():
 
     print("Executing mhm2 under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
     print("Executed as:" + " ".join(sys.argv))
-    print("Setting GASNET_COLL_SCRATCH_SIZE=4M")
-    # it appears that this is still needed
-    runenv = dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M")
+
+    cores = get_job_cores_per_node()
+    noderanks = '0'
+    halfnoderanks = '0,%d' % (cores/2)
+    for n in range(1, get_job_nodes()):
+        noderanks += ',' + str(n*cores)
+        halfnoderanks += ',' + str(n*cores) + ',' + str(n*cores+cores/2)
+
+    # set extra GASNET environments from build and/or options to mhm2.py
+    runtime_vars = """@MHM2PY_RUNTIME_ENV@"""
+    if runtime_vars == '@MHM2PY_RUNTIME' + '_ENV@':
+        runtime_vars = ''
+    runtime_output_vars = ''
+
+    if options.stats_dir:
+        if not os.path.isdir(options.stats_dir):
+            os.mkdir(options.stats_dir)
+        runtime_vars += ' GASNET_STATSFILE="%s/stats.%%", ' % (os.path.realpath(options.stats_dir))
+        runtime_vars += runtime_output_vars
+        if os.environ.get("GASNET_STATSNODES") is None:
+            runtime_vars += ' GASNET_STATSNODES="%s", ' % noderanks
+    if options.trace_dir:
+        if not os.path.isdir(options.trace_dir):
+            os.mkdir(options.trace_dir)
+        runtime_vars += ' GASNET_TRACEFILE="%s/trace.%%", ' % (os.path.realpath(options.trace_dir))
+        if os.environ.get("GASNET_TRACENODES") is None:
+            runtime_vars += ' GASNET_TRACENODES="%s", ' % halfnoderanks
+        if os.environ.get("GASNET_TRACEMASK") is None:
+            runtime_vars += ' GASNET_TRACEMASK="GPWBNIH", ' # some of the more useful and less verbose trace options
+
+    # it appears that this GASNET_COLL_SCRATCH_SIZE  is still needed
+    print("Setting GASNET_COLL_SCRATCH_SIZE=4M", runtime_vars)
+    runenv = eval('dict(os.environ, GASNET_COLL_SCRATCH_SIZE="4M", %s MHM2_RUNTIME_PLACEHOLDER="")' % (runtime_vars))
+    print("Runtime environment: ", runenv)
 
     mhm2_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
     if not (os.path.exists(mhm2_lib_path)):

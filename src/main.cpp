@@ -1,5 +1,7 @@
 #include "main.hpp"
 
+#include <sys/resource.h>
+
 #include "contigging.hpp"
 #include "post_assembly.hpp"
 #include "scaffolding.hpp"
@@ -44,6 +46,19 @@ int main(int argc, char **argv) {
     pin_core();
   else if (options->pin_by == "numa")
     pin_numa();
+
+  // update rlimits on RLIMIT_NOFILE files if necessary
+  auto num_input_files = options->reads_fnames.size();
+  if (num_input_files > 1) {
+    struct rlimit limits;
+    int status = getrlimit(RLIMIT_NOFILE, &limits);
+    if (status == 0) {
+      limits.rlim_cur = std::min(limits.rlim_cur + num_input_files * 8, limits.rlim_max);
+      status = setrlimit(RLIMIT_NOFILE, &limits);
+      SLOG_VERBOSE("Set RLIMIT_NOFILE to ", limits.rlim_cur, "\n");
+    }
+    if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
+  }
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
