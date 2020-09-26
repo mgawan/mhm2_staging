@@ -97,6 +97,7 @@ void pin_numa();
 #include <functional>
 #include <memory>
 #include <thread>
+
 #include <upcxx/upcxx.hpp>
 
 namespace upcxx_utils {
@@ -106,8 +107,10 @@ namespace upcxx_utils {
  * requires removal of using namespace std across the board
  * templates must be in header files
  * and std::future makes calls to upcxx::future ambiguous (same with promise)
- *
+ */
 
+/*
+#include <future>
 template <typename F, typename... Ts>
 inline auto reallyAsync(F&& f, Ts&&... params) {
     return std::async(std::launch::async, std::forward<F>(f),
@@ -145,8 +148,7 @@ auto execute_async(Func&& func, Args&&... args) {
                 assert(persona.active_with_caller());
 
                 duration_seconds sec = Timer::now() - t_start;
-                DBG_VERBOSE("Waiting for completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(),
-"s\n");
+                DBG_VERBOSE("Waiting for completed async ", async_fut.valid(), " sh_prom=", sh_prom.get(), " in ", sec.count(), "s\n");
 
                 async_fut.wait(); // should be noop but there could be a short race between lpc and returning the value
                 assert(async_fut.valid());
@@ -156,6 +158,12 @@ auto execute_async(Func&& func, Args&&... args) {
                 return async_fut.get();
             });
 }
+
+template <typename Func>
+upcxx::future<> execute_in_new_thread(Func &&func) {
+  return execute_async(func);
+};
+
 */
 
 // Func no argument returned or given lambda - void()
@@ -186,5 +194,7 @@ template <typename Func>
 upcxx::future<> execute_in_new_thread(Func func) {
   return execute_in_new_thread(upcxx::current_persona(), func);
 }
+
+/**/
 
 };  // namespace upcxx_utils

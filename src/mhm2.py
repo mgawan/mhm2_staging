@@ -332,6 +332,9 @@ def check_err_msgs(err_msgs):
         elif msg[:2] == '+ ':
             # this is 'set -x' console echo of a command
             pass
+        elif 'GASNet reporting enabled' in msg:
+            # this is just info
+            pass
         elif msg != '':
             errors.append(msg)
     if len(warnings) > 0:

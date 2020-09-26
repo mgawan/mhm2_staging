@@ -224,7 +224,7 @@ int64_t FastqReader::get_fptr_for_next_record(int64_t offset) {
   return last_tell;
 }
 
-FastqReader::FastqReader(const string &_fname, bool wait)
+FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_wait)
     : fname(_fname)
     , f(nullptr)
     , max_read_len(0)
@@ -254,7 +254,7 @@ FastqReader::FastqReader(const string &_fname, bool wait)
   future<> file_size_fut = upcxx::broadcast(file_size, 0).then([&file_size = this->file_size](int64_t sz) { file_size = sz; });
 
   // continue opening IO operations to find this rank's start record in a separate thread
-  open_fut = when_all(open_fut, file_size_fut).then([this, fd]() {
+  open_fut = when_all(open_fut, file_size_fut, first_wait).then([this, fd]() {
     return execute_in_new_thread([this, fd]() { this->continue_open(fd); });
   });
 
@@ -381,8 +381,13 @@ void FastqReader::reset() {
   if (fqr2) fqr2->reset();
 }
 
+//
+// FastqReaders
+//
+
 FastqReaders::FastqReaders()
-    : readers() {}
+    : readers()
+    , pending_ops(make_future()) {}
 
 FastqReaders &FastqReaders::getInstance() {
   static FastqReaders _;
@@ -394,7 +399,8 @@ FastqReader &FastqReaders::open(const string fname) {
   auto it = me.readers.find(fname);
   if (it == me.readers.end()) {
     upcxx::discharge();  // opening itself may take some time
-    it = me.readers.insert(it, {fname, make_shared<FastqReader>(fname)});
+    it = me.readers.insert(it, {fname, make_shared<FastqReader>(fname, false, me.pending_ops)});
+    me.pending_ops = when_all(me.pending_ops, it->second->get_open_fut());
     upcxx::discharge();  // opening requires a broadcast with to complete
     upcxx::progress();   // opening requires some user progress too
   }
@@ -419,5 +425,6 @@ void FastqReaders::close(const string fname) {
 
 void FastqReaders::close_all() {
   FastqReaders &me = getInstance();
+  me.pending_ops.wait();
   me.readers.clear();
 }
