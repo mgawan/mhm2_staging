@@ -342,17 +342,20 @@ def check_err_msgs(err_msgs):
         print('There were', len(errors), 'errors:', file=sys.stderr)
         for err in errors:
             sys.stderr.write(err + '\n')
+    return len(errors) + len(warnings)
 
 def print_err_msgs(err_msgs, return_status):
     global _output_dir
-    check_err_msgs(err_msgs)
+    num_problems = check_err_msgs(err_msgs)
     err_msgs.append('==============================================')
     if len(_output_dir) == 0:
         _output_dir = os.getcwd() + "/"
         # we have not yet entered the output directory, so this is a failure of the command line
         # and we need to dump all the error messages to the console
         print_red("No output dir was created yet")
-        print_err_msgs(err_msgs, -1)
+        for msg in err_msgs:
+            print(msg)
+            sys.exit(1)
     else:
         if _output_dir[0] != '/':
             _output_dir = os.getcwd() + "/" + _output_dir
@@ -362,7 +365,6 @@ def print_err_msgs(err_msgs, return_status):
                 suspect_oom = "Got SIGKILLed"
             err_msgs.append("Return status: %d\n" % (return_status))
             print_red("MHM2 failed")
-        print_red("Check " + _output_dir + "err.log for details")
         # keep track of all msg copies so we don't print duplicates
         seen_msgs = {}
         with open(_output_dir + 'err.log', 'a') as f:
@@ -379,6 +381,8 @@ def print_err_msgs(err_msgs, return_status):
             if suspect_oom is not None:
                 f.write("Out of memory is suspected because of: %s\n" %(suspect_oom))
                 print_red("Out of memory is suspected based on the errors in err.log such as: ", suspect_oom, "\n")
+        if num_problems > 0:
+            print_red("Check " + _output_dir + "err.log for details")
 
 def main():
     global _orig_sighdlr
@@ -490,7 +494,6 @@ def main():
                 _proc.returncode *= -1
             if _proc.returncode > 128 and _proc.returncode != 255:
                 _proc.returncode -= 128
-            got_signal = None
             if _proc.returncode not in [0, 15] or not status:
                 signame = ''
                 if _proc.returncode <= len(SIGNAMES) and _proc.returncode > 0:
