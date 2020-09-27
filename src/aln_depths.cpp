@@ -132,7 +132,6 @@ class CtgsDepths {
                  for (int i = aln_start; i < aln_stop; i++) {
                    ctg_base_counts[i]++;
                  }
-#ifdef DOUBLE_COUNT_MERGED_REGION
                  // disabled by default -- counts are "better" if this does not happen
                  // instead, count *insert coverage* not *read coverage*
                  // insert coverage should be closer to a Poisson distribution
@@ -144,7 +143,6 @@ class CtgsDepths {
                      ctg_base_counts[i]++;
                    }
                  }
-#endif
                },
                ctgs_depths, cid, read_group_id, aln_start, aln_stop, aln_merge_start, aln_merge_stop)
         .wait();
@@ -214,7 +212,7 @@ class CtgsDepths {
 };
 
 void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len,
-                        vector<string> &read_groups) {
+                        vector<string> &read_groups, bool double_count_merged_region) {
   BarrierTimer timer(__FILEFUNC__);
   int edge_base_len = (min_ctg_len >= 75 ? 75 : 0);
   CtgsDepths ctgs_depths(edge_base_len, read_groups.size());
@@ -262,7 +260,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
       int aln_cstart_merge = -1, aln_cstop_merge = -1;
       // FIXME: need to somehow communicate to the update func the range of double counting for a merged read.
       // This is the area > length of read pair that is in the middle of the read
-      if (aln.rlen > unmerged_rlen) {
+      if (double_count_merged_region && aln.rlen > unmerged_rlen) {
         // merged read
         int merge_offset = (aln.rlen - unmerged_rlen) / 2;
         aln_cstart_merge = (merge_offset > aln.rstart ? merge_offset - aln.rstart : 0) + aln.cstart;

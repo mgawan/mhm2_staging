@@ -90,7 +90,7 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname = "");
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames);
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames, bool double_count_merged_region);
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
