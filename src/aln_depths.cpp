@@ -128,7 +128,7 @@ class CtgsDepths {
                  //DBG_VERBOSE("cid=", cid, " counting aln_start=", aln_start, " aln_stop=", aln_stop, " read_group_id=", read_group_id,
                  //    " contig.size()=", ctg_base_counts.size(), "\n");
                  assert(aln_start >= 0 && "Align start >= 0");
-                 assert(aln_stop < ctg_base_counts.size() && "Align stop < contig.size()");
+                 assert(aln_stop <= ctg_base_counts.size() && "Align stop <= contig.size()");
                  for (int i = aln_start; i < aln_stop; i++) {
                    ctg_base_counts[i]++;
                  }
@@ -138,7 +138,8 @@ class CtgsDepths {
 
                  // this is the merged region in a merged read - will be counted double
                  if (aln_merge_start != -1 && aln_merge_stop != -1) {
-                   assert(aln_merge_start >= 0 && aln_merge_stop < ctg_base_counts.size());
+                   assert(aln_merge_start >= 0 && "merge start >= 0");
+                   assert(aln_merge_stop <= ctg_base_counts.size() && "merge_stop <= size");
                    for (int i = aln_merge_start; i < aln_merge_stop; i++) {
                      ctg_base_counts[i]++;
                    }
@@ -246,6 +247,7 @@ void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer
     }
     */
     // convert to coords for use here
+    assert(aln.is_valid());
     auto cstart = aln.cstart;
     auto cstop = aln.cstop;
     if (aln.orient == '-') {

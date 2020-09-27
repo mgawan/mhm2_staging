@@ -113,6 +113,11 @@ string Aln::to_string() const {
 }
 
 bool Aln::is_valid() const {
+  assert(rstart >= 0 && "start >= 0");
+  assert(rstop <= rlen && "stop <= len");
+  assert(cstart >= 0 && "cstart >= 0");
+  assert(cstop <= clen && "cstop <= clen");
+
   return read_group_id >= 0 && (orient == '+' || orient == '-') && mismatches >= 0 && mismatches <= rlen && identity >= 0 &&
          identity <= 100 && cid >= 0 && read_id.size() > 0;
 }
