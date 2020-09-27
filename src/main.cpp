@@ -119,8 +119,9 @@ int main(int argc, char **argv) {
     unsigned rlen_limit = 0;
     for (auto packed_reads : packed_reads_list) {
       rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
+      packed_reads->report_size();
     }
-
+        
     if (!options->ctgs_fname.empty()) {
       stage_timers.load_ctgs->start();
       ctgs.load_contigs(options->ctgs_fname);
@@ -129,7 +130,6 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> init_t_elapsed = std::chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-
          get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3;

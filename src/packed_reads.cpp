@@ -51,6 +51,7 @@
 
 #include "fastq.hpp"
 #include "upcxx_utils/log.hpp"
+#include "upcxx_utils/mem_profile.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "zstr.hpp"
@@ -65,6 +66,11 @@ using upcxx::rank_n;
 using namespace upcxx_utils;
 
 using std::max;
+
+PackedRead::PackedRead()
+    : read_id(0)
+    , read_len(0)
+    , packed_read(nullptr) {}
 
 PackedRead::PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset) {
   read_id = strtol(id_str.c_str() + 1, nullptr, 10);
@@ -102,7 +108,41 @@ PackedRead::PackedRead(const string &id_str, string_view seq, string_view quals,
   read_len = (uint16_t)seq.length();
 }
 
-PackedRead::~PackedRead() { delete[] packed_read; }
+PackedRead::PackedRead(const PackedRead &copy)
+    : read_id(copy.read_id)
+    , packed_read(new unsigned char[read_len])
+    , read_len(copy.read_len) {
+  memcpy(packed_read, copy.packed_read, read_len);
+}
+
+PackedRead::PackedRead(PackedRead &&move)
+    : read_id(move.read_id)
+    , packed_read(move.packed_read)
+    , read_len(move.read_len) {
+  move.packed_read = nullptr;
+  move.clear();
+}
+
+PackedRead &PackedRead::operator=(const PackedRead &copy) {
+  PackedRead pr(copy);
+  std::swap(*this, pr);
+  return *this;
+}
+
+PackedRead &PackedRead::operator=(PackedRead &&move) {
+  PackedRead pr(std::move(move));
+  std::swap(*this, pr);
+  return *this;
+}
+
+PackedRead::~PackedRead() { clear(); }
+
+void PackedRead::clear() {
+  if (packed_read) delete[] packed_read;
+  packed_read = nullptr;
+  read_len = 0;
+  read_id = 0;
+}
 
 void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) {
   char pair_id = (read_id < 0 ? '1' : '2');
@@ -122,15 +162,26 @@ PackedReads::PackedReads(int qual_offset, const string &fname, bool str_ids)
     , fname(fname)
     , str_ids(str_ids) {}
 
+PackedReads::~PackedReads() { clear(); }
+
 bool PackedReads::get_next_read(string &id, string &seq, string &quals) {
   if (index == packed_reads.size()) return false;
-  packed_reads[index]->unpack(id, seq, quals, qual_offset);
+  packed_reads[index].unpack(id, seq, quals, qual_offset);
   if (str_ids) id = read_id_idx_to_str[index];
   index++;
   return true;
 }
 
 void PackedReads::reset() { index = 0; }
+
+void PackedReads::clear() {
+  LOG_MEM("Clearing Packed Reads");
+  index = 0;
+  fname.clear();
+  vector<PackedRead>().swap(packed_reads);
+  if (str_ids) vector<string>().swap(read_id_idx_to_str);
+  LOG_MEM("Cleared Packed Reads");
+}
 
 string PackedReads::get_fname() { return fname; }
 
@@ -139,9 +190,13 @@ unsigned PackedReads::get_max_read_len() { return max_read_len; }
 int64_t PackedReads::get_local_num_reads() { return packed_reads.size(); }
 
 void PackedReads::add_read(const string &read_id, const string &seq, const string &quals) {
-  packed_reads.push_back(std::make_unique<PackedRead>(read_id, seq, quals, qual_offset));
-  if (str_ids) read_id_idx_to_str.push_back(read_id);
+  packed_reads.emplace_back(read_id, seq, quals, qual_offset);
+  if (str_ids) {
+    read_id_idx_to_str.push_back(read_id);
+    name_bytes += sizeof(string) + read_id.size();
+  }
   max_read_len = max(max_read_len, (unsigned)seq.length());
+  bases += seq.length();
 }
 
 void PackedReads::load_reads() {
@@ -158,7 +213,7 @@ void PackedReads::load_reads() {
   }
   int64_t bytes_per_record = tot_bytes_read / num_records;
   int64_t estimated_records = fqr.my_file_size() / bytes_per_record;
-  packed_reads.reserve(estimated_records);
+  packed_reads.reserve(estimated_records * 1.05 + 10000);
   fqr.reset();
   ProgressBar progbar(fqr.my_file_size(), "Loading reads from " + fname + " " + get_size_str(fqr.my_file_size()));
   tot_bytes_read = 0;
@@ -167,13 +222,22 @@ void PackedReads::load_reads() {
     if (!bytes_read) break;
     tot_bytes_read += bytes_read;
     progbar.update(tot_bytes_read);
-    packed_reads.push_back(std::make_unique<PackedRead>(id, seq, quals, qual_offset));
-    if (str_ids) read_id_idx_to_str.push_back(id);
-    max_read_len = max(max_read_len, (unsigned)seq.length());
+    add_read(id, seq, quals);
   }
   progbar.done();
   upcxx::barrier();
   auto all_estimated_records = upcxx::reduce_one(estimated_records, upcxx::op_fast_add, 0).wait();
   auto all_num_records = upcxx::reduce_one(packed_reads.size(), upcxx::op_fast_add, 0).wait();
-  SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, ") max_read=", max_read_len, "\n");
+  auto all_num_bases = upcxx::reduce_one(bases, upcxx::op_fast_add, 0).wait();
+  SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, ") max_read=", max_read_len,
+               " tot_bases=", all_num_bases, "\n");
+}
+
+void PackedReads::report_size() {
+  auto all_num_records = upcxx::reduce_one(packed_reads.size(), upcxx::op_fast_add, 0).wait();
+  auto all_num_bases = upcxx::reduce_one(bases, upcxx::op_fast_add, 0).wait();
+  auto all_num_names = upcxx::reduce_one(name_bytes, upcxx::op_fast_add, 0).wait();
+  SLOG_VERBOSE("Loaded ", all_num_records, " tot_bases=", all_num_bases, " names=", get_size_str(all_num_names), "\n");
+  LOG_MEM("Loaded Packed Reads");
+  SLOG_VERBOSE("Estimated memory for PackedReads: ", get_size_str(all_num_records * sizeof(PackedRead) + all_num_bases + all_num_names), "\n");
 }
