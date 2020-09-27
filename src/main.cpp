@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
     MemoryTrackerThread memory_tracker("memory_tracker.log");
     memory_tracker.start();
     SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
-    vector<PackedReads *> packed_reads_list;
+    PackedReads::PackedReadsList packed_reads_list;
     for (auto const &reads_fname : options->reads_fnames) {
       packed_reads_list.push_back(new PackedReads(options->qual_offset, get_merged_reads_fname(reads_fname)));
     }
@@ -109,9 +109,7 @@ int main(int argc, char **argv) {
       stage_timers.cache_reads->start();
       double free_mem = (!rank_me() ? get_free_mem() : 0);
       upcxx::barrier();
-      for (auto packed_reads : packed_reads_list) {
-        packed_reads->load_reads();
-      }
+      PackedReads::load_reads(packed_reads_list);
       stage_timers.cache_reads->stop();
       SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                    KNORM, "\n");

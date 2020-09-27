@@ -47,6 +47,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <upcxx/upcxx.hpp>
 
 using std::max;
 using std::string;
@@ -96,6 +97,7 @@ class PackedReads {
   bool str_ids;
 
  public:
+  using PackedReadsList = vector<PackedReads*>;
   PackedReads(int qual_offset, const string &fname, bool str_ids = false);
   ~PackedReads();
 
@@ -114,6 +116,10 @@ class PackedReads {
   void add_read(const string &read_id, const string &seq, const string &quals);
 
   void load_reads();
+
+  upcxx::future<> load_reads_nb();
+
+  static void load_reads(PackedReadsList&);
 
   void report_size();
 };

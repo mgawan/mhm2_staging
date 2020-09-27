@@ -379,6 +379,7 @@ void FastqReader::reset() {
   if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
   io_t.stop();
   if (fqr2) fqr2->reset();
+  first_file = true;
 }
 
 //
