@@ -202,7 +202,7 @@ std::string &left_trim(std::string &str) {
 
 int pin_clear() {
 #if defined(__APPLE__) && defined(__MACH__)
-  // TODO
+// TODO
 #else
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
@@ -253,7 +253,7 @@ vector<int> get_pinned_cpus() {
 
 void pin_proc(vector<int> cpus) {
 #if defined(__APPLE__) && defined(__MACH__)
-  // TODO
+// TODO
 #else
   cpu_set_t cpu_set;
   CPU_ZERO(&cpu_set);
