@@ -108,9 +108,9 @@ class FastqReaders {
   // singleton class to hold as set of fastq readers open and re-usable
   using ShFastqReader = shared_ptr<FastqReader>;
   std::unordered_map<string, ShFastqReader> readers;
-  future<> pending_ops;
 
   FastqReaders();
+  ~FastqReaders();
 
  public:
   static FastqReaders &getInstance();

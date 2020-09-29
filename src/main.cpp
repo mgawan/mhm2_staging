@@ -6,6 +6,8 @@
 #include "post_assembly.hpp"
 #include "scaffolding.hpp"
 
+#include "upcxx_utils/thread_pool.hpp"
+
 bool _verbose = false;
 
 StageTimers stage_timers = {
@@ -59,6 +61,7 @@ int main(int argc, char **argv) {
     }
     if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
   }
+  upcxx_utils::ThreadPool::get_single_pool(2); // reserve up to 2 threads in the singleton thread pool
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
@@ -295,13 +298,14 @@ int main(int argc, char **argv) {
     FastqReaders::close_all();
   }
 
+  upcxx_utils::ThreadPool::join_single_pool(); // cleanup singleton thread pool
+  barrier();
+
 #ifdef DEBUG
   _dbgstream.flush();
   while (close_dbg())
     ;
 #endif
-
-  barrier();
   upcxx::finalize();
   return 0;
 }
