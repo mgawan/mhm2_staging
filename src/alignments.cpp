@@ -100,7 +100,7 @@ Aln::Aln(const string &read_id, int64_t cid, int rstart, int rstop, int rlen, in
     , read_group_id(read_group_id)
     , orient(orient)
     , identity(identity) {
-  DBG(read_id, " cid=", cid, " RG=", read_group_id, " mismatches=", mismatches, "\n");
+  //DBG_VERBOSE(read_id, " cid=", cid, " RG=", read_group_id, " mismatches=", mismatches, "\n");
 }
 
 // writes out in the format meraligner uses
