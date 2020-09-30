@@ -358,7 +358,7 @@ def print_err_msgs(err_msgs, return_status):
         print_red("No output dir was created yet")
         for msg in err_msgs:
             print(msg)
-            sys.exit(1)
+            sys.exit(return_status)
     else:
         if _output_dir[0] != '/':
             _output_dir = os.getcwd() + "/" + _output_dir
@@ -528,15 +528,24 @@ def main():
             _err_thread.join()
             if _proc.returncode < 0:
                 _proc.returncode *= -1
-            if _proc.returncode > 128 and _proc.returncode != 255:
-                _proc.returncode -= 128
             if _proc.returncode not in [0, 15] or not status:
                 signame = ''
                 if _proc.returncode <= len(SIGNAMES) and _proc.returncode > 0:
                     signame = ' (' + SIGNAMES[_proc.returncode - 1] + ')'
-                if _proc.returncode != 255:
-                    # 255 is the return code from the CLI parser, so we don't want to print this
-                    print_red("\nERROR: subprocess terminated with return code ", _proc.returncode)
+                if _proc.returncode == 127:
+                    # 127 is the return code from the CLI parser, so we don't want to print this
+                    found_error = False
+                    for msg in err_msgs:
+                        if msg.startswith('Error'):
+                            print(msg, end='')
+                            found_error = True
+                        else:
+                            print(" ", msg, end='')
+                    if found_error:
+                        return 127
+                    else:
+                        return 0
+                print_red("\nERROR: subprocess terminated with return code ", _proc.returncode)
                 signals_found = {}
                 for err_msg in err_msgs:
                     for signame in SIGNAMES:
@@ -590,7 +599,8 @@ if __name__ == "__main__":
     try:
         status = main()
     except SystemExit:
-        raise
+        if status != 127:
+            raise
     except:
         e = sys.exc_info()[0]
         print_red("\n", "\nCaught an exception %s in mhm2.py!\n\n" % e)

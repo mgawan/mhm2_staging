@@ -34,9 +34,10 @@ int main(int argc, char **argv) {
   executed += ".py"; // assume the python wrapper was actually called
   for (int i = 1; i < argc; i++) executed = executed + " " + argv[i];
   auto options = make_shared<Options>();
-  if (!options->load(argc, argv)) return -1;
+  // if we don't load, return "command not found"
+  if (!options->load(argc, argv)) return 127;
   SLOG_VERBOSE("Executed as: ", executed, "\n");
-  
+
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
@@ -122,7 +123,7 @@ int main(int argc, char **argv) {
       rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
       packed_reads->report_size();
     }
-        
+
     if (!options->ctgs_fname.empty()) {
       stage_timers.load_ctgs->start();
       ctgs.load_contigs(options->ctgs_fname);

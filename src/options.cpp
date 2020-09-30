@@ -91,12 +91,18 @@ bool Options::find_restart(string stage_type, int k) {
       stage_type = "scaff-contigs";
       k = scaff_kmer_lens[0];
     } else {
-      if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+      if (!extract_previous_lens(kmer_lens, k)) {
+        SWARN("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+        return false;
+      }
       prev_kmer_len = k;
     }
     ctgs_fname = new_ctgs_fname;
   } else if (stage_type == "uutigs") {
-    if (!extract_previous_lens(kmer_lens, k)) SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+    if (!extract_previous_lens(kmer_lens, k)) {
+      SWARN("Cannot find kmer length ", k, " in configuration: ", vec_to_str(kmer_lens));
+      return false;
+    }
     kmer_lens.insert(kmer_lens.begin(), k);
     prev_kmer_len = k;
     ctgs_fname = new_ctgs_fname;
@@ -109,16 +115,21 @@ bool Options::find_restart(string stage_type, int k) {
       if (k == scaff_kmer_lens.back()) k = scaff_kmer_lens[scaff_kmer_lens.size() - 2];
       ctgs_fname = "scaff-contigs-" + to_string(k) + ".fasta";
     }
-    if (!extract_previous_lens(scaff_kmer_lens, k))
-      SDIE("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
+    if (!extract_previous_lens(scaff_kmer_lens, k)) {
+      SWARN("Cannot find kmer length ", k, " in configuration: ", vec_to_str(scaff_kmer_lens));
+      return false;
+    }
   } else {
-    SDIE("Invalid previous stage '", stage_type, "' k ", k, ", could not restart");
+    SWARN("Invalid previous stage '", stage_type, "' k ", k, ", could not restart");
+    return false;
   }
   SLOG(KLBLUE, "Restart options:\n", "  kmer-lens =              ", vec_to_str(kmer_lens), "\n",
        "  scaff-kmer-lens =        ", vec_to_str(scaff_kmer_lens), "\n", "  prev-kmer-len =          ", prev_kmer_len, "\n",
        "  max-kmer-len =           ", max_kmer_len, "\n", "  contigs =                ", ctgs_fname, KNORM, "\n");
-  if (!upcxx::rank_me() && !file_exists(ctgs_fname))
-    SDIE("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
+  if (!upcxx::rank_me() && !file_exists(ctgs_fname)) {
+    SWARN("File ", ctgs_fname, " not found. Did the previous run have --checkpoint enabled?");
+    return false;
+  }
   return true;
 }
 
@@ -315,13 +326,19 @@ bool Options::load(int argc, char **argv) {
   try {
     app.parse(argc, argv);
   } catch (const CLI::ParseError &e) {
-    if (upcxx::rank_me() == 0) app.exit(e);
+    if (upcxx::rank_me() == 0) {
+      if (e.get_exit_code() != 0) cerr << "\nError in command line:\n";
+      app.exit(e);
+    }
     return false;
   }
 
   if (!paired_fnames.empty()) {
     // convert pairs to colon ':' separated single files for FastqReader to process
-    if (paired_fnames.size() % 2 != 0) SDIE("Did not get pairs of files in -p: ", paired_fnames.size());
+    if (paired_fnames.size() % 2 != 0) {
+      if (!rank_me()) cerr << "Did not get pairs of files in -p: " << paired_fnames.size() << endl;
+      return false;
+    }
     while (paired_fnames.size() >= 2) {
       reads_fnames.push_back(paired_fnames[0] + ":" + paired_fnames[1]);
       paired_fnames.erase(paired_fnames.begin());
@@ -335,9 +352,10 @@ bool Options::load(int argc, char **argv) {
     app.get_option("--restart")->default_val("false");
   }
 
-  if (!upcxx::rank_me() && !restart && reads_fnames.empty()) {
-    // FIXME: there appears to be no way to do exactly this with a validator or ->required()
-    DIE("Require read names if not restarting");
+  if (!restart && reads_fnames.empty()) {
+    if (!rank_me())
+      cerr << "\nError in command line:\nRequire read names if not restarting\nRun with --help for more information\n";
+    return false;
   }
 
   if (post_assm_only && ctgs_fname.empty()) ctgs_fname = "final_assembly.fasta";
@@ -345,6 +363,11 @@ bool Options::load(int argc, char **argv) {
   upcxx::barrier();
 
   if (!*output_dir_opt) {
+    if (restart) {
+      if (!rank_me())
+        cerr << "\nError in command line:\nRequire output directory when restarting run\nRun with --help for more information\n";
+      return false;
+    }
     string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
     output_dir = "mhm2-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
                  to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
