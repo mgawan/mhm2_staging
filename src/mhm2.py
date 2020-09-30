@@ -342,7 +342,11 @@ def check_err_msgs(err_msgs):
             sys.stderr.write(warning + '\n')
     if len(errors) > 0:
         print('There were', len(errors), 'errors:', file=sys.stderr)
+        print_sigint = False
         for err in errors:
+            if 'SIGINT(2)' in err and print_sigint:
+                continue
+            print_sigint = True
             sys.stderr.write(err + '\n')
     return len(errors) + len(warnings)
 
