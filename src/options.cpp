@@ -327,7 +327,7 @@ bool Options::load(int argc, char **argv) {
     app.parse(argc, argv);
   } catch (const CLI::ParseError &e) {
     if (upcxx::rank_me() == 0) {
-      if (e.get_exit_code() != 0) cerr << "\nError in command line:\n";
+      if (e.get_exit_code() != 0) cerr << "\nError (" << e.get_exit_code() << ") in command line:\n";
       app.exit(e);
     }
     return false;
@@ -375,10 +375,15 @@ bool Options::load(int argc, char **argv) {
   }
 
   if (restart) {
-    // this mucking about is to ensure we don't get multiple failures messages if the config file does not parse
-    if (!upcxx::rank_me()) app.parse_config(output_dir + "/mhm2.config");
-    upcxx::barrier();
-    if (upcxx::rank_me()) app.parse_config(output_dir + "/mhm2.config");
+    try {
+      app.parse_config(output_dir + "/mhm2.config");
+    } catch (const CLI::ConfigError &e) {
+      if (!upcxx::rank_me()) {
+        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << output_dir << "/mhm2.config" << "):\n";
+        app.exit(e);
+      }
+      return false;
+    }
   }
 
   // make sure we only use defaults for kmer lens if none of them were set by the user

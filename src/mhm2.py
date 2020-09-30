@@ -91,7 +91,7 @@ def get_hdw_cores_per_node():
         hyperthreads = 1
         if platform.system() == 'Darwin':
             for line in os.popen('sysctl -n hw.physicalcpu').readlines():
-                 hyperthreads = cpus / int(line)
+                hyperthreads = cpus / int(line)
             print("Found %d cpus and %d hyperthreads from sysctl" % (cpus, hyperthreads))
         else:
             for line in os.popen('lscpu').readlines():
@@ -105,15 +105,15 @@ def get_hdw_cores_per_node():
 def get_job_id():
     """Query the environment for a job"""
     for key in ['PBS_JOBID', 'SLURM_JOBID', 'LSB_JOBID', 'JOB_ID', 'COBALT_JOBID', 'LOAD_STEP_ID', 'LBS_JOBID']:
-      if key in os.environ:
-        return os.environ.get(key)
+        if key in os.environ:
+            return os.environ.get(key)
     return str(os.getpid())
 
 def get_job_name():
     """Query the env for the name of a job"""
     for key in ['PBS_JOBNAME', 'JOBNAME', 'SLURM_JOB_NAME', 'LSB_JOBNAME', 'JOB_NAME', 'LSB_JOBNAME']:
-      if key in os.environ:
-        return os.environ.get(key)
+        if key in os.environ:
+            return os.environ.get(key)
     return ""
 
 def is_cobalt_job():
@@ -248,11 +248,10 @@ def get_job_nodes():
     return 1
 
 def get_job_desc():
-    return get_job_id() + " (" + get_job_name() + ")"
-
-
-def get_job_desc():
-    return get_job_id() + " (" + get_job_name() + ")"
+    job_name = get_job_name()
+    if job_name == "":
+        return "PID " + get_job_id()
+    return "job " + get_job_id() + " (" + job_name + ")"
 
 
 def which(file_name):
@@ -439,8 +438,8 @@ def main():
     cmd.extend(['--', mhm2_binary_path])
     cmd.extend(unknown_options)
 
-    print("Executing mhm2 under " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
-    print("Executed as:" + " ".join(sys.argv))
+    print("Executing mhm2 with " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
+    print("Executing as: " + " ".join(sys.argv))
 
     cores = get_job_cores_per_node()
     noderanks = '0'
@@ -477,7 +476,7 @@ def main():
     #print("Runtime environment: ", runenv)
 
     mhm2_lib_path = os.path.split(sys.argv[0])[0] + '/../lib'
-    if not (os.path.exists(mhm2_lib_path)):
+    if not os.path.exists(mhm2_lib_path):
         die("Cannot find mhm2 lib install in '", mhm2_lib_path, "'")
 
     # This should no longer be necessary with the static GPU build fixes of df8cc23, leaving here in case problems reoccur
@@ -539,6 +538,8 @@ def main():
                         if msg.startswith('Error'):
                             print(msg, end='')
                             found_error = True
+                        elif msg.startswith('INI was not able to parse'):
+                            print("  Unable to parse entry '" + msg.split()[-1] + "' in the config file")
                         else:
                             print(" ", msg, end='')
                     if found_error:
