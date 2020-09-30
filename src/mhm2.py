@@ -444,7 +444,7 @@ def main():
     cores = get_job_cores_per_node()
     noderanks = '0'
     halfnoderanks = '0,%d' % (cores/2)
-    for n in range(1, get_job_nodes()):
+    for n in range(1, num_nodes):
         noderanks += ',' + str(n*cores)
         halfnoderanks += ',' + str(n*cores) + ',' + str(n*cores+cores/2)
 
