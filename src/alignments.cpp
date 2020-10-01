@@ -66,13 +66,60 @@ using std::to_string;
 // class Aln
 //
 
+Aln::Aln()
+    : read_id("")
+    , cid(-1)
+    , cstart(0)
+    , cstop(0)
+    , clen(0)
+    , rstart(0)
+    , rstop(0)
+    , rlen(0)
+    , score1(0)
+    , score2(0)
+    , mismatches(0)
+    , sam_string({})
+    , read_group_id(-1)
+    , orient()
+    , identity(0) {}
+
+Aln::Aln(const string &read_id, int64_t cid, int rstart, int rstop, int rlen, int cstart, int cstop, int clen, char orient,
+         int score1, int score2, int identity, int mismatches, int read_group_id)
+    : read_id(read_id)
+    , cid(cid)
+    , cstart(cstart)
+    , cstop(cstop)
+    , clen(clen)
+    , rstart(rstart)
+    , rstop(rstop)
+    , rlen(rlen)
+    , score1(score1)
+    , score2(score2)
+    , mismatches(mismatches)
+    , sam_string({})
+    , read_group_id(read_group_id)
+    , orient(orient)
+    , identity(identity) {
+  //DBG_VERBOSE(read_id, " cid=", cid, " RG=", read_group_id, " mismatches=", mismatches, "\n");
+}
+
 // writes out in the format meraligner uses
-string Aln::to_string() {
+string Aln::to_string() const {
   ostringstream os;
   os << read_id << "\t" << rstart + 1 << "\t" << rstop << "\t" << rlen << "\t"
      << "Contig" << cid << "\t" << cstart + 1 << "\t" << cstop << "\t" << clen << "\t" << (orient == '+' ? "Plus" : "Minus") << "\t"
      << score1 << "\t" << score2;
   return os.str();
+}
+
+bool Aln::is_valid() const {
+  assert(rstart >= 0 && "start >= 0");
+  assert(rstop <= rlen && "stop <= len");
+  assert(cstart >= 0 && "cstart >= 0");
+  assert(cstop <= clen && "cstop <= clen");
+
+  return read_group_id >= 0 && (orient == '+' || orient == '-') && mismatches >= 0 && mismatches <= rlen && identity >= 0 &&
+         identity <= 100 && cid >= 0 && read_id.size() > 0;
 }
 
 //
@@ -100,6 +147,7 @@ void Alns::add_aln(Aln &aln) {
     }
   }
 #endif
+  assert(aln.is_valid());
   alns.push_back(aln);
 }
 
@@ -119,58 +167,49 @@ void Alns::reset() { alns.clear(); }
 
 int64_t Alns::get_num_dups() { return upcxx::reduce_one(num_dups, upcxx::op_fast_add, 0).wait(); }
 
-void Alns::dump_alns(string fname) {
+void Alns::dump_rank_file(string fname) {
   get_rank_path(fname, rank_me());
   zstr::ofstream f(fname);
-  ostringstream out_buf;
-  ProgressBar progbar(alns.size(), "Writing alns");
-  size_t bytes_written = 0;
-  int64_t i = 0;
-  for (auto aln : alns) {
-    out_buf << aln.to_string() << std::endl;
-    progbar.update();
-    i++;
-    if (!(i % 1000)) {
-      f << out_buf.str();
-      bytes_written += out_buf.str().length();
-      out_buf = ostringstream();
-    }
-  }
-  if (!out_buf.str().empty()) {
-    f << out_buf.str();
-    bytes_written += out_buf.str().length();
-  }
+  dump_all(f, false);
   f.close();
-  progbar.done();
   upcxx::barrier();
 }
 
-void Alns::dump_single_file_alns(const string fname, bool as_sam_format, Contigs *ctgs) {
+void Alns::dump_single_file(const string fname) {
+  dist_ofstream of(fname);
+  dump_all(of, false);
+  of.close();
+  upcxx::barrier();
+}
+
+void Alns::dump_sam_file(const string fname, const vector<string> &read_group_names, const Contigs &ctgs) {
   BarrierTimer timer(__FILEFUNC__);
 
   string out_str = "";
 
-  // FIXME: first, all ranks must dump contig info to the file, for every contig:
-  // @SQ	SN:Contig0	LN:887
   dist_ofstream of(fname);
-  future<> all_done;
-  for (auto &ctg : *ctgs) {
+  future<> all_done = make_future();
+
+  // First all ranks dump Sequence tags - @SQ	SN:Contig0	LN:887
+  for (const auto &ctg : ctgs) {
     of << "@SQ\tSN:Contig" << to_string(ctg.id) << "\tLN:" << to_string(ctg.seq.length()) << "\n";
   }
+  // all @SQ headers aggregated to the top of the file
   all_done = of.flush_collective();
 
+  // rank 0 continues with header
   if (!upcxx::rank_me()) {
-    // program information
+    // add ReadGroup tags - @RG ID:[0-n] DS:filename
+    for (int i = 0; i < read_group_names.size(); i++) {
+      string basefilename = upcxx_utils::get_basename(read_group_names[i]);
+      of << "@RG\tID:" << to_string(i) << "\tDS:" << basefilename << "\n";
+    }
+    // add program information
     of << "@PG\tID:MHM2\tPN:MHM2\tVN:" << string(MHM2_VERSION) << "\n";
   }
-  all_done = when_all(all_done, of.flush_collective());
 
-  for (auto aln : alns) {
-    if (!as_sam_format)
-      of << aln.to_string() << "\n";
-    else
-      of << aln.sam_string << "\n";
-  }
+  // next alignments.  rank0 will be first with the remaining header fields
+  dump_all(of, true);
   all_done = when_all(all_done, of.close_async());
   all_done.wait();
   of.report_timings().wait();

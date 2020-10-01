@@ -1,14 +1,19 @@
 #include "main.hpp"
 
+#include <sys/resource.h>
+
 #include "contigging.hpp"
 #include "post_assembly.hpp"
 #include "scaffolding.hpp"
+
+#include "upcxx_utils/thread_pool.hpp"
 
 bool _verbose = false;
 
 StageTimers stage_timers = {
     .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
     .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
+    .load_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Load contigs", "Loading contigs"),
     .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
     .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
     .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
@@ -24,8 +29,15 @@ int main(int argc, char **argv) {
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
   auto init_start_t = start_t;
+  // keep the exact command line arguments before options may have modified anything
+  string executed = argv[0];
+  executed += ".py"; // assume the python wrapper was actually called
+  for (int i = 1; i < argc; i++) executed = executed + " " + argv[i];
   auto options = make_shared<Options>();
-  if (!options->load(argc, argv)) return -1;
+  // if we don't load, return "command not found"
+  if (!options->load(argc, argv)) return 127;
+  SLOG_VERBOSE("Executed as: ", executed, "\n");
+
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
@@ -38,14 +50,34 @@ int main(int argc, char **argv) {
   else if (options->pin_by == "numa")
     pin_numa();
 
+  // update rlimits on RLIMIT_NOFILE files if necessary
+  auto num_input_files = options->reads_fnames.size();
+  if (num_input_files > 1) {
+    struct rlimit limits;
+    int status = getrlimit(RLIMIT_NOFILE, &limits);
+    if (status == 0) {
+      limits.rlim_cur = std::min(limits.rlim_cur + num_input_files * 8, limits.rlim_max);
+      status = setrlimit(RLIMIT_NOFILE, &limits);
+      SLOG_VERBOSE("Set RLIMIT_NOFILE to ", limits.rlim_cur, "\n");
+    }
+    if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
+  }
+  upcxx_utils::ThreadPool::get_single_pool(2); // reserve up to 2 threads in the singleton thread pool
+
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
     for (auto const &reads_fname : options->reads_fnames) {
       tot_file_size += get_file_size(reads_fname);
     }
-    SLOG("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""), " is ",
+    SOUT("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""), " is ",
          get_size_str(tot_file_size), "\n");
+    auto nodes = upcxx::rank_n() / upcxx::local_team().rank_n();
+    auto total_free_mem = get_free_mem() * nodes;
+    if (total_free_mem < 3 * tot_file_size)
+      SWARN("There may not be enough memory in this job of ", nodes,
+            " nodes for this amount of data.\n\tTotal free memory is approx ", get_size_str(total_free_mem),
+            " and should be at least 3x the data size of ", get_size_str(tot_file_size), "\n");
   }
 #ifdef ENABLE_GPUS
   // initialize the GPU and first-touch memory and functions in a new thread as this can take many seconds to complete
@@ -74,7 +106,7 @@ int main(int argc, char **argv) {
     MemoryTrackerThread memory_tracker("memory_tracker.log");
     memory_tracker.start();
     SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
-    vector<PackedReads *> packed_reads_list;
+    PackedReads::PackedReadsList packed_reads_list;
     for (auto const &reads_fname : options->reads_fnames) {
       packed_reads_list.push_back(new PackedReads(options->qual_offset, get_merged_reads_fname(reads_fname)));
     }
@@ -89,9 +121,7 @@ int main(int argc, char **argv) {
       stage_timers.cache_reads->start();
       double free_mem = (!rank_me() ? get_free_mem() : 0);
       upcxx::barrier();
-      for (auto packed_reads : packed_reads_list) {
-        packed_reads->load_reads();
-      }
+      PackedReads::load_reads(packed_reads_list);
       stage_timers.cache_reads->stop();
       SLOG_VERBOSE(KBLUE, "Cache used ", setprecision(2), fixed, get_size_str(free_mem - get_free_mem()), " memory on node 0",
                    KNORM, "\n");
@@ -99,13 +129,17 @@ int main(int argc, char **argv) {
     unsigned rlen_limit = 0;
     for (auto packed_reads : packed_reads_list) {
       rlen_limit = max(rlen_limit, packed_reads->get_max_read_len());
+      packed_reads->report_size();
     }
 
-    if (!options->ctgs_fname.empty()) ctgs.load_contigs(options->ctgs_fname);
+    if (!options->ctgs_fname.empty()) {
+      stage_timers.load_ctgs->start();
+      ctgs.load_contigs(options->ctgs_fname);
+      stage_timers.load_ctgs->stop();
+    }
     std::chrono::duration<double> init_t_elapsed = std::chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-
          get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3;
@@ -241,6 +275,8 @@ int main(int argc, char **argv) {
     std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - start_t;
     SLOG("Finished in ", setprecision(2), fixed, t_elapsed.count(), " s at ", get_current_time(), " for ", MHM2_VERSION, "\n");
   }
+  FastqReaders::close_all();
+
   // post processing
   if (options->post_assm_aln || options->post_assm_only || options->post_assm_abundances) {
     int kmer_len = 33;
@@ -267,15 +303,17 @@ int main(int argc, char **argv) {
       default: DIE("Built for maximum kmer of ", MAX_BUILD_KMER, " not ", max_k); break;
     }
 #undef POST_ASSEMBLY
+    FastqReaders::close_all();
   }
+
+  upcxx_utils::ThreadPool::join_single_pool(); // cleanup singleton thread pool
+  barrier();
 
 #ifdef DEBUG
   _dbgstream.flush();
   while (close_dbg())
     ;
 #endif
-
-  barrier();
   upcxx::finalize();
   return 0;
 }

@@ -83,7 +83,7 @@ class FastqReader {
 
  public:
   FastqReader() = delete;  // no default constructor
-  FastqReader(const string &_fname, bool wait = false);
+  FastqReader(const string &_fname, bool wait = false, upcxx::future<> first_wait = make_future());
 
   // this happens within a separate thread
   void continue_open(int fd = -1);
@@ -100,6 +100,8 @@ class FastqReader {
   double static get_io_time();
 
   void reset();
+
+  future<> get_open_fut() const { return open_fut; }
 };
 
 class FastqReaders {
@@ -108,6 +110,7 @@ class FastqReaders {
   std::unordered_map<string, ShFastqReader> readers;
 
   FastqReaders();
+  ~FastqReaders();
 
  public:
   static FastqReaders &getInstance();

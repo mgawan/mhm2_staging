@@ -500,10 +500,10 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
   // that all loops will be detected
   string longest_walk = "";
   int shift = 0;
-  DBG("  reads:\n");
+  DBG_VERBOSE("  reads:\n");
 #ifdef DEBUG
   for (auto &read_seq : reads) {
-    DBG("    ", read_seq.read_id, "\n", read_seq.seq, "\n");
+    DBG_VERBOSE("    ", read_seq.read_id, "\n", read_seq.seq, "\n");
   }
 #endif
   for (int mer_len = kmer_len; mer_len >= min_mer_len && mer_len <= max_mer_len; mer_len += shift) {
@@ -561,7 +561,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       num_sides++;
       num_reads += ctg->reads_right.size();
       max_num_reads = max(max_num_reads, (int64_t)ctg->reads_right.size());
-      DBG("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
+      DBG_VERBOSE("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
       // have to do right first because the contig needs to be revcomped for the left
       string right_walk =
           iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset, walk_len_limit, term_counts,
@@ -573,7 +573,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       num_reads += ctg->reads_left.size();
       max_num_reads = max(max_num_reads, (int64_t)ctg->reads_left.size());
       string seq_rc = revcomp(ctg->seq);
-      DBG("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
+      DBG_VERBOSE("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
       string left_walk =
           iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset, walk_len_limit, term_counts,
                           num_walks, max_walk_len, sum_ext, count_mers_timer, walk_mers_timer, excess_reads);

@@ -64,10 +64,8 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
 
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
-  string contigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
-  if (options->restart && file_exists(contigs_fname)) {
-    ctgs.load_contigs(contigs_fname);
-  } else {
+  string uutigs_fname("uutigs-" + to_string(kmer_len) + ".fasta");
+  if (options->ctgs_fname != uutigs_fname) {
     Kmer<MAX_K>::set_k(kmer_len);
     // duration of kmer_dht
     stage_timers.analyze_kmers->start();
@@ -77,8 +75,8 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
                                          options->force_bloom, options->use_heavy_hitters);
     barrier();
-    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dynamic_min_depth, options->dmin_thres,
-                  ctgs, kmer_dht, num_kmers_factor);
+    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dmin_thres, ctgs, kmer_dht,
+                  num_kmers_factor);
     stage_timers.analyze_kmers->stop();
     barrier();
     stage_timers.dbjg_traversal->start();
@@ -86,7 +84,7 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     stage_timers.dbjg_traversal->stop();
     if (is_debug || options->checkpoint) {
       stage_timers.dump_ctgs->start();
-      ctgs.dump_contigs(contigs_fname, 0);
+      ctgs.dump_contigs(uutigs_fname, 0);
       stage_timers.dump_ctgs->stop();
     }
   }
@@ -100,7 +98,7 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     stage_timers.alignments->stop();
     barrier();
 #ifdef DEBUG
-    alns.dump_alns("ctg-" + to_string(kmer_len) + ".alns.gz");
+    alns.dump_rank_file("ctg-" + to_string(kmer_len) + ".alns.gz");
 #endif
     tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
     // insert size should never be larger than this; if it is that signals some error in the assembly

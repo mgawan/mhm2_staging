@@ -22,12 +22,12 @@ if [ "$1" == "clean" ]; then
 else
     mkdir -p $rootdir/.build
     cd $rootdir/.build
-    if [ "$1" == "Debug" ] || [ "$1" == "Release" ]; then
+    if [ "$1" == "Debug" ] || [ "$1" == "Release" ] || [ "$1" == "RelWithDebInfo" ]; then
         rm -rf *
         rm -rf $INSTALL_PATH/cmake
         cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH $MHM2_CMAKE_EXTRAS
     fi
-    make -j install
+    make -j ${MHM2_BUILD_THREADS} install
 fi
 
 echo "Build took $((SECONDS))s"

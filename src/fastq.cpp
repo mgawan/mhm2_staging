@@ -51,6 +51,7 @@
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/thread_pool.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "utils.hpp"
 
@@ -117,10 +118,12 @@ bool FastqReader::get_fq_name(string &header) {
 }
 
 int64_t FastqReader::get_fptr_for_next_record(int64_t offset) {
-  io_t.start();
   // first record is the first record, include it.  Every other partition will be at least 1 full record after offset.
   if (offset == 0) return 0;
+  // eof - do not read anything
   if (offset >= file_size) return file_size;
+
+  io_t.start();
   if (fseek(f, offset, SEEK_SET) != 0) DIE("Could not fseek in ", fname, " to ", offset, ": ", strerror(errno));
   // skip first (likely partial) line after this offset to ensure we start at the beginning of a line
   if (!fgets(buf, BUF_SIZE, f)) {
@@ -163,7 +166,8 @@ int64_t FastqReader::get_fptr_for_next_record(int64_t offset) {
               case ('C'):
               case ('G'):
               case ('T'):
-              case ('N'): break;  // okay
+              case ('N'):
+                break;  // okay
               case ('\n'):
                 // newline.  okay if last char
                 record_found = k == seqlen - 1;
@@ -224,7 +228,7 @@ int64_t FastqReader::get_fptr_for_next_record(int64_t offset) {
   return last_tell;
 }
 
-FastqReader::FastqReader(const string &_fname, bool wait)
+FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_wait)
     : fname(_fname)
     , f(nullptr)
     , max_read_len(0)
@@ -254,8 +258,8 @@ FastqReader::FastqReader(const string &_fname, bool wait)
   future<> file_size_fut = upcxx::broadcast(file_size, 0).then([&file_size = this->file_size](int64_t sz) { file_size = sz; });
 
   // continue opening IO operations to find this rank's start record in a separate thread
-  open_fut = when_all(open_fut, file_size_fut).then([this, fd]() {
-    return execute_in_new_thread([this, fd]() { this->continue_open(fd); });
+  open_fut = when_all(open_fut, file_size_fut, first_wait).then([this, fd]() {
+    return upcxx_utils::execute_in_thread_pool([this, fd]() { this->continue_open(fd); });
   });
 
   if (!fname2.empty()) {
@@ -297,9 +301,9 @@ void FastqReader::continue_open(int fd) {
 
   io_t.start();
   if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
-    // tell the OS this file will be accessed sequentially
+// tell the OS this file will be accessed sequentially
 #if defined(__APPLE__) && defined(__MACH__)
-    // TODO
+// TODO
 #else
   posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
 #endif
@@ -315,7 +319,14 @@ FastqReader::~FastqReader() {
     WARN("Destructor called before opening completed\n");
     open_fut.wait();
   }
-  if (f) fclose(f);
+
+  if (f) {
+    io_t.start();
+    fclose(f);
+    io_t.stop();
+  }
+  f = nullptr;
+
   io_t.done_all_async();  // will print in Timings' order eventually
   FastqReader::overall_io_t += io_t.get_elapsed();
 }
@@ -374,16 +385,28 @@ int FastqReader::get_max_read_len() { return std::max(max_read_len, fqr2 ? fqr2-
 double FastqReader::get_io_time() { return overall_io_t; }
 
 void FastqReader::reset() {
-  open_fut.wait();
+  if (!open_fut.ready()) {
+    open_fut.wait();
+  }
+  if (!f) {
+    DIE("Reset called on unopened file\n");
+  }
   io_t.start();
+  assert(f && "reset called on active file");
   if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
   io_t.stop();
   if (fqr2) fqr2->reset();
+  first_file = true;
 }
+
+//
+// FastqReaders
+//
 
 FastqReaders::FastqReaders()
     : readers() {}
 
+FastqReaders::~FastqReaders() { close_all(); }
 FastqReaders &FastqReaders::getInstance() {
   static FastqReaders _;
   return _;
@@ -394,7 +417,7 @@ FastqReader &FastqReaders::open(const string fname) {
   auto it = me.readers.find(fname);
   if (it == me.readers.end()) {
     upcxx::discharge();  // opening itself may take some time
-    it = me.readers.insert(it, {fname, make_shared<FastqReader>(fname)});
+    it = me.readers.insert(it, {fname, make_shared<FastqReader>(fname, false)});
     upcxx::discharge();  // opening requires a broadcast with to complete
     upcxx::progress();   // opening requires some user progress too
   }

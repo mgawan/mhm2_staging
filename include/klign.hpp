@@ -186,7 +186,8 @@ class KmerCtgDHT {
     return base_count;
   }
 
-  static void set_sam_string(Aln &aln, string read_seq, string cigar) {
+  void set_sam_string(Aln &aln, string read_seq, string cigar) {
+    assert(aln.is_valid());
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
       aln.sam_string += "16\t";
@@ -210,7 +211,8 @@ class KmerCtgDHT {
     // Don't output either the read sequence or quals - that causes the SAM file to bloat up hugely, and that info is already
     // available in the read files
     aln.sam_string += cigar + "\t*\t0\t0\t*\t*\t";
-    aln.sam_string += "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches);
+    aln.sam_string +=
+        "AS:i:" + to_string(aln.score1) + "\tNM:i:" + to_string(aln.mismatches) + "\tRG:Z:" + to_string(aln.read_group_id);
     // for debugging
     // aln.sam_string += " rstart " + to_string(aln.rstart) + " rstop " + to_string(aln.rstop) + " cstop " + to_string(aln.cstop) +
     //                  " clen " + to_string(aln.clen) + " alnlen " + to_string(aln.rstop - aln.rstart);
@@ -225,7 +227,7 @@ class KmerCtgDHT {
   }
 
   void align_read(const string &rname, int64_t cid, const string &rseq, const string &cseq, int rstart, int rlen, int cstart,
-                  int clen, char orient, int overlap_len, IntermittentTimer &aln_kernel_timer) {
+                  int clen, char orient, int overlap_len, int read_group_id, IntermittentTimer &aln_kernel_timer) {
     if (cseq.compare(0, overlap_len, rseq, rstart, overlap_len) == 0) {
       num_perfect_alns++;
       int rstop = rstart + overlap_len;
@@ -233,7 +235,8 @@ class KmerCtgDHT {
       if (orient == '-') switch_orient(rstart, rstop, rlen);
       int score1 = overlap_len * aln_scoring.match;
       int identity = 100 * score1 / aln_scoring.match / rlen;
-      Aln aln = {rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, score1, 0, identity, 0};
+      Aln aln(rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, score1, 0, identity, 0, read_group_id);
+      assert(aln.is_valid());
       if (ssw_filter.report_cigar) set_sam_string(aln, rseq, to_string(overlap_len) + "M");
       alns->add_aln(aln);
     } else {
@@ -244,14 +247,14 @@ class KmerCtgDHT {
       int64_t tot_mem_est = num_alns * (max_clen + max_rlen + 2 * sizeof(int) + 5 * sizeof(short));
       // contig is the ref, read is the query - done this way so that we can potentially do multiple alns to each read
       // this is also the way it's done in meraligner
-      kernel_alns.push_back({rname, cid, 0, 0, rlen, cstart, 0, clen, orient});
-      ctg_seqs.push_back(cseq);
-      read_seqs.push_back(rseq);
+      kernel_alns.emplace_back(rname, cid, 0, 0, rlen, cstart, 0, clen, orient);
+      ctg_seqs.emplace_back(cseq);
+      read_seqs.emplace_back(rseq);
       bool will_run_kernel = (tot_mem_est >= gpu_mem_avail) | (num_alns >= KLIGN_GPU_BLOCK_SIZE);
       if (will_run_kernel) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
-        kernel_align_block(aln_kernel_timer);
+        kernel_align_block(aln_kernel_timer, read_group_id);
       }
     }
   }
@@ -382,6 +385,7 @@ class KmerCtgDHT {
       // FIXME: need to get the mismatches
       aln.mismatches = 0;  // ssw_aln.mismatches;
       aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
+      aln.read_group_id = read_group_id;
       // FIXME: need to get cigar
       // if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
       abd.alns->add_aln(aln);
@@ -587,21 +591,20 @@ class KmerCtgDHT {
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
-    return rpc(
-        target_rank,
-        [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
-          vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
-          for (auto &kmer : kmers) {
-            const auto it = kmer_map->find(kmer);
-            if (it == kmer_map->end()) continue;
-            // skip conflicts
-            if (it->second.first) continue;
-            // now add it
-            kmer_ctg_locs.push_back({kmer, it->second.second});
-          }
-          return kmer_ctg_locs;
-        },
-        kmers, kmer_map);
+    return rpc(target_rank,
+               [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
+                 vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
+                 for (auto &kmer : kmers) {
+                   const auto it = kmer_map->find(kmer);
+                   if (it == kmer_map->end()) continue;
+                   // skip conflicts
+                   if (it->second.first) continue;
+                   // now add it
+                   kmer_ctg_locs.push_back({kmer, it->second.second});
+                 }
+                 return kmer_ctg_locs;
+               },
+               kmers, kmer_map);
   }
 
 #ifdef DEBUG
@@ -634,7 +637,7 @@ class KmerCtgDHT {
 #endif
 
   void compute_alns_for_read(HASH_TABLE<cid_t, ReadAndCtgLoc> *aligned_ctgs_map, const string &rname, string rseq,
-                             IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer) {
+                             int read_group_id, IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
     char *seq_buf = new char[2 * rlen + 1];
@@ -675,7 +678,7 @@ class KmerCtgDHT {
       string ctg_subseq(seq_buf, overlap_len);
       ctg_seq_bytes_fetched += overlap_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, overlap_len,
-                 aln_kernel_timer);
+                 read_group_id, aln_kernel_timer);
       num_alns++;
     }
     delete[] seq_buf;
@@ -749,7 +752,8 @@ struct KmerToRead {
 template <int MAX_K>
 int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<KmerToRead>> &kmer_read_map,
                 vector<ReadRecord *> &read_records, IntermittentTimer &compute_alns_timer, IntermittentTimer &get_ctgs_timer,
-                IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer, int64_t &num_excess_alns_reads) {
+                IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer, int64_t &num_excess_alns_reads,
+                int &read_group_id) {
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer<MAX_K>>[rank_n()];
   for (auto &elem : kmer_read_map) {
@@ -816,8 +820,8 @@ int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<
     // compute alignments
     if (read_record->aligned_ctgs_map.size()) {
       num_reads_aligned++;
-      kmer_ctg_dht.compute_alns_for_read(&read_record->aligned_ctgs_map, read_record->id, read_record->seq, fetch_ctg_seqs_timer,
-                                         aln_kernel_timer);
+      kmer_ctg_dht.compute_alns_for_read(&read_record->aligned_ctgs_map, read_record->id, read_record->seq, read_group_id,
+                                         fetch_ctg_seqs_timer, aln_kernel_timer);
     }
     delete read_record;
   }
@@ -846,6 +850,7 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
   kmer_ctg_dht.clear_aln_bufs();
   barrier();
   upcxx::future<> all_done = make_future();
+  int read_group_id = 0;
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
     string read_id, read_seq, quals;
@@ -879,12 +884,12 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
       }
       if (filled)
         num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
-                                         fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads);
+                                         fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads, read_group_id);
       num_reads++;
     }
     if (read_records.size())
       num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
-                                       fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads);
+                                       fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads, read_group_id);
 
     all_done = when_all(all_done, progbar.set_done());
   }
@@ -950,7 +955,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads *> &packed_reads_li
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
-  // kmer_ctg_dht.dump_ctg_kmers();
+// kmer_ctg_dht.dump_ctg_kmers();
 #endif
   double kernel_elapsed = do_alignments(kmer_ctg_dht, packed_reads_list, seed_space, compute_cigar);
   barrier();
@@ -971,7 +976,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads *> &packed_reads_li
   MODIFIER void build_alignment_index<KMER_LEN>(KmerCtgDHT<KMER_LEN> &, Contigs &, unsigned);                                    \
   MODIFIER int align_kmers<KMER_LEN>(KmerCtgDHT<KMER_LEN> &, HASH_TABLE<Kmer<KMER_LEN>, vector<KmerToRead>> &,                   \
                                      vector<ReadRecord *> &, IntermittentTimer &, IntermittentTimer &, IntermittentTimer &,      \
-                                     IntermittentTimer &, int64_t &);                                                            \
+                                     IntermittentTimer &, int64_t &, int &);                                                     \
   MODIFIER double do_alignments<KMER_LEN>(KmerCtgDHT<KMER_LEN> &, vector<PackedReads *> &, int, bool);                           \
   MODIFIER double find_alignments<KMER_LEN>(unsigned, vector<PackedReads *> &, int, int, Contigs &, Alns &, int, int, bool, int, \
                                             int);
