@@ -47,6 +47,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <upcxx/upcxx.hpp>
 
 using std::max;
 using std::string;
@@ -59,38 +60,52 @@ class PackedRead {
   static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
   // read_id is not packed as it is already reduced to an index number
   // the pair number is indicated in the read id - negative means pair 1, positive means pair 2
-  int64_t read_id;
+  int64_t read_id : 48;
+  // the read is not going to be larger than 65536 in length, but possibly larger than 256
+  uint64_t read_len : 16;
   // each cached read packs the nucleotide into 3 bits (ACGTN), and the quality score into 5 bits
   unsigned char *packed_read;
-  // the read is not going to be larger than 65536 in length, but possibly larger than 256
-  uint16_t read_len;
+
   // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
-  // 8+150+2=160 vs 13+300=313
+  // 16+150=166 vs 13+300=313
 
  public:
+  // default, move and (deep) copy constructors to support containers without unique_ptr overhead
+  PackedRead();
   PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset);
+  PackedRead(const PackedRead &copy);
+  PackedRead(PackedRead &&Move);
+  PackedRead &operator=(const PackedRead &copy);
+  PackedRead &operator=(PackedRead &&move);
 
   ~PackedRead();
 
   void unpack(string &read_id_str, string &seq, string &quals, int qual_offset);
+  void clear();
 };
 
 class PackedReads {
-  vector<unique_ptr<PackedRead>> packed_reads;
+  vector<PackedRead> packed_reads;
   // this is only used when we need to know the actual name of the original reads
   vector<string> read_id_idx_to_str;
   unsigned max_read_len = 0;
   uint64_t index = 0;
+  uint64_t bases = 0;
+  uint64_t name_bytes = 0;
   unsigned qual_offset;
   string fname;
   bool str_ids;
 
  public:
+  using PackedReadsList = vector<PackedReads*>;
   PackedReads(int qual_offset, const string &fname, bool str_ids = false);
+  ~PackedReads();
 
   bool get_next_read(string &id, string &seq, string &quals);
 
   void reset();
+
+  void clear();
 
   string get_fname();
 
@@ -101,4 +116,10 @@ class PackedReads {
   void add_read(const string &read_id, const string &seq, const string &quals);
 
   void load_reads();
+
+  upcxx::future<> load_reads_nb();
+
+  static void load_reads(PackedReadsList&);
+
+  void report_size();
 };

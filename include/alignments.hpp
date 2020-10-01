@@ -46,17 +46,26 @@
 #include "version.h"
 
 struct Aln {
+  Aln();
+  Aln(const string &read_id, int64_t cid, int rstart, int rstop, int rlen, int cstart, int cstop, int clen, char orient,
+      int score1 = 0, int score2 = 0, int identity = 0, int mismatches = 0, int read_group_id = -1);
+
+  // optimal packing of data fields (does not match constructor exactly)
   string read_id;
   int64_t cid;
-  int rstart, rstop, rlen, cstart, cstop, clen;
-  char orient;
-  int score1, score2;
-  int identity;
-  int mismatches;
+  int cstart, cstop, clen;
+  int rstart, rstop, rlen;  // TODO can these be int16_t (for short reads only)?
+  int score1, score2;       // TODO can this be uint16_t (for short reads only)?
+  int mismatches;           // TODO can this be uint16_t (for short reads only)?
   string sam_string;
+  int16_t read_group_id;
+  char orient;      // TODO can this be bool?
+  int8_t identity;  // this can be uint8_t - used as integer 0-100 %  // TODO can it even a member function int identity(int
+                    // match_score)
 
   // writes out in the format meraligner uses
-  string to_string();
+  string to_string() const;
+  bool is_valid() const;
 };
 
 class Alns {
@@ -79,9 +88,20 @@ class Alns {
   inline auto begin() { return alns.begin(); }
   inline auto end() { return alns.end(); };
 
-  void dump_alns(string fname);
+  template <typename OSTREAM>
+  void dump_all(OSTREAM &os, bool as_sam_format) {
+    // all ranks dump their alignments
+    for (const auto &aln : alns) {
+      if (!as_sam_format)
+        os << aln.to_string() << "\n";
+      else
+        os << aln.sam_string << "\n";
+    }
+  }
 
-  void dump_single_file_alns(const string fname, bool as_sam_format = false, Contigs *ctgs = nullptr);
+  void dump_single_file(const string fname);
+  void dump_sam_file(const string fname, const vector<string> &read_group_names, const Contigs &ctgs);
+  void dump_rank_file(const string fname);
 
   int calculate_unmerged_rlen();
 

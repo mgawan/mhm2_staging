@@ -12,7 +12,7 @@ This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bit
    * Fixed error when writing to a lagging filesystem - Issues #26 #15
    * Various bug fixes - Issues #27 #29 #31 #36 #44
    * Included build support for MacOSX (not tested)
-   * Various cosmetic - Issues #38 #40 #42
+   * Various cosmetic - Issues #38 #40 #42 #47 #43
       * Renamed from MHMXX to MHM2 - Issue #18
       * Reformatted the entire code base
 

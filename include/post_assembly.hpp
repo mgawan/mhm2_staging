@@ -77,12 +77,12 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
   packed_reads_list.clear();
   calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
   if (options->post_assm_aln) {
-    alns.dump_single_file_alns("final_assembly.sam", true, &ctgs);
+    alns.dump_sam_file("final_assembly.sam", options->reads_fnames, ctgs);
     SLOG("\n", KBLUE, "Aligned unmerged reads to final assembly: SAM file can be found at ", options->output_dir,
          "/final_assembly.sam", KNORM, "\n");
   }
   if (options->post_assm_abundances) {
-    compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len);
+    compute_aln_depths("final_assembly_depths.txt", ctgs, alns, kmer_len, options->min_ctg_print_len, options->reads_fnames, false);
     SLOG(KBLUE, "Contig depths (abundances) can be found at ", options->output_dir, "/final_assembly_depths.txt", KNORM, "\n");
   }
   SLOG(KBLUE, "_________________________", KNORM, "\n");

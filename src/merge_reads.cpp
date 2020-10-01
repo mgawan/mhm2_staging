@@ -468,6 +468,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
     num_reads += num_pairs * 2;
     ri++;
+    FastqReaders::close(reads_fname);
   }
   merge_time.initiate_exit_reduction();
 
@@ -485,10 +486,6 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
 
   summary_promise.fulfill_anonymous(1);
   fut_summary.wait();
-
-  // merged files will now be used exclusively
-  FastqReaders::close_all();
-  FastqReaders::open_all(merged_reads_fname_list);
 
   timer.initate_exit_barrier();
 }

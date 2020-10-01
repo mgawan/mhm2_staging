@@ -21,6 +21,14 @@ Options:
 
 "
 
+# TEMPORARY
+# for Issue #37 to scale up to 778 nodes 
+export GASNET_USE_SRQ=1 
+export GASNET_USE_XRC=1
+export GASNET_AM_CREDITS_PP=1
+export GASNET_RBUF_COUNT=$((1*778*42))
+
+
 if [ -n "${__UPCXX_RUN_SUMMIT}" ]
 then
   socket=$(hwloc-calc -I Node $(hwloc-bind --get))
