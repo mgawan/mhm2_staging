@@ -12,6 +12,7 @@
       div.column{display: inline-block; vertical-align: top; width: 50%;}
   </style>
   <center><h1>MHM User Guide</h1><h3>Version 2.0 (09/30/2020)</h3></center>
+  <center><h1>MHM User Guide</h1><h3>Version 2.0 (09/30/2020)</h3></center>
 </head>
 <body>
 <style type="text/css">
@@ -411,7 +412,7 @@ make -j all install</code></pre>
 <h1 id="running">Running</h1>
 <p>To execute MHM2, run the <code>mhm2.py</code> script located at <code>install/bin</code>. Most parameters have sensible defaults, so it is possible to run with only the read FASTQ files specified, e.g. to run with two interleaved reads files, <code>lib1.fastq</code> and <code>lib2.fastq</code>, you could execute:</p>
 <p><code>mhm2.py -r lib1.fastq,lib2.fastq</code></p>
-<p>A list of all the command line options can be found by running with <code>-h</code>. Some of these have a short form (a single dash with a single character and a long form, starting with a double-dash). In the options described below, where both a short form and a long form exist, they are separated by a comma. The type of the option is indicated as one of <code>STRING</code> (a string of characters), <code>INT</code> (an integer), <code>FLOAT</code> (a floating point value) or <code>BOOL</code> (a boolean flag). For <code>BOOL</code>, the option can be given as <code>true</code>, <code>false</code>, <code>yes</code>, <code>no</code>, <code>0</code>, <code>1</code>, or omitted altogether, in which case the option will be <code>true</code>, and if an option is specfied, the <code>=</code> must be used, e.g. <code>mhm2.py --checkpoint=false</code></p>
+<p>A list of all the command line options can be found by running with <code>-h</code>. Some of these have a short form (a single dash with a single character) and a long form (starting with a double-dash). In the options described below, where both a short form and a long form exist, they are separated by a comma. The type of the option is indicated as one of <code>STRING</code> (a string of characters), <code>INT</code> (an integer), <code>FLOAT</code> (a floating point value) or <code>BOOL</code> (a boolean flag). For <code>BOOL</code>, the option can be given as <code>true</code>, <code>false</code>, <code>yes</code>, <code>no</code>, <code>0</code>, <code>1</code>, or omitted altogether, in which case the option will be <code>true</code>, and if an option is specfied, the <code>=</code> must be used, e.g. <code>mhm2.py --checkpoint=false</code></p>
 <p>By default, the run will generate files in the output directory (see the <code>--output</code> option below). At a minimum, this will include the following files:</p>
 <ul>
 <li><code>final_assembly.fasta</code>: the contigs for the assembly, in FASTA format.</li>

@@ -83,7 +83,7 @@ execute:
 `mhm2.py -r lib1.fastq,lib2.fastq`
 
 A list of all the command line options can be found by running with `-h`. Some of these have a short form (a single dash with a
-single character and a long form, starting with a double-dash). In the options described below, where both a short form and a
+single character) and a long form (starting with a double-dash). In the options described below, where both a short form and a
 long form exist, they are separated by a comma. The type of the option is indicated as one of `STRING` (a string of characters), `INT` (an
 integer), `FLOAT` (a floating point value) or `BOOL` (a boolean flag). For `BOOL`, the option can be given as `true`, `false`,
 `yes`, `no`, `0`, `1`, or omitted altogether, in which case the option will be `true`, and if an option is specfied, the `=` must be used,
