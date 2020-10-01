@@ -186,7 +186,7 @@ class KmerCtgDHT {
     return base_count;
   }
 
-  void set_sam_string(Aln &aln, string read_seq, string cigar) {
+  static void set_sam_string(Aln &aln, string read_seq, string cigar) {
     assert(aln.is_valid());
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
@@ -261,7 +261,7 @@ class KmerCtgDHT {
 
   static void ssw_align_read(StripedSmithWaterman::Aligner &ssw_aligner, StripedSmithWaterman::Filter &ssw_filter, Alns *alns,
                              AlnScoring &aln_scoring, IntermittentTimer &aln_kernel_timer, Aln &aln, const string &cseq,
-                             const string &rseq) {
+                             const string &rseq, int read_group_id) {
     StripedSmithWaterman::Alignment ssw_aln;
     aln_kernel_timer.start();
     // align query, ref, reflen
@@ -278,12 +278,13 @@ class KmerCtgDHT {
     aln.score2 = ssw_aln.sw_score_next_best;
     aln.mismatches = ssw_aln.mismatches;
     aln.identity = 100 * ssw_aln.sw_score / aln_scoring.match / aln.rlen;
+    aln.read_group_id = read_group_id;
     if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
     alns->add_aln(aln);
   }
 
-  void ssw_align_read(IntermittentTimer &aln_kernel_timer, Aln &aln, const string &cseq, const string &rseq) {
-    ssw_align_read(ssw_aligner, ssw_filter, alns, aln_scoring, aln_kernel_timer, aln, cseq, rseq);
+  void ssw_align_read(IntermittentTimer &aln_kernel_timer, Aln &aln, const string &cseq, const string &rseq, int read_group_id) {
+    ssw_align_read(ssw_aligner, ssw_filter, alns, aln_scoring, aln_kernel_timer, aln, cseq, rseq, read_group_id);
   }
 
   // encapsulate the data for a kernel to run a block independently
@@ -300,13 +301,15 @@ class KmerCtgDHT {
     StripedSmithWaterman::Filter ssw_filter;
     int64_t max_clen;
     int64_t max_rlen;
+    int read_group_id;
 
-    AlignBlockData(KmerCtgDHT &kmer_ctg_dht)
+    AlignBlockData(KmerCtgDHT &kmer_ctg_dht, int read_group_id)
         : aln_scoring(kmer_ctg_dht.aln_scoring)
         , ssw_aligner(kmer_ctg_dht.ssw_aligner)
         , ssw_filter(kmer_ctg_dht.ssw_filter)
         , max_clen(kmer_ctg_dht.max_clen)
         , max_rlen(kmer_ctg_dht.max_rlen)
+        , read_group_id(read_group_id)
 #ifdef ENABLE_GPUS
         , gpu_driver(kmer_ctg_dht.gpu_driver)
 #endif
@@ -332,13 +335,13 @@ class KmerCtgDHT {
       Aln &aln = abd.kernel_alns[i];
       string &cseq = abd.ctg_seqs[i];
       string &rseq = abd.read_seqs[i];
-      ssw_align_read(abd.ssw_aligner, abd.ssw_filter, alns_ptr, abd.aln_scoring, aln_kernel_timer, aln, cseq, rseq);
+      ssw_align_read(abd.ssw_aligner, abd.ssw_filter, alns_ptr, abd.aln_scoring, aln_kernel_timer, aln, cseq, rseq, abd.read_group_id);
     }
   }
 
-  upcxx::future<> ssw_align_block(IntermittentTimer &aln_kernel_timer) {
+  upcxx::future<> ssw_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
     auto &myself = *this;
-    shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself);
+    shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
     future<> fut = upcxx_utils::execute_in_new_thread([sh_abd, &aln_kernel_timer]() {
@@ -385,16 +388,16 @@ class KmerCtgDHT {
       // FIXME: need to get the mismatches
       aln.mismatches = 0;  // ssw_aln.mismatches;
       aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
-      aln.read_group_id = read_group_id;
+      aln.read_group_id = abd.read_group_id;
       // FIXME: need to get cigar
       // if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
       abd.alns->add_aln(aln);
     }
   }
 
-  upcxx::future<> gpu_align_block(IntermittentTimer &aln_kernel_timer) {
+  upcxx::future<> gpu_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
     auto &myself = *this;
-    shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself);
+    shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
     future<> fut = upcxx_utils::execute_in_new_thread([&myself, sh_abd, &aln_kernel_timer] {
@@ -538,7 +541,7 @@ class KmerCtgDHT {
     max_rlen = 0;
   }
 
-  void kernel_align_block(IntermittentTimer &aln_kernel_timer) {
+  void kernel_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
     auto num = kernel_alns.size();
 
     // steal work from this kernel block if the previous kernel is still active
@@ -547,7 +550,7 @@ class KmerCtgDHT {
       assert(!ctg_seqs.empty());
       assert(!read_seqs.empty());
       // steal one from the block
-      ssw_align_read(aln_cpu_bypass_timer, kernel_alns.back(), ctg_seqs.back(), read_seqs.back());
+      ssw_align_read(aln_cpu_bypass_timer, kernel_alns.back(), ctg_seqs.back(), read_seqs.back(), read_group_id);
       kernel_alns.pop_back();
       ctg_seqs.pop_back();
       read_seqs.pop_back();
@@ -563,24 +566,24 @@ class KmerCtgDHT {
 #ifdef ENABLE_GPUS
       // for now, the GPU alignment doesn't support cigars
       if (!ssw_filter.report_cigar && gpu_mem_avail) {
-        active_kernel_fut = gpu_align_block(aln_kernel_timer);
+        active_kernel_fut = gpu_align_block(aln_kernel_timer, read_group_id);
       } else {
-        active_kernel_fut = ssw_align_block(aln_kernel_timer);
+        active_kernel_fut = ssw_align_block(aln_kernel_timer, read_group_id);
       }
 #else
-      active_kernel_fut = ssw_align_block(aln_kernel_timer);
+      active_kernel_fut = ssw_align_block(aln_kernel_timer, read_group_id);
 #endif
     }
 
     clear_aln_bufs();
   }
 
-  void flush_remaining(IntermittentTimer &aln_kernel_timer) {
+  void flush_remaining(IntermittentTimer &aln_kernel_timer, int read_group_id) {
     BaseTimer t(__FILEFUNC__);
     t.start();
     auto num = kernel_alns.size();
     if (num) {
-      kernel_align_block(aln_kernel_timer);
+      kernel_align_block(aln_kernel_timer, read_group_id);
     }
     bool is_ready = active_kernel_fut.ready();
     active_kernel_fut.wait();
@@ -891,11 +894,12 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
       num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
                                        fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads, read_group_id);
 
+    kmer_ctg_dht.flush_remaining(aln_kernel_timer, read_group_id);
     all_done = when_all(all_done, progbar.set_done());
   }
 
   // make sure to do any outstanding kernel block alignments
-  kmer_ctg_dht.flush_remaining(aln_kernel_timer);
+  
 
   auto tot_num_reads_fut = reduce_one(num_reads, op_fast_add, 0);
   auto num_excess_alns_reads_fut = reduce_one(num_excess_alns_reads, op_fast_add, 0);
