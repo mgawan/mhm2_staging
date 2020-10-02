@@ -66,8 +66,8 @@
 #include "adept-sw/driver.hpp"
 #endif
 
-#ifndef __POWERPC__  // FIXME remove after solving Issues #35 #49
-#define KLIGN_CPU_WORK_STEAL
+#ifdef __PPC64__  // FIXME remove after solving Issues #35 #49
+#define NO_KLIGN_CPU_WORK_STEAL
 #endif
 
 using namespace upcxx;
@@ -559,7 +559,7 @@ class KmerCtgDHT {
     while (!active_kernel_fut.ready() && !kernel_alns.empty()) {
       assert(!ctg_seqs.empty());
       assert(!read_seqs.empty());
-#ifdef KLIGN_CPU_WORK_STEAL
+#ifndef NO_KLIGN_CPU_WORK_STEAL
       // steal one from the block
       ssw_align_read(aln_cpu_bypass_timer, kernel_alns.back(), ctg_seqs.back(), read_seqs.back(), read_group_id);
       kernel_alns.pop_back();
