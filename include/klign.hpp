@@ -536,7 +536,7 @@ class KmerCtgDHT {
   }
 
   void flush_add_kmers() {
-    BarrierTimer timer(__FILEFUNC__, false); // barrier on exit, not entrance
+    BarrierTimer timer(__FILEFUNC__, false);  // barrier on exit, not entrance
     kmer_store.flush_updates();
     kmer_store.clear();
   }
@@ -634,7 +634,7 @@ class KmerCtgDHT {
 
 #ifdef DEBUG
   void dump_ctg_kmers() {
-    BarrierTimer timer(__FILEFUNC__, false); // barrier on exit not entrance
+    BarrierTimer timer(__FILEFUNC__, false);  // barrier on exit not entrance
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
