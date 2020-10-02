@@ -536,7 +536,7 @@ class KmerCtgDHT {
   }
 
   void flush_add_kmers() {
-    BarrierTimer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false); // barrier on exit, not entrance
     kmer_store.flush_updates();
     kmer_store.clear();
   }
@@ -634,7 +634,7 @@ class KmerCtgDHT {
 
 #ifdef DEBUG
   void dump_ctg_kmers() {
-    BarrierTimer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false); // barrier on exit not entrance
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
@@ -744,9 +744,10 @@ void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, unsig
       progress();
     }
   }
-  progbar.done();
+  auto fut = progbar.set_done();
   kmer_ctg_dht.flush_add_kmers();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
+  fut.wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
   auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs();
