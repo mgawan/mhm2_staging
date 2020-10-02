@@ -577,6 +577,11 @@ def main():
                         print_red("No additional completed round. Could not restart, exiting...")
                     return signal.SIGABRT
             else:
+                final_assembly = _output_dir + "final_assembly.fasta"
+                if os.path.exists(final_assembly):
+                    print("Final assembly can be found at ", final_assembly)
+                else:
+                    err_msgs.append("Could not find the final assembly!  It should be at %s\n" % (final_assembly))
                 print_err_msgs(err_msgs, _proc.returncode)
                 print('Overall time taken (including any restarts): %.2f s' % (time.time() - start_time))
                 break
