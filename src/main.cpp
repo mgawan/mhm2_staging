@@ -62,7 +62,9 @@ int main(int argc, char **argv) {
     }
     if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
   }
-  upcxx_utils::ThreadPool::get_single_pool(2); // reserve up to 2 threads in the singleton thread pool
+  const int num_threads = 3; // reserve up to 3 threads in the singleton thread pool TODO make an option
+  upcxx_utils::ThreadPool::get_single_pool(num_threads); 
+  SLOG_VERBOSE("Allowing up to ", num_threads, " extra threads in the thread pool\n");
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
@@ -86,7 +88,7 @@ int main(int argc, char **argv) {
   size_t gpu_mem = 0;
   bool init_gpu_thread = true;
   SLOG_VERBOSE("Detecting GPUs\n");
-  auto detect_gpu_fut = execute_in_new_thread(
+  auto detect_gpu_fut = execute_in_thread_pool(
     [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
       adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
   }).then(
