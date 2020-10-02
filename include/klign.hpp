@@ -66,6 +66,10 @@
 #include "adept-sw/driver.hpp"
 #endif
 
+#ifndef __POWERPC__  // FIXME remove after solving Issues #35 #49
+#define KLIGN_CPU_WORK_STEAL
+#endif
+
 using namespace upcxx;
 using namespace upcxx_utils;
 
@@ -335,26 +339,29 @@ class KmerCtgDHT {
       Aln &aln = abd.kernel_alns[i];
       string &cseq = abd.ctg_seqs[i];
       string &rseq = abd.read_seqs[i];
-      ssw_align_read(abd.ssw_aligner, abd.ssw_filter, alns_ptr, abd.aln_scoring, aln_kernel_timer, aln, cseq, rseq, abd.read_group_id);
+      ssw_align_read(abd.ssw_aligner, abd.ssw_filter, alns_ptr, abd.aln_scoring, aln_kernel_timer, aln, cseq, rseq,
+                     abd.read_group_id);
     }
   }
 
   upcxx::future<> ssw_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+    AsyncTimer t("ssw_align_block (thread)");
     auto &myself = *this;
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut = upcxx_utils::execute_in_new_thread([sh_abd, &aln_kernel_timer]() {
-      BaseTimer t("ssw_align_block (thread)");
+    future<> fut = upcxx_utils::execute_in_thread_pool([sh_abd, t, &aln_kernel_timer]() {
       t.start();
       assert(!sh_abd->kernel_alns.empty());
       _ssw_align_block(*sh_abd, aln_kernel_timer);
       t.stop();
-      SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s\n");
+      SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
+                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
     });
-    fut = fut.then([&myself, sh_abd]() {
+    fut = fut.then([&myself, sh_abd, t]() {
       DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
       myself.alns->append(*(sh_abd->alns));
+      // TODO collect and report on AsyncTimer t
     });
     return fut;
   }
@@ -400,12 +407,13 @@ class KmerCtgDHT {
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut = upcxx_utils::execute_in_new_thread([&myself, sh_abd, &aln_kernel_timer] {
+    future<> fut = upcxx_utils::execute_in_thread_pool([&myself, sh_abd, &aln_kernel_timer] {
       BaseTimer t("gpu_align_block (thread)");
       t.start();
       _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
       t.stop();
-      SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s\n");
+      SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
+                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
     });
     fut = fut.then([&myself, sh_abd]() {
       DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
@@ -542,6 +550,8 @@ class KmerCtgDHT {
   }
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+    BaseTimer steal_t("CPU work steal");
+    steal_t.start();
     auto num = kernel_alns.size();
 
     // steal work from this kernel block if the previous kernel is still active
@@ -549,19 +559,31 @@ class KmerCtgDHT {
     while (!active_kernel_fut.ready() && !kernel_alns.empty()) {
       assert(!ctg_seqs.empty());
       assert(!read_seqs.empty());
+#ifdef KLIGN_CPU_WORK_STEAL
       // steal one from the block
       ssw_align_read(aln_cpu_bypass_timer, kernel_alns.back(), ctg_seqs.back(), read_seqs.back(), read_group_id);
       kernel_alns.pop_back();
       ctg_seqs.pop_back();
       read_seqs.pop_back();
+#endif
 #ifndef ENABLE_GPUS
       std::this_thread::yield();  // yield if the kernel is CPU based
 #endif
       progress();
     }
-    if (kernel_alns.empty()) {
-      LOG("Drained entire kernel block of ", num, " while waiting for previous block\n");
-    } else {
+
+    steal_t.stop();
+    auto steal_secs = steal_t.get_elapsed();
+    if (num != kernel_alns.size()) {
+      auto num_stole = num - kernel_alns.size();
+      LOG("Stole from kernel block ", num_stole, " alignments in ", steal_secs, "s (",
+          (steal_secs > 0 ? num_stole / steal_secs : 0.0), " aln/s), while waiting for previous block to complete",
+          (kernel_alns.empty() ? " - THE ENTIRE BLOCK" : ""), "\n");
+    } else if (steal_secs > 0.01) {
+      LOG("Waited ", steal_secs, "s for previous block to complete\n");
+    }
+    if (!kernel_alns.empty()) {
+      assert(active_kernel_fut.ready() && "active_kernel_fut should already be ready");
       active_kernel_fut.wait();  // should be ready already
 #ifdef ENABLE_GPUS
       // for now, the GPU alignment doesn't support cigars
@@ -695,7 +717,7 @@ class KmerCtgDHT {
       SWARN("Waiting for active_kernel - has flush_remaining() been called?\n");
     }
     active_kernel_fut.wait();
-    alns->sort_alns();
+    alns->sort_alns().wait();
   }
 
   int get_gpu_mem_avail() { return gpu_mem_avail; }
@@ -899,15 +921,12 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
   }
 
   // make sure to do any outstanding kernel block alignments
-  
 
   auto tot_num_reads_fut = reduce_one(num_reads, op_fast_add, 0);
   auto num_excess_alns_reads_fut = reduce_one(num_excess_alns_reads, op_fast_add, 0);
   auto num_seeds_fut = reduce_one(tot_num_kmers, op_fast_add, 0);
   auto tot_num_reads_aligned_fut = reduce_one(num_reads_aligned, op_fast_add, 0);
 
-  upcxx::discharge();
-  progress();
   kmer_ctg_dht.sort_alns();
   auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
   all_done.wait();

@@ -45,6 +45,10 @@
 #include "contigs.hpp"
 #include "version.h"
 
+#include "upcxx/upcxx.hpp"
+
+using upcxx::future;
+
 struct Aln {
   Aln();
   Aln(const string &read_id, int64_t cid, int rstart, int rstop, int rlen, int cstart, int cstop, int clen, char orient,
@@ -113,5 +117,5 @@ class Alns {
 
   int calculate_unmerged_rlen();
 
-  void sort_alns();
+  future<> sort_alns();
 };
