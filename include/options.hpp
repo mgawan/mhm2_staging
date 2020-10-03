@@ -97,7 +97,7 @@ class Options {
   bool post_assm_only = false;
   bool dump_gfa = false;
   bool show_progress = false;
-  string pin_by = "cpu";
+  string pin_by = "core";
   int ranks_per_gpu = 0;  // autodetect
   string ctgs_fname;
 #ifdef USE_KMER_DEPTHS

@@ -52,6 +52,7 @@
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/ofstream.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/thread_pool.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "utils.hpp"
 #include "version.h"
@@ -61,6 +62,8 @@ using namespace upcxx_utils;
 using std::ostringstream;
 using std::string;
 using std::to_string;
+
+using upcxx::future;
 
 //
 // class Aln
@@ -100,7 +103,7 @@ Aln::Aln(const string &read_id, int64_t cid, int rstart, int rstop, int rlen, in
     , read_group_id(read_group_id)
     , orient(orient)
     , identity(identity) {
-  //DBG_VERBOSE(read_id, " cid=", cid, " RG=", read_group_id, " mismatches=", mismatches, "\n");
+  // DBG_VERBOSE(read_id, " cid=", cid, " RG=", read_group_id, " mismatches=", mismatches, "\n");
 }
 
 // writes out in the format meraligner uses
@@ -151,9 +154,19 @@ void Alns::add_aln(Aln &aln) {
   alns.push_back(aln);
 }
 
+void Alns::append(Alns &more_alns) {
+  alns.insert(alns.end(), more_alns.alns.begin(), more_alns.alns.end());
+  num_dups += more_alns.num_dups;
+  more_alns.clear();
+}
+
 Aln &Alns::get_aln(int64_t i) { return alns[i]; }
 
 size_t Alns::size() { return alns.size(); }
+
+void Alns::reserve(size_t capacity) { alns.reserve(capacity); }
+
+void Alns::reset() { alns.clear(); }
 
 int64_t Alns::get_num_dups() { return upcxx::reduce_one(num_dups, upcxx::op_fast_add, 0).wait(); }
 
@@ -230,24 +243,33 @@ int Alns::calculate_unmerged_rlen() {
   return most_common_rlen;
 }
 
-void Alns::sort_alns() {
-  BarrierTimer timer(__FILEFUNC__);
-  // sort the alns by name and then for the read from best score to worst - this is needed in later stages
-  std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
-    if (elem1.read_id == elem2.read_id) {
-      // sort by score, then contig len then last by cid to get a deterministic ordering
-      if (elem1.score1 == elem2.score1) {
-        if (elem1.clen == elem2.clen) return elem1.cid > elem2.cid;
-        return elem1.clen > elem2.clen;
+future<> Alns::sort_alns() {
+  AsyncTimer timer(__FILEFUNC__);
+  // execute this in a separate thread so master can continue to communicate freely
+  auto fut = execute_in_thread_pool([&alns=this->alns, timer]() {
+    timer.start();
+    // sort the alns by name and then for the read from best score to worst - this is needed in later stages
+    std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
+      if (elem1.read_id == elem2.read_id) {
+        // sort by score, then contig len then last by cid to get a deterministic ordering
+        if (elem1.score1 == elem2.score1) {
+          if (elem1.clen == elem2.clen) return elem1.cid > elem2.cid;
+          return elem1.clen > elem2.clen;
+        }
+        return elem1.score1 > elem2.score1;
       }
-      return elem1.score1 > elem2.score1;
-    }
-    if (elem1.read_id.length() == elem2.read_id.length()) {
-      auto rlen = elem1.read_id.length();
-      auto cmp = elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2);
-      if (cmp == 0) return (elem1.read_id[rlen - 1] == '1');
-      return cmp > 0;
-    }
-    return elem1.read_id > elem2.read_id;
+      if (elem1.read_id.length() == elem2.read_id.length()) {
+        auto rlen = elem1.read_id.length();
+        auto cmp = elem1.read_id.compare(0, rlen - 2, elem2.read_id, 0, rlen - 2);
+        if (cmp == 0) return (elem1.read_id[rlen - 1] == '1');
+        return cmp > 0;
+      }
+      return elem1.read_id > elem2.read_id;
+    });
+    timer.stop();
+    return timer;
+  });
+  return fut.then([](AsyncTimer timer){
+    // TODO record timer and initate reports after waiting...
   });
 }

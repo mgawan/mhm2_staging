@@ -45,6 +45,10 @@
 #include "contigs.hpp"
 #include "version.h"
 
+#include "upcxx/upcxx.hpp"
+
+using upcxx::future;
+
 struct Aln {
   Aln();
   Aln(const string &read_id, int64_t cid, int rstart, int rstop, int rlen, int cstart, int cstop, int clen, char orient,
@@ -77,11 +81,19 @@ class Alns {
 
   void clear();
 
+  bool check_dup(Aln &aln);
+
   void add_aln(Aln &aln);
+
+  void append(Alns &more_alns);
 
   Aln &get_aln(int64_t i);
 
   size_t size();
+  
+  void reserve(size_t capacity);
+
+  void reset();
 
   int64_t get_num_dups();
 
@@ -105,5 +117,5 @@ class Alns {
 
   int calculate_unmerged_rlen();
 
-  void sort_alns();
+  future<> sort_alns();
 };

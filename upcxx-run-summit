@@ -8,8 +8,8 @@ Options:
   --low-latency     Select the HCA(s) for lowest latency (default)
   --high-bandwidth  Select the HCA(s) for higest bandwidth
 
-  --by-socket       Resource Set by socket - Bind ranks to 1 socket with 3 GPUs (default)
-  --by-gpu          Resource Set by GPU    - Bind ranks to 7 cores on 1 socket with 1 GPU
+  --by-gpu          Resource Set by GPU    - Bind ranks to 7 cores on 1 socket with 1 GPU (default)
+  --by-socket       Resource Set by socket - Bind ranks to 1 socket with 3 GPUs
 
   --1-hca           Use 1 HCA per rank
   --2-hca           Use 2 HCA per rank (default)
@@ -97,8 +97,8 @@ do
   shift
 
   case $opt in
-    "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;; # default
     "by-gpu")    RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;;
+    "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;;
 
     "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
     "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
@@ -121,8 +121,8 @@ do
   esac
 done
 
-# default is by socket
-RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;
+# default is by gpu
+RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;
 
 set -x
 exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind none $0 "$@"

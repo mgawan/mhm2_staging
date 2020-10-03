@@ -66,6 +66,10 @@
 #include "adept-sw/driver.hpp"
 #endif
 
+#ifdef __PPC64__  // FIXME remove after solving Issues #35 #49
+#define NO_KLIGN_CPU_WORK_STEAL
+#endif
+
 using namespace upcxx;
 using namespace upcxx_utils;
 
@@ -150,6 +154,9 @@ class KmerCtgDHT {
   vector<string> ctg_seqs;
   vector<string> read_seqs;
 
+  future<> active_kernel_fut;
+  IntermittentTimer aln_cpu_bypass_timer;
+
   int64_t max_clen = 0;
   int64_t max_rlen = 0;
   size_t gpu_mem_avail = 0;
@@ -183,7 +190,7 @@ class KmerCtgDHT {
     return base_count;
   }
 
-  void set_sam_string(Aln &aln, string read_seq, string cigar) {
+  static void set_sam_string(Aln &aln, string read_seq, string cigar) {
     assert(aln.is_valid());
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
@@ -247,7 +254,8 @@ class KmerCtgDHT {
       kernel_alns.emplace_back(rname, cid, 0, 0, rlen, cstart, 0, clen, orient);
       ctg_seqs.emplace_back(cseq);
       read_seqs.emplace_back(rseq);
-      if ((tot_mem_est >= gpu_mem_avail && kernel_alns.size()) || kernel_alns.size() >= KLIGN_GPU_BLOCK_SIZE) {
+      bool will_run_kernel = (tot_mem_est >= gpu_mem_avail) | (num_alns >= KLIGN_GPU_BLOCK_SIZE);
+      if (will_run_kernel) {
         DBG("tot_mem_est (", tot_mem_est, ") >= gpu_mem_avail (", gpu_mem_avail, " - dispatching ", kernel_alns.size(),
             " alignments\n");
         kernel_align_block(aln_kernel_timer, read_group_id);
@@ -255,56 +263,127 @@ class KmerCtgDHT {
     }
   }
 
-  void ssw_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+  static void ssw_align_read(StripedSmithWaterman::Aligner &ssw_aligner, StripedSmithWaterman::Filter &ssw_filter, Alns *alns,
+                             AlnScoring &aln_scoring, IntermittentTimer &aln_kernel_timer, Aln &aln, const string &cseq,
+                             const string &rseq, int read_group_id) {
     StripedSmithWaterman::Alignment ssw_aln;
-    for (int i = 0; i < kernel_alns.size(); i++) {
-      Aln &aln = kernel_alns[i];
-      string &cseq = ctg_seqs[i];
-      string &rseq = read_seqs[i];
-      // make sure upcxx progress is done before starting alignment
-      // discharge is for internal progress;  progress defaults to user level
-      progress();
-      discharge();
-      aln_kernel_timer.start();
-      // align query, ref, reflen
-      ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
-      aln_kernel_timer.stop();
+    aln_kernel_timer.start();
+    // align query, ref, reflen
+    ssw_aligner.Align(cseq.c_str(), rseq.c_str(), rseq.length(), ssw_filter, &ssw_aln, max((int)(rseq.length() / 2), 15));
+    aln_kernel_timer.stop();
 
-      aln.rstop = aln.rstart + ssw_aln.ref_end + 1;
-      aln.rstart += ssw_aln.ref_begin;
-      aln.cstop = aln.cstart + ssw_aln.query_end + 1;
-      aln.cstart += ssw_aln.query_begin;
-      if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
+    aln.rstop = aln.rstart + ssw_aln.ref_end + 1;
+    aln.rstart += ssw_aln.ref_begin;
+    aln.cstop = aln.cstart + ssw_aln.query_end + 1;
+    aln.cstart += ssw_aln.query_begin;
+    if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
 
-      aln.score1 = ssw_aln.sw_score;
-      aln.score2 = ssw_aln.sw_score_next_best;
-      aln.mismatches = ssw_aln.mismatches;
-      aln.identity = 100 * ssw_aln.sw_score / aln_scoring.match / aln.rlen;
-      aln.read_group_id = read_group_id;
+    aln.score1 = ssw_aln.sw_score;
+    aln.score2 = ssw_aln.sw_score_next_best;
+    aln.mismatches = ssw_aln.mismatches;
+    aln.identity = 100 * ssw_aln.sw_score / aln_scoring.match / aln.rlen;
+    aln.read_group_id = read_group_id;
+    if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+    alns->add_aln(aln);
+  }
 
-      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
-      alns->add_aln(aln);
+  void ssw_align_read(IntermittentTimer &aln_kernel_timer, Aln &aln, const string &cseq, const string &rseq, int read_group_id) {
+    ssw_align_read(ssw_aligner, ssw_filter, alns, aln_scoring, aln_kernel_timer, aln, cseq, rseq, read_group_id);
+  }
+
+  // encapsulate the data for a kernel to run a block independently
+  struct AlignBlockData {
+#ifdef ENABLE_GPUS
+    adept_sw::GPUDriver &gpu_driver;
+#endif
+    vector<Aln> kernel_alns;
+    vector<string> ctg_seqs;
+    vector<string> read_seqs;
+    shared_ptr<Alns> alns;
+    AlnScoring aln_scoring;
+    StripedSmithWaterman::Aligner ssw_aligner;
+    StripedSmithWaterman::Filter ssw_filter;
+    int64_t max_clen;
+    int64_t max_rlen;
+    int read_group_id;
+
+    AlignBlockData(KmerCtgDHT &kmer_ctg_dht, int read_group_id)
+        : aln_scoring(kmer_ctg_dht.aln_scoring)
+        , ssw_aligner(kmer_ctg_dht.ssw_aligner)
+        , ssw_filter(kmer_ctg_dht.ssw_filter)
+        , max_clen(kmer_ctg_dht.max_clen)
+        , max_rlen(kmer_ctg_dht.max_rlen)
+        , read_group_id(read_group_id)
+#ifdef ENABLE_GPUS
+        , gpu_driver(kmer_ctg_dht.gpu_driver)
+#endif
+
+    {
+      DBG_VERBOSE("Created AlignBlockData for kernel ", kmer_ctg_dht.kernel_alns.size(), "\n");
+      // copy/swap/reserve necessary data and configs
+      kernel_alns.swap(kmer_ctg_dht.kernel_alns);
+      kmer_ctg_dht.kernel_alns.reserve(kernel_alns.size());
+      ctg_seqs.swap(kmer_ctg_dht.ctg_seqs);
+      kmer_ctg_dht.ctg_seqs.reserve(ctg_seqs.size());
+      read_seqs.swap(kmer_ctg_dht.read_seqs);
+      kmer_ctg_dht.read_seqs.reserve(read_seqs.size());
+      alns = make_shared<Alns>();
+      alns->reserve(kernel_alns.size());
+    }
+  };
+
+  static void _ssw_align_block(AlignBlockData &abd, IntermittentTimer &aln_kernel_timer) {
+    DBG_VERBOSE("Starting _ssw_align_block of ", abd.kernel_alns.size(), "\n");
+    auto alns_ptr = abd.alns.get();
+    for (int i = 0; i < abd.kernel_alns.size(); i++) {
+      Aln &aln = abd.kernel_alns[i];
+      string &cseq = abd.ctg_seqs[i];
+      string &rseq = abd.read_seqs[i];
+      ssw_align_read(abd.ssw_aligner, abd.ssw_filter, alns_ptr, abd.aln_scoring, aln_kernel_timer, aln, cseq, rseq,
+                     abd.read_group_id);
     }
   }
 
-#ifdef ENABLE_GPUS
-  void gpu_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
-    progress();
-    discharge();
+  upcxx::future<> ssw_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+    AsyncTimer t("ssw_align_block (thread)");
+    auto &myself = *this;
+    shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
+    assert(kernel_alns.empty());
 
+    future<> fut = upcxx_utils::execute_in_thread_pool([sh_abd, t, &aln_kernel_timer]() {
+      t.start();
+      assert(!sh_abd->kernel_alns.empty());
+      _ssw_align_block(*sh_abd, aln_kernel_timer);
+      t.stop();
+      SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
+                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
+    });
+    fut = fut.then([&myself, sh_abd, t]() {
+      DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+      myself.alns->append(*(sh_abd->alns));
+      // TODO collect and report on AsyncTimer t
+    });
+    return fut;
+  }
+
+#ifdef ENABLE_GPUS
+
+  static void _gpu_align_block_kernel(AlignBlockData &abd, IntermittentTimer &aln_kernel_timer) {
+    DBG_VERBOSE("Starting _gpu_align_block_kernel of ", abd.kernel_alns.size(), "\n");
     aln_kernel_timer.start();
+
     // align query_seqs, ref_seqs, max_query_size, max_ref_size
-    gpu_driver.run_kernel_forwards(read_seqs, ctg_seqs, max_rlen, max_clen);
-    while (!gpu_driver.kernel_is_done()) progress();
-    gpu_driver.run_kernel_backwards(read_seqs, ctg_seqs, max_rlen, max_clen);
-    while (!gpu_driver.kernel_is_done()) progress();
+    abd.gpu_driver.run_kernel_forwards(abd.read_seqs, abd.ctg_seqs, abd.max_rlen, abd.max_clen);
+    abd.gpu_driver.kernel_block();
+    abd.gpu_driver.run_kernel_backwards(abd.read_seqs, abd.ctg_seqs, abd.max_rlen, abd.max_clen);
+    abd.gpu_driver.kernel_block();
     aln_kernel_timer.stop();
 
-    auto aln_results = gpu_driver.get_aln_results();
+    auto aln_results = abd.gpu_driver.get_aln_results();
 
-    for (int i = 0; i < kernel_alns.size(); i++) {
-      progress();
-      Aln &aln = kernel_alns[i];
+    for (int i = 0; i < abd.kernel_alns.size(); i++) {
+      // progress();
+      Aln &aln = abd.kernel_alns[i];
       aln.rstop = aln.rstart + aln_results.query_end[i];
       aln.rstart += aln_results.query_begin[i];
       aln.cstop = aln.cstart + aln_results.ref_end[i];
@@ -315,12 +394,33 @@ class KmerCtgDHT {
       aln.score2 = 0;
       // FIXME: need to get the mismatches
       aln.mismatches = 0;  // ssw_aln.mismatches;
-      aln.identity = 100 * aln.score1 / aln_scoring.match / aln.rlen;
-      aln.read_group_id = read_group_id;
+      aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
+      aln.read_group_id = abd.read_group_id;
       // FIXME: need to get cigar
-      // if (ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
-      alns->add_aln(aln);
+      // if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+      abd.alns->add_aln(aln);
     }
+  }
+
+  upcxx::future<> gpu_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+    auto &myself = *this;
+    shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
+    assert(kernel_alns.empty());
+
+    future<> fut = upcxx_utils::execute_in_thread_pool([&myself, sh_abd, &aln_kernel_timer] {
+      BaseTimer t("gpu_align_block (thread)");
+      t.start();
+      _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
+      t.stop();
+      SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
+                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
+    });
+    fut = fut.then([&myself, sh_abd]() {
+      DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+      myself.alns->append(*(sh_abd->alns));
+    });
+
+    return fut;
   }
 #endif
 
@@ -342,6 +442,8 @@ class KmerCtgDHT {
       , kernel_alns({})
       , ctg_seqs({})
       , read_seqs({})
+      , active_kernel_fut(make_future())
+      , aln_cpu_bypass_timer("klign.cpp:CPU_BSW-bypass")
       , alns(&alns)
       , kmer_len(kmer_len) {
     this->aln_scoring = aln_scoring;
@@ -381,6 +483,10 @@ class KmerCtgDHT {
   }
 
   void clear() {
+    if (kernel_alns.size() || !active_kernel_fut.ready())
+      DIE("clear called with alignments in the buffer or active kernel - was flush_remaining called before destrutor?\n");
+    clear_aln_bufs();
+    aln_cpu_bypass_timer.print_out();
     for (auto it = kmer_map->begin(); it != kmer_map->end();) {
       it = kmer_map->erase(it);
     }
@@ -430,7 +536,7 @@ class KmerCtgDHT {
   }
 
   void flush_add_kmers() {
-    BarrierTimer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false);  // barrier on exit, not entrance
     kmer_store.flush_updates();
     kmer_store.clear();
   }
@@ -444,23 +550,69 @@ class KmerCtgDHT {
   }
 
   void kernel_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
-    BaseTimer t(__FILEFUNC__);
-    t.start();
-    if (ctg_seqs.size()) {
+    BaseTimer steal_t("CPU work steal");
+    steal_t.start();
+    auto num = kernel_alns.size();
+
+    // steal work from this kernel block if the previous kernel is still active
+    // if true, this balances the block size that will be sent to the kernel
+    while (!active_kernel_fut.ready() && !kernel_alns.empty()) {
+      assert(!ctg_seqs.empty());
+      assert(!read_seqs.empty());
+#ifndef NO_KLIGN_CPU_WORK_STEAL
+      // steal one from the block
+      ssw_align_read(aln_cpu_bypass_timer, kernel_alns.back(), ctg_seqs.back(), read_seqs.back(), read_group_id);
+      kernel_alns.pop_back();
+      ctg_seqs.pop_back();
+      read_seqs.pop_back();
+#endif
+#ifndef ENABLE_GPUS
+      std::this_thread::yield();  // yield if the kernel is CPU based
+#endif
+      progress();
+    }
+
+    steal_t.stop();
+    auto steal_secs = steal_t.get_elapsed();
+    if (num != kernel_alns.size()) {
+      auto num_stole = num - kernel_alns.size();
+      LOG("Stole from kernel block ", num_stole, " alignments in ", steal_secs, "s (",
+          (steal_secs > 0 ? num_stole / steal_secs : 0.0), " aln/s), while waiting for previous block to complete",
+          (kernel_alns.empty() ? " - THE ENTIRE BLOCK" : ""), "\n");
+    } else if (steal_secs > 0.01) {
+      LOG("Waited ", steal_secs, "s for previous block to complete\n");
+    }
+    if (!kernel_alns.empty()) {
+      assert(active_kernel_fut.ready() && "active_kernel_fut should already be ready");
+      active_kernel_fut.wait();  // should be ready already
 #ifdef ENABLE_GPUS
       // for now, the GPU alignment doesn't support cigars
-      if (!ssw_filter.report_cigar && gpu_mem_avail)
-        gpu_align_block(aln_kernel_timer, read_group_id);
-      else
-        ssw_align_block(aln_kernel_timer, read_group_id);
+      if (!ssw_filter.report_cigar && gpu_mem_avail) {
+        active_kernel_fut = gpu_align_block(aln_kernel_timer, read_group_id);
+      } else {
+        active_kernel_fut = ssw_align_block(aln_kernel_timer, read_group_id);
+      }
 #else
-      ssw_align_block(aln_kernel_timer, read_group_id);
+      active_kernel_fut = ssw_align_block(aln_kernel_timer, read_group_id);
 #endif
-      t.stop();
-      // interferes with progress ticker
-      DBG("Aligned block with ", kernel_alns.size(), " alignments in ", t.get_elapsed(), "\n");
     }
+
     clear_aln_bufs();
+  }
+
+  void flush_remaining(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+    BaseTimer t(__FILEFUNC__);
+    t.start();
+    auto num = kernel_alns.size();
+    if (num) {
+      kernel_align_block(aln_kernel_timer, read_group_id);
+    }
+    bool is_ready = active_kernel_fut.ready();
+    active_kernel_fut.wait();
+    t.stop();
+    if (num || !is_ready) {
+      SLOG_VERBOSE("Aligned and waited for final block with ", num, " alignments in ", t.get_elapsed(), "\n");
+    }
   }
 
   future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
@@ -482,7 +634,7 @@ class KmerCtgDHT {
 
 #ifdef DEBUG
   void dump_ctg_kmers() {
-    BarrierTimer timer(__FILEFUNC__);
+    BarrierTimer timer(__FILEFUNC__, false);  // barrier on exit not entrance
     string dump_fname = "ctg_kmers-" + to_string(kmer_len) + ".txt.gz";
     get_rank_path(dump_fname, rank_me());
     zstr::ofstream dump_file(dump_fname);
@@ -557,7 +709,16 @@ class KmerCtgDHT {
     delete[] seq_buf;
   }
 
-  void sort_alns() { alns->sort_alns(); }
+  void sort_alns() {
+    if (!kernel_alns.empty()) {
+      DIE("sort_alns called while alignments are still pending to be processed - ", kernel_alns.size());
+    }
+    if (!active_kernel_fut.ready()) {
+      SWARN("Waiting for active_kernel - has flush_remaining() been called?\n");
+    }
+    active_kernel_fut.wait();
+    alns->sort_alns().wait();
+  }
 
   int get_gpu_mem_avail() { return gpu_mem_avail; }
 };
@@ -583,9 +744,10 @@ void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, unsig
       progress();
     }
   }
-  progbar.done();
+  auto fut = progbar.set_done();
   kmer_ctg_dht.flush_add_kmers();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
+  fut.wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
   auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs();
@@ -713,6 +875,7 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
 #endif
   kmer_ctg_dht.clear_aln_bufs();
   barrier();
+  upcxx::future<> all_done = make_future();
   int read_group_id = 0;
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
@@ -753,24 +916,33 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
     if (read_records.size())
       num_reads_aligned += align_kmers(kmer_ctg_dht, kmer_read_map, read_records, compute_alns_timer, get_ctgs_timer,
                                        fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads, read_group_id);
-    // make sure to do any outstanding kernel block alignments
-    kmer_ctg_dht.kernel_align_block(aln_kernel_timer, read_group_id);
-    kmer_ctg_dht.sort_alns();
-    read_group_id++;
-    progbar.done();
-    barrier();
+
+    kmer_ctg_dht.flush_remaining(aln_kernel_timer, read_group_id);
+    all_done = when_all(all_done, progbar.set_done());
   }
-  auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Parsed ", tot_num_reads, " reads, with ", reduce_one(tot_num_kmers, op_fast_add, 0).wait(), " seeds\n");
+
+  // make sure to do any outstanding kernel block alignments
+
+  auto tot_num_reads_fut = reduce_one(num_reads, op_fast_add, 0);
+  auto num_excess_alns_reads_fut = reduce_one(num_excess_alns_reads, op_fast_add, 0);
+  auto num_seeds_fut = reduce_one(tot_num_kmers, op_fast_add, 0);
+  auto tot_num_reads_aligned_fut = reduce_one(num_reads_aligned, op_fast_add, 0);
+
+  kmer_ctg_dht.sort_alns();
+  auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
+  all_done.wait();
+  barrier();
+
+  auto tot_num_reads = tot_num_reads_fut.wait();
+  SLOG_VERBOSE("Parsed ", tot_num_reads, " reads, with ", num_seeds_fut.wait(), " seeds\n");
   auto tot_num_alns = kmer_ctg_dht.get_num_alns();
   SLOG_VERBOSE("Found ", tot_num_alns, " alignments of which ", perc_str(kmer_ctg_dht.get_num_perfect_alns(), tot_num_alns),
                " are perfect\n");
-  auto tot_excess_alns_reads = reduce_one(num_excess_alns_reads, op_fast_add, 0).wait();
+  auto tot_excess_alns_reads = num_excess_alns_reads_fut.wait();
   if (num_excess_alns_reads)
     SLOG_VERBOSE("Dropped ", tot_excess_alns_reads, " reads because of alignments in excess of ", KLIGN_MAX_ALNS_PER_READ, "\n");
-  auto num_overlaps = kmer_ctg_dht.get_num_overlaps();
   if (num_overlaps) SLOG_VERBOSE("Dropped ", perc_str(num_overlaps, tot_num_alns), " alignments becasue of overlaps\n");
-  auto tot_num_reads_aligned = reduce_one(num_reads_aligned, op_fast_add, 0).wait();
+  auto tot_num_reads_aligned = tot_num_reads_aligned_fut.wait();
   SLOG_VERBOSE("Mapped ", perc_str(tot_num_reads_aligned, tot_num_reads), " reads to contigs\n");
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
   SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences\n");

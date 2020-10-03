@@ -4,7 +4,6 @@
 #include <cmath>
 #include <string>
 #include <vector>
-#include <thread>
 
 #define NSTREAMS 2
 
@@ -29,9 +28,9 @@ std::string get_device_name(int device_id);
 int get_num_node_gpus();
 
 // The first call to cudaMallocHost can take several seconds of real time but no cpu time
-// so start it asap in a new thread
-std::thread *initialize_gpu();
-std::thread *initialize_gpu(double &time_to_initialize);
+// so start it asap (call this in a new thread)
+bool initialize_gpu();
+bool initialize_gpu(double &time_to_initialize, int &device_count, size_t &total_mem);
 
 struct DriverState;
 
@@ -50,6 +49,7 @@ class GPUDriver {
   void run_kernel_backwards(std::vector<std::string> &reads, std::vector<std::string> &contigs, unsigned maxReadSize,
                             unsigned maxContigSize);
   bool kernel_is_done();
+  void kernel_block();
 
   AlignmentResults &get_aln_results() { return alignments; }
 };
