@@ -310,7 +310,7 @@ def capture_err(err_msgs):
         # filter out all but warnings
         # errors causing crashes will come to light later
         if 'WARNING' in line:
-            if 'GASNet was configured without multi-rail support' not in line:
+            if 'GASNet was configured without multi-rail support' not in line and 'GASNET_AM_CREDITS_SLACK reduced to GASNET_AM_CREDITS_PP' not in line:
                 sys.stderr.write(line)
                 sys.stderr.flush()
         # FIXME: check for messages about memory failures
