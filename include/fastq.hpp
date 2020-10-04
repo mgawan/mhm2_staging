@@ -53,6 +53,8 @@ using std::to_string;
 
 using upcxx::rank_me;
 using upcxx::rank_n;
+using upcxx::dist_object;
+using upcxx::promise;
 
 using upcxx_utils::IntermittentTimer;
 
@@ -71,7 +73,18 @@ class FastqReader {
   shared_ptr<FastqReader> fqr2;
   bool first_file;
   IntermittentTimer io_t;
+  struct PromStartStop {
+    promise<int64_t> start_prom, stop_prom;
+    future<> set(FastqReader *fqr) {
+      auto set_start = start_prom.get_future().then([fqr](int64_t start) { fqr->start_read = start; });
+      auto set_end = stop_prom.get_future().then([fqr](int64_t stop) { fqr->end_read = stop; });
+      return when_all(set_start, set_end);
+    }
+  };
+  dist_object<PromStartStop> dist_prom;
   upcxx::future<> open_fut;
+  void advise();
+  void seek();
 
   inline static double overall_io_t = 0;
 
@@ -86,7 +99,7 @@ class FastqReader {
   FastqReader(const string &_fname, bool wait = false, upcxx::future<> first_wait = make_future());
 
   // this happens within a separate thread
-  void continue_open(int fd = -1);
+  upcxx::future<> continue_open(int fd = -1);
 
   ~FastqReader();
 

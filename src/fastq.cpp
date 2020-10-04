@@ -58,7 +58,12 @@
 using namespace upcxx_utils;
 using std::ostringstream;
 using std::string;
+using std::make_shared;
+using std::shared_ptr;
+
 using upcxx::future;
+using upcxx::local_team;
+using upcxx::rank_me;
 
 void FastqReader::rtrim(string &s) {
   auto pos = s.length() - 1;
@@ -235,6 +240,7 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
     , fqr2(nullptr)
     , first_file(true)
     , io_t("fastq IO for " + fname)
+    , dist_prom(world())
     , open_fut(make_future()) {
   Timer construction_timer("FastqReader construct " + get_basename(fname));
   construction_timer.initiate_entrance_reduction();
@@ -258,9 +264,7 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
   future<> file_size_fut = upcxx::broadcast(file_size, 0).then([&file_size = this->file_size](int64_t sz) { file_size = sz; });
 
   // continue opening IO operations to find this rank's start record in a separate thread
-  open_fut = when_all(open_fut, file_size_fut, first_wait).then([this, fd]() {
-    return upcxx_utils::execute_in_thread_pool([this, fd]() { this->continue_open(fd); });
-  });
+  open_fut = when_all(open_fut, file_size_fut, first_wait).then([this, fd]() { return this->continue_open(fd); });
 
   if (!fname2.empty()) {
     // this second reader is generally hidden from the user
@@ -275,7 +279,7 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
 }
 
 // this happens within a separate thread
-void FastqReader::continue_open(int fd) {
+upcxx::future<> FastqReader::continue_open(int fd) {
   io_t.start();
   if (fd < 0) {
     f = fopen(fname.c_str(), "r");
@@ -287,30 +291,66 @@ void FastqReader::continue_open(int fd) {
   }
   LOG("Opened", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
   io_t.stop();
+  if (rank_me() == 0) {
+    // special set 0 to first rank and nothing else
+    dist_prom->start_prom.fulfill_result(0);
+  } else if (rank_me() == rank_n() - 1) {
+    // special set last to file size
+    dist_prom->stop_prom.fulfill_result(file_size);
+  }
+  promise wait_prom(1);
+  if (local_team().rank_me() == local_team().rank_n() - 1) {
+    // do all the fseeking for the local team
+    using DPSS = dist_object<PromStartStop>;
+    int64_t read_block = INT_CEIL(file_size, rank_n());
+    auto first_rank = rank_me() + 1 - local_team().rank_n();
+    for (auto rank = first_rank; rank < first_rank + local_team().rank_n(); rank++) {
+      // just a part of the file is read by this thread
+      if (rank == 0) {
+        // special set 0 to first rank and nothing else
+        continue;
+      }
+      assert(rank > 0);
+      start_read = read_block * rank;
+      auto pos = get_fptr_for_next_record(start_read);
+      wait_prom.get_future().then([rank, pos, &dist_prom=this->dist_prom]() {
+        // send end to prev rank
+        rpc_ff(rank - 1, [](DPSS &dpss, int64_t end_pos) { dpss->stop_prom.fulfill_result(end_pos); }, dist_prom, pos);
+        // send start to rank
+        rpc_ff(rank, [](DPSS &dpss, int64_t start_pos) { dpss->start_prom.fulfill_result(start_pos); }, dist_prom, pos);
+      });
+    }
+  }
+  // all my seeks are done, send results to local team
+  wait_prom.fulfill_anonymous(1);
+  auto fut_set = dist_prom->set(this);
+  auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });
+  // run posix_advise in a separate thread per Issue#61
+  auto fut_advise = fut_seek.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->advise(); }); });
+  return fut_seek;
+}
 
-  // just a part of the file is read by this thread
-  int64_t read_block = INT_CEIL(file_size, rank_n());
-  start_read = read_block * rank_me();
-  end_read = read_block * (rank_me() + 1);
-
-  if (rank_me()) start_read = get_fptr_for_next_record(start_read);
-  if (rank_me() == rank_n() - 1)
-    end_read = file_size;
-  else
-    end_read = get_fptr_for_next_record(end_read);
-
-  io_t.start();
-  if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
-// tell the OS this file will be accessed sequentially
+void FastqReader::advise() {
 #if defined(__APPLE__) && defined(__MACH__)
 // TODO
 #else
+  BaseTimer advise_t("Advise " + fname);
+  advise_t.start();
   posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+  LOG("advised ", fname, " POSIX_FADV_SEQUENTIAL in ", advise_t.get_elapsed_since_start(), "s\n");
+  posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_WILLNEED);
+  LOG("advised ", fname, " POSIX_FADV_WILLNEED in ", advise_t.get_elapsed_since_start(), "s\n");
 #endif
+}
+
+void FastqReader::seek() {
+  // seek and madvise
+  io_t.start();
+  if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
   SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
   double fseek_t = io_t.get_elapsed_since_start();
   io_t.stop();
-  LOG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), " seek+advise ", fseek_t, "s io to open+find+seek ",
+  LOG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), " seek ", fseek_t, "s io to open+find+seek ",
       io_t.get_elapsed(), "s\n");
 }
 
