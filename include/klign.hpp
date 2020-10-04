@@ -66,7 +66,7 @@
 #include "adept-sw/driver.hpp"
 #endif
 
-#ifdef __PPC64__  // FIXME remove after solving Issues #35 #49
+#ifdef __PPC64__  // FIXME remove after solving Issues #60 #35 #49
 #define NO_KLIGN_CPU_WORK_STEAL
 #endif
 
@@ -126,7 +126,8 @@ class KmerCtgDHT {
 
   // maps a kmer to a contig - the first part of the pair is set to true if this is a conflict,
   // with a kmer mapping to multiple contigs
-  using kmer_map_t = dist_object<HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>>;
+  using local_kmer_map_t = HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>;
+  using kmer_map_t = dist_object<local_kmer_map_t>;
   kmer_map_t kmer_map;
 
 #ifndef FLAT_AGGR_STORE
@@ -487,13 +488,18 @@ class KmerCtgDHT {
       DIE("clear called with alignments in the buffer or active kernel - was flush_remaining called before destrutor?\n");
     clear_aln_bufs();
     aln_cpu_bypass_timer.print_out();
-    for (auto it = kmer_map->begin(); it != kmer_map->end();) {
-      it = kmer_map->erase(it);
-    }
+    local_kmer_map_t().swap(*kmer_map); // release all memory
     kmer_store.clear();
   }
 
   ~KmerCtgDHT() { clear(); }
+
+  void reserve(int64_t mysize) {
+    kmer_map->reserve(mysize);
+  }
+  int64_t size() const {
+    return kmer_map->size();
+  }
 
   intrank_t get_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
 
@@ -728,6 +734,17 @@ void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, unsig
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   ProgressBar progbar(ctgs.size(), "Extracting seeds from contigs");
+  // estimate and reserve room in the local map to avoid excessive reallocations
+  int64_t est_num_kmers = 0;
+  for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
+    auto ctg = it;
+    auto len = ctg->seq.length();
+    if (len < min_ctg_len) continue;
+    est_num_kmers += len - kmer_ctg_dht.kmer_len + 1;
+  }
+  est_num_kmers = upcxx::reduce_all(est_num_kmers, upcxx::op_fast_add).wait();
+  auto my_reserve = 1.2 * est_num_kmers / rank_n() + 2000;  // 120% to keep the map fast
+  kmer_ctg_dht.reserve(my_reserve);
   vector<Kmer<MAX_K>> kmers;
   for (auto it = ctgs.begin(); it != ctgs.end(); ++it) {
     auto ctg = it;
@@ -741,14 +758,15 @@ void build_alignment_index(KmerCtgDHT<MAX_K> &kmer_ctg_dht, Contigs &ctgs, unsig
     for (unsigned i = 0; i < kmers.size(); i++) {
       ctg_loc.pos_in_ctg = i;
       kmer_ctg_dht.add_kmer(kmers[i], ctg_loc);
-      progress();
     }
+    progress();
   }
   auto fut = progbar.set_done();
   kmer_ctg_dht.flush_add_kmers();
   auto tot_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   fut.wait();
   auto num_kmers_in_ht = kmer_ctg_dht.get_num_kmers();
+  LOG("Estimated room for ", my_reserve, " my final count ", kmer_ctg_dht.size(), "\n");
   SLOG_VERBOSE("Processed ", tot_num_kmers, " seeds from contigs, added ", num_kmers_in_ht, "\n");
   auto num_dropped_seed_to_ctgs = kmer_ctg_dht.get_num_dropped_seed_to_ctgs();
   if (num_dropped_seed_to_ctgs)
@@ -787,18 +805,26 @@ int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
   }
   get_ctgs_timer.start();
-  // future<> fut_chain = make_future();
+  // get the singleton thread pool to handle the postprocessing of the rpc return results
+  //   ... and let progress() keep communicating and handling rpc callbacks
+  // enforce serialization by future chain of the result processing so only 1 thread-at-a-time is utilized is this function
+  // there is no race, because serial_tp is the only thread making changes to kmer_read_map and kmer_to_reads
+  auto &single_tp = upcxx_utils::ThreadPool::get_single_pool(1);
+  future<> fut_serial_results = make_future();
   // fetch ctgs for each set of kmers from target ranks
   auto lranks = local_team().rank_n();
   auto nnodes = rank_n() / lranks;
-  for (int i = 0; i < rank_n(); i++) {
-    // stagger by rank_me, round robin by node
-    auto target_rank = ((i % nnodes) * lranks + i / nnodes + rank_me()) % rank_n();
+  for (auto target_rank : upcxx_utils::foreach_rank_by_node()) {  // stagger by rank_me, round robin by node
     progress();
     // skip targets that have no ctgs - this should reduce communication at scale
     if (kmer_lists[target_rank].empty()) continue;
-    auto fut =
-        kmer_ctg_dht.get_ctgs_with_kmers(target_rank, kmer_lists[target_rank]).then([&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
+    auto fut_get_ctgs = kmer_ctg_dht.get_ctgs_with_kmers(target_rank, kmer_lists[target_rank]);
+    auto fut_rpc_returned = fut_get_ctgs.then([&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
+      // move and process results in a different thread
+      auto sh_kmer_ctg_locs = make_shared < vector<KmerCtgLoc<MAX_K>>>(std::move(kmer_ctg_locs));
+      fut_serial_results = fut_serial_results.then([&, sh_kmer_ctg_locs]() {
+        auto fut_processed = single_tp.enqueue([&, sh_kmer_ctg_locs]() {
+          vector < KmerCtgLoc<MAX_K> > &kmer_ctg_locs = *sh_kmer_ctg_locs;
           // iterate through the kmers, each one has an associated ctg location
           for (auto &kmer_ctg_loc : kmer_ctg_locs) {
             // get the reads that this kmer mapped to
@@ -821,11 +847,18 @@ int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<
             }
           }
         });
-    upcxx_utils::limit_outstanding_futures(fut, std::max(nnodes * 2, lranks * 4)).wait();
-    // fut_chain = when_all(fut_chain, fut);
+        return fut_processed;
+      });
+      return;  // return immediately
+    });
+
+    upcxx_utils::limit_outstanding_futures(fut_rpc_returned, std::max(nnodes * 2, lranks * 4)).wait();
   }
-  // fut_chain.wait();
+
   upcxx_utils::flush_outstanding_futures();
+  // after flush_outstanding_futures, fut_serial_results is fully future chained
+  fut_serial_results.wait();  // wait for serial results processing to complete
+
   get_ctgs_timer.stop();
   delete[] kmer_lists;
   kmer_read_map.clear();
