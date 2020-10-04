@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
   auto init_start_t = start_t;
   // keep the exact command line arguments before options may have modified anything
   string executed = argv[0];
-  executed += ".py"; // assume the python wrapper was actually called
+  executed += ".py";  // assume the python wrapper was actually called
   for (int i = 1; i < argc; i++) executed = executed + " " + argv[i];
   auto options = make_shared<Options>();
   // if we don't load, return "command not found"
@@ -62,15 +62,28 @@ int main(int argc, char **argv) {
     }
     if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
   }
-  const int num_threads = 3; // reserve up to 3 threads in the singleton thread pool TODO make an option
-  upcxx_utils::ThreadPool::get_single_pool(num_threads); 
+  const int num_threads = 3;  // reserve up to 3 threads in the singleton thread pool TODO make an option
+  upcxx_utils::ThreadPool::get_single_pool(num_threads);
   SLOG_VERBOSE("Allowing up to ", num_threads, " extra threads in the thread pool\n");
 
   if (!upcxx::rank_me()) {
     // get total file size across all libraries
     double tot_file_size = 0;
     for (auto const &reads_fname : options->reads_fnames) {
-      tot_file_size += get_file_size(reads_fname);
+      auto spos = reads_fname.find_first_of(':');  // support paired reads
+      if (spos == string::npos) {
+        auto sz = get_file_size(reads_fname);
+        SLOG("Reads file ", reads_fname, "is ", get_size_str(sz), "\n");
+        tot_file_size += sz;
+      } else {
+        // paired files
+        auto r1 = reads_fname.substr(0, spos);
+        auto s1 = get_file_size(r1);
+        auto r2 = reads_fname.substr(spos + 1);
+        auto s2 = get_file_size(r2);
+        SLOG("Paired files ", r1, " and ", r2, " are ", get_size_str(s1), " and ", get_size_str(s2), "\n");
+        tot_file_size += s1 + s2;
+      }
     }
     SOUT("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""), " is ",
          get_size_str(tot_file_size), "\n");
@@ -88,17 +101,16 @@ int main(int argc, char **argv) {
   size_t gpu_mem = 0;
   bool init_gpu_thread = true;
   SLOG_VERBOSE("Detecting GPUs\n");
-  auto detect_gpu_fut = execute_in_thread_pool(
-    [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
-      adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
-  }).then(
-    [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
-        if (num_gpus>0) {
-            SLOG_VERBOSE("Using ", num_gpus, " GPUs on node 0, with ", get_size_str(gpu_mem), " available memory. Detected in ", gpu_startup_duration, " s.\n");
-        } else {
-            SWARN("Compiled for GPUs but no GPUs available...");
-        }
-    });
+  auto detect_gpu_fut = execute_in_thread_pool([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+                          adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
+                        }).then([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+    if (num_gpus > 0) {
+      SLOG_VERBOSE("Using ", num_gpus, " GPUs on node 0, with ", get_size_str(gpu_mem), " available memory. Detected in ",
+                   gpu_startup_duration, " s.\n");
+    } else {
+      SWARN("Compiled for GPUs but no GPUs available...");
+    }
+  });
 #endif
 
   Contigs ctgs;
@@ -141,8 +153,8 @@ int main(int argc, char **argv) {
     }
     std::chrono::duration<double> init_t_elapsed = std::chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
-    SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-         get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+    SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", get_current_time(), " (",
+         get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3;
     int ins_avg = 0;
@@ -308,7 +320,7 @@ int main(int argc, char **argv) {
     FastqReaders::close_all();
   }
 
-  upcxx_utils::ThreadPool::join_single_pool(); // cleanup singleton thread pool
+  upcxx_utils::ThreadPool::join_single_pool();  // cleanup singleton thread pool
   barrier();
 
 #ifdef DEBUG

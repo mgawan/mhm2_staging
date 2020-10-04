@@ -207,7 +207,16 @@ void Options::setup_output_dir() {
   char cwd_str[FILENAME_MAX];
   if (!getcwd(cwd_str, FILENAME_MAX)) SDIE("Cannot get current working directory: ", strerror(errno));
   for (auto &fname : reads_fnames) {
-    if (fname[0] != '/') fname = string(cwd_str) + "/" + fname;
+    if (fname[0] != '/') {
+      string dir = string(cwd_str) + "/";
+      auto spos = fname.find_first_of(':');
+      if (spos == string::npos) {
+        fname = dir + fname;
+      } else {
+        // paired read
+        fname = dir + fname.substr(0, spos) + ":" + dir + fname.substr(spos + 1);
+      }
+    }
   }
   // all change to the output directory
   if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
@@ -317,11 +326,10 @@ bool Options::load(int argc, char **argv) {
   app.add_option("--ranks-per-gpu", ranks_per_gpu, "Number of processes multiplexed to each GPU (default depends on hardware).")
       ->check(CLI::Range(0, (int)upcxx::local_team().rank_n() * 8));
   auto *bloom_opt = app.add_flag("--force-bloom", force_bloom, "Always use bloom filters.")
-//      ->default_val(force_bloom ? "true" : "false")
-      ->multi_option_policy();
-  app.add_flag("--pin", pin_by,
-               "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
-               "or NUMA domains (cpu, core, numa, none).")
+                        //      ->default_val(force_bloom ? "true" : "false")
+                        ->multi_option_policy();
+  app.add_flag("--pin", pin_by, "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
+                                "or NUMA domains (cpu, core, numa, none).")
       ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
   try {
     app.parse(argc, argv);
@@ -369,6 +377,8 @@ bool Options::load(int argc, char **argv) {
       return false;
     }
     string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
+    auto spos = first_read_fname.find_first_of(':');
+    if (spos != string::npos) first_read_fname = first_read_fname.substr(0, spos);
     output_dir = "mhm2-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
                  to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
     output_dir_opt->default_val(output_dir);
@@ -379,7 +389,8 @@ bool Options::load(int argc, char **argv) {
       app.parse_config(output_dir + "/mhm2.config");
     } catch (const CLI::ConfigError &e) {
       if (!upcxx::rank_me()) {
-        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << output_dir << "/mhm2.config" << "):\n";
+        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << output_dir << "/mhm2.config"
+             << "):\n";
         app.exit(e);
       }
       return false;
