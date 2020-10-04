@@ -269,7 +269,8 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
   if (!fname2.empty()) {
     // this second reader is generally hidden from the user
     LOG("Opening second FastqReader with ", fname2, "\n");
-    fqr2 = make_shared<FastqReader>(fname2);
+    fqr2 = make_shared<FastqReader>(fname2, wait, open_fut);
+    open_fut = when_all(open_fut, fqr2->open_fut);
   }
 
   if (wait) {
@@ -325,8 +326,9 @@ upcxx::future<> FastqReader::continue_open(int fd) {
   wait_prom.fulfill_anonymous(1);
   auto fut_set = dist_prom->set(this);
   auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });
-  // run posix_advise in a separate thread per Issue#61
-  auto fut_advise = fut_seek.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->advise(); }); });
+  // run posix_advise in a separate thread and serialize per Issue#61
+  advise_fut() = when_all(advise_fut(), fut_seek).then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->advise(); }); });
+  
   return fut_seek;
 }
 

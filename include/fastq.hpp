@@ -87,6 +87,10 @@ class FastqReader {
   void seek();
 
   inline static double overall_io_t = 0;
+  static future<> &advise_fut() {
+    static future<> fut = make_future();
+    return fut;
+  }
 
   static void rtrim(string &s);
 
