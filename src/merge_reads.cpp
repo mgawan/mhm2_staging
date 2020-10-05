@@ -54,6 +54,7 @@
 #endif
 #include <functional>
 #include <upcxx/upcxx.hpp>
+#include <utility>
 
 using namespace std;
 using namespace upcxx;
@@ -105,9 +106,9 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   for (auto const &reads_fname : reads_fname_list) {
     // let multiple ranks handle multiple files
     if (rank_me() % modulo_rank != (read_file_idx++ % modulo_rank)) {
-        ProgressBar progbar((int64_t) 0, "Scanning reads file to estimate number of reads"); // still do the progress bar...
-        progress_fut = when_all(progress_fut, progbar.set_done());
-        continue;
+      ProgressBar progbar((int64_t)0, "Scanning reads file to estimate number of reads");  // still do the progress bar...
+      progress_fut = when_all(progress_fut, progbar.set_done());
+      continue;
     }
     FastqReader &fqr = FastqReaders::get(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of reads");
@@ -214,12 +215,13 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   int64_t tot_num_merged = 0;
   int tot_max_read_len = 0;
   // for unique read id need to estimate number of reads in our sections of all files
-  auto [my_num_reads_estimate, read_len] = estimate_num_reads(reads_fname_list);
+  auto[my_num_reads_estimate, read_len] = estimate_num_reads(reads_fname_list);
   auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
   auto tot_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_add).wait();
   SLOG_VERBOSE("Estimated total number of reads as ", tot_num_reads, ", and max for any rank ", max_num_reads, "\n");
-  // double the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
-  uint64_t read_id = rank_me() * (max_num_reads + 10000) * 2;
+  // tripple the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
+  uint64_t read_id = rank_me() * (max_num_reads + 10000) * 3;
+  uint64_t start_read_id = read_id;
   IntermittentTimer dump_reads_t("dump_reads");
   future<> wrote_all_files_fut = make_future();
   promise<> summary_promise;
@@ -490,6 +492,28 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     FastqReaders::close(reads_fname);
   }
   merge_time.initiate_exit_reduction();
+
+#ifdef DEBUG
+    // ensure there is no overlap in read_ids
+    using SSPair = std::pair<uint64_t,uint64_t>;
+    SSPair start_stop(start_read_id, read_id);
+    upcxx::dist_object<SSPair> dist_ss(world(), start_stop);
+    // check next rank
+    if (rank_me() < rank_n() - 1)
+      rpc_ff(rank_me() + 1,
+             [](upcxx::dist_object<pair<uint64_t, uint64_t>> &dist_ss, SSPair ss) {
+               assert(ss.first < dist_ss->first && "Valid start/stop from prev rank");
+               assert(ss.second < dist_ss->first && "Valid last read_id from prev rank");
+             },
+             dist_ss, *dist_ss);
+    if (rank_me() > 0)
+      rpc_ff(rank_me() - 1,
+             [](upcxx::dist_object<pair<uint64_t, uint64_t>> &dist_ss, SSPair ss) {
+               assert(ss.first > dist_ss->second && "Valid start from next rank");
+               assert(ss.second > dist_ss->second && "Valid end from next rank");
+             },
+             dist_ss, *dist_ss);
+#endif
 
   // finish all file writing and report
   dump_reads_t.start();
