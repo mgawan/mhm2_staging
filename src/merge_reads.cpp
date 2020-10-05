@@ -104,7 +104,11 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   int read_file_idx = 0;
   for (auto const &reads_fname : reads_fname_list) {
     // let multiple ranks handle multiple files
-    if (rank_me() % modulo_rank != (read_file_idx++ % modulo_rank)) continue;
+    if (rank_me() % modulo_rank != (read_file_idx++ % modulo_rank)) {
+        ProgressBar progbar((int64_t) 0, "Scanning reads file to estimate number of reads"); // still do the progress bar...
+        progress_fut = when_all(progress_fut, progbar.set_done());
+        continue;
+    }
     FastqReader &fqr = FastqReaders::get(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of reads");
     size_t tot_bytes_read = 0;
