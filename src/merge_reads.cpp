@@ -129,7 +129,7 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
     max_read_len = max(fqr.get_max_read_len(), max_read_len);
   }
   fut_max_read_len = reduce_all(max_read_len, upcxx::op_fast_max);
-  auto fut_global_estimate = reduce_all(estimated_total_records * modulo_rank, upcxx::op_fast_max);
+  auto fut_global_estimate = reduce_all(estimated_total_records * modulo_rank, upcxx::op_fast_add);
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads) with max_read_len=", max_read_len, "\n");
   timer.initate_exit_barrier();
   progress_fut.wait();
