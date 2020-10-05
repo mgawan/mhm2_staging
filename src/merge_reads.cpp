@@ -85,13 +85,26 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   BarrierTimer timer(__FILEFUNC__);
   FastqReaders::open_all(reads_fname_list);
 
+  // Issue #61 - reduce the # of reading ranks to fix excessively long estimates on poor filesystems
+  // only a few ranks need to estimate - local_team().rank_n() / 2 to nodes
+  auto nodes = rank_n() / local_team().rank_n();
+  intrank_t modulo_rank = 1;
+  if (nodes >= local_team().rank_n() / 2) {
+    modulo_rank = local_team().rank_n();
+  } else {
+    modulo_rank = 2 * nodes;
+  }
+  SLOG("Estimating with 1 rank out of every ", modulo_rank, "\n");
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
   int64_t total_records_processed = 0;
   string id, seq, quals;
   int max_read_len = 0;
+  int read_file_idx = 0;
   for (auto const &reads_fname : reads_fname_list) {
+    // let multiple ranks handle multiple files
+    if (rank_me() % modulo_rank != (read_file_idx++ % modulo_rank)) continue;
     FastqReader &fqr = FastqReaders::get(reads_fname);
     ProgressBar progbar(fqr.my_file_size(), "Scanning reads file to estimate number of reads");
     size_t tot_bytes_read = 0;
@@ -116,11 +129,13 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
     max_read_len = max(fqr.get_max_read_len(), max_read_len);
   }
   fut_max_read_len = reduce_all(max_read_len, upcxx::op_fast_max);
+  auto fut_global_estimate = reduce_all(estimated_total_records * modulo_rank, upcxx::op_fast_max);
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads) with max_read_len=", max_read_len, "\n");
   timer.initate_exit_barrier();
   progress_fut.wait();
   max_read_len = fut_max_read_len.wait();
-  SLOG_VERBOSE("Found maximum read length of ", max_read_len, "\n");
+  estimated_total_records = fut_global_estimate.wait() / rank_n();
+  SLOG_VERBOSE("Found maximum read length of ", max_read_len, " and estimated total ", estimated_total_records, " per rank\n");
   return {estimated_total_records, max_read_len};
 }
 
@@ -200,7 +215,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   auto tot_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_add).wait();
   SLOG_VERBOSE("Estimated total number of reads as ", tot_num_reads, ", and max for any rank ", max_num_reads, "\n");
   // double the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
-  uint64_t read_id = rank_me() * max_num_reads * 2;
+  uint64_t read_id = rank_me() * (max_num_reads + 10000) * 2;
   IntermittentTimer dump_reads_t("dump_reads");
   future<> wrote_all_files_fut = make_future();
   promise<> summary_promise;
