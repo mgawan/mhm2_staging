@@ -289,6 +289,10 @@ bool Options::load(int argc, char **argv) {
       ->default_val(checkpoint ? "true" : "false")
       ->capture_default_str()
       ->multi_option_policy();
+  app.add_flag("--checkpoint-merged", checkpoint_merged, "Enable checkpointing of merged fastq files (must also set --checkpoint for effect)")
+      ->default_val(checkpoint_merged && checkpoint ? "true" : "false")
+      ->capture_default_str()
+      ->multi_option_policy();
   app.add_flag("--restart", restart,
                "Restart in previous directory where a run failed (must specify the previous directory with -o).")
       ->capture_default_str();

@@ -125,13 +125,14 @@ int main(int argc, char **argv) {
       packed_reads_list.push_back(new PackedReads(options->qual_offset, get_merged_reads_fname(reads_fname)));
     }
     double elapsed_write_io_t = 0;
-    if (!options->restart) {
+    bool checkpoint_merged = options->checkpoint_merged & options->checkpoint;
+    if (!options->restart | !checkpoint_merged) {
       // merge the reads and insert into the packed reads memory cache
       stage_timers.merge_reads->start();
-      merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint);
+      merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, checkpoint_merged);
       stage_timers.merge_reads->stop();
     } else {
-      // since this is a restart, the merged reads should be on disk already
+      // since this is a restart with checkpoint_merged set, the merged reads should be on disk already
       stage_timers.cache_reads->start();
       double free_mem = (!rank_me() ? get_free_mem() : 0);
       upcxx::barrier();
