@@ -314,7 +314,7 @@ upcxx::future<> FastqReader::continue_open(int fd) {
       assert(rank > 0);
       start_read = read_block * rank;
       auto pos = get_fptr_for_next_record(start_read);
-      wait_prom.get_future().then([rank, pos, &dist_prom=this->dist_prom]() {
+      wait_prom.get_future().then([rank, pos, &dist_prom = this->dist_prom]() {
         // send end to prev rank
         rpc_ff(rank - 1, [](DPSS &dpss, int64_t end_pos) { dpss->stop_prom.fulfill_result(end_pos); }, dist_prom, pos);
         // send start to rank
@@ -325,7 +325,7 @@ upcxx::future<> FastqReader::continue_open(int fd) {
   // all my seeks are done, send results to local team
   wait_prom.fulfill_anonymous(1);
   auto fut_set = dist_prom->set(this);
-  auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });  
+  auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });
   return fut_seek;
 }
 
@@ -347,6 +347,7 @@ void FastqReader::advise(bool will_need) {
   SLOG_VERBOSE("No posix_fadvice to ", fname, "\n");
 #endif
 #endif
+  if (fqr2) fqr2->advise(will_need); // advise the second file too!
 }
 
 void FastqReader::seek() {
