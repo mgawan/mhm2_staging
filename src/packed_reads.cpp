@@ -221,6 +221,7 @@ upcxx::future<> PackedReads::load_reads_nb() {
   size_t tot_bytes_read = 0;
   int64_t num_records = 0;
   FastqReader &fqr = FastqReaders::get(fname);
+  fqr.advise(true);
   string id, seq, quals;
   for (num_records = 0; num_records < 10000; num_records++) {
     size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
@@ -241,6 +242,7 @@ upcxx::future<> PackedReads::load_reads_nb() {
     progbar.update(tot_bytes_read);
     add_read(id, seq, quals);
   }
+  fqr.advise(false);
   FastqReaders::close(fname);
   auto fut = progbar.set_done();
   auto underestimate = estimated_records - packed_reads.size();

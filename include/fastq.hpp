@@ -83,14 +83,9 @@ class FastqReader {
   };
   dist_object<PromStartStop> dist_prom;
   upcxx::future<> open_fut;
-  void advise();
   void seek();
 
   inline static double overall_io_t = 0;
-  static future<> &advise_fut() {
-    static future<> fut = make_future();
-    return fut;
-  }
 
   static void rtrim(string &s);
 
@@ -110,6 +105,8 @@ class FastqReader {
   string get_fname();
 
   size_t my_file_size();
+
+  void advise(bool will_need);
 
   size_t get_next_fq_record(string &id, string &seq, string &quals);
   int get_max_read_len();

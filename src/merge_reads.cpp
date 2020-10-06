@@ -235,6 +235,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     if (file_exists(out_fname)) SWARN("File ", out_fname, " already exists, will overwrite...");
 
     FastqReader &fqr = FastqReaders::get(reads_fname);
+    fqr.advise(true);
     auto my_file_size = fqr.my_file_size();
     ProgressBar progbar(my_file_size, "Merging reads " + reads_fname + " " + get_size_str(fqr.my_file_size()));
 
@@ -456,6 +457,9 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       // inc by 2 so that we can use a later optimization of treating the even as /1 and the odd as /2
       read_id += 2;
     }
+
+    fqr.advise(false); // free kernel memory
+
     if (checkpoint) {
       // close this file, but do not wait for it yet
       dump_reads_t.start();

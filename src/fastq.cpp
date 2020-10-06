@@ -325,32 +325,32 @@ upcxx::future<> FastqReader::continue_open(int fd) {
   // all my seeks are done, send results to local team
   wait_prom.fulfill_anonymous(1);
   auto fut_set = dist_prom->set(this);
-  auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });
-  // run posix_advise in a separate thread and serialize per Issue#61
-  advise_fut() = when_all(advise_fut(), fut_seek).then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->advise(); }); });
-  
+  auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });  
   return fut_seek;
 }
 
-void FastqReader::advise() {
+void FastqReader::advise(bool will_need) {
 #if defined(__APPLE__) && defined(__MACH__)
 // TODO
 #else
 #ifndef MHM2_NO_FADVISE
   BaseTimer advise_t("Advise " + fname);
   advise_t.start();
-  posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
-  LOG("advised ", fname, " POSIX_FADV_SEQUENTIAL in ", advise_t.get_elapsed_since_start(), "s\n");
-  posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_WILLNEED);
-  LOG("advised ", fname, " POSIX_FADV_WILLNEED in ", advise_t.get_elapsed_since_start(), "s\n");
+  if (will_need) {
+    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+    LOG("advised ", fname, " POSIX_FADV_SEQUENTIAL in ", advise_t.get_elapsed_since_start(), "s\n");
+  } else {
+    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_DONTNEED);
+    LOG("advised ", fname, " POSIX_FADV_DONTNEED in ", advise_t.get_elapsed_since_start(), "s\n");
+  }
 #else
-  SLOG_VERBOSE("No posix_fadvice\n");
+  SLOG_VERBOSE("No posix_fadvice to ", fname, "\n");
 #endif
 #endif
 }
 
 void FastqReader::seek() {
-  // seek and madvise
+  // seek to first record
   io_t.start();
   if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
   SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
