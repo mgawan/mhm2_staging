@@ -97,12 +97,12 @@ struct CtgLoc {
   global_ptr<char> seq_gptr;
   int clen;
   int pos_in_ctg;
-  bool is_rc;
+  bool is_rc;  // FIXME pack with bitfields this bool likely adds 8 bytes!
 };
 
 struct ReadAndCtgLoc {
   int pos_in_read;
-  bool read_is_rc;
+  bool read_is_rc;  // FIXME  pack this bool better, if possible
   CtgLoc ctg_loc;
 };
 
@@ -488,18 +488,14 @@ class KmerCtgDHT {
       DIE("clear called with alignments in the buffer or active kernel - was flush_remaining called before destrutor?\n");
     clear_aln_bufs();
     aln_cpu_bypass_timer.print_out();
-    local_kmer_map_t().swap(*kmer_map); // release all memory
+    local_kmer_map_t().swap(*kmer_map);  // release all memory
     kmer_store.clear();
   }
 
   ~KmerCtgDHT() { clear(); }
 
-  void reserve(int64_t mysize) {
-    kmer_map->reserve(mysize);
-  }
-  int64_t size() const {
-    return kmer_map->size();
-  }
+  void reserve(int64_t mysize) { kmer_map->reserve(mysize); }
+  int64_t size() const { return kmer_map->size(); }
 
   intrank_t get_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
 
@@ -625,6 +621,7 @@ class KmerCtgDHT {
     return rpc(target_rank,
                [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
                  vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
+                 kmer_ctg_locs.reserve(kmers.size());
                  for (auto &kmer : kmers) {
                    const auto it = kmer_map->find(kmer);
                    if (it == kmer_map->end()) continue;
@@ -819,38 +816,42 @@ int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, vector<
     // skip targets that have no ctgs - this should reduce communication at scale
     if (kmer_lists[target_rank].empty()) continue;
     auto fut_get_ctgs = kmer_ctg_dht.get_ctgs_with_kmers(target_rank, kmer_lists[target_rank]);
-    auto fut_rpc_returned = fut_get_ctgs.then([&](vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
-      // move and process results in a different thread
-      auto sh_kmer_ctg_locs = make_shared < vector<KmerCtgLoc<MAX_K>>>(std::move(kmer_ctg_locs));
-      fut_serial_results = fut_serial_results.then([&, sh_kmer_ctg_locs]() {
-        auto fut_processed = single_tp.enqueue([&, sh_kmer_ctg_locs]() {
-          vector < KmerCtgLoc<MAX_K> > &kmer_ctg_locs = *sh_kmer_ctg_locs;
-          // iterate through the kmers, each one has an associated ctg location
-          for (auto &kmer_ctg_loc : kmer_ctg_locs) {
-            // get the reads that this kmer mapped to
-            auto kmer_read_map_it = kmer_read_map.find(kmer_ctg_loc.kmer);
-            if (kmer_read_map_it == kmer_read_map.end()) DIE("Could not find kmer ", kmer_ctg_loc.kmer);
-            // this is a list of the reads
-            auto &kmer_to_reads = kmer_read_map_it->second;
-            // now add the ctg loc to all the reads
-            for (auto &kmer_to_read : kmer_to_reads) {
-              auto read_record = kmer_to_read.read_record;
-              int pos_in_read = kmer_to_read.pos_in_read;
-              bool read_is_rc = kmer_to_read.is_rc;
-              if (KLIGN_MAX_ALNS_PER_READ && read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
-                // too many mappings for this read, stop adding to it
-                num_excess_alns_reads++;
-                continue;
+    auto fut_rpc_returned = fut_get_ctgs.then(
+        [&fut_serial_results, &kmer_read_map, &num_excess_alns_reads, &single_tp](const vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
+          // copy and process results in a different thread
+          auto sh_kmer_ctg_locs = make_shared<vector<KmerCtgLoc<MAX_K>>>(kmer_ctg_locs);
+          fut_serial_results = fut_serial_results.then([&kmer_read_map, &num_excess_alns_reads, &single_tp, sh_kmer_ctg_locs]() {
+            auto fut_processed = single_tp.enqueue([&kmer_read_map, &num_excess_alns_reads, sh_kmer_ctg_locs]() {
+              vector<KmerCtgLoc<MAX_K>> &kmer_ctg_locs = *sh_kmer_ctg_locs;
+              // iterate through the kmers, each one has an associated ctg location
+              for (auto &kmer_ctg_loc : kmer_ctg_locs) {
+                // get the reads that this kmer mapped to
+                auto kmer_read_map_it = kmer_read_map.find(kmer_ctg_loc.kmer);
+                if (kmer_read_map_it == kmer_read_map.end()) {
+                  WARN("could not find kmer\n");
+                  DIE("Could not find kmer ", kmer_ctg_loc.kmer);
+                }  /////
+                // this is a list of the reads
+                auto &kmer_to_reads = kmer_read_map_it->second;
+                // now add the ctg loc to all the reads
+                for (auto &kmer_to_read : kmer_to_reads) {
+                  auto read_record = kmer_to_read.read_record;
+                  int pos_in_read = kmer_to_read.pos_in_read;
+                  bool read_is_rc = kmer_to_read.is_rc;
+                  if (KLIGN_MAX_ALNS_PER_READ && read_record->aligned_ctgs_map.size() >= KLIGN_MAX_ALNS_PER_READ) {
+                    // too many mappings for this read, stop adding to it
+                    num_excess_alns_reads++;
+                    continue;
+                  }
+                  // this here ensures that we don't insert duplicate mappings
+                  read_record->aligned_ctgs_map.insert({kmer_ctg_loc.ctg_loc.cid, {pos_in_read, read_is_rc, kmer_ctg_loc.ctg_loc}});
+                }
               }
-              // this here ensures that we don't insert duplicate mappings
-              read_record->aligned_ctgs_map.insert({kmer_ctg_loc.ctg_loc.cid, {pos_in_read, read_is_rc, kmer_ctg_loc.ctg_loc}});
-            }
-          }
+            });
+            return fut_processed;
+          });
+          return;  // return immediately
         });
-        return fut_processed;
-      });
-      return;  // return immediately
-    });
 
     upcxx_utils::limit_outstanding_futures(fut_rpc_returned, std::max(nnodes * 2, lranks * 4)).wait();
   }
