@@ -951,6 +951,7 @@ double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads *> &pac
                                        fetch_ctg_seqs_timer, aln_kernel_timer, num_excess_alns_reads, read_group_id);
 
     kmer_ctg_dht.flush_remaining(aln_kernel_timer, read_group_id);
+    read_group_id++;
     all_done = when_all(all_done, progbar.set_done());
   }
 
