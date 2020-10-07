@@ -82,6 +82,7 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   // estimate reads in this rank's section of all the files
   future<int> fut_max_read_len;
   future<> progress_fut = make_future();
+  future<> rpc_fut = make_future();
 
   BarrierTimer timer(__FILEFUNC__);
   FastqReaders::open_all(reads_fname_list);
@@ -96,6 +97,7 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
     modulo_rank = 2 * nodes;
   }
   SLOG("Estimating with 1 rank out of every ", modulo_rank, "\n");
+  dist_object<int64_t> dist_est(world(), 0);
   int64_t num_reads = 0;
   int64_t num_lines = 0;
   int64_t estimated_total_records = 0;
@@ -106,7 +108,8 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
   for (auto const &reads_fname : reads_fname_list) {
     // let multiple ranks handle multiple files
     if (rank_me() % modulo_rank != (read_file_idx++ % modulo_rank)) {
-      ProgressBar progbar((int64_t)0, "Scanning reads file to estimate number of reads");  // still do the progress bar...
+      ProgressBar progbar((int64_t)0,
+                          "Scanning reads file to estimate number of reads");  // still do the collectives on progress bar...
       progress_fut = when_all(progress_fut, progbar.set_done());
       continue;
     }
@@ -128,19 +131,32 @@ static pair<uint64_t, int> estimate_num_reads(vector<string> &reads_fname_list) 
     total_records_processed += records_processed;
     if (records_processed) {
       int64_t bytes_per_record = tot_bytes_read / records_processed;
-      estimated_total_records += fqr.my_file_size() / bytes_per_record;
+      int64_t num_records = fqr.my_file_size() / bytes_per_record;
+      estimated_total_records += num_records;
+      // since each input file is not necessarily run on the same rank
+      // collect the local total estimates to a single rank within modulo_rank
+      assert(read_file_idx > 0);
+      assert(rank_me() >= (read_file_idx - 1) % modulo_rank);
+      auto fut_collect_rpc = rpc(rank_me() - (read_file_idx - 1) % modulo_rank,
+                                 [](dist_object<int64_t> &dist_est, int64_t num_records, int file_i) {
+                                   *dist_est += num_records;
+                                   LOG("Found ", num_records, " in file ", file_i, ", total=", *dist_est, "\n");
+                                 },
+                                 dist_est, num_records, read_file_idx - 1);
+      rpc_fut = when_all(rpc_fut, fut_collect_rpc);
     }
     progress_fut = when_all(progress_fut, progbar.set_done());
     max_read_len = max(fqr.get_max_read_len(), max_read_len);
   }
   fut_max_read_len = reduce_all(max_read_len, upcxx::op_fast_max);
-  auto fut_global_estimate = reduce_all(estimated_total_records * modulo_rank, upcxx::op_fast_add);
   DBG("This rank processed ", num_lines, " lines (", num_reads, " reads) with max_read_len=", max_read_len, "\n");
-  timer.initate_exit_barrier();
   progress_fut.wait();
   max_read_len = fut_max_read_len.wait();
-  estimated_total_records = fut_global_estimate.wait() / rank_n();
-  SLOG_VERBOSE("Found maximum read length of ", max_read_len, " and estimated total ", estimated_total_records, " per rank\n");
+  rpc_fut.wait();
+  timer.initate_exit_barrier();  // barrier ensures rpc_fut have all completed for next reduction
+  auto fut_max_estimate = reduce_all(*dist_est, upcxx::op_fast_max);
+  estimated_total_records = fut_max_estimate.wait();
+  SLOG_VERBOSE("Found maximum read length of ", max_read_len, " and max estimated total ", estimated_total_records, " per rank\n");
   return {estimated_total_records, max_read_len};
 }
 
@@ -219,7 +235,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   auto max_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_max).wait();
   auto tot_num_reads = upcxx::reduce_all(my_num_reads_estimate, upcxx::op_fast_add).wait();
   SLOG_VERBOSE("Estimated total number of reads as ", tot_num_reads, ", and max for any rank ", max_num_reads, "\n");
-  // tripple the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
+  // triple the block size estimate to be sure that we have no overlap. The read ids do not have to be contiguous
   uint64_t read_id = rank_me() * (max_num_reads + 10000) * 3;
   uint64_t start_read_id = read_id;
   IntermittentTimer dump_reads_t("dump_reads");
@@ -458,7 +474,7 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
       read_id += 2;
     }
 
-    fqr.advise(false); // free kernel memory
+    fqr.advise(false);  // free kernel memory
 
     if (checkpoint) {
       // close this file, but do not wait for it yet
@@ -497,27 +513,36 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
   }
   merge_time.initiate_exit_reduction();
 
-#ifdef DEBUG
-    // ensure there is no overlap in read_ids
-    using SSPair = std::pair<uint64_t,uint64_t>;
-    SSPair start_stop(start_read_id, read_id);
-    upcxx::dist_object<SSPair> dist_ss(world(), start_stop);
-    // check next rank
-    if (rank_me() < rank_n() - 1)
-      rpc_ff(rank_me() + 1,
-             [](upcxx::dist_object<pair<uint64_t, uint64_t>> &dist_ss, SSPair ss) {
-               assert(ss.first < dist_ss->first && "Valid start/stop from prev rank");
-               assert(ss.second < dist_ss->first && "Valid last read_id from prev rank");
-             },
-             dist_ss, *dist_ss);
-    if (rank_me() > 0)
-      rpc_ff(rank_me() - 1,
-             [](upcxx::dist_object<pair<uint64_t, uint64_t>> &dist_ss, SSPair ss) {
-               assert(ss.first > dist_ss->second && "Valid start from next rank");
-               assert(ss.second > dist_ss->second && "Valid end from next rank");
-             },
-             dist_ss, *dist_ss);
-#endif
+//#ifdef DEBUG
+  // ensure there is no overlap in read_ids which will cause a crash later
+  using SSPair = std::pair<uint64_t, uint64_t>;
+  SSPair start_stop(start_read_id, read_id);
+  upcxx::dist_object<SSPair> dist_ss(world(), start_stop);
+  future<> rpc_tests = make_future();
+  // check next rank
+  assert(dist_ss->first <= dist_ss->second);
+  if (rank_me() < rank_n() - 1) {
+    auto fut = rpc(rank_me() + 1,
+                   [](upcxx::dist_object<pair<uint64_t, uint64_t>> &dist_ss, SSPair ss) {
+                     if (!(ss.first < dist_ss->first && ss.second < dist_ss->first))
+                       DIE("Invalid read ids from previous rank: ", rank_me(), "=", dist_ss->first, "-", dist_ss->second,
+                           " prev rank=", ss.first, "-", ss.second, "\n");
+                   },
+                   dist_ss, *dist_ss);
+    rpc_tests = when_all(rpc_tests, fut);
+  }
+  if (rank_me() > 0) {
+    auto fut = rpc(rank_me() - 1,
+                   [](upcxx::dist_object<pair<uint64_t, uint64_t>> &dist_ss, SSPair ss) {
+                     if (!(ss.first > dist_ss->second && ss.second > dist_ss->second))
+                       DIE("Invalid read ids from next rank: ", rank_me(), "=", dist_ss->first, "-", dist_ss->second,
+                           " next rank=", ss.first, "-", ss.second, "\n");
+                   },
+                   dist_ss, *dist_ss);
+    rpc_tests = when_all(rpc_tests, fut);
+  }
+  rpc_tests.wait();
+//#endif
 
   // finish all file writing and report
   dump_reads_t.start();
