@@ -322,6 +322,7 @@ int main(int argc, char **argv) {
   }
 
   upcxx_utils::ThreadPool::join_single_pool();  // cleanup singleton thread pool
+  upcxx_utils::Timings::wait_pending(); // ensure all outstanding timing summaries have printed
   barrier();
 
 #ifdef DEBUG
