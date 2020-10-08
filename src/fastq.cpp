@@ -279,8 +279,9 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
   }
 }
 
-// this happens within a separate thread
+// all ranks open, 1 rank per node finds block boundaries
 upcxx::future<> FastqReader::continue_open(int fd) {
+  assert(upcxx::master_persona().active_with_caller());
   io_t.start();
   if (fd < 0) {
     f = fopen(fname.c_str(), "r");
@@ -293,12 +294,13 @@ upcxx::future<> FastqReader::continue_open(int fd) {
   LOG("Opened", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
   io_t.stop();
   if (rank_me() == 0) {
-    // special set 0 to first rank and nothing else
+    // special for first rank set start as 0
     dist_prom->start_prom.fulfill_result(0);
   } else if (rank_me() == rank_n() - 1) {
-    // special set last to file size
+    // special for last rank set end as file size
     dist_prom->stop_prom.fulfill_result(file_size);
   }
+  // have all other local ranks delay their seeks and I/O until these seeks are finished.
   promise wait_prom(1);
   if (local_team().rank_me() == local_team().rank_n() - 1) {
     // do all the fseeking for the local team
@@ -308,7 +310,7 @@ upcxx::future<> FastqReader::continue_open(int fd) {
     for (auto rank = first_rank; rank < first_rank + local_team().rank_n(); rank++) {
       // just a part of the file is read by this thread
       if (rank == 0) {
-        // special set 0 to first rank and nothing else
+        // already done - special already set 0 for first rank
         continue;
       }
       assert(rank > 0);
@@ -322,10 +324,11 @@ upcxx::future<> FastqReader::continue_open(int fd) {
       });
     }
   }
-  // all my seeks are done, send results to local team
+  // all the seeks are done, send results to local team
   wait_prom.fulfill_anonymous(1);
   auto fut_set = dist_prom->set(this);
   auto fut_seek = fut_set.then([this]() { this->seek(); });
+  progress();
   return fut_seek;
 }
 
