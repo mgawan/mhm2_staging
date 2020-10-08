@@ -356,10 +356,9 @@ class KmerCtgDHT {
       assert(!sh_abd->kernel_alns.empty());
       _ssw_align_block(*sh_abd, aln_kernel_timer);
       t.stop();
+    }).then([&myself, sh_abd,t](){
       SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
                    (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
-    });
-    fut = fut.then([&myself, sh_abd, t]() {
       DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
       myself.alns->append(*(sh_abd->alns));
       // TODO collect and report on AsyncTimer t
@@ -398,25 +397,24 @@ class KmerCtgDHT {
       aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
       aln.read_group_id = abd.read_group_id;
       // FIXME: need to get cigar
-      // if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, ssw_aln.cigar_string);
+      if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, "*"); // FIXME until there is a valid:ssw_aln.cigar_string);
       abd.alns->add_aln(aln);
     }
   }
 
   upcxx::future<> gpu_align_block(IntermittentTimer &aln_kernel_timer, int read_group_id) {
+    AsyncTimer t("gpu_align_block (thread)");
     auto &myself = *this;
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut = upcxx_utils::execute_in_thread_pool([&myself, sh_abd, &aln_kernel_timer] {
-      BaseTimer t("gpu_align_block (thread)");
+    future<> fut = upcxx_utils::execute_in_thread_pool([&myself, t, sh_abd, &aln_kernel_timer] {
       t.start();
       _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
       t.stop();
+    }).then([&myself, t, sh_abd]() {
       SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
                    (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
-    });
-    fut = fut.then([&myself, sh_abd]() {
       DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
       myself.alns->append(*(sh_abd->alns));
     });

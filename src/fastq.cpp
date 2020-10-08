@@ -325,7 +325,7 @@ upcxx::future<> FastqReader::continue_open(int fd) {
   // all my seeks are done, send results to local team
   wait_prom.fulfill_anonymous(1);
   auto fut_set = dist_prom->set(this);
-  auto fut_seek = fut_set.then([this]() { return upcxx_utils::execute_in_thread_pool([this]() { this->seek(); }); });
+  auto fut_seek = fut_set.then([this]() { this->seek(); });
   return fut_seek;
 }
 
