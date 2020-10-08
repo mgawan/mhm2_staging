@@ -172,7 +172,7 @@ void Options::setup_output_dir() {
     // created the directory - now stripe it if possible
     auto status = std::system("which lfs 2>&1 > /dev/null");
     if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-      string cmd = "lfs setstripe -c -1 " + output_dir;
+      string cmd = "lfs setstripe --stripe-count -1 --stripe-size 16M " + output_dir;
       auto status = std::system(cmd.c_str());
       if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
         cout << "Set Lustre striping on the output directory\n";
@@ -182,7 +182,7 @@ void Options::setup_output_dir() {
       // ensure per_thread dir exists and has stripe 1
       string per_thread = output_dir + "/per_thread";
       mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);  // ignore any errors
-      cmd = "lfs setstripe -c 1 " + per_thread;
+      cmd = "lfs setstripe --stripe-count 1 " + per_thread;
       status = std::system(cmd.c_str());
       if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
         cout << "Set Lustre striping on the per_thread output directory\n";
