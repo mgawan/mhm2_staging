@@ -164,10 +164,7 @@ void Options::setup_output_dir() {
           cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
                << " already exists. May overwrite existing files\n";
         } else {
-          ostringstream oss;
-          oss << KLRED << "ERROR: " << KNORM << " Could not create output directory " << output_dir << ": " << strerror(errno)
-              << endl;
-          throw std::runtime_error(oss.str());
+          SDIE("Could not create output directory ", output_dir, ": ", strerror(errno), "\n");
         }
       }
     }
@@ -192,12 +189,15 @@ void Options::setup_output_dir() {
       else
         cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
       // this should avoid contention on the filesystem when ranks start racing to creating these top levels
+      char basepath[256];
       for (int i = 0; i < rank_n(); i += 1000) {
-        char basepath[256];
         sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
         auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
         if (ret != 0) break;  // ignore any errors, just stop
       }
+      sprintf(basepath, "%s/00000000/%08d", per_thread.c_str(), 0);
+      auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+      if (!ret) cout << "Could not create rank 0 per thread directory... does it exist already?\n";
     }
   }
 
@@ -233,8 +233,10 @@ void Options::setup_log_file() {
       cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhm2.log exists. Renaming to " << output_dir << "/" << new_log_fname
            << endl;
       if (rename("mhm2.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhm2.log: ", strerror(errno));
+      // also unlink the rank0 per_thread file (a hard link if it exists)
+      unlink("per_thread/00000000/00000000/mhm2.log"); // ignore any errors
     } else if (!file_exists("mhm2.log") && restart) {
-      DIE("Could not restart - missing mhm2.log in tis directory");
+      DIE("Could not restart - missing mhm2.log in this directory");
     }
   }
   upcxx::barrier();
@@ -436,8 +438,14 @@ bool Options::load(int argc, char **argv) {
   auto logger_t = chrono::high_resolution_clock::now();
   if (upcxx::local_team().rank_me() == 0) {
     // open 1 log per node
-    // rank0 has mhm2.log in rundir, all others have logs in per_thread
-    init_logger("mhm2.log", verbose, rank_me());
+    // all have logs in per_thread
+    init_logger("mhm2.log", verbose, true);
+    // if not restarting, hardlink just the rank0 log to the output dir
+    // this ensures a stripe count of 1 even when the output dir is striped wide
+    if (rank_me() == 0 && !restart) {
+      auto ret = link("per_thread/00000000/00000000/mhm2.log", "mhm2.log");
+      if (ret != 0) SWARN("Could not hard link mhm2.log from per_thread/00000000/00000000/mhm2.log\n");
+    }
   }
 
   barrier();
