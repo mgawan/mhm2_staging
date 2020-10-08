@@ -397,7 +397,7 @@ class KmerCtgDHT {
       aln.identity = 100 * aln.score1 / abd.aln_scoring.match / aln.rlen;
       aln.read_group_id = abd.read_group_id;
       // FIXME: need to get cigar
-      if (abd.ssw_filter.report_cigar) set_sam_string(aln, rseq, "*"); // FIXME until there is a valid:ssw_aln.cigar_string);
+      if (abd.ssw_filter.report_cigar) set_sam_string(aln, "*", "*"); // FIXME until there is a valid:ssw_aln.cigar_string);
       abd.alns->add_aln(aln);
     }
   }
