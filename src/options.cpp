@@ -234,7 +234,7 @@ void Options::setup_log_file() {
            << endl;
       if (rename("mhm2.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhm2.log: ", strerror(errno));
       // also unlink the rank0 per_thread file (a hard link if it exists)
-      unlink("per_thread/00000000/00000000/mhm2.log"); // ignore any errors
+      unlink("per_thread/00000000/00000000/mhm2.log");  // ignore any errors
     } else if (!file_exists("mhm2.log") && restart) {
       DIE("Could not restart - missing mhm2.log in this directory");
     }
@@ -391,18 +391,8 @@ bool Options::load(int argc, char **argv) {
     output_dir_opt->default_val(output_dir);
   }
 
-  if (restart) {
-    try {
-      app.parse_config(output_dir + "/mhm2.config");
-    } catch (const CLI::ConfigError &e) {
-      if (!upcxx::rank_me()) {
-        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << output_dir << "/mhm2.config"
-             << "):\n";
-        app.exit(e);
-      }
-      return false;
-    }
-  }
+  setup_output_dir();
+  setup_log_file();
 
   // make sure we only use defaults for kmer lens if none of them were set by the user
   if (!*kmer_lens_opt && !*scaff_kmer_lens_opt) {
@@ -426,8 +416,20 @@ bool Options::load(int argc, char **argv) {
     scaff_kmer_lens.clear();
   }
 
-  setup_output_dir();
-  setup_log_file();
+  string config_file = "per_thread/mhm2.config";
+  string linked_config_file = "mhm2.config";
+  if (restart) {
+    // use per_thread to read/write this small file, hardlink to top run level
+    try {
+      app.parse_config(config_file);
+    } catch (const CLI::ConfigError &e) {
+      if (!upcxx::rank_me()) {
+        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << config_file << "):\n";
+        app.exit(e);
+      }
+      return false;
+    }
+  }
 
   if (max_kmer_store_mb == 0) {
     // use 1% of the minimum available memory
@@ -481,8 +483,10 @@ bool Options::load(int argc, char **argv) {
 #endif
   if (!upcxx::rank_me()) {
     // write out configuration file for restarts
-    ofstream ofs("mhm2.config");
+    ofstream ofs(config_file);
     ofs << app.config_to_str(true, true);
+    auto ret = link(config_file.c_str(), linked_config_file.c_str());
+    if (ret != 0 && !restart) LOG("Could not hard link config file, continuing\n");
   }
   upcxx::barrier();
   return true;
