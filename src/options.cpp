@@ -169,34 +169,34 @@ void Options::setup_output_dir() {
               << endl;
           throw std::runtime_error(oss.str());
         }
-      } else {
-        // created the directory - now stripe it if possible
-        auto status = std::system("which lfs 2>&1 > /dev/null");
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-          string cmd = "lfs setstripe -c -1 " + output_dir;
-          auto status = std::system(cmd.c_str());
-          if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            cout << "Set Lustre striping on the output directory\n";
-          else
-            cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
+      }
+    }
+    // always ensure striping is set or reset properly
+    // created the directory - now stripe it if possible
+    auto status = std::system("which lfs 2>&1 > /dev/null");
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+      string cmd = "lfs setstripe -c -1 " + output_dir;
+      auto status = std::system(cmd.c_str());
+      if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        cout << "Set Lustre striping on the output directory\n";
+      else
+        cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
 
-          // ensure per_thread dir exists and has stripe 1
-          string per_thread = output_dir + "/per_thread";
-          mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);  // ignore any errors
-          cmd = "lfs setstripe -c 1 " + per_thread;
-          status = std::system(cmd.c_str());
-          if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            cout << "Set Lustre striping on the per_thread output directory\n";
-          else
-            cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
-          // this should avoid contention on the filesystem when ranks start racing to creating these top levels
-          for (int i = 0; i < rank_n(); i += 1000) {
-            char basepath[256];
-            sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
-            auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
-            if (ret != 0) break;  // ignore any errors, just stop
-          }
-        }
+      // ensure per_thread dir exists and has stripe 1
+      string per_thread = output_dir + "/per_thread";
+      mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);  // ignore any errors
+      cmd = "lfs setstripe -c 1 " + per_thread;
+      status = std::system(cmd.c_str());
+      if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        cout << "Set Lustre striping on the per_thread output directory\n";
+      else
+        cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
+      // this should avoid contention on the filesystem when ranks start racing to creating these top levels
+      for (int i = 0; i < rank_n(); i += 1000) {
+        char basepath[256];
+        sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
+        auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+        if (ret != 0) break;  // ignore any errors, just stop
       }
     }
   }
@@ -289,7 +289,8 @@ bool Options::load(int argc, char **argv) {
       ->default_val(checkpoint ? "true" : "false")
       ->capture_default_str()
       ->multi_option_policy();
-  app.add_flag("--checkpoint-merged", checkpoint_merged, "Enable checkpointing of merged fastq files (must also set --checkpoint for effect)")
+  app.add_flag("--checkpoint-merged", checkpoint_merged,
+               "Enable checkpointing of merged fastq files (must also set --checkpoint for effect)")
       ->default_val(checkpoint_merged && checkpoint ? "true" : "false")
       ->capture_default_str()
       ->multi_option_policy();
