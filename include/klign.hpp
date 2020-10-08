@@ -592,7 +592,12 @@ class KmerCtgDHT {
       if (!ssw_filter.report_cigar && gpu_mem_avail) {
         active_kernel_fut = gpu_align_block(aln_kernel_timer, read_group_id);
       } else {
+#ifdef __PPC64__
+        SWARN("FIXME Issue #49,#60 no cigars for gpu alignments\n");
+        active_kernel_fut = gpu_align_block(aln_kernel_timer, read_group_id);
+#else
         active_kernel_fut = ssw_align_block(aln_kernel_timer, read_group_id);
+#endif
       }
 #else
       active_kernel_fut = ssw_align_block(aln_kernel_timer, read_group_id);
