@@ -196,7 +196,7 @@ class KmerCtgDHT {
     aln.sam_string = aln.read_id + "\t";
     if (aln.orient == '-') {
       aln.sam_string += "16\t";
-      read_seq = revcomp(read_seq);
+      if (read_seq != "*") read_seq = revcomp(read_seq);
       // reverse(read_quals.begin(), read_quals.end());
     } else {
       aln.sam_string += "0\t";
