@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
   int max_kmer_len = 0;
   int max_expected_ins_size = 0;
   if (!options->post_assm_only) {
-    MemoryTrackerThread memory_tracker; // write only to mhm2.log file(s), not a separate one too
+    MemoryTrackerThread memory_tracker;  // write only to mhm2.log file(s), not a separate one too
     memory_tracker.start();
     SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
     PackedReads::PackedReadsList packed_reads_list;
@@ -125,14 +125,14 @@ int main(int argc, char **argv) {
       packed_reads_list.push_back(new PackedReads(options->qual_offset, get_merged_reads_fname(reads_fname)));
     }
     double elapsed_write_io_t = 0;
-    bool checkpoint_merged = options->checkpoint_merged & options->checkpoint;
-    if (!options->restart | !checkpoint_merged) {
+    if (!options->restart | !options->checkpoint_merged) {
       // merge the reads and insert into the packed reads memory cache
       stage_timers.merge_reads->start();
-      merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, checkpoint_merged);
+      merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint_merged);
       stage_timers.merge_reads->stop();
     } else {
-      // since this is a restart with checkpoint_merged set, the merged reads should be on disk already
+      // since this is a restart with checkpoint_merged true, the merged reads should be on disk already
+      // load the merged reads instead of merge the original ones again
       stage_timers.cache_reads->start();
       double free_mem = (!rank_me() ? get_free_mem() : 0);
       upcxx::barrier();
@@ -322,7 +322,7 @@ int main(int argc, char **argv) {
   }
 
   upcxx_utils::ThreadPool::join_single_pool();  // cleanup singleton thread pool
-  upcxx_utils::Timings::wait_pending(); // ensure all outstanding timing summaries have printed
+  upcxx_utils::Timings::wait_pending();         // ensure all outstanding timing summaries have printed
   barrier();
 
 #ifdef DEBUG

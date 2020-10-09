@@ -292,8 +292,7 @@ bool Options::load(int argc, char **argv) {
       ->capture_default_str()
       ->multi_option_policy();
   app.add_flag("--checkpoint-merged", checkpoint_merged,
-               "Enable checkpointing of merged fastq files (must also set --checkpoint for effect)")
-      ->default_val(checkpoint_merged && checkpoint ? "true" : "false")
+               "(debugging option) enables checkpointing of merged fastq files in the output directory")
       ->capture_default_str()
       ->multi_option_policy();
   app.add_flag("--restart", restart,
@@ -416,6 +415,7 @@ bool Options::load(int argc, char **argv) {
     scaff_kmer_lens.clear();
   }
 
+  // save to per_thread, but hardlink to output_dir
   string config_file = "per_thread/mhm2.config";
   string linked_config_file = "mhm2.config";
   if (restart) {

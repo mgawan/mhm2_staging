@@ -92,7 +92,7 @@ class Options {
   bool force_bloom = false;
   int dmin_thres = 2.0;
   bool checkpoint = true;
-  bool checkpoint_merged = true;
+  bool checkpoint_merged = false;
   bool post_assm_aln = false;
   bool post_assm_abundances = false;
   bool post_assm_only = false;
