@@ -3,6 +3,13 @@
 
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhm2)
 
+### 2.0.1 2020-10-10
+   * Fixed scaling Issues - #52, #54, #61
+   * Fixed cmake/build - Issues #20, #51
+   * Fixed paired read usage - Issue #58  
+   * Fixed minor UI Issues - #53, #33, #50, #46, #45
+   * Fixed edge cases of improper lustre striping - Issue #62
+
 ### 2.0.0 2020-09-30
    * Updated documentation and added a user guide.
    * Incorporated a 3 tier aggregating store to allow scaling on 1000s of nodes Issue #4
