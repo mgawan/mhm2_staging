@@ -254,11 +254,11 @@ bool Options::load(int argc, char **argv) {
                             string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
   // basic options - see user guide
-  app.add_option("-r, --reads", reads_fnames, "Files containing merged and unmerged reads in FASTQ format (comma separated).")
+  app.add_option("-r, --reads", reads_fnames, "Files containing interleaved paired reads in FASTQ format (comma or space separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
   app.add_option("-p, --paired-reads", paired_fnames,
-                 "Pairs of files containing paired reads for the same insert in FASTQ format (comma separated).")
+                 "Alternating read files containing separate paired reads in FASTQ format (comma or space separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
   app.add_option("-i, --insert", insert_size, "Insert size (average:stddev) (autodetected by default).")
