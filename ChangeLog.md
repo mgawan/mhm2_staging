@@ -5,7 +5,7 @@ This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bit
 
 ### 2.0.1 2020-10-10
    * Fixed scaling Issues - #52, #54, #61
-   * Fixed cmake/build - Issues #20, #51
+   * Fixed cmake/build - Issues #20, #51, #55
    * Fixed paired read usage - Issue #58  
    * Fixed minor UI Issues - #53, #33, #50, #46, #45
    * Fixed edge cases of improper lustre striping - Issue #62
