@@ -107,9 +107,9 @@ These are the most commonly used options.
 
 **`-r, --reads STRING,STRING,...`**
 
-A collection of names of files containing reads in FASTQ format. Multiple files must be comma-separated, without spaces. If the
-files contain paired-reads, these should be interleaved. For paired reads in separate files, use the
-`-p` option. Either this or the `-p` option are required. For long lists of read files, they can be set in a
+A collection of names of files containing reads in FASTQ format. Multiple files must be comma-separated, or can be separated by
+spaces. Currently, only paired reads are supported, and with this option they must be interleaved. For paired reads in separate
+files, use the `-p` option. Either this or the `-p` option are required. For long lists of read files, they can be set in a
 configuration file, to avoid having to type them in on the command line.
 
 When running on a [Lustre](https://lustre.org/) file system (such as on NERSC's Cori), it is recommended that all input files be
@@ -129,6 +129,10 @@ first pairs must be followed by the file containing the reads for the second pai
 files `lib1_1.fastq`, `lib1_2.fastq` and `lib2_1.fastq`, `lib2_2.fastq`, the option should be specified as:
 
 `-p lib1_1.fastq,lib1_2.fastq,lib2_1.fastq,lib2_2.fastq`
+
+This option only supports reads where each pair of reads has the same sequence length, usually only seen in raw reads. For support
+of trimmed reads of possibly different lengths, first interleave the files and then call with the `-r` option. The separate files
+can be interleaved with `reformat.sh` from [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/).
 
 **`-i, --insert INT:INT`**
 
