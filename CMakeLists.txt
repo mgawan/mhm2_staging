@@ -228,3 +228,8 @@ add_subdirectory(src)
 install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhm2-upcxx-run-summit)
 install(PROGRAMS ci/check_asm_quality.py ci/ci_asm_qual_test.sh DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(FILES ci/good-arctic-sample0.txt ci/good-arctic-sample0-k63.txt ci/good-arctic-sample0-k31k63.txt ci/good-arcticsynth.txt DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
+
+option(MHM2_ENABLE_TESTING "Enable testing in MHM2" ON)
+if (MHM2_ENABLE_TESTING)
+  add_subdirectory(test)
+endif()
