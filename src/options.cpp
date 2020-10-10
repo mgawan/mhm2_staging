@@ -210,10 +210,11 @@ void Options::setup_output_dir() {
     if (fname[0] != '/') {
       string dir = string(cwd_str) + "/";
       auto spos = fname.find_first_of(':');
-      if (spos == string::npos) {
+      if (spos == string::npos || spos == fname.size() - 1) {
+        // interleaved (no colon) or single read (colon at the end)
         fname = dir + fname;
       } else {
-        // paired read
+        // paired read (colon in between)
         fname = dir + fname.substr(0, spos) + ":" + dir + fname.substr(spos + 1);
       }
     }
@@ -265,11 +266,15 @@ bool Options::load(int argc, char **argv) {
                             string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
   // basic options - see user guide
-  app.add_option("-r, --reads", reads_fnames, "Files containing interleaved paired reads in FASTQ format (comma or space separated).")
+  app.add_option("-r, --reads", reads_fnames,
+                 "Files containing interleaved paired reads in FASTQ format (comma or space separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
   app.add_option("-p, --paired-reads", paired_fnames,
                  "Alternating read files containing separate paired reads in FASTQ format (comma or space separated).")
+      ->delimiter(',')
+      ->check(CLI::ExistingFile);
+  app.add_option("-u, --unpaired-reads", unpaired_fnames, "Unpaired or single reads in FASTQ format (comma or space separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
   app.add_option("-i, --insert", insert_size, "Insert size (average:stddev) (autodetected by default).")
@@ -348,7 +353,7 @@ bool Options::load(int argc, char **argv) {
   }
 
   if (!paired_fnames.empty()) {
-    // convert pairs to colon ':' separated single files for FastqReader to process
+    // convert pairs to colon ':' separated unpaired/single files for FastqReader to process
     if (paired_fnames.size() % 2 != 0) {
       if (!rank_me()) cerr << "Did not get pairs of files in -p: " << paired_fnames.size() << endl;
       return false;
@@ -358,6 +363,15 @@ bool Options::load(int argc, char **argv) {
       paired_fnames.erase(paired_fnames.begin());
       paired_fnames.erase(paired_fnames.begin());
     }
+  }
+
+  if (!unpaired_fnames.empty()) {
+    // append a ':' to the file name, signaling to FastqReader that this is a unpaired/single file
+    // a paired file would have another name after the ':'
+    for (auto name : unpaired_fnames) {
+      reads_fnames.push_back(name + ":");
+    }
+    unpaired_fnames.clear();
   }
 
   // we can get restart incorrectly set in the config file from restarted runs
@@ -382,7 +396,11 @@ bool Options::load(int argc, char **argv) {
         cerr << "\nError in command line:\nRequire output directory when restarting run\nRun with --help for more information\n";
       return false;
     }
-    string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
+    string first_read_fname = reads_fnames[0];
+    // strip out the paired or unpaired/single the possible ':' in the name string
+    auto colpos = first_read_fname.find_last_of(':');
+    if (colpos != string::npos) first_read_fname = first_read_fname.substr(0, colpos);
+    first_read_fname = remove_file_ext(get_basename(first_read_fname));
     auto spos = first_read_fname.find_first_of(':');
     if (spos != string::npos) first_read_fname = first_read_fname.substr(0, spos);
     output_dir = "mhm2-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +

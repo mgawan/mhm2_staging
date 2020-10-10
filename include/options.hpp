@@ -80,6 +80,7 @@ class Options {
  public:
   vector<string> reads_fnames;
   vector<string> paired_fnames;
+  vector<string> unpaired_fnames;
   vector<unsigned> kmer_lens = {};
   int max_kmer_len = 0;
   int prev_kmer_len = 0;

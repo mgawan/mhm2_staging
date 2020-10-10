@@ -72,6 +72,7 @@ class FastqReader {
   int qual_offset;
   shared_ptr<FastqReader> fqr2;
   bool first_file;
+  bool _is_paired;
   IntermittentTimer io_t;
   struct PromStartStop {
     promise<int64_t> start_prom, stop_prom;
@@ -116,6 +117,8 @@ class FastqReader {
   void reset();
 
   future<> get_open_fut() const { return open_fut; }
+
+  bool is_paired() const { return _is_paired; }
 
   static future<> set_matching_pair(FastqReader &fqr1, FastqReader &fqr2, dist_object<PromStartStop> &dist_start_stop1,
                                     dist_object<PromStartStop> &dist_start_stop2);
