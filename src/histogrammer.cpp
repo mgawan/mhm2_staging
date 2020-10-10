@@ -170,7 +170,8 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
            expected_ins_stddev);
       return {expected_ins_avg, expected_ins_stddev};
     } else {
-      DIE("Could not find any suitable alignments for calculating the insert size and no parameters are set.");
+      SWARN("Could not find any suitable alignments for calculating the insert size and no parameters are set.");
+      return {0, 0};
     }
   }
   auto insert_avg = all_sum_insert_size / all_num_valid_pairs;
