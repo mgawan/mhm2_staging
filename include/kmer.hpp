@@ -75,13 +75,15 @@
  *  - Provide hash of kmers
  *  - Get last and next kmer, e.g. ACGT -> CGTT or ACGT -> AACGT
  *  */
-extern const uint64_t TWIN_TABLE[256];
+using longs_t = uint64_t;
+extern const longs_t TWIN_TABLE[256];
+extern const longs_t ZERO_MASK[32];
 
 template <int MAX_K>
 class Kmer {
   inline static unsigned int k = 0;
   inline static const int N_LONGS = (MAX_K + 31) / 32;
-  std::array<uint64_t, N_LONGS> longs;
+  std::array<longs_t, N_LONGS> longs;
 
  public:
   // serialization has to be public
@@ -106,6 +108,10 @@ class Kmer {
 
   static unsigned int get_k() { return Kmer::k; }
 
+  static unsigned int get_N_LONGS() { return Kmer::N_LONGS; }
+
+  static unsigned int get_MAX_K() { return MAX_K; }
+
   static void get_kmers(unsigned kmer_len, std::string seq, std::vector<Kmer> &kmers) {
     // only need rank 0 to check
     assert(Kmer::k > 0);
@@ -113,11 +119,11 @@ class Kmer {
     kmers.clear();
     if (seq.size() < Kmer::k) return;
     for (auto &c : seq) c = toupper(c);
-    int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + 2;
+    int bufsize = std::max((int)N_LONGS, (int)(seq.size() + 31) / 32) + N_LONGS;
     int lastLong = N_LONGS - 1;
     assert(lastLong >= 0 && lastLong < N_LONGS);
     kmers.resize(seq.size() - Kmer::k + 1);
-    uint64_t buf[bufsize];
+    longs_t buf[bufsize];
     uint8_t *bufPtr = (uint8_t *)buf;
     memset(buf, 0, bufsize * 8);
     const char *s = seq.c_str();
@@ -126,16 +132,16 @@ class Kmer {
       int j = i % 32;
       int l = i / 32;
       assert(*s != '\0');
-      size_t x = ((*s) & 4) >> 1;
+      longs_t x = ((*s) & 4) >> 1;
       buf[l] |= ((x + ((x ^ (*s & 2)) >> 1)) << (2 * (31 - j)));
       s++;
     }
     // fix to big endian
     for (int l = 0; l < bufsize; l++) buf[l] = H2BE(buf[l]);
-    const uint64_t mask = ((int64_t)0x3);
-    uint64_t endmask = 0;
+    const longs_t mask = ((int64_t)0x3);
+    longs_t endmask = 0;
     if (Kmer::k % 32) {
-      endmask = (((uint64_t)2) << (2 * (31 - (k % 32)) + 1)) - 1;
+      endmask = (((longs_t)2) << (2 * (31 - (k % 32)) + 1)) - 1;
       // k == 0 :                0x0000000000000000
       // k == 1 : 2 << 61  - 1 : 0x3FFFFFFFFFFFFFFF
       // k == 31: 2 << 1   - 1 : 0x0000000000000003
@@ -155,7 +161,7 @@ class Kmer {
         int byteOffset = i / 4;
         assert(byteOffset + N_LONGS * 8 <= bufsize * 8);
         for (int l = 0; l < N_LONGS; l++) {
-          kmers[i].longs[l] = BE2H(*((uint64_t *)(bufPtr + byteOffset + l * 8)));
+          kmers[i].longs[l] = BE2H(*((longs_t *)(bufPtr + byteOffset + l * 8)));
         }
         // set remaining bits to 0
         kmers[i].longs[lastLong] &= endmask;
@@ -185,36 +191,59 @@ class Kmer {
 
   void set_kmer(const char *s) {
     size_t i, j, l;
-#ifdef USE_VECTOR
-    std::fill(longs.begin(), longs.end(), 0);
-#else
     longs.fill(0);
-#endif
     for (i = 0; i < Kmer::k; ++i) {
       j = i % 32;
       l = i / 32;
       assert(*s != '\0');
-      size_t x = ((*s) & 4) >> 1;
+      assert(((*s >= 'A' && *s <= 'Z') || (*s >= 'a' && *s <= 'z')) && "bases are letters");
+      longs_t x;
+#if 1
+      x = ((*s) & 4) >> 1;
       longs[l] |= ((x + ((x ^ (*s & 2)) >> 1)) << (2 * (31 - j)));
+#else
+      // This is the same, but broken down...
+      x = ((*s) & 4) >> 1;  // i.e. Gg/Tt will set bit 1, so x == 2 | 0
+      assert(x == 2 || x == 0);
+      x |= (x ^ ((*s) & 2)) >> 1;  // i.e. Cc/Gg will not set bit 0, Aa/Tt will set bit 0
+      assert(x >= 0 && x <= 3);
+      longs[l] |= (x) << (2 * (31 - j));
+#endif
       s++;
     }
   }
 
-  uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(uint64_t)); }
+  uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }
+
+  void set_zeros() {
+    // set trailing bits in longs
+    auto mod = k % 32;
+    auto last_long = k / 32;
+    if (mod != 0) {
+      longs[last_long] &= ZERO_MASK[mod];
+    }
+
+    // set remaining longs, if any, to 0
+    for (int l = 1 + last_long; l < N_LONGS; l++) {
+      longs[l] = 0;
+    }
+  }
 
   Kmer revcomp() const {
-    Kmer km(*this);
-    for (size_t i = 0; i < N_LONGS; i++) {
-      uint64_t v = longs[i];
-      km.longs[N_LONGS - 1 - i] = (TWIN_TABLE[v & 0xFF] << 56) | (TWIN_TABLE[(v >> 8) & 0xFF] << 48) |
-                                  (TWIN_TABLE[(v >> 16) & 0xFF] << 40) | (TWIN_TABLE[(v >> 24) & 0xFF] << 32) |
-                                  (TWIN_TABLE[(v >> 32) & 0xFF] << 24) | (TWIN_TABLE[(v >> 40) & 0xFF] << 16) |
-                                  (TWIN_TABLE[(v >> 48) & 0xFF] << 8) | (TWIN_TABLE[(v >> 56)]);
+    Kmer km;
+    auto last_long = (k + 31) / 32;
+    assert(last_long <= N_LONGS);
+    for (size_t i = 0; i < last_long; i++) {
+      longs_t v = longs[i];
+      km.longs[last_long - 1 - i] = (TWIN_TABLE[v & 0xFF] << 56) | (TWIN_TABLE[(v >> 8) & 0xFF] << 48) |
+                                    (TWIN_TABLE[(v >> 16) & 0xFF] << 40) | (TWIN_TABLE[(v >> 24) & 0xFF] << 32) |
+                                    (TWIN_TABLE[(v >> 32) & 0xFF] << 24) | (TWIN_TABLE[(v >> 40) & 0xFF] << 16) |
+                                    (TWIN_TABLE[(v >> 48) & 0xFF] << 8) | (TWIN_TABLE[(v >> 56)]);
     }
-    size_t shift = (Kmer::k % 32) ? 2 * (32 - (Kmer::k % 32)) : 0;
-    uint64_t shiftmask = (Kmer::k % 32) ? (((1ULL << shift) - 1) << (64 - shift)) : 0ULL;
+    longs_t shift = (Kmer::k % 32) ? 2 * (32 - (Kmer::k % 32)) : 0;
+    longs_t shiftmask = (Kmer::k % 32) ? (((((longs_t)1) << shift) - 1) << (64 - shift)) : ((longs_t)0);
     km.longs[0] = km.longs[0] << shift;
-    for (size_t i = 1; i < N_LONGS; i++) {
+    for (size_t i = 1; i < last_long; i++) {
       km.longs[i - 1] |= (km.longs[i] & shiftmask) >> (64 - shift);
       km.longs[i] = km.longs[i] << shift;
     }
@@ -228,7 +257,7 @@ class Kmer {
       km.longs[i - 1] |= (km.longs[i] & (3ULL << 62)) >> 62;
       km.longs[i] = km.longs[i] << 2;
     }
-    uint64_t x = (b & 4) >> 1;
+    longs_t x = (b & 4) >> 1;
     km.longs[N_LONGS - 1] |= (x + ((x ^ (b & 2)) >> 1)) << (2 * (31 - ((k - 1) % 32)));
     return km;
   }
@@ -241,7 +270,7 @@ class Kmer {
       km.longs[N_LONGS - i] |= (km.longs[N_LONGS - i - 1] & 3ULL) << 62;
       km.longs[N_LONGS - i - 1] = km.longs[N_LONGS - i - 1] >> 2;
     }
-    uint64_t x = (b & 4) >> 1;
+    longs_t x = (b & 4) >> 1;
     km.longs[0] |= (x + ((x ^ (b & 2)) >> 1)) << 62;
     return km;
   }
@@ -279,8 +308,21 @@ class Kmer {
     return std::string(buf);
   }
 
+  std::string to_hex() const {
+    std::ostringstream os;
+    assert(N_LONGS == longs.size());
+    os << "longs=" << N_LONGS << ",k=" << get_k() << ":" << to_string() << ":";
+    for (auto l : longs) os << l << ",";
+    os << ":";
+    os << std::hex;
+    for (auto l : longs) {
+      os << l << ",";
+    }
+    return os.str();
+  }
+
   std::pair<const uint8_t *, int> get_bytes() const {
-    return {reinterpret_cast<const uint8_t *>(longs.data()), N_LONGS * sizeof(uint64_t)};
+    return {reinterpret_cast<const uint8_t *>(longs.data()), N_LONGS * sizeof(longs_t)};
   }
 };
 
