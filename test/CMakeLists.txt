@@ -10,7 +10,7 @@ add_subdirectory(googletest)
 
 set(BINARY mhm2_test)
 
-file(GLOB_RECURSE TEST_SOURCES LIST_DIRECTORIES false *.hpp *.cpp)
+file(GLOB TEST_SOURCES LIST_DIRECTORIES false *.hpp *.cpp)
 
 set(SOURCES ${TEST_SOURCES})
 
