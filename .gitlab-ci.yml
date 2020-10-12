@@ -46,6 +46,21 @@ Cori:build:
     - exec 2> >(tee -ia ${SCRATCH}/build.err >&2)    
     - echo "Logging to ${SCRATCH}/build.log and .err at $(date) on $(uname -n) in $(pwd)"
     - lmstat -a -c $INTEL_LICENSE_FILE || /bin/true
+    - echo "Loading Haswell modules for upcxx GNU"
+    - source ${MHM2_SOURCE}/contrib/environments/cori-haswell/gnu.sh
+    - module list
+    - export MHM2_BUILD=${BUILD_PREFIX}-haswell-dbg
+    - mkdir -p ${MHM2_BUILD}
+    - cd $MHM2_BUILD
+    - echo "Building Haswell GNU Debug"
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Debug ${MHM2_SOURCE}
+    - make -j 12 all check install
+    - export MHM2_BUILD=${BUILD_PREFIX}-haswell
+    - mkdir -p ${MHM2_BUILD}
+    - cd $MHM2_BUILD
+    - echo "Building Haswell GNU Release"
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Release ${MHM2_SOURCE}
+    - make -j 12 all check install
     - echo "Loading KNL modules for upcxx on cori GNU"
     - source ${MHM2_SOURCE}/contrib/environments/cori-knl/gnu.sh
     - module list
@@ -54,28 +69,19 @@ Cori:build:
     - cd $MHM2_BUILD
     - echo "Building KNL GNU Debug"
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-dbg -DCMAKE_BUILD_TYPE=Debug ${MHM2_SOURCE}
-    - make -j 12 all check install
-    - export MHM2_BUILD=${BUILD_PREFIX}-knl-reldbg
+    - make -j 12 all install # cannot check knl build on haswell
+    - export MHM2_BUILD=${BUILD_PREFIX}-knl-rwdi
     - mkdir -p ${MHM2_BUILD}
     - cd $MHM2_BUILD
     - echo "Building KNL GNU RelWithDebInfo"
-    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-reldbg -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHM2_SOURCE}
-    - make -j 12 all check install
+    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl-rwdi -DCMAKE_BUILD_TYPE=RelWithDebInfo ${MHM2_SOURCE}
+    - make -j 12 all install # cannot check knl build on haswell
     - export MHM2_BUILD=${BUILD_PREFIX}-knl
     - mkdir -p ${MHM2_BUILD}
     - cd $MHM2_BUILD
     - echo "Building KNL GNU Release"
     - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-knl -DCMAKE_BUILD_TYPE=Release ${MHM2_SOURCE}
-    - make -j 12 all check install
-    - echo "Loading Haswell modules for upcxx GNU"
-    - source ${MHM2_SOURCE}/contrib/environments/cori-haswell/gnu.sh
-    - module list
-    - export MHM2_BUILD=${BUILD_PREFIX}-haswell
-    - mkdir -p ${MHM2_BUILD}
-    - cd $MHM2_BUILD
-    - echo "Building Haswell GNU Release"
-    - CXX=CC cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX}-haswell -DCMAKE_BUILD_TYPE=Release ${MHM2_SOURCE}
-    - make -j 12 all check install
+    - make -j 12 all install # cannot check knl build on haswell
     - echo "Done building"
 
 Cori:validation:
@@ -107,7 +113,7 @@ Cori:validation:
     - FAILED=""   
     - inst=${INSTALL_PREFIX}-knl
     - echo "Testing builds on KNL - $inst"
-    - export RWDI=${INSTALL_PREFIX}-knl-reldbg/bin/
+    - export RWDI=${INSTALL_PREFIX}-knl-rwdi/bin/
     - export DBG=${INSTALL_PREFIX}-knl-dbg/bin/
     - export REL=${INSTALL_PREFIX}-knl/bin/
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
