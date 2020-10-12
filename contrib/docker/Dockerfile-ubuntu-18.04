@@ -35,12 +35,19 @@ RUN apt-get update  && \
     apt-get autoclean && \
     rm -rf /var/lib/apt/lists/* && \
     find / -name '*.pyc' -exec rm {} \; && \
-    echo "Build MHM2" && \
-    git clone https://bitbucket.org/berkeleylab/mhm2.git && \
+    echo "Done installing build-essential"
+
+# Copy source tree to mhm2.  If not run from the mhm2 top level, then a git clone of ${MHM2_VER} will occur
+COPY . mhm2
+
+RUN echo "Build MHM2" && \
     cd mhm2 && \
-    ( [ -z "${MHM_VER}" ] || git checkout ${MHM_VER} ) && \
+    ( [ -z "${MHM2_VER}" -o -f src/mhm2.py ] || ( \
+      git clone https://bitbucket.org/berkeleylab/mhm2.git . && \
+      git checkout ${MHM2_VER} && \
+      git submodule init && \
+      git submodule update ) ) && \
     git describe && \
-    git submodule init && git submodule update && \
     echo "Build upcxx" && \
     mkdir build-upcxx && \
     cd build-upcxx && \
