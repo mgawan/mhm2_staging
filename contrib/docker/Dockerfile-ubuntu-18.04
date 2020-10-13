@@ -57,8 +57,8 @@ RUN echo "Build MHM2" && \
     which upcxx && \
     mkdir build && \
     cd build && \
-    cmake .. && \
-    make -j 8 all install && \
+    cmake -DENABLE_CUDA=off -DMHM2_VECTORS=off .. && \
+    make -j 8 all check install && \
     echo "Done building MHM2"
 
 #
