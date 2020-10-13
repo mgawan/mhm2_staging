@@ -98,33 +98,35 @@ else()
   message(STATUS "Building for CPU only")
 endif()
 
-find_package(CpuArch
-  REQUIRED
-  COMPONENTS
-  OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
+option(MHM2_VECTORS "Test for optimal arch-specific compiler flags" ON)
+if (MHM2_VECTORS)
+  find_package(CpuArch
+    REQUIRED
+    COMPONENTS
+    OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
 
-if (NOT APPLE)
-  LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
-endif()
-
-option(MHM2_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
-foreach(_ARCH ${CpuArch_FEATURES})
-  check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
-  if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug" AND NOT MHM2_DEBUG_VECTORS)
-    message("NOT enabling -m${_ARCH} compile option in this Debug build")
-  else()
-    if (HAVE_C_OPT_${_ARCH})
-      message(STATUS "Compiling C with -m${_ARCH} option")
-      string(APPEND CMAKE_C_FLAGS " -m${_ARCH}")
-    endif()
-    check_cxx_compiler_flag(-m${_ARCH} HAVE_CXX_OPT_${_ARCH})
-    if (HAVE_CXX_OPT_${_ARCH})
-      message(STATUS "Compiling CXX with -m${_ARCH} option")
-      string(APPEND CMAKE_CXX_FLAGS " -m${_ARCH}")
-    endif()
+  if (NOT APPLE)
+    LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
   endif()
-endforeach()
 
+  option(MHM2_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
+  foreach(_ARCH ${CpuArch_FEATURES})
+    check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug" AND NOT MHM2_DEBUG_VECTORS)
+      message("NOT enabling -m${_ARCH} compile option in this Debug build")
+    else()
+      if (HAVE_C_OPT_${_ARCH})
+        message(STATUS "Compiling C with -m${_ARCH} option")
+        string(APPEND CMAKE_C_FLAGS " -m${_ARCH}")
+      endif()
+      check_cxx_compiler_flag(-m${_ARCH} HAVE_CXX_OPT_${_ARCH})
+      if (HAVE_CXX_OPT_${_ARCH})
+        message(STATUS "Compiling CXX with -m${_ARCH} option")
+        string(APPEND CMAKE_CXX_FLAGS " -m${_ARCH}")
+      endif()
+    endif()
+  endforeach()
+endif()
 
 message("Building ${CMAKE_BUILD_TYPE} version")
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
@@ -228,3 +230,8 @@ add_subdirectory(src)
 install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhm2-upcxx-run-summit)
 install(PROGRAMS ci/check_asm_quality.py ci/ci_asm_qual_test.sh DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(FILES ci/good-arctic-sample0.txt ci/good-arctic-sample0-k63.txt ci/good-arctic-sample0-k31k63.txt ci/good-arcticsynth.txt DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
+
+option(MHM2_ENABLE_TESTING "Enable testing in MHM2" ON)
+if (MHM2_ENABLE_TESTING)
+  add_subdirectory(test)
+endif()
