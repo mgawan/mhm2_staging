@@ -143,10 +143,16 @@ elseif("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
 endif()
 
 option(UPCXX_VERBOSE "" ON)
-find_package(UPCXX 2020.3 REQUIRED)
+set(MIN_UPCXX_VERSION "2020.3" CACHE STRING "Minimum version of UPCXX required for MHM2")
+find_package(UPCXX ${MIN_UPCXX_VERSION})
 if(NOT UPCXX_FOUND)
-  message(FATAL_ERROR "UPCXX is required to build and it should have been found in the upcxx-utils submodule under src")
+  message(FATAL_ERROR "UPCXX (version ${MIN_UPCXX_VERSION}) is required to build.
+  Please verify the installation of upcxx
+  and verify that upcxx is in your PATH: which upcxx && upcxx --version
+  and has been installed in the correct location: find $(dirname $(which upcxx))/../share -name 'UPCXX*' -type f
+    which should discover UPCXXConfig.cmake and UPCXXConfigVersion.cmake")
 endif()
+find_package(UPCXX ${MIN_UPCXX_VERSION} REQUIRED)
 
 message(STATUS "Building for ${CMAKE_BUILD_TYPE}: CMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}")
 
