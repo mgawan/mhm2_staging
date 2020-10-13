@@ -9,5 +9,5 @@ TEST(MHMTest, version) {
     //assert
     string ver(MHM2_VERSION);
     
-    EXPECT_STREQ (ver.substr(0,ver.find_last_of('.')).c_str(),  "2.0.0") << "Version is correct";
+    EXPECT_STREQ (ver.substr(0,ver.find_last_of('.')).c_str(),  "2.0.1") << "Version is correct";
 }
