@@ -9,6 +9,8 @@ This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bit
    * Fixed paired read usage - Issue #58  
    * Fixed minor UI Issues - #53, #33, #50, #46, #45
    * Fixed edge cases of improper lustre striping - Issue #62
+   * Added framework for unit tests
+   * Added a ability to build a docker image
 
 ### 2.0.0 2020-09-30
    * Updated documentation and added a user guide.
