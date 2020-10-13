@@ -64,6 +64,7 @@ void test_get_kmers(int klen) {
   test_get_kmers<MAX_K>(klen, ACGTs);
   test_get_kmers<MAX_K>(klen, TCGAs);
   test_get_kmers<MAX_K>(klen, CAGTs);
+  test_get_kmers<MAX_K>(klen, RandomRead);
 }
 
 template <typename K>
