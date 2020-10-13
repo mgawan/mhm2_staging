@@ -205,7 +205,7 @@ void Options::setup_output_dir() {
   // after we change to the output directory, relative paths could be incorrect, so make sure we have the correct path of the
   // reads files
   char cwd_str[FILENAME_MAX];
-  if (!getcwd(cwd_str, FILENAME_MAX)) SDIE("Cannot get current working directory: ", strerror(errno));
+  if (!getcwd(cwd_str, FILENAME_MAX)) DIE("Cannot get current working directory: ", strerror(errno));
   for (auto &fname : reads_fnames) {
     if (fname[0] != '/') {
       string dir = string(cwd_str) + "/";
@@ -219,8 +219,11 @@ void Options::setup_output_dir() {
     }
   }
   // all change to the output directory
-  if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
-    DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
+  auto chdir_attempts = 0;
+  while (chdir(output_dir.c_str()) != 0) {
+    // failed, retry for 5 more seconds - Issue #69
+    if (chdir_attempts++ > 10) DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
   upcxx::barrier();
 }
