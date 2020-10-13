@@ -286,6 +286,21 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
     int64_t num_reads = 0;
 
     for (;; num_pairs++) {
+      if (!fqr.is_paired()) {
+        // unpaired reads get dummy read2 just like merged reads
+        int64_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
+        if (!bytes_read1) break;
+        bytes_read += bytes_read1;
+        progbar.update(bytes_read);
+        packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/1", seq1, quals1);
+        packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/2", "N", to_string((char)qual_offset));
+        read_id += 2;
+        if (checkpoint) {
+          *sh_out_file << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
+          *sh_out_file << "@r" << read_id << "/2\nN\n+\n" << (char)qual_offset << "\n";
+        }
+        continue;
+      }
       int64_t bytes_read1 = fqr.get_next_fq_record(id1, seq1, quals1);
       if (!bytes_read1) break;
       int64_t bytes_read2 = fqr.get_next_fq_record(id2, seq2, quals2);
@@ -455,7 +470,6 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
         packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/1", seq1, quals1);
         packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/2", "N", to_string((char)qual_offset));
         if (checkpoint) {
-          ostringstream out_buf;
           *sh_out_file << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
           *sh_out_file << "@r" << read_id << "/2\nN\n+\n" << (char)qual_offset << "\n";
         }
@@ -465,7 +479,6 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
         packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/1", seq1, quals1);
         packed_reads_list[ri]->add_read("r" + to_string(read_id) + "/2", seq2, quals2);
         if (checkpoint) {
-          ostringstream out_buf;
           *sh_out_file << "@r" << read_id << "/1\n" << seq1 << "\n+\n" << quals1 << "\n";
           *sh_out_file << "@r" << read_id << "/2\n" << seq2 << "\n+\n" << quals2 << "\n";
         }

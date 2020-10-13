@@ -72,12 +72,13 @@ class FastqReader {
   int qual_offset;
   shared_ptr<FastqReader> fqr2;
   bool first_file;
+  bool _is_paired;
   IntermittentTimer io_t;
   struct PromStartStop {
     promise<int64_t> start_prom, stop_prom;
-    future<> set(FastqReader *fqr) {
-      auto set_start = start_prom.get_future().then([fqr](int64_t start) { fqr->start_read = start; });
-      auto set_end = stop_prom.get_future().then([fqr](int64_t stop) { fqr->end_read = stop; });
+    future<> set(FastqReader &fqr) {
+      auto set_start = start_prom.get_future().then([&fqr](int64_t start) { fqr.start_read = start; });
+      auto set_end = stop_prom.get_future().then([&fqr](int64_t stop) { fqr.end_read = stop; });
       return when_all(set_start, set_end);
     }
   };
@@ -108,7 +109,7 @@ class FastqReader {
 
   void advise(bool will_need);
 
-  size_t get_next_fq_record(string &id, string &seq, string &quals);
+  size_t get_next_fq_record(string &id, string &seq, string &quals, bool wait_open = true);
   int get_max_read_len();
 
   double static get_io_time();
@@ -116,6 +117,11 @@ class FastqReader {
   void reset();
 
   future<> get_open_fut() const { return open_fut; }
+
+  bool is_paired() const { return _is_paired; }
+
+  static future<> set_matching_pair(FastqReader &fqr1, FastqReader &fqr2, dist_object<PromStartStop> &dist_start_stop1,
+                                    dist_object<PromStartStop> &dist_start_stop2);
 };
 
 class FastqReaders {
