@@ -60,19 +60,16 @@ void check_alns(vector<Alignment> &alns, int qstart, int qend, int rstart, int r
     EXPECT_EQ(aln.query_end, qend) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
     if (!aln.cigar_string.empty()) {  // mismatches should be recorded...
       EXPECT_EQ(aln.mismatches, mismatches) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-      if (!cigar.empty()) EXPECT_STREQ(aln.cigar_string.c_str(), cigar.c_str());
+      if (!cigar.empty()) EXPECT_STREQ(aln.cigar_string.c_str(), cigar.c_str()) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
     }
   }
 }
 void check_not_alns(vector<Alignment> &alns, string query = "", string ref = "") {
   for (Alignment &aln : alns) {
-    EXPECT_EQ(aln.ref_begin, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-    EXPECT_EQ(aln.ref_end, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-    EXPECT_EQ(aln.query_begin, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-    EXPECT_EQ(aln.query_end, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-    EXPECT_EQ(aln.mismatches, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-    EXPECT_EQ(aln.sw_score, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
-    EXPECT_EQ(aln.sw_score_next_best, 0) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
+    EXPECT_TRUE(aln.ref_end - aln.ref_begin <= 2) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
+    EXPECT_TRUE(aln.query_end - aln.query_begin <= 2) << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
+    EXPECT_TRUE(aln.sw_score <= 4)  << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
+    EXPECT_TRUE(aln.sw_score_next_best == 0)  << "query=" << query << " ref=" << ref << " aln=" << aln2string(aln);
   }
 }
 
@@ -103,25 +100,25 @@ TEST(MHMTest, ssw) {
   string r = "AAAATTTTCCCCGGGG";
   string q = "AAAATTTTCCCCGGGG";
   test_aligns(alns, q, r);
-  check_alns(alns, 0, 15, 0, 15, 0, q, r);
+  check_alns(alns, 0, 15, 0, 15, 0, q, r, "16=");
 
   // 1 subst
   q = "AAAATTTTACCCGGGG";
   test_aligns(alns, q, r);
-  check_alns(alns, 0, 15, 0, 15, 1, q, r);
+  check_alns(alns, 0, 15, 0, 15, 1, q, r, "8=1X7=");
 
   // 1 insert
   q = "AAAATTTTACCCCGGGG";
   test_aligns(alns, q, r);
-  check_alns(alns, 0, 16, 0, 15, 1, q, r);
+  check_alns(alns, 0, 16, 0, 15, 1, q, r, "8=1I8=");
 
   // 1 del
   q = "AAAATTTCCCCGGGG";
   test_aligns(alns, q, r);
-  check_alns(alns, 0, 14, 0, 15, 1, q, r);
+  check_alns(alns, 0, 14, 0, 15, 1, q, r, "4=1D11=");
 
   // no match
-  q = "ACGTCGTAGTACTACGT";
+  q = "GCTAGCTAGCTAGCTA";
   test_aligns(alns, q, r);
   check_not_alns(alns, q, r);
 }
