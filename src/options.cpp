@@ -151,54 +151,73 @@ void Options::get_restart_options() {
 }
 
 void Options::setup_output_dir() {
+  if (output_dir.empty()) DIE("Invalid empty ouput_dir");
   if (!upcxx::rank_me()) {
-    // create the output directory and stripe it if not doing a restart
+    // create the output directory (and possibly stripe it)
+
     if (restart) {
+      // it must already exist for a restart
       if (access(output_dir.c_str(), F_OK) == -1) {
         SDIE("Output directory ", output_dir, " for restart does not exist");
       }
-    } else {
-      if (mkdir(output_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */) == -1) {
-        // could not create the directory
-        if (errno == EEXIST) {
-          cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
-               << " already exists. May overwrite existing files\n";
-        } else {
-          SDIE("Could not create output directory ", output_dir, ": ", strerror(errno), "\n");
-        }
-      }
     }
-    // always ensure striping is set or reset properly
-    // created the directory - now stripe it if possible
+
+    // always try to make the output_dir
+    if (mkdir(output_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */) == -1) {
+      // could not create the directory
+      if (errno == EEXIST) {
+        // okay but warn if not restarting
+        if (!restart) SWARN("Output directory ", output_dir, " already exists. May overwrite existing files\n");
+      } else {
+        SDIE("Could not create output directory '", output_dir, "': ", strerror(errno), "\n");
+      }
+    } else {
+      cout << "Created " << output_dir << "\n";
+    }
+
+    // always ensure striping is set or reset wide when lustre is available
     auto status = std::system("which lfs 2>&1 > /dev/null");
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+    bool set_lfs_stripe = WIFEXITED(status) & (WEXITSTATUS(status) == 0);
+    if (set_lfs_stripe) {
+      // stripe with count -1 to use all the OSTs
       string cmd = "lfs setstripe --stripe-count -1 --stripe-size 16M " + output_dir;
       auto status = std::system(cmd.c_str());
       if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
         cout << "Set Lustre striping on the output directory\n";
       else
         cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
+    }
 
-      // ensure per_thread dir exists and has stripe 1
-      string per_thread = output_dir + "/per_thread";
-      mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);  // ignore any errors
-      cmd = "lfs setstripe --stripe-count 1 " + per_thread;
+    // ensure per_thread dir exists (and additionally has stripe 1, if lfs exists)
+    string per_thread = output_dir + "/per_thread";
+    status = mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+    if (status != 0 && errno != EEXIST) SDIE("Could not create '", per_thread, "'! ", strerror(errno));
+    if (set_lfs_stripe) {
+      // stripe per_thread directory with count 1
+      string cmd = "lfs setstripe --stripe-count 1 " + per_thread;
       status = std::system(cmd.c_str());
       if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        cout << "Set Lustre striping on the per_thread output directory\n";
+        cout << "Set Lustre striping on the per_thread output directory: " << per_thread << "\n";
       else
         cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
-      // this should avoid contention on the filesystem when ranks start racing to creating these top levels
-      char basepath[256];
-      for (int i = 0; i < rank_n(); i += 1000) {
-        sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
-        auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
-        if (ret != 0) break;  // ignore any errors, just stop
-      }
-      sprintf(basepath, "%s/00000000/%08d", per_thread.c_str(), 0);
-      auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
-      if (!ret) cout << "Could not create rank 0 per thread directory... does it exist already?\n";
     }
+
+    // this should avoid contention on the filesystem when ranks start racing to creating these top levels
+    char basepath[256];
+    for (int i = 0; i < rank_n(); i += 1000) {
+      sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
+      status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+      if (status != 0 && errno != EEXIST) {
+        SWARN("Could not create '", basepath, "'! ", strerror(errno));
+        break;  // ignore any errors, just stop
+      }
+    }
+    sprintf(basepath, "%s/00000000/%08d", per_thread.c_str(), 0);
+    status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+    if (status != 0 && errno != EEXIST) SDIE("Could not mkdir rank 0 per thread directory '", basepath, "'! ", strerror(errno));
+
+    cout.flush();
+    cerr.flush();
   }
 
   upcxx::barrier();
