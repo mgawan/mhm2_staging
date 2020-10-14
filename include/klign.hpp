@@ -241,7 +241,7 @@ class KmerCtgDHT {
       int identity = 100 * score1 / aln_scoring.match / rlen;
       Aln aln(rname, cid, rstart, rstop, rlen, cstart, cstop, clen, orient, score1, 0, identity, 0, read_group_id);
       assert(aln.is_valid());
-      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, to_string(overlap_len) + "M");
+      if (ssw_filter.report_cigar) set_sam_string(aln, rseq, to_string(overlap_len) + "="); // exact match '=' not 'M'
       alns->add_aln(aln);
     } else {
       max_clen = max((int64_t)cseq.size(), max_clen);

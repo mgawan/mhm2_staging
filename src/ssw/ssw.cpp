@@ -6,6 +6,7 @@
 #include "ssw_core.hpp"
 
 #include <sstream>
+#include <cassert>
 
 namespace {
 
@@ -140,8 +141,17 @@ namespace {
 
     if (al->query_begin > 0) {
       uint32_t cigar = to_cigar_int(al->query_begin, 'S');
-      new_cigar.push_back(cigar);
-      new_cigar_string << al->query_begin << 'S';
+      if (al->cigar.empty() || cigar != al->cigar[0]) {
+        if (!al->cigar.empty()) {
+          char op = cigar_int_to_op(al->cigar[0]);
+          if (op == 'S') {
+            assert(false && "This should not happen! First CIGAR operation is soft clip but is the wrong value!");
+            abort();
+          }
+        }
+        new_cigar.push_back(cigar);
+        new_cigar_string << al->query_begin << 'S';
+      } // else it will be processed normally
     }
 
     bool in_M = false; // the previous is match
@@ -153,26 +163,24 @@ namespace {
       char op = cigar_int_to_op(al->cigar[i]);
       uint32_t length = cigar_int_to_len(al->cigar[i]);
       if (op == 'M') {
-        /*
-        // This appears to be broken - this should just be a sequence of M's, not a bunch of X's and ='s.
+#ifndef NO_SAM_REPLACE_M_WITH_MATCH_MISMATCH
+        // replace the old M op
         for (uint32_t j = 0; j < length; ++j) {
           if (*ref != *query) {
             ++mismatch_length;
             if (in_M) { // the previous is match; however the current one is mismatche
-              uint32_t match = to_cigar_int(length_M, '=');
-              new_cigar.push_back(match);
-              new_cigar_string << length_M << '=';
+              CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
             }
+            // start X op
             length_M = 0;
             ++length_X;
             in_M = false;
             in_X = true;
           } else { // *ref == *query
             if (in_X) { // the previous is mismatch; however the current one is matche
-              uint32_t match = to_cigar_int(length_X, 'X');
-              new_cigar.push_back(match);
-              new_cigar_string << length_X << 'X';
+              CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
             }
+            // start = op
             ++length_M;
             length_X = 0;
             in_M = true;
@@ -181,24 +189,32 @@ namespace {
           ++ref;
           ++query;
         }
-        */
+#else
+        assert(!in_X && "No mismatch possible in 'M' cigar op");
+        // keep the old M op
         query += length;
         ref += length;
-        CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
-        new_cigar.push_back(al->cigar[i]);
-        new_cigar_string << length << 'M';
+        in_M = true;
+        length_m += length;
+#endif
       } else if (op == 'I') {
+        // add an I op
         query += length;
         mismatch_length += length;
         CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
         new_cigar.push_back(al->cigar[i]);
-        new_cigar_string << length << 'I';
+        new_cigar_string << length << op;
       } else if (op == 'D') {
+        // add a D op
         ref += length;
         mismatch_length += length;
         CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
         new_cigar.push_back(al->cigar[i]);
-        new_cigar_string << length << 'D';
+        new_cigar_string << length << op;
+      } else {
+        assert((op == 'X' || op == '=' || 'S') && "No unexpected op");
+        new_cigar.push_back(al->cigar[i]);
+        new_cigar_string << length << op;
       }
     }
 
@@ -207,8 +223,17 @@ namespace {
     int end = query_len - al->query_end - 1;
     if (end > 0) {
       uint32_t cigar = to_cigar_int(end, 'S');
-      new_cigar.push_back(cigar);
-      new_cigar_string << end << 'S';
+      if (al->cigar.empty() || cigar != al->cigar[al->cigar.size()-1]) {
+        if (!al->cigar.empty()) {
+          char op = cigar_int_to_op(al->cigar[0]);
+          if (op == 'S') {
+            assert(false && "This should not happen! Last CIGAR operation is soft clip but is the wrong value!");
+            abort();
+          }
+        }
+        new_cigar.push_back(cigar);
+        new_cigar_string << end << 'S';
+      }
     }
 
     al->cigar_string.clear();
