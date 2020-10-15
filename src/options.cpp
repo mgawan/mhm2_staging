@@ -193,7 +193,8 @@ void Options::setup_output_dir() {
         }
         fclose(f_osts);
       }
-      num_osts = std::min(num_osts, std::min((int) 72, (int) rank_n())); // see Issue #70
+      // reduce to the minimum of 90% or rank_n()
+      num_osts = std::min(9*num_osts/10, std::min((int) 72, (int) rank_n())); // see Issue #70
     }
     set_lfs_stripe &= num_osts > 0;
     if (set_lfs_stripe) {
