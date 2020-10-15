@@ -49,6 +49,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <upcxx/upcxx.hpp>
 
 #include "CLI11.hpp"
@@ -178,12 +179,29 @@ void Options::setup_output_dir() {
     // always ensure striping is set or reset wide when lustre is available
     auto status = std::system("which lfs 2>&1 > /dev/null");
     bool set_lfs_stripe = WIFEXITED(status) & (WEXITSTATUS(status) == 0);
+    int num_osts = 0;
+    if (set_lfs_stripe) {
+      // detect the number of OSTs with "lfs df -l $output_dir" and count the entries with OST: 
+      string cmd("lfs df -l ");
+      cmd += output_dir;
+      FILE *f_osts = popen(cmd.c_str(), "r");
+      if (f_osts) {
+        char buf[256];
+        while (char *ret = fgets(buf, 256, f_osts)) {
+          std::string_view s(buf);
+          if (s.find("OST:") != string::npos) num_osts++;
+        }
+        fclose(f_osts);
+      }
+      num_osts = std::min(num_osts, std::min((int) 72, (int) rank_n())); // see Issue #70
+    }
+    set_lfs_stripe &= num_osts > 0;
     if (set_lfs_stripe) {
       // stripe with count -1 to use all the OSTs
-      string cmd = "lfs setstripe --stripe-count -1 --stripe-size 16M " + output_dir;
+      string cmd = "lfs setstripe --stripe-count " + std::to_string(num_osts) + " --stripe-size 16M " + output_dir;
       auto status = std::system(cmd.c_str());
       if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        cout << "Set Lustre striping on the output directory\n";
+        cout << "Set Lustre striping on the output directory: count=" << num_osts << ", size=16M\n";
       else
         cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
     }
