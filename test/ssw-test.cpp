@@ -85,17 +85,44 @@ TEST(MHMTest, ssw) {
   string ref = "ACGT";
   string query = ref;
   test_aligns(alns, query, ref);
-  check_alns(alns, 0, 3, 0, 3, 0, query, ref);
+  check_alns(alns, 0, 3, 0, 3, 0, query, ref, "4=");
   ref = "AACGT";
   test_aligns(alns, query, ref);
-  check_alns(alns, 0, 3, 1, 4, 0, query, ref);
-  query = "TACGT";
+  check_alns(alns, 0, 3, 1, 4, 0, query, ref, "4=");
+  ref = "ACGTT";
   test_aligns(alns, query, ref);
-  check_alns(alns, 1, 4, 1, 4, 0, query, ref);
+  check_alns(alns, 0, 3, 0, 3, 0, query, ref, "4=");
+
   ref = "ACGT";
+
   query = "TACGT";
   test_aligns(alns, query, ref);
-  check_alns(alns, 1, 4, 0, 3, 0, query, ref);
+  check_alns(alns, 1, 4, 0, 3, 0, query, ref, "1S4=");
+  query = "TTACGT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 2, 5, 0, 3, 0, query, ref, "2S4=");
+  query = "ACGTT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 0, 3, 0, 3, 0, query, ref, "4=1S");
+  query = "ACGTTT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 0, 3, 0, 3, 0, query, ref, "4=2S");
+
+  query = "TACGTT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 1, 4, 0, 3, 0, query, ref, "1S4=1S");
+  query = "TTACGTT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 2, 5, 0, 3, 0, query, ref, "2S4=1S");
+  query = "TACGTTT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 1, 4, 0, 3, 0, query, ref, "1S4=2S");
+  query = "TTACGTTT";
+  test_aligns(alns, query, ref);
+  check_alns(alns, 2, 5, 0, 3, 0, query, ref, "2S4=2S");
+
+
+
 
   string r = "AAAATTTTCCCCGGGG";
   string q = "AAAATTTTCCCCGGGG";
@@ -121,4 +148,16 @@ TEST(MHMTest, ssw) {
   q = "GCTAGCTAGCTAGCTA";
   test_aligns(alns, q, r);
   check_not_alns(alns, q, r);
+
+  // soft clip start
+  q = "GCTAAAATTTTCCCCGGGG";
+  test_aligns(alns, q, r);
+  check_alns(alns, 3, 18, 0, 15, 0, q, r, "3S16=");
+
+  // soft clip end
+  q = "AAAATTTTCCCCGGGGACT";
+  test_aligns(alns, q, r);
+  check_alns(alns, 0, 15, 0, 15, 0, q, r, "16=3S");
+
+
 }

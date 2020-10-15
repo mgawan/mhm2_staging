@@ -107,7 +107,7 @@ namespace {
       uint32_t match = to_cigar_int(*length_M, '=');
       new_cigar->push_back(match);
       (*new_cigar_string) << *length_M << '=';
-    } else if (*in_X){ //in_X
+    } else if (*in_X) { //in_X
       uint32_t match = to_cigar_int(*length_X, 'X');
       new_cigar->push_back(match);
       (*new_cigar_string) << *length_X << 'X';
@@ -122,8 +122,8 @@ namespace {
 
 // @Function:
 //     1. Calculate the number of mismatches.
-//     2. Modify the cigar string:
-//         differentiate matches (M) and mismatches(X).
+//     2. Modify the cigar string: (if NO_SAM_REPLACE_M_WITH_MATCH_MISMATCH is not set)
+//         differentiate alignment matches (M) into sequence match (=) and sequence mismatch (X).
 // @Return:
 //     The number of mismatches.
   int CalculateNumberMismatch(
@@ -132,34 +132,38 @@ namespace {
     int8_t const *query,
     const int& query_len) {
 
+    if (al->cigar.empty()) return 0;
+
     ref   += al->ref_begin;
-    query += al->query_begin;
+    
     int mismatch_length = 0;
 
     std::vector<uint32_t> new_cigar;
     std::ostringstream new_cigar_string;
-
+    
+    int start_op = 0;
     if (al->query_begin > 0) {
-      uint32_t cigar = to_cigar_int(al->query_begin, 'S');
-      if (al->cigar.empty() || cigar != al->cigar[0]) {
-        if (!al->cigar.empty()) {
-          char op = cigar_int_to_op(al->cigar[0]);
-          if (op == 'S') {
-            assert(false && "This should not happen! First CIGAR operation is soft clip but is the wrong value!");
-            abort();
-          }
+      uint32_t cint = to_cigar_int(al->query_begin, 'S');
+      if (cint != al->cigar[0]) {
+        char op = cigar_int_to_op(al->cigar[0]);
+        if (op == 'S') {
+          assert(false && "This should not happen! First CIGAR operation is soft clip but is the wrong value!");
+          abort();
         }
-        new_cigar.push_back(cigar);
+        // needs a new Soft clip entry
+        new_cigar.push_back(cint);
         new_cigar_string << al->query_begin << 'S';
-      } // else it will be processed normally
-    }
+        query += al->query_begin;
+      }
+    } // else it will be processed normally
+    
 
     bool in_M = false; // the previous is match
     bool in_X = false; // the previous is mismatch
     uint32_t length_M = 0;
     uint32_t length_X = 0;
 
-    for (unsigned int i = 0; i < al->cigar.size(); ++i) {
+    for (unsigned int i = start_op; i < al->cigar.size(); ++i) {
       char op = cigar_int_to_op(al->cigar[i]);
       uint32_t length = cigar_int_to_len(al->cigar[i]);
       if (op == 'M') {
@@ -168,7 +172,7 @@ namespace {
         for (uint32_t j = 0; j < length; ++j) {
           if (*ref != *query) {
             ++mismatch_length;
-            if (in_M) { // the previous is match; however the current one is mismatche
+            if (in_M) { // the previous is match; however the current one is mismatch
               CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
             }
             // start X op
@@ -177,7 +181,7 @@ namespace {
             in_M = false;
             in_X = true;
           } else { // *ref == *query
-            if (in_X) { // the previous is mismatch; however the current one is matche
+            if (in_X) { // the previous is mismatch; however the current one is match
               CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
             }
             // start = op
@@ -195,7 +199,7 @@ namespace {
         query += length;
         ref += length;
         in_M = true;
-        length_m += length;
+        length_M += length;
 #endif
       } else if (op == 'I') {
         // add an I op
@@ -212,7 +216,17 @@ namespace {
         new_cigar.push_back(al->cigar[i]);
         new_cigar_string << length << op;
       } else {
-        assert((op == 'X' || op == '=' || 'S') && "No unexpected op");
+        assert((op == 'X' || op == '=' || op == 'S') && "No unexpected op"); // no support for N, H, or P yet
+        if (op == 'S') {
+          query += length;
+        } else if (op == 'X' || op == '=') {
+          // X or =
+          query += length;
+          ref += length;
+        } else {
+          abort();
+        }
+        CleanPreviousMOperator(&in_M, &in_X, &length_M, &length_X, &new_cigar, &new_cigar_string);
         new_cigar.push_back(al->cigar[i]);
         new_cigar_string << length << op;
       }
@@ -222,25 +236,20 @@ namespace {
 
     int end = query_len - al->query_end - 1;
     if (end > 0) {
-      uint32_t cigar = to_cigar_int(end, 'S');
-      if (al->cigar.empty() || cigar != al->cigar[al->cigar.size()-1]) {
-        if (!al->cigar.empty()) {
-          char op = cigar_int_to_op(al->cigar[0]);
-          if (op == 'S') {
-            assert(false && "This should not happen! Last CIGAR operation is soft clip but is the wrong value!");
-            abort();
-          }
+      uint32_t cint = to_cigar_int(end, 'S');
+      if (cint != al->cigar[al->cigar.size()-1]) {
+        char op = cigar_int_to_op(al->cigar[al->cigar.size()-1]);
+        if (op == 'S') {
+          assert(false && "This should not happen! Last CIGAR operation is soft clip but is the wrong value!");
+          abort();
         }
-        new_cigar.push_back(cigar);
+        new_cigar.push_back(cint);
         new_cigar_string << end << 'S';
       }
     }
 
-    al->cigar_string.clear();
-    al->cigar.clear();
     al->cigar_string = new_cigar_string.str();
-    al->cigar = new_cigar;
-
+    al->cigar.swap(new_cigar);
     return mismatch_length;
   }
 
@@ -407,7 +416,7 @@ namespace StripedSmithWaterman {
 
     alignment->Clear();
     ConvertAlignment(*s_al, query_len, alignment);
-    alignment->mismatches = CalculateNumberMismatch(&*alignment, translated_reference_, translated_query, query_len);
+    alignment->mismatches = CalculateNumberMismatch(alignment, translated_reference_, translated_query, query_len);
 
 
     // Free memory
@@ -448,7 +457,7 @@ namespace StripedSmithWaterman {
 
     alignment->Clear();
     ConvertAlignment(*s_al, query_len, alignment);
-    alignment->mismatches = CalculateNumberMismatch(&*alignment, translated_ref, translated_query, query_len);
+    alignment->mismatches = CalculateNumberMismatch(alignment, translated_ref, translated_query, query_len);
 
     // Free memory
     delete [] translated_query;
