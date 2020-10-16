@@ -4,7 +4,7 @@
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhm2)
 
 ### 2.0.1 2020-10-16
-   * Fixed scaling Issues - #52, #54, #61
+   * Fixed scaling Issues - #52, #54, #61, #72
    * Fixed cmake/build - Issues #20, #51, #55, #68, #67
    * Fixed paired read usage - Issue #58  
    * Fixed minor UI Issues - #53, #33, #50, #46, #45
