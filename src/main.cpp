@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
       auto spos = reads_fname.find_first_of(':');  // support paired reads
       if (spos == string::npos) {
         auto sz = get_file_size(reads_fname);
-        SLOG("Reads file ", reads_fname, "is ", get_size_str(sz), "\n");
+        SLOG("Reads file ", reads_fname, " is ", get_size_str(sz), "\n");
         tot_file_size += sz;
       } else {
         // paired files
