@@ -199,12 +199,10 @@ void Contigs::dump_contigs(const string &fname, unsigned min_ctg_len) {
 }
 
 void Contigs::load_contigs(const string &ctgs_fname) {
-  auto get_file_offset_for_rank = [](ifstream &f, int rank, string &ctg_prefix) -> size_t {
-    f.seekg(0, f.end);
-    auto sz = f.tellg();
+  auto get_file_offset_for_rank = [](ifstream &f, int rank, string &ctg_prefix, size_t file_size) -> size_t {
     if (rank == 0) return 0;
-    if (rank == rank_n()) return sz;
-    size_t offset = sz / rank_n() * rank;
+    if (rank == rank_n()) return file_size;
+    size_t offset = file_size / rank_n() * rank;
     f.seekg(offset);
     string line;
     while (getline(f, line)) {
@@ -219,17 +217,34 @@ void Contigs::load_contigs(const string &ctgs_fname) {
   SLOG_VERBOSE("Loading contigs from fasta file ", ctgs_fname, "\n");
   BarrierTimer timer(__FILEFUNC__);
   contigs.clear();
+  dist_object<promise<size_t>> dist_stop_prom(world());
   string line;
   string ctg_prefix = ">Contig";
   string cname, seq, buf;
   size_t bytes_read = 0;
+  size_t file_size = 0;
+  
+  // broadcast the file size
+  if (rank_me() == 0) {
+    file_size = upcxx_utils::get_file_size(ctgs_fname);
+  }
   ifstream ctgs_file(ctgs_fname);
   if (!ctgs_file.is_open()) DIE("Could not open ctgs file '", ctgs_fname, "': ", strerror(errno));
-  int64_t start_rank = rank_me();
-  int64_t stop_rank = rank_me() + 1;
-  auto start_offset = get_file_offset_for_rank(ctgs_file, start_rank, ctg_prefix);
-  auto stop_offset = get_file_offset_for_rank(ctgs_file, stop_rank, ctg_prefix);
-  int64_t tot_len = 0;
+  file_size = upcxx::broadcast(file_size, 0).wait();
+  
+  auto start_offset = get_file_offset_for_rank(ctgs_file, rank_me(), ctg_prefix, file_size);
+  if (rank_me() > 0) {
+    // notify previous rank of its stop offset
+    rpc_ff(rank_me() - 1, [](dist_object<promise<size_t>> &dist_stop_prom, size_t stop_offset) {
+      dist_stop_prom->fulfill_result(stop_offset);
+    }, dist_stop_prom, start_offset);
+  }
+  if (rank_me() == rank_n() - 1) {
+    dist_stop_prom->fulfill_result(file_size);
+  }
+  auto stop_offset = dist_stop_prom->get_future().wait();
+
+  size_t tot_len = 0;
   ProgressBar progbar(stop_offset - start_offset, "Parsing contigs");
   // these can be equal if the contigs are very long and there are many ranks so this one doesn't get even a full contig
   ctgs_file.seekg(start_offset);
@@ -250,6 +265,7 @@ void Contigs::load_contigs(const string &ctgs_fname) {
     Contig contig = {.id = id, .seq = seq, .depth = depth};
     add_contig(contig);
   }
+  if (ctgs_file.tellg() < stop_offset) DIE("Did not read the entire contigs file from ", start_offset, " to ", stop_offset, " tellg=", ctgs_file.tellg());
   progbar.done();
   barrier();
   SLOG_VERBOSE("Loaded ", reduce_one(contigs.size(), op_fast_add, 0).wait(), " contigs (",
