@@ -20,5 +20,5 @@ fi
 wd=`pwd`
 test_dir=$wd/test-arctic-sample0
 rm -rf $test_dir
-$mhm2_install_dir/bin/mhm2.py -r $reads -o $test_dir --checkpoint=no
+$mhm2_install_dir/bin/mhm2.py -r $reads -o $test_dir --checkpoint=no --post-asm-align --post-asm-abd
 $mhm2_install_dir/bin/check_asm_quality.py --asm-dir $test_dir --expected-quals $mhm2_install_dir/share/good-arctic-sample0.txt --refs $wd/$refs
