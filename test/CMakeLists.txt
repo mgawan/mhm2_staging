@@ -14,6 +14,8 @@ file(GLOB TEST_SOURCES LIST_DIRECTORIES false *.hpp *.cpp)
 
 set(SOURCES ${TEST_SOURCES})
 
+include_directories("${CMAKE_SOURCE_DIR}/src/ssw")
+
 add_executable(${BINARY} ${TEST_SOURCES} ${MHM2_TARGET_OBJECTS})
 
 add_test(NAME ${BINARY} COMMAND ${BINARY})
