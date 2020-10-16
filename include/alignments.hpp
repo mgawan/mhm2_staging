@@ -101,9 +101,10 @@ class Alns {
   inline auto end() { return alns.end(); };
 
   template <typename OSTREAM>
-  void dump_all(OSTREAM &os, bool as_sam_format) {
-    // all ranks dump their alignments
+  void dump_all(OSTREAM &os, bool as_sam_format) const {
+    // all ranks dump their valid alignments
     for (const auto &aln : alns) {
+      if (!aln.is_valid()) continue;
       if (!as_sam_format)
         os << aln.to_string() << "\n";
       else
@@ -112,7 +113,7 @@ class Alns {
   }
 
   void dump_single_file(const string fname);
-  void dump_sam_file(const string fname, const vector<string> &read_group_names, const Contigs &ctgs);
+  void dump_sam_file(const string fname, const vector<string> &read_group_names, const Contigs &ctgs, int min_contig_len);
   void dump_rank_file(const string fname);
 
   int calculate_unmerged_rlen();
