@@ -171,7 +171,7 @@ void Alns::reset() { alns.clear(); }
 
 int64_t Alns::get_num_dups() { return upcxx::reduce_one(num_dups, upcxx::op_fast_add, 0).wait(); }
 
-void Alns::dump_rank_file(string fname) {
+void Alns::dump_rank_file(string fname) const {
   get_rank_path(fname, rank_me());
   zstr::ofstream f(fname);
   dump_all(f, false);
@@ -179,14 +179,14 @@ void Alns::dump_rank_file(string fname) {
   upcxx::barrier();
 }
 
-void Alns::dump_single_file(const string fname) {
+void Alns::dump_single_file(const string fname) const {
   dist_ofstream of(fname);
   dump_all(of, false);
   of.close();
   upcxx::barrier();
 }
 
-void Alns::dump_sam_file(const string fname, const vector<string> &read_group_names, const Contigs &ctgs, int min_ctg_len) {
+void Alns::dump_sam_file(const string fname, const vector<string> &read_group_names, const Contigs &ctgs, int min_ctg_len) const {
   BarrierTimer timer(__FILEFUNC__);
 
   string out_str = "";
@@ -195,11 +195,9 @@ void Alns::dump_sam_file(const string fname, const vector<string> &read_group_na
   future<> all_done = make_future();
 
   // First all ranks dump Sequence tags - @SQ	SN:Contig0	LN:887
-  std::unordered_set<int64_t> passed_contigs;
   for (const auto &ctg : ctgs) {
     if (ctg.seq.length() < min_ctg_len) continue;
     assert(ctg.id >= 0);
-    passed_contigs.insert({ctg.id});
     of << "@SQ\tSN:Contig" << to_string(ctg.id) << "\tLN:" << to_string(ctg.seq.length()) << "\n";
   }
   // all @SQ headers aggregated to the top of the file
@@ -216,26 +214,8 @@ void Alns::dump_sam_file(const string fname, const vector<string> &read_group_na
     of << "@PG\tID:MHM2\tPN:MHM2\tVN:" << string(MHM2_VERSION) << "\n";
   }
 
-  // invalidate (temporarily) alignments to short contigs
-  for (auto &aln : alns) {
-    if (passed_contigs.find(aln.cid) == passed_contigs.end()) {
-      assert(aln.cid >= 0);
-      aln.cid = std::numeric_limits<int64_t>::min() + aln.cid;  // set the cid negative to invalidate
-      assert(aln.cid < 0);
-    }
-  }
-  std::unordered_set<int64_t>().swap(passed_contigs);
-
   // next alignments.  rank0 will be first with the remaining header fields
-  dump_all(of, true);
-
-  // re-validate alignments
-  for (auto &aln : alns) {
-    if (aln.cid < 0) {
-      aln.cid = aln.cid - std::numeric_limits<int64_t>::min();
-    }
-    assert(aln.cid >= 0);
-  }
+  dump_all(of, true, min_ctg_len);
   
   all_done = when_all(all_done, of.close_async());
   all_done.wait();
