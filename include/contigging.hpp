@@ -75,12 +75,16 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
                                          options->force_bloom, options->use_heavy_hitters);
     barrier();
+    BEGIN_GASNET_STATS("kmer_analysis");
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dmin_thres, ctgs, kmer_dht,
                   num_kmers_factor);
+    END_GASNET_STATS();
     stage_timers.analyze_kmers->stop();
     barrier();
     stage_timers.dbjg_traversal->start();
+    BEGIN_GASNET_STATS("dbjg_traversal");
     traverse_debruijn_graph(kmer_len, kmer_dht, ctgs);
+    END_GASNET_STATS();
     stage_timers.dbjg_traversal->stop();
     if (is_debug || options->checkpoint) {
       stage_timers.dump_ctgs->start();
@@ -92,8 +96,10 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
   if (kmer_len < options->kmer_lens.back()) {
     Alns alns;
     stage_timers.alignments->start();
+    BEGIN_GASNET_STATS("alignment");
     double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
                                                    alns, KLIGN_SEED_SPACE, rlen_limit, false, 0, options->ranks_per_gpu);
+    END_GASNET_STATS();
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
@@ -105,7 +111,9 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     max_expected_ins_size = ins_avg + 8 * ins_stddev;
     barrier();
     stage_timers.localassm->start();
+    BEGIN_GASNET_STATS("local_assembly");
     localassm(LASSM_MAX_KMER_LEN, kmer_len, packed_reads_list, ins_avg, ins_stddev, options->qual_offset, ctgs, alns);
+    END_GASNET_STATS();
     stage_timers.localassm->stop();
   }
   barrier();

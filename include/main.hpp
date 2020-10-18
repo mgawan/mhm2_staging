@@ -72,6 +72,27 @@
 #include "adept-sw/driver.hpp"
 #endif
 
+#if defined(DEBUG) && defined(ENABLE_GASNET_STATS)
+
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+
+extern string _gasnet_stats_stage;
+
+#define BEGIN_GASNET_STATS(stage)                        \
+  if (_gasnet_stats_stage == stage) {                    \
+    GASNETT_STATS_SETMASK("PGA");                        \
+    SWARN("Collecting communication stats for ", stage); \
+  }
+#define END_GASNET_STATS() \
+  if (_gasnet_stats_stage != "") GASNETT_STATS_SETMASK("")
+
+#else
+#define BEGIN_GASNET_STATS(stage)
+#define END_GASNET_STATS()
+#endif
+
+
 using namespace upcxx;
 using namespace upcxx_utils;
 

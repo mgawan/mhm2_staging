@@ -254,7 +254,8 @@ bool Options::load(int argc, char **argv) {
                             string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
   // basic options - see user guide
-  app.add_option("-r, --reads", reads_fnames, "Files containing interleaved paired reads in FASTQ format (comma or space separated).")
+  app.add_option("-r, --reads", reads_fnames,
+                 "Files containing interleaved paired reads in FASTQ format (comma or space separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
   app.add_option("-p, --paired-reads", paired_fnames,

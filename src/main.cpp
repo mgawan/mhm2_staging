@@ -9,6 +9,7 @@
 #include "upcxx_utils/thread_pool.hpp"
 
 bool _verbose = false;
+string _gasnet_stats_stage = "";
 
 StageTimers stage_timers = {
     .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
@@ -25,6 +26,13 @@ StageTimers stage_timers = {
 
 int main(int argc, char **argv) {
   upcxx::init();
+#ifdef ENABLE_GASNET_STATS
+  const char* gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
+  if (gasnet_stats_stage) {
+    GASNETT_STATS_SETMASK("");
+    _gasnet_stats_stage = string(gasnet_stats_stage);
+  }
+#endif
   // we wish to have all ranks start at the same time to determine actual timing
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
@@ -43,12 +51,9 @@ int main(int argc, char **argv) {
 
   SLOG_VERBOSE("Process 0 on node 0 is initially pinned to ", get_proc_pin(), "\n");
   // pin ranks only in production
-  if (options->pin_by == "cpu")
-    pin_cpu();
-  else if (options->pin_by == "core")
-    pin_core();
-  else if (options->pin_by == "numa")
-    pin_numa();
+  if (options->pin_by == "cpu") pin_cpu();
+  else if (options->pin_by == "core") pin_core();
+  else if (options->pin_by == "numa") pin_numa();
 
   // update rlimits on RLIMIT_NOFILE files if necessary
   auto num_input_files = options->reads_fnames.size();
@@ -63,7 +68,7 @@ int main(int argc, char **argv) {
     if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
   }
   const int num_threads = 3; // reserve up to 3 threads in the singleton thread pool TODO make an option
-  upcxx_utils::ThreadPool::get_single_pool(num_threads); 
+  upcxx_utils::ThreadPool::get_single_pool(num_threads);
   SLOG_VERBOSE("Allowing up to ", num_threads, " extra threads in the thread pool\n");
 
   if (!upcxx::rank_me()) {
@@ -88,17 +93,15 @@ int main(int argc, char **argv) {
   size_t gpu_mem = 0;
   bool init_gpu_thread = true;
   SLOG_VERBOSE("Detecting GPUs\n");
-  auto detect_gpu_fut = execute_in_thread_pool(
-    [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
-      adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
-  }).then(
-    [&gpu_startup_duration, &num_gpus, &gpu_mem]() {
-        if (num_gpus>0) {
-            SLOG_VERBOSE("Using ", num_gpus, " GPUs on node 0, with ", get_size_str(gpu_mem), " available memory. Detected in ", gpu_startup_duration, " s.\n");
-        } else {
-            SWARN("Compiled for GPUs but no GPUs available...");
-        }
-    });
+  auto detect_gpu_fut = execute_in_thread_pool([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+                          adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
+                        }).then([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+    if (num_gpus > 0)
+      SLOG_VERBOSE("Using ", num_gpus, " GPUs on node 0, with ", get_size_str(gpu_mem), " available memory. Detected in ",
+                   gpu_startup_duration, " s.\n");
+    else
+      SWARN("Compiled for GPUs but no GPUs available...");
+  });
 #endif
 
   Contigs ctgs;
@@ -115,9 +118,11 @@ int main(int argc, char **argv) {
     double elapsed_write_io_t = 0;
     if (!options->restart) {
       // merge the reads and insert into the packed reads memory cache
+      BEGIN_GASNET_STATS("merge_reads");
       stage_timers.merge_reads->start();
       merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint);
       stage_timers.merge_reads->stop();
+      END_GASNET_STATS();
     } else {
       // since this is a restart, the merged reads should be on disk already
       stage_timers.cache_reads->start();
