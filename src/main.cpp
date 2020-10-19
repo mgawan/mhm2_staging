@@ -26,7 +26,7 @@ StageTimers stage_timers = {
 
 int main(int argc, char **argv) {
   upcxx::init();
-#ifdef ENABLE_GASNET_STATS
+#if defined(DEBUG) && defined(ENABLE_GASNET_STATS)
   const char* gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
   if (gasnet_stats_stage) {
     GASNETT_STATS_SETMASK("");
