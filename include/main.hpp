@@ -72,20 +72,18 @@
 #include "adept-sw/driver.hpp"
 #endif
 
-#if defined(DEBUG) && defined(ENABLE_GASNET_STATS)
-
-#include <gasnetex.h>
-#include <gasnet_tools.h>
+#if defined(ENABLE_GASNET_STATS)
 
 extern string _gasnet_stats_stage;
+extern void mhm2_trace_set_mask(const char *newmask);
 
 #define BEGIN_GASNET_STATS(stage)                        \
   if (_gasnet_stats_stage == stage) {                    \
-    GASNETT_STATS_SETMASK("PGA");                        \
+    mhm2_trace_set_mask("PGA");                        \
     SWARN("Collecting communication stats for ", stage); \
   }
 #define END_GASNET_STATS() \
-  if (_gasnet_stats_stage != "") GASNETT_STATS_SETMASK("")
+  if (_gasnet_stats_stage != "") mhm2_trace_set_mask("")
 
 #else
 #define BEGIN_GASNET_STATS(stage)
@@ -119,3 +117,5 @@ struct StageTimers {
 };
 
 extern StageTimers stage_timers;
+
+void mhm2_trace_setmask(const char *newmask);

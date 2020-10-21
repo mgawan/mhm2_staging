@@ -9,7 +9,6 @@
 #include "upcxx_utils/thread_pool.hpp"
 
 bool _verbose = false;
-string _gasnet_stats_stage = "";
 
 StageTimers stage_timers = {
     .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
@@ -26,10 +25,10 @@ StageTimers stage_timers = {
 
 int main(int argc, char **argv) {
   upcxx::init();
-#if defined(DEBUG) && defined(ENABLE_GASNET_STATS)
+#if defined(ENABLE_GASNET_STATS)
   const char* gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
   if (gasnet_stats_stage) {
-    GASNETT_STATS_SETMASK("");
+    mhm2_trace_set_mask("");
     _gasnet_stats_stage = string(gasnet_stats_stage);
   }
 #endif
@@ -324,3 +323,20 @@ int main(int argc, char **argv) {
   upcxx::finalize();
   return 0;
 }
+
+#if defined(ENABLE_GASNET_STATS)
+
+// We may be compiling with debug-mode GASNet with optimization.
+// GASNet has checks to prevent users from blindly doing this, 
+// because it's a bad idea to run that way in production.
+// However in this case we know what we are doing...
+#undef NDEBUG
+#undef __OPTIMIZE__
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+string _gasnet_stats_stage = "";
+void mhm2_trace_set_mask(const char *newmask) {
+  GASNETT_TRACE_SETMASK(newmask);
+}
+
+#endif
