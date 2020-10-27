@@ -480,7 +480,7 @@ bool Options::load(int argc, char **argv) {
   if (restart) {
     // use per_thread to read/write this small file, hardlink to top run level
     try {
-      app.parse_config(config_file);
+      app.parse_config(linked_config_file);
     } catch (const CLI::ConfigError &e) {
       if (!upcxx::rank_me()) {
         cerr << "\nError (" << e.get_exit_code() << ") in config file (" << config_file << "):\n";
@@ -500,10 +500,14 @@ bool Options::load(int argc, char **argv) {
   if (upcxx::local_team().rank_me() == 0) {
     // open 1 log per node
     // all have logs in per_thread
+    if (rank_me() == 0 && restart) {
+      auto ret = rename("mhm2.log", "per_thread/00000000/00000000/mhm2.log");
+      if (ret != 0) SWARN("For this restart, could not rename mhm2.log to per_thread/00000000/00000000/mhm2.log\n");
+    }
     init_logger("mhm2.log", verbose, true);
     // if not restarting, hardlink just the rank0 log to the output dir
     // this ensures a stripe count of 1 even when the output dir is striped wide
-    if (rank_me() == 0 && !restart) {
+    if (rank_me() == 0) {
       auto ret = link("per_thread/00000000/00000000/mhm2.log", "mhm2.log");
       if (ret != 0) SWARN("Could not hard link mhm2.log from per_thread/00000000/00000000/mhm2.log\n");
     }
