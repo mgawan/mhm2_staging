@@ -10,6 +10,13 @@
 
 int main(int argc, char **argv) {
   upcxx::init();
+#if defined(ENABLE_GASNET_STATS)
+  const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
+  if (gasnet_stats_stage) {
+    mhm2_trace_set_mask("");
+    _gasnet_stats_stage = string(gasnet_stats_stage);
+  }
+#endif
   // we wish to have all ranks start at the same time to determine actual timing
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
@@ -112,9 +119,11 @@ int main(int argc, char **argv) {
     double elapsed_write_io_t = 0;
     if (!options->restart | !options->checkpoint_merged) {
       // merge the reads and insert into the packed reads memory cache
+      BEGIN_GASNET_STATS("merge_reads");
       stage_timers.merge_reads->start();
       merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint_merged);
       stage_timers.merge_reads->stop();
+      END_GASNET_STATS();
     } else {
       // since this is a restart with checkpoint_merged true, the merged reads should be on disk already
       // load the merged reads instead of merge the original ones again
@@ -318,3 +327,18 @@ int main(int argc, char **argv) {
   upcxx::finalize();
   return 0;
 }
+
+#if defined(ENABLE_GASNET_STATS)
+
+// We may be compiling with debug-mode GASNet with optimization.
+// GASNet has checks to prevent users from blindly doing this,
+// because it's a bad idea to run that way in production.
+// However in this case we know what we are doing...
+#undef NDEBUG
+#undef __OPTIMIZE__
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+string _gasnet_stats_stage = "";
+void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
+
+#endif
