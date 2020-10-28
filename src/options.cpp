@@ -548,6 +548,8 @@ bool Options::load(int argc, char **argv) {
     // write out configuration file for restarts
     ofstream ofs(config_file);
     ofs << app.config_to_str(true, true);
+    ofs.close();
+    unlink(linked_config_file.c_str()); // ignore errors
     auto ret = link(config_file.c_str(), linked_config_file.c_str());
     if (ret != 0 && !restart) LOG("Could not hard link config file, continuing\n");
   }
