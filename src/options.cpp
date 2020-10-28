@@ -207,31 +207,31 @@ void Options::setup_output_dir() {
         cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
     }
 
-    // ensure per_thread dir exists (and additionally has stripe 1, if lfs exists)
-    string per_thread = output_dir + "/per_thread";
-    status = mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
-    if (status != 0 && errno != EEXIST) SDIE("Could not create '", per_thread, "'! ", strerror(errno));
+    // ensure per_rank dir exists (and additionally has stripe 1, if lfs exists)
+    string per_rank = output_dir + "/per_rank";
+    status = mkdir(per_rank.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+    if (status != 0 && errno != EEXIST) SDIE("Could not create '", per_rank, "'! ", strerror(errno));
     if (set_lfs_stripe) {
-      // stripe per_thread directory with count 1
-      string cmd = "lfs setstripe --stripe-count 1 " + per_thread;
+      // stripe per_rank directory with count 1
+      string cmd = "lfs setstripe --stripe-count 1 " + per_rank;
       status = std::system(cmd.c_str());
       if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        cout << "Set Lustre striping on the per_thread output directory: " << per_thread << "\n";
+        cout << "Set Lustre striping on the per_rank output directory: " << per_rank << "\n";
       else
-        cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
+        cout << "Failed to set Lustre striping on per_rank output directory: " << WEXITSTATUS(status) << endl;
     }
 
     // this should avoid contention on the filesystem when ranks start racing to creating these top levels
     char basepath[256];
     for (int i = 0; i < rank_n(); i += 1000) {
-      sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
+      sprintf(basepath, "%s/%08d", per_rank.c_str(), i);
       status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
       if (status != 0 && errno != EEXIST) {
         SWARN("Could not create '", basepath, "'! ", strerror(errno));
         break;  // ignore any errors, just stop
       }
     }
-    sprintf(basepath, "%s/00000000/%08d", per_thread.c_str(), 0);
+    sprintf(basepath, "%s/00000000/%08d", per_rank.c_str(), 0);
     status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
     if (status != 0 && errno != EEXIST) SDIE("Could not mkdir rank 0 per thread directory '", basepath, "'! ", strerror(errno));
 
@@ -275,8 +275,8 @@ void Options::setup_log_file() {
       cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhm2.log exists. Renaming to " << output_dir << "/" << new_log_fname
            << endl;
       if (rename("mhm2.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhm2.log: ", strerror(errno));
-      // also unlink the rank0 per_thread file (a hard link if it exists)
-      unlink("per_thread/00000000/00000000/mhm2.log");  // ignore any errors
+      // also unlink the rank0 per_rank file (a hard link if it exists)
+      unlink("per_rank/00000000/00000000/mhm2.log");  // ignore any errors
     } else if (!file_exists("mhm2.log") && restart) {
       DIE("Could not restart - missing mhm2.log in this directory");
     }
@@ -474,11 +474,11 @@ bool Options::load(int argc, char **argv) {
     scaff_kmer_lens.clear();
   }
 
-  // save to per_thread, but hardlink to output_dir
-  string config_file = "per_thread/mhm2.config";
+  // save to per_rank, but hardlink to output_dir
+  string config_file = "per_rank/mhm2.config";
   string linked_config_file = "mhm2.config";
   if (restart) {
-    // use per_thread to read/write this small file, hardlink to top run level
+    // use per_rank to read/write this small file, hardlink to top run level
     try {
       app.parse_config(linked_config_file);
     } catch (const CLI::ConfigError &e) {
@@ -499,17 +499,17 @@ bool Options::load(int argc, char **argv) {
   auto logger_t = chrono::high_resolution_clock::now();
   if (upcxx::local_team().rank_me() == 0) {
     // open 1 log per node
-    // all have logs in per_thread
+    // all have logs in per_rank
     if (rank_me() == 0 && restart) {
-      auto ret = rename("mhm2.log", "per_thread/00000000/00000000/mhm2.log");
-      if (ret != 0) SWARN("For this restart, could not rename mhm2.log to per_thread/00000000/00000000/mhm2.log\n");
+      auto ret = rename("mhm2.log", "per_rank/00000000/00000000/mhm2.log");
+      if (ret != 0) SWARN("For this restart, could not rename mhm2.log to per_rank/00000000/00000000/mhm2.log\n");
     }
     init_logger("mhm2.log", verbose, true);
     // if not restarting, hardlink just the rank0 log to the output dir
     // this ensures a stripe count of 1 even when the output dir is striped wide
     if (rank_me() == 0) {
-      auto ret = link("per_thread/00000000/00000000/mhm2.log", "mhm2.log");
-      if (ret != 0) SWARN("Could not hard link mhm2.log from per_thread/00000000/00000000/mhm2.log\n");
+      auto ret = link("per_rank/00000000/00000000/mhm2.log", "mhm2.log");
+      if (ret != 0) SWARN("Could not hard link mhm2.log from per_rank/00000000/00000000/mhm2.log\n");
     }
   }
 

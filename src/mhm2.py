@@ -373,10 +373,10 @@ def print_err_msgs(err_msgs, return_status):
             print_red("MHM2 failed")
         # keep track of all msg copies so we don't print duplicates
         seen_msgs = {}
-        per_thread_dir = _output_dir + 'per_thread/'
-        if not os.path.exists(per_thread_dir):
-            per_thread_dir = _output_dir
-        err_log = per_thread_dir + 'err.log'
+        per_rank_dir = _output_dir + 'per_rank/'
+        if not os.path.exists(per_rank_dir):
+            per_rank_dir = _output_dir
+        err_log = per_rank_dir + 'err.log'
         with open(err_log, 'a') as f:
             for msg in err_msgs:
                 clean_msg = msg.strip()
@@ -525,7 +525,7 @@ def main():
                     # get rid of any leftover error logs if not restarting
                     try:
                         if not restarting:
-                            os.rename(_output_dir + '/per_thread/err.log', _output_dir + '/per_thread/err.log' + str(datetime.datetime.now().isoformat()))
+                            os.rename(_output_dir + '/per_rank/err.log', _output_dir + '/per_rank/err.log' + str(datetime.datetime.now().isoformat()))
                     except:
                         pass
 
