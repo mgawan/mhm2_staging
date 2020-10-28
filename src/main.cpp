@@ -25,13 +25,20 @@ StageTimers stage_timers = {
 
 int main(int argc, char **argv) {
   upcxx::init();
+#if defined(ENABLE_GASNET_STATS)
+  const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
+  if (gasnet_stats_stage) {
+    mhm2_trace_set_mask("");
+    _gasnet_stats_stage = string(gasnet_stats_stage);
+  }
+#endif
   // we wish to have all ranks start at the same time to determine actual timing
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
   auto init_start_t = start_t;
   // keep the exact command line arguments before options may have modified anything
   string executed = argv[0];
-  executed += ".py"; // assume the python wrapper was actually called
+  executed += ".py";  // assume the python wrapper was actually called
   for (int i = 1; i < argc; i++) executed = executed + " " + argv[i];
   auto options = make_shared<Options>();
   // if we don't load, return "command not found"
@@ -62,7 +69,7 @@ int main(int argc, char **argv) {
     }
     if (status != 0) SWARN("Could not get/set rlimits for NOFILE\n");
   }
-  const int num_threads = 3; // reserve up to 3 threads in the singleton thread pool TODO make an option
+  const int num_threads = 3;  // reserve up to 3 threads in the singleton thread pool TODO make an option
   upcxx_utils::ThreadPool::get_single_pool(num_threads);
   SLOG_VERBOSE("Allowing up to ", num_threads, " extra threads in the thread pool\n");
 
@@ -88,9 +95,9 @@ int main(int argc, char **argv) {
   size_t gpu_mem = 0;
   bool init_gpu_thread = true;
   SLOG_VERBOSE("Detecting GPUs\n");
-  auto detect_gpu_fut = execute_in_thread_pool([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
-                          adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem);
-                        }).then([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
+  auto detect_gpu_fut = execute_in_thread_pool(
+      [&gpu_startup_duration, &num_gpus, &gpu_mem]() { adept_sw::initialize_gpu(gpu_startup_duration, num_gpus, gpu_mem); });
+  detect_gpu_fut = detect_gpu_fut.then([&gpu_startup_duration, &num_gpus, &gpu_mem]() {
     if (num_gpus > 0) {
       SLOG_VERBOSE("Using ", num_gpus, " GPUs on node 0, with ", get_size_str(gpu_mem), " available memory. Detected in ",
                    gpu_startup_duration, " s.\n");
@@ -114,9 +121,11 @@ int main(int argc, char **argv) {
     double elapsed_write_io_t = 0;
     if (!options->restart) {
       // merge the reads and insert into the packed reads memory cache
+      BEGIN_GASNET_STATS("merge_reads");
       stage_timers.merge_reads->start();
       merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint);
       stage_timers.merge_reads->stop();
+      END_GASNET_STATS();
     } else {
       // since this is a restart, the merged reads should be on disk already
       stage_timers.cache_reads->start();
@@ -140,8 +149,8 @@ int main(int argc, char **argv) {
     }
     std::chrono::duration<double> init_t_elapsed = std::chrono::high_resolution_clock::now() - init_start_t;
     SLOG("\n");
-    SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ",
-         get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
+    SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", get_current_time(), " (",
+         get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
     double num_kmers_factor = 1.0 / 3;
     int ins_avg = 0;
@@ -307,7 +316,7 @@ int main(int argc, char **argv) {
     FastqReaders::close_all();
   }
 
-  upcxx_utils::ThreadPool::join_single_pool(); // cleanup singleton thread pool
+  upcxx_utils::ThreadPool::join_single_pool();  // cleanup singleton thread pool
   barrier();
 
 #ifdef DEBUG
@@ -318,3 +327,18 @@ int main(int argc, char **argv) {
   upcxx::finalize();
   return 0;
 }
+
+#if defined(ENABLE_GASNET_STATS)
+
+// We may be compiling with debug-mode GASNet with optimization.
+// GASNet has checks to prevent users from blindly doing this,
+// because it's a bad idea to run that way in production.
+// However in this case we know what we are doing...
+#undef NDEBUG
+#undef __OPTIMIZE__
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+string _gasnet_stats_stage = "";
+void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
+
+#endif

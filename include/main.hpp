@@ -72,6 +72,27 @@
 #include "adept-sw/driver.hpp"
 #endif
 
+#if defined(ENABLE_GASNET_STATS)
+
+extern string _gasnet_stats_stage;
+extern void mhm2_trace_set_mask(const char *newmask);
+
+// ALL collects stats for the whole execution, including between stages
+// ANY collects stats for each of the named stages
+#define BEGIN_GASNET_STATS(stage)                        \
+  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") {                    \
+    mhm2_trace_set_mask("PGA");                        \
+    SWARN("Collecting communication stats for ", stage); \
+  }
+#define END_GASNET_STATS() \
+  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_trace_set_mask("")
+
+#else
+#define BEGIN_GASNET_STATS(stage)
+#define END_GASNET_STATS()
+#endif
+
+
 using namespace upcxx;
 using namespace upcxx_utils;
 
@@ -98,3 +119,5 @@ struct StageTimers {
 };
 
 extern StageTimers stage_timers;
+
+void mhm2_trace_setmask(const char *newmask);
