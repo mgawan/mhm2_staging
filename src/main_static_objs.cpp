@@ -14,3 +14,18 @@ StageTimers stage_timers = {
     .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
     .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
     .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")};
+
+#if defined(ENABLE_GASNET_STATS)
+
+// We may be compiling with debug-mode GASNet with optimization.
+// GASNet has checks to prevent users from blindly doing this,
+// because it's a bad idea to run that way in production.
+// However in this case we know what we are doing...
+#undef NDEBUG
+#undef __OPTIMIZE__
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+string _gasnet_stats_stage = "";
+void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
+
+#endif
