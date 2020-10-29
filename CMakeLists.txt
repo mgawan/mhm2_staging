@@ -85,7 +85,7 @@ if(CMAKE_CUDA_COMPILER)
     option(ENABLE_CUDA "Enable CUDA" ON)
     if (ENABLE_CUDA)
       SET(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-      SET(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # only build device link objects for GPU targets 
+      SET(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # only build device link objects for GPU targets
       enable_language(CUDA)
     endif()
 else()
@@ -216,7 +216,7 @@ include(CheckSubmodules)
 CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
 
 # set version
-include_directories(include)
+include_directories(include src)
 GET_GIT_VERSION(MHM2)
 
 # add upcxx-utils
@@ -257,7 +257,7 @@ install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME
 install(PROGRAMS ci/check_asm_quality.py ci/ci_asm_qual_test.sh DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(FILES ci/good-arctic-sample0.txt ci/good-arctic-sample0-k63.txt ci/good-arctic-sample0-k31k63.txt ci/good-arcticsynth.txt DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
 
-option(MHM2_ENABLE_TESTING "Enable testing in MHM2" ON)
+option(MHM2_ENABLE_TESTING "Enable testing in MHM2" OFF)
 if (MHM2_ENABLE_TESTING)
   add_subdirectory(test)
 endif()

@@ -98,8 +98,17 @@ foreach(KMER_LENGTH ${MHM2_KMER_LENGTHS})
   endforeach()
 endforeach()
 
+#foreach(KMER_LENGTH ${MHM2_KMER_LENGTHS})
+#  foreach(TEMPLATE "kcount" "klign" "scaffolding" "contigging" "post_assembly")
+#    set(TEMPLATE_FILE "${TEMPLATE}-extern-template-${KMER_LENGTH}")
+#    string(TOUPPER ${TEMPLATE} TEMPLATE_UPPER)
+#    configure_file("extern_template.in.cpp" "${TEMPLATE_FILE}.cpp" @ONLY)
+#    list(APPEND EXTERN_TEMPLATE_FILES ${TEMPLATE_FILE})
+#  endforeach()
+#endforeach()
 
-foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options kmer kcount kmer_dht 
+
+foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options kcount
             main_static_objs merge_reads dbjg_traversal klign cgraph build_ctg_graph
             walk_ctg_graph spanner splinter localassm histogrammer aln_depths
             ${EXTERN_TEMPLATE_FILES}
