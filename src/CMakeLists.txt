@@ -108,7 +108,7 @@ endforeach()
 #endforeach()
 
 
-foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options kcount
+foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options
             main_static_objs merge_reads dbjg_traversal klign cgraph build_ctg_graph
             walk_ctg_graph spanner splinter localassm histogrammer aln_depths
             ${EXTERN_TEMPLATE_FILES}
