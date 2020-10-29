@@ -46,6 +46,17 @@
 #include "contigs.hpp"
 #include "packed_reads.hpp"
 
+struct AlnScoring {
+  int match, mismatch, gap_opening, gap_extending, ambiguity;
+
+  string to_string() {
+    std::ostringstream oss;
+    oss << "match " << match << " mismatch " << mismatch << " gap open " << gap_opening << " gap extend " << gap_extending
+        << " ambiguity " << ambiguity;
+    return oss.str();
+  }
+};
+
 template <int MAX_K>
 double find_alignments(unsigned kmer_len, std::vector<PackedReads *> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
                        Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar = false, int min_ctg_len = 0,

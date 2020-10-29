@@ -49,10 +49,8 @@
 #include <iostream>
 #include <upcxx/upcxx.hpp>
 
-#include "alignments.hpp"
-#include "contigs.hpp"
+#include "klign.hpp"
 #include "kmer.hpp"
-#include "packed_reads.hpp"
 #include "ssw.hpp"
 #include "upcxx_utils/limit_outstanding.hpp"
 #include "upcxx_utils/log.hpp"
@@ -76,17 +74,6 @@ using std::max;
 using std::min;
 using std::pair;
 using std::setprecision;
-
-struct AlnScoring {
-  int match, mismatch, gap_opening, gap_extending, ambiguity;
-
-  string to_string() {
-    ostringstream oss;
-    oss << "match " << match << " mismatch " << mismatch << " gap open " << gap_opening << " gap extend " << gap_extending
-        << " ambiguity " << ambiguity;
-    return oss.str();
-  }
-};
 
 using cid_t = int64_t;
 

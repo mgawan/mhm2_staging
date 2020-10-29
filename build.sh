@@ -40,8 +40,7 @@ else
         rm -rf $INSTALL_PATH/cmake
         cmake $rootdir -DCMAKE_BUILD_TYPE=$1 -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH $MHM2_CMAKE_EXTRAS
     fi
-    #    make -j ${MHM2_BUILD_THREADS} all check install
-    make -j ${MHM2_BUILD_THREADS} all install
+    make -j ${MHM2_BUILD_THREADS} all check install
 fi
 
 echo "Build took $((SECONDS))s"

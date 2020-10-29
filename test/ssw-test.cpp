@@ -8,6 +8,8 @@
 
 using std::vector;
 using std::string;
+using std::min;
+using std::max;
 
 using namespace StripedSmithWaterman;
 
