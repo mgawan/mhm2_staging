@@ -185,11 +185,7 @@ class Kmer {
 
   void set_kmer(const char *s) {
     size_t i, j, l;
-#ifdef USE_VECTOR
-    std::fill(longs.begin(), longs.end(), 0);
-#else
     longs.fill(0);
-#endif
     for (i = 0; i < Kmer::k; ++i) {
       j = i % 32;
       l = i / 32;
