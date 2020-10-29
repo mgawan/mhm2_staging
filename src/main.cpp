@@ -40,20 +40,25 @@
  form.
 */
 
-#include "main.hpp"
-
 #include <sys/resource.h>
 
 #include "contigging.hpp"
 #include "fastq.hpp"
 #include "post_assembly.hpp"
 #include "scaffolding.hpp"
+#include "stage_timers.hpp"
+#include "gasnet_stats.hpp"
 #include "upcxx_utils.hpp"
 #include "upcxx_utils/thread_pool.hpp"
 #include "utils.hpp"
 
 using std::fixed;
 using std::setprecision;
+
+using namespace upcxx_utils;
+
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
+                 vector<PackedReads *> &packed_reads_list, bool checkpoint);
 
 int main(int argc, char **argv) {
   upcxx::init();

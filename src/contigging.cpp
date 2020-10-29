@@ -42,11 +42,12 @@
 
 #include "contigging.hpp"
 
+#include "gasnet_stats.hpp"
 #include "histogrammer.hpp"
 #include "kcount.hpp"
 #include "klign.hpp"
 #include "kmer_dht.hpp"
-#include "main.hpp"
+#include "stage_timers.hpp"
 
 using namespace upcxx;
 using namespace upcxx_utils;

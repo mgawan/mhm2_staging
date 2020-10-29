@@ -43,10 +43,10 @@
 #include "scaffolding.hpp"
 
 #include "aln_depths.hpp"
+#include "gasnet_stats.hpp"
 #include "histogrammer.hpp"
 #include "klign.hpp"
-//#include "stage_timers.hpp"
-#include "main.hpp"
+#include "stage_timers.hpp"
 
 using namespace upcxx;
 using namespace upcxx_utils;

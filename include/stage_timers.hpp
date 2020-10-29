@@ -42,70 +42,26 @@
  form.
 */
 
-#include <fcntl.h>
-#include <math.h>
-#include <stdarg.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <upcxx/upcxx.hpp>
-
-#include "alignments.hpp"
-#include "contigs.hpp"
-#include "fastq.hpp"
-#include "kcount.hpp"
-#include "klign.hpp"
-#include "kmer.hpp"
-#include "kmer_dht.hpp"
-#include "options.hpp"
-#include "packed_reads.hpp"
 #include "upcxx_utils.hpp"
 
-#ifdef ENABLE_GPUS
-#include <thread>
+using upcxx_utils::IntermittentTimer;
 
-#include "adept-sw/driver.hpp"
-#endif
-
-#if defined(ENABLE_GASNET_STATS)
-
-extern string _gasnet_stats_stage;
-extern void mhm2_trace_set_mask(const char *newmask);
-
-// ALL collects stats for the whole execution, including between stages
-// ANY collects stats for each of the named stages
-#define BEGIN_GASNET_STATS(stage)                                                                     \
-  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") { \
-    mhm2_trace_set_mask("PGA");                                                                       \
-    SWARN("Collecting communication stats for ", stage);                                              \
-  }
-#define END_GASNET_STATS() \
-  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_trace_set_mask("")
-
-#else
-#define BEGIN_GASNET_STATS(stage)
-#define END_GASNET_STATS()
-#endif
-
-using namespace upcxx;
-using namespace upcxx_utils;
-
-extern bool _verbose;
-
-// Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
-void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
-                 vector<PackedReads *> &packed_reads_list, bool checkpoint);
+inline bool _verbose = false;
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
       *cgraph, *dump_ctgs, *compute_kmer_depths;
 };
 
-extern StageTimers stage_timers;
-
-void mhm2_trace_setmask(const char *newmask);
+inline StageTimers stage_timers = {
+    .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
+    .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
+    .load_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Load contigs", "Loading contigs"),
+    .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
+    .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
+    .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
+    .kernel_alns = new IntermittentTimer(__FILENAME__ + string(":") + "Kernel alignments", ""),
+    .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
+    .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
+    .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
+    .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")};

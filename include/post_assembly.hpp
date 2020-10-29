@@ -45,7 +45,6 @@
 #include <memory>
 
 #include "contigs.hpp"
-#include "main.hpp"
 #include "options.hpp"
 
 template <int MAX_K>

@@ -45,10 +45,11 @@
 #include "post_assembly.hpp"
 
 #include "aln_depths.hpp"
+#include "gasnet_stats.hpp"
 #include "histogrammer.hpp"
 #include "klign.hpp"
-#include "main.hpp"
 #include "packed_reads.hpp"
+#include "stage_timers.hpp"
 #include "upcxx_utils.hpp"
 
 using namespace upcxx_utils;

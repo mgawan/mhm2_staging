@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
  through Lawrence Berkeley National Laboratory (subject to receipt of any required
@@ -40,23 +42,6 @@
  form.
 */
 
-#include "main.hpp"
-
-bool _verbose = false;
-
-StageTimers stage_timers = {
-    .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
-    .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
-    .load_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Load contigs", "Loading contigs"),
-    .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
-    .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
-    .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
-    .kernel_alns = new IntermittentTimer(__FILENAME__ + string(":") + "Kernel alignments", ""),
-    .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
-    .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
-    .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
-    .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")};
-
 #if defined(ENABLE_GASNET_STATS)
 
 // We may be compiling with debug-mode GASNet with optimization.
@@ -67,7 +52,20 @@ StageTimers stage_timers = {
 #undef __OPTIMIZE__
 #include <gasnet_tools.h>
 #include <gasnetex.h>
-string _gasnet_stats_stage = "";
-void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
+inline string _gasnet_stats_stage = "";
+inline void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
 
+// ALL collects stats for the whole execution, including between stages
+// ANY collects stats for each of the named stages
+#define BEGIN_GASNET_STATS(stage)                                                                     \
+  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") { \
+    mhm2_trace_set_mask("PGA");                                                                       \
+    SWARN("Collecting communication stats for ", stage);                                              \
+  }
+#define END_GASNET_STATS() \
+  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_trace_set_mask("")
+
+#else
+#define BEGIN_GASNET_STATS(stage)
+#define END_GASNET_STATS()
 #endif
