@@ -42,32 +42,9 @@
  form.
 */
 
+#include "alignments.hpp"
 #include "contigs.hpp"
-#include "options.hpp"
-#include "packed_reads.hpp"
 
-template <int MAX_K>
-void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, std::vector<PackedReads *> packed_reads_list, Contigs &ctgs,
-                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, std::shared_ptr<Options> options);
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len,
+                        std::vector<string> &filenames, bool double_count_merged_region);
 
-#define __MACRO_SCAFFOLDING__(KMER_LEN, MODIFIER)                                                                \
-  MODIFIER void scaffolding<KMER_LEN>(int, int, int, std::vector<PackedReads *>, Contigs &, int &, int &, int &, \
-                                      std::shared_ptr<Options>);
-
-// Reduce compile time by instantiating templates of common types
-// extern template declarations are in scaffolding.hpp
-// template instantiations each happen in src/CMakeLists via scaffolding-extern-template.in.cpp
-
-__MACRO_SCAFFOLDING__(32, extern template);
-#if MAX_BUILD_KMER >= 64
-__MACRO_SCAFFOLDING__(64, extern template);
-#endif
-#if MAX_BUILD_KMER >= 96
-__MACRO_SCAFFOLDING__(96, extern template);
-#endif
-#if MAX_BUILD_KMER >= 128
-__MACRO_SCAFFOLDING__(128, extern template);
-#endif
-#if MAX_BUILD_KMER >= 160
-__MACRO_SCAFFOLDING__(160, extern template);
-#endif

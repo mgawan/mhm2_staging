@@ -100,11 +100,6 @@ extern bool _verbose;
 // Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
                  vector<PackedReads *> &packed_reads_list, bool checkpoint);
-void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
-                        const string &graph_fname);
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames,
-                        bool double_count_merged_region);
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,

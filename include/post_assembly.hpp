@@ -42,6 +42,7 @@
  form.
 */
 
+#include "aln_depths.hpp"
 #include "histogrammer.hpp"
 #include "main.hpp"
 

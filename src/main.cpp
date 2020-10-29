@@ -52,6 +52,9 @@
 #include "upcxx_utils/thread_pool.hpp"
 #include "utils.hpp"
 
+using std::fixed;
+using std::setprecision;
+
 int main(int argc, char **argv) {
   upcxx::init();
 #if defined(ENABLE_GASNET_STATS)
