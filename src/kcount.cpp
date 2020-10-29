@@ -48,8 +48,8 @@
 #define DBG_ADD_KMER(...)
 
 template <int MAX_K>
-void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
-                 dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
+static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
+                        dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
   BarrierTimer timer(__FILEFUNC__);
   // probability of an error is P = 10^(-Q/10) where Q is the quality cutoff
   // so we want P = 0.5*1/k (i.e. 50% chance of 1 error)
@@ -148,7 +148,7 @@ void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *> &pack
 
 // count ctg kmers if using bloom
 template <int MAX_K>
-void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
+static void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   BarrierTimer timer(__FILEFUNC__);
   ProgressBar progbar(ctgs.size(), "Counting kmers in contigs");
   int64_t num_kmers = 0;
@@ -178,7 +178,7 @@ void count_ctg_kmers(unsigned kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K
 };
 
 template <int MAX_K>
-void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
+static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ctgs, dist_object<KmerDHT<MAX_K>> &kmer_dht) {
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_kmers = 0;
   int64_t num_prev_kmers = kmer_dht->get_num_kmers();

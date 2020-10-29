@@ -47,6 +47,8 @@
 using namespace upcxx;
 using namespace upcxx_utils;
 
+using std::fixed;
+using std::setprecision;
 using std::tie;
 
 inline uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &packed_reads_list) {

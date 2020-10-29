@@ -51,6 +51,8 @@ using namespace upcxx;
 using namespace upcxx_utils;
 
 using std::tie;
+using std::setprecision;
+using std::fixed;
 
 template <int MAX_K>
 
