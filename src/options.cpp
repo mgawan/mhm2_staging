@@ -181,7 +181,7 @@ void Options::setup_output_dir() {
     bool set_lfs_stripe = WIFEXITED(status) & (WEXITSTATUS(status) == 0);
     int num_osts = 0;
     if (set_lfs_stripe) {
-      // detect the number of OSTs with "lfs df -l $output_dir" and count the entries with OST: 
+      // detect the number of OSTs with "lfs df -l $output_dir" and count the entries with OST:
       string cmd("lfs df -l ");
       cmd += output_dir;
       FILE *f_osts = popen(cmd.c_str(), "r");
@@ -194,7 +194,7 @@ void Options::setup_output_dir() {
         fclose(f_osts);
       }
       // reduce to the minimum of 90% or rank_n()
-      num_osts = std::min(9*num_osts/10, std::min((int) 72, (int) rank_n())); // see Issue #70
+      num_osts = std::min(9 * num_osts / 10, std::min((int)72, (int)rank_n()));  // see Issue #70
     }
     set_lfs_stripe &= num_osts > 0;
     if (set_lfs_stripe) {
@@ -380,8 +380,9 @@ bool Options::load(int argc, char **argv) {
   auto *bloom_opt = app.add_flag("--force-bloom", force_bloom, "Always use bloom filters.")
                         //      ->default_val(force_bloom ? "true" : "false")
                         ->multi_option_policy();
-  app.add_flag("--pin", pin_by, "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
-                                "or NUMA domains (cpu, core, numa, none).")
+  app.add_flag("--pin", pin_by,
+               "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
+               "or NUMA domains (cpu, core, numa, none).")
       ->check(CLI::IsMember({"cpu", "core", "numa", "none"}));
   try {
     app.parse(argc, argv);
@@ -549,7 +550,7 @@ bool Options::load(int argc, char **argv) {
     ofstream ofs(config_file);
     ofs << app.config_to_str(true, true);
     ofs.close();
-    unlink(linked_config_file.c_str()); // ignore errors
+    unlink(linked_config_file.c_str());  // ignore errors
     auto ret = link(config_file.c_str(), linked_config_file.c_str());
     if (ret != 0 && !restart) LOG("Could not hard link config file, continuing\n");
   }

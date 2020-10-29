@@ -79,10 +79,10 @@ extern void mhm2_trace_set_mask(const char *newmask);
 
 // ALL collects stats for the whole execution, including between stages
 // ANY collects stats for each of the named stages
-#define BEGIN_GASNET_STATS(stage)                        \
-  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") {                    \
-    mhm2_trace_set_mask("PGA");                        \
-    SWARN("Collecting communication stats for ", stage); \
+#define BEGIN_GASNET_STATS(stage)                                                                     \
+  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") { \
+    mhm2_trace_set_mask("PGA");                                                                       \
+    SWARN("Collecting communication stats for ", stage);                                              \
   }
 #define END_GASNET_STATS() \
   if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_trace_set_mask("")
@@ -91,7 +91,6 @@ extern void mhm2_trace_set_mask(const char *newmask);
 #define BEGIN_GASNET_STATS(stage)
 #define END_GASNET_STATS()
 #endif
-
 
 using namespace upcxx;
 using namespace upcxx_utils;
@@ -111,7 +110,8 @@ void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int
                         const string &graph_fname);
 pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
                                      const string &dump_large_alns_fname = "");
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames, bool double_count_merged_region);
+void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames,
+                        bool double_count_merged_region);
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
