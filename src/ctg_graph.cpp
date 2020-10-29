@@ -88,8 +88,6 @@ ostream &operator<<(ostream &os, const CidPair &cids) {
   return os;
 }
 
-const CidPair NULL_CIDS = CidPair{-1, -1};
-
 string edge_type_str(EdgeType edge_type) {
   switch (edge_type) {
     case EdgeType::SPLINT: return "splint";
