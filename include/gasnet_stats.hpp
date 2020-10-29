@@ -50,8 +50,10 @@
 // However in this case we know what we are doing...
 #undef NDEBUG
 #undef __OPTIMIZE__
-#include <gasnet_tools.h>
+
 #include <gasnetex.h>
+#include <gasnet_tools.h>
+
 inline string _gasnet_stats_stage = "";
 inline void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
 
