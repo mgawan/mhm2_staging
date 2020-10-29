@@ -213,7 +213,7 @@ include(CMakeDefinitions.txt)
 
 # verify submodules
 include(CheckSubmodules)
-CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
+CHECK_SUBMODULES(zstr upcxx-utils test/googletest)# todo klign
 
 # set version
 include_directories(include src)
