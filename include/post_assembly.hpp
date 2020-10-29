@@ -42,6 +42,7 @@
  form.
 */
 
+#include "histogrammer.hpp"
 #include "main.hpp"
 
 template <int MAX_K>

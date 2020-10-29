@@ -107,8 +107,6 @@ void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_rea
 void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
                         vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
                         const string &graph_fname);
-pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
-                                     const string &dump_large_alns_fname = "");
 void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames,
                         bool double_count_merged_region);
 

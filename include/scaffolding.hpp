@@ -44,15 +44,16 @@
 
 #include <chrono>
 
+#include "histogrammer.hpp"
 #include "main.hpp"
 #include "upcxx_utils/timers.hpp"
 
 using namespace upcxx;
 using namespace upcxx_utils;
 
-using std::tie;
-using std::setprecision;
 using std::fixed;
+using std::setprecision;
+using std::tie;
 
 template <int MAX_K>
 
