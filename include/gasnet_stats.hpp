@@ -42,6 +42,8 @@
  form.
 */
 
+#include "upcxx_utils.hpp"
+
 #if defined(ENABLE_GASNET_STATS)
 
 // We may be compiling with debug-mode GASNet with optimization.
@@ -55,17 +57,17 @@
 #include <gasnet_tools.h>
 
 inline string _gasnet_stats_stage = "";
-inline void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
+inline void mhm2_stats_set_mask(const char *newmask) { GASNETT_STATS_SETMASK(newmask); }
 
 // ALL collects stats for the whole execution, including between stages
 // ANY collects stats for each of the named stages
 #define BEGIN_GASNET_STATS(stage)                                                                     \
   if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") { \
-    mhm2_trace_set_mask("PGA");                                                                       \
+    mhm2_stats_set_mask("PGA");                                                                       \
     SWARN("Collecting communication stats for ", stage);                                              \
   }
 #define END_GASNET_STATS() \
-  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_trace_set_mask("")
+  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_stats_set_mask("")
 
 #else
 #define BEGIN_GASNET_STATS(stage)
