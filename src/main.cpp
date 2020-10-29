@@ -64,8 +64,9 @@ int main(int argc, char **argv) {
   upcxx::init();
 #if defined(ENABLE_GASNET_STATS)
   const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
-  if (gasnet_stats_stage) {
-    mhm2_trace_set_mask("");
+  const char *gasnet_statsfile = getenv("GASNET_STATSFILE");
+  if (gasnet_stats_stage && gasnet_statsfile) {
+    mhm2_stats_set_mask("");
     _gasnet_stats_stage = string(gasnet_stats_stage);
   }
 #endif
