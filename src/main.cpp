@@ -43,6 +43,7 @@
 #include <sys/resource.h>
 
 #include "contigging.hpp"
+#include "klign.hpp"
 #include "fastq.hpp"
 #include "post_assembly.hpp"
 #include "scaffolding.hpp"
