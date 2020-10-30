@@ -121,7 +121,7 @@ Cori:validation:
     - export GASNET_BACKTRACE=1
 
     - echo "Submitting job on 3 nodes - on 2 nodes roughly RWDI=400s, DBG --kmer-lens 63 =456s  ...REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhm2.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhm2.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
+    - knl_job=$(sbatch --parsable --job-name="CImhv-${CI_COMMIT_SHORT_SHA}" --account=mp215 -C knl --nodes=3 --qos=debug --time=30:00 --wrap="${RWDI}/mhm2.py $OPTS -o ${RUN_PREFIX}/rwdi && ${DBG}/mhm2.py ${OPTS} --kmer-lens 63 -o ${RUN_PREFIX}/dbg && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
@@ -170,10 +170,10 @@ Cori:accuracy:
     - export ARCTIC=/global/cscratch1/sd/regan/GitlabCIData/
     - export OPTS="-r ${ARCTIC}/arctic_sample_0.fq --checkpoint=no"
     - echo "Submitting job on 5 nodes... on 2 nodes is is roughly REL=170s"
-    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL}/mhm2.py $OPTS -o ${RUN_PREFIX}/rel && echo Good")
+    - knl_job=$(sbatch --parsable --job-name="CImha-${CI_COMMIT_SHORT_SHA}" --account=mp215 -C knl --nodes=5 --qos=debug --time=10:00 --wrap="${REL}/mhm2.py $OPTS -o ${RUN_PREFIX}/rel && echo Good")
     - echo "Submitting full arctic job on 15 nodes"
     - export OPTS2="-r ${ARCTIC}/arctic_samples.fq --checkpoint=no"
-    - knl_job2=$(sbatch --parsable --job-name="CI-mhm2-${CI_COMMIT_SHORT_SHA}" --account=m2865 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL}/mhm2.py $OPTS2 -o ${RUN_PREFIX}/rel-full && echo Good")
+    - knl_job2=$(sbatch --parsable --job-name="CI-mhm2-${CI_COMMIT_SHORT_SHA}" --account=mp215 -C knl --nodes=15 --qos=debug --time=30:00 --wrap="${REL}/mhm2.py $OPTS2 -o ${RUN_PREFIX}/rel-full && echo Good")
     - echo "Waiting for knl job $knl_job"
     - date
     - while /bin/true ; do sleep 120 ; date ; sacct=$(sacct -j $knl_job -o state -X -n 2>/dev/null || true) ; if [ -n "${sacct}" -a -z "$(echo "${sacct}" | grep ING)" ] ; then break ; fi ; done
