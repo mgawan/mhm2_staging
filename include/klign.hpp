@@ -46,6 +46,10 @@
 #include "contigs.hpp"
 #include "packed_reads.hpp"
 
+#ifdef ENABLE_GPUS
+#include "adept-sw/driver.hpp"
+#endif
+
 struct AlnScoring {
   int match, mismatch, gap_opening, gap_extending, ambiguity;
 
