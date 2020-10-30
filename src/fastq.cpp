@@ -51,6 +51,7 @@
 
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/promise_collectives.hpp"
 #include "upcxx_utils/thread_pool.hpp"
 #include "upcxx_utils/timers.hpp"
 #include "utils.hpp"
@@ -58,7 +59,12 @@
 using namespace upcxx_utils;
 using std::ostringstream;
 using std::string;
+using std::make_shared;
+using std::shared_ptr;
+
 using upcxx::future;
+using upcxx::local_team;
+using upcxx::rank_me;
 
 void FastqReader::rtrim(string &s) {
   auto pos = s.length() - 1;
@@ -204,6 +210,12 @@ int64_t FastqReader::get_fptr_for_next_record(int64_t offset) {
         continue;
       }
 
+      if (!is_paired()) {
+        DBG("Found record for unpaired read file: ", header, "\n");
+        last_tell = this_tell;
+        break;
+      }
+
       // need this to be the second of the pair
       this_pair = header[header.length() - 1];
       DBG("Found possible pair ", (char)this_pair, ", header: ", header, "\n");
@@ -234,16 +246,24 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
     , max_read_len(0)
     , fqr2(nullptr)
     , first_file(true)
+    , _is_paired(true)
     , io_t("fastq IO for " + fname)
+    , dist_prom(world())
     , open_fut(make_future()) {
   Timer construction_timer("FastqReader construct " + get_basename(fname));
   construction_timer.initiate_entrance_reduction();
   string fname2;
   size_t pos;
   if ((pos = fname.find(':')) != string::npos) {
-    // colon separating a pair into two files
-    fname2 = fname.substr(pos + 1);
-    fname = fname.substr(0, pos);
+    if (pos == fname.size() - 1) {
+      // unpaird/single file
+      _is_paired = false;
+      fname = fname.substr(0, pos);
+    } else {
+      // colon separating a pair into two files
+      fname2 = fname.substr(pos + 1);
+      fname = fname.substr(0, pos);
+    }
   }
   int fd = -1;
   if (!rank_me()) {
@@ -258,14 +278,32 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
   future<> file_size_fut = upcxx::broadcast(file_size, 0).then([&file_size = this->file_size](int64_t sz) { file_size = sz; });
 
   // continue opening IO operations to find this rank's start record in a separate thread
-  open_fut = when_all(open_fut, file_size_fut, first_wait).then([this, fd]() {
-    return upcxx_utils::execute_in_thread_pool([this, fd]() { this->continue_open(fd); });
-  });
+  open_fut = when_all(open_fut, file_size_fut, first_wait).then([this, fd]() { return this->continue_open(fd); });
 
   if (!fname2.empty()) {
     // this second reader is generally hidden from the user
     LOG("Opening second FastqReader with ", fname2, "\n");
-    fqr2 = make_shared<FastqReader>(fname2);
+    fqr2 = make_shared<FastqReader>(fname2, wait, open_fut);
+    open_fut = when_all(open_fut, fqr2->open_fut);
+
+    // find the positions in the file that correspond to matching pairs
+    auto sh_promstartstop1 = make_shared<dist_object<PromStartStop>>(world());
+    auto sh_promstartstop2 = make_shared<dist_object<PromStartStop>>(world());
+    auto sh_prombarrier = make_shared<upcxx_utils::PromiseBarrier>(world());
+    open_fut = when_all(open_fut, fqr2->open_fut)
+                   .then([this, sh_promstartstop1, sh_promstartstop2, sh_prombarrier]() {
+                     FastqReader &fqr1 = *this;
+                     FastqReader &fqr2 = *(this->fqr2);
+                     return set_matching_pair(fqr1, fqr2, *sh_promstartstop1, *sh_promstartstop2);
+                   })
+                   .then([sh_promstartstop1, sh_promstartstop2, sh_prombarrier]() {
+                     sh_prombarrier->fulfill();
+                     return sh_prombarrier->get_future();
+                   });
+    fqr2->open_fut = open_fut;
+    future<> free_mem =
+        open_fut.then([sh_promstartstop1, sh_promstartstop2, sh_prombarrier]() {});  // keep shared_ptrs alive until finished
+    upcxx_utils::Timings::set_pending(free_mem);                                     // eventualy will clean up
   }
 
   if (wait) {
@@ -274,8 +312,97 @@ FastqReader::FastqReader(const string &_fname, bool wait, upcxx::future<> first_
   }
 }
 
-// this happens within a separate thread
-void FastqReader::continue_open(int fd) {
+future<> FastqReader::set_matching_pair(FastqReader &fqr1, FastqReader &fqr2, dist_object<PromStartStop> &dist_start_stop1,
+                                        dist_object<PromStartStop> &dist_start_stop2) {
+  DBG("Starting matching pair ", fqr1.start_read, " and ", fqr2.start_read, "\n");
+  assert(fqr1.f && "FQ 1 is open");
+  assert(fqr2.f && "FQ 2 is open");
+  assert(fqr1.start_read == ftell(fqr1.f) && "fqr1 is at the naive start");
+  assert(fqr2.start_read == ftell(fqr2.f) && "fqr2 is at the naive start");
+  int64_t pos1 = fqr1.start_read, pos2 = fqr2.start_read;
+  // allow search to extend past the original block size
+  fqr1.end_read = fqr1.file_size;
+  fqr2.end_read = fqr2.file_size;
+  string id, seq, qual;
+  int64_t offset1 = 0, offset2 = 0;
+  string read1, read2;
+  int64_t bytes1 = 0, bytes2 = 0;
+  while (true) {
+    offset1 += bytes1;
+    bytes1 = fqr1.get_next_fq_record(id, seq, qual, false);
+    if (bytes1 == 0) {
+      // no match found in entire block. so no reads will be returned
+      // this should only happen in the last ranks of a small file in a large job
+      offset1 = fqr1.end_read - fqr1.start_read;
+      offset2 = fqr2.end_read - fqr2.start_read;
+      break;
+    }
+    rtrim(id);
+    DBG("id read1 '", id, "' '", id[id.size() - 2], "' '", id[id.size() - 1], "'\n");
+    assert(id.size() >= 3 && id[id.size() - 2] == '/' && id[id.size() - 1] == '1' && "read1 has the expected format");
+    id = id.substr(0, id.size() - 2);
+    if (read2.compare(id) == 0) {
+      offset2 = 0;
+      DBG("Found pair read1 ", id, " at ", pos1 + offset1, " matches read2 ", read2, " at ", pos2, " offset1=", offset1, "\n");
+      read1 = id;
+      break;
+    }
+    if (read1.empty()) read1 = id;
+    offset2 += bytes2;
+    bytes2 = fqr1.get_next_fq_record(id, seq, qual, false);  // use fqr1 as it calls fqr2 to mimic interleaving!!!
+    if (bytes2 == 0) {
+      // no match found in entire block. so no reads will be returned
+      // this should only happen in the last ranks of a small file in a large job
+      offset1 = fqr1.end_read - fqr1.start_read;
+      offset2 = fqr2.end_read - fqr2.start_read;
+      break;
+    }
+    rtrim(id);
+    DBG("id read2 ", id, "\n");
+    assert(id.size() >= 3 && id[id.size() - 2] == '/' && id[id.size() - 1] == '2' && "read2 has the expected format");
+    id = id.substr(0, id.size() - 2);
+    if (read1.compare(id) == 0) {
+      offset1 = 0;
+      DBG("Found pair read1 ", read1, " at ", pos1, " matches read2 ", id, " at ", pos2 + offset2, " offset2=", offset2, "\n");
+      read2 = id;
+      break;
+    }
+    if (read2.empty()) read2 = id;
+  }
+  if (rank_me() == 0) {
+    assert(pos1 + offset1 == 0 && pos2 + offset2 == 0 && "Rank0 starts at pos 0");
+  }
+  LOG("Found matching pair for ", fqr1.fname, " at ", pos1 + offset1, " and ", fqr2.fname, " at ", pos2 + offset2, " - ", read1,
+      "\n");
+  dist_start_stop1->start_prom.fulfill_result(pos1 + offset1);
+  dist_start_stop2->start_prom.fulfill_result(pos2 + offset2);
+  if (rank_me() > 0) {
+    rpc_ff(
+        rank_me() - 1,
+        [](dist_object<PromStartStop> &dist_start_stop1, dist_object<PromStartStop> &dist_start_stop2, int64_t end1, int64_t end2) {
+          dist_start_stop1->stop_prom.fulfill_result(end1);
+          dist_start_stop2->stop_prom.fulfill_result(end2);
+        },
+        dist_start_stop1, dist_start_stop2, pos1 + offset1, pos2 + offset2);
+  }
+  if (rank_me() == rank_n() - 1) {
+    // special case of eof -- use file_size
+    dist_start_stop1->stop_prom.fulfill_result(fqr1.file_size);
+    dist_start_stop2->stop_prom.fulfill_result(fqr2.file_size);
+  }
+  auto fut1 = dist_start_stop1->set(fqr1).then([&fqr1]() {
+    fqr1.seek();
+    fqr1.first_file = true;
+  });
+  auto fut2 = dist_start_stop2->set(fqr2).then([&fqr2]() { fqr2.seek(); });
+  return when_all(fut1, fut2).then([&fqr1, &fqr2]() {
+    DBG("Found matching pair ", fqr1.start_read, " and ", fqr2.start_read, "\n");
+  });
+}
+
+// all ranks open, 1 rank per node finds block boundaries
+upcxx::future<> FastqReader::continue_open(int fd) {
+  assert(upcxx::master_persona().active_with_caller());
   io_t.start();
   if (fd < 0) {
     f = fopen(fname.c_str(), "r");
@@ -285,32 +412,76 @@ void FastqReader::continue_open(int fd) {
   if (!f) {
     SDIE("Could not open file ", fname, ": ", strerror(errno));
   }
-  LOG("Opened", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
+  LOG("Opened ", fname, " in ", io_t.get_elapsed_since_start(), "s.\n");
   io_t.stop();
+  if (rank_me() == 0) {
+    // special for first rank set start as 0
+    dist_prom->start_prom.fulfill_result(0);
+  } else if (rank_me() == rank_n() - 1) {
+    // special for last rank set end as file size
+    dist_prom->stop_prom.fulfill_result(file_size);
+  }
+  // have all other local ranks delay their seeks and I/O until these seeks are finished.
+  promise wait_prom(1);
+  if (local_team().rank_me() == local_team().rank_n() - 1) {
+    // do all the fseeking for the local team
+    using DPSS = dist_object<PromStartStop>;
+    int64_t read_block = INT_CEIL(file_size, rank_n());
+    auto first_rank = rank_me() + 1 - local_team().rank_n();
+    for (auto rank = first_rank; rank < first_rank + local_team().rank_n(); rank++) {
+      // just a part of the file is read by this thread
+      if (rank == 0) {
+        // already done - special already set 0 for first rank
+        continue;
+      }
+      assert(rank > 0);
+      start_read = read_block * rank;
+      auto pos = get_fptr_for_next_record(start_read);
+      wait_prom.get_future().then([rank, pos, &dist_prom = this->dist_prom]() {
+        // send end to prev rank
+        rpc_ff(rank - 1, [](DPSS &dpss, int64_t end_pos) { dpss->stop_prom.fulfill_result(end_pos); }, dist_prom, pos);
+        // send start to rank
+        rpc_ff(rank, [](DPSS &dpss, int64_t start_pos) { dpss->start_prom.fulfill_result(start_pos); }, dist_prom, pos);
+      });
+    }
+  }
+  // all the seeks are done, send results to local team
+  wait_prom.fulfill_anonymous(1);
+  auto fut_set = dist_prom->set(*this);
+  auto fut_seek = fut_set.then([this]() { this->seek(); });
+  progress();
+  return fut_seek;
+}
 
-  // just a part of the file is read by this thread
-  int64_t read_block = INT_CEIL(file_size, rank_n());
-  start_read = read_block * rank_me();
-  end_read = read_block * (rank_me() + 1);
-
-  if (rank_me()) start_read = get_fptr_for_next_record(start_read);
-  if (rank_me() == rank_n() - 1)
-    end_read = file_size;
-  else
-    end_read = get_fptr_for_next_record(end_read);
-
-  io_t.start();
-  if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
-// tell the OS this file will be accessed sequentially
+void FastqReader::advise(bool will_need) {
 #if defined(__APPLE__) && defined(__MACH__)
 // TODO
 #else
-  posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+#ifndef MHM2_NO_FADVISE
+  BaseTimer advise_t("Advise " + fname);
+  advise_t.start();
+  if (will_need) {
+    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_SEQUENTIAL);
+    LOG("advised ", fname, " POSIX_FADV_SEQUENTIAL in ", advise_t.get_elapsed_since_start(), "s\n");
+  } else {
+    posix_fadvise(fileno(f), start_read, end_read - start_read, POSIX_FADV_DONTNEED);
+    LOG("advised ", fname, " POSIX_FADV_DONTNEED in ", advise_t.get_elapsed_since_start(), "s\n");
+  }
+#else
+  SLOG_VERBOSE("No posix_fadvice to ", fname, "\n");
 #endif
+#endif
+  if (fqr2) fqr2->advise(will_need);  // advise the second file too!
+}
+
+void FastqReader::seek() {
+  // seek to first record
+  io_t.start();
+  if (fseek(f, start_read, SEEK_SET) != 0) DIE("Could not fseek on ", fname, " to ", start_read, ": ", strerror(errno));
   SLOG_VERBOSE("Reading FASTQ file ", fname, "\n");
   double fseek_t = io_t.get_elapsed_since_start();
   io_t.stop();
-  LOG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), " seek+advise ", fseek_t, "s io to open+find+seek ",
+  LOG("Reading fastq file ", fname, " at pos ", start_read, " ", ftell(f), " seek ", fseek_t, "s io to open+find+seek ",
       io_t.get_elapsed(), "s\n");
 }
 
@@ -335,8 +506,8 @@ string FastqReader::get_fname() { return fname; }
 
 size_t FastqReader::my_file_size() { return end_read - start_read + (fqr2 ? fqr2->my_file_size() : 0); }
 
-size_t FastqReader::get_next_fq_record(string &id, string &seq, string &quals) {
-  if (!open_fut.ready()) {
+size_t FastqReader::get_next_fq_record(string &id, string &seq, string &quals, bool wait_open) {
+  if (wait_open && !open_fut.ready()) {
     WARN("Attempt to read ", fname, " before it is ready. wait on open_fut first to avoid this warning!\n");
     open_fut.wait();
   }
@@ -346,13 +517,14 @@ size_t FastqReader::get_next_fq_record(string &id, string &seq, string &quals) {
       first_file = false;
     } else {
       first_file = true;
-      return fqr2->get_next_fq_record(id, seq, quals);
+      return fqr2->get_next_fq_record(id, seq, quals, wait_open);
     }
   }
   if (feof(f) || ftell(f) >= end_read) return 0;
   io_t.start();
   size_t bytes_read = 0;
   id = "";
+  char id2 = '\0';
   for (int i = 0; i < 4; i++) {
     char *bytes = fgets(buf, BUF_SIZE, f);
     if (!bytes) DIE("Read record terminated on file ", fname, " before full record at position ", ftell(f));
@@ -360,6 +532,8 @@ size_t FastqReader::get_next_fq_record(string &id, string &seq, string &quals) {
       id.assign(buf);
     else if (i == 1)
       seq.assign(buf);
+    else if (i == 2)
+      id2 = buf[0];
     else if (i == 3)
       quals.assign(buf);
     bytes_read += strlen(buf);
@@ -367,7 +541,8 @@ size_t FastqReader::get_next_fq_record(string &id, string &seq, string &quals) {
   rtrim(id);
   rtrim(seq);
   rtrim(quals);
-  if (id[0] != '@') DIE("Invalid FASTQ in ", fname, ": expected read name (@), got: ", id);
+  if (id[0] != '@') DIE("Invalid FASTQ in ", fname, ": expected read name (@), got: id=", id, " at ", ftell(f), "\n");
+  if (id2 != '+') DIE("Invalid FASTQ in ", fname, ": expected '+', got: '", id2, "' id=", id, " at ", ftell(f), "\n");
   // construct universally formatted name (illumina 1 format)
   if (!get_fq_name(id)) DIE("Invalid FASTQ in ", fname, ": incorrect name format '", id, "'");
   // get rid of spaces

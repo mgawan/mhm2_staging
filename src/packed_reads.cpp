@@ -221,15 +221,16 @@ upcxx::future<> PackedReads::load_reads_nb() {
   size_t tot_bytes_read = 0;
   int64_t num_records = 0;
   FastqReader &fqr = FastqReaders::get(fname);
+  fqr.advise(true);
   string id, seq, quals;
-  for (num_records = 0; num_records < 10000; num_records++) {
+  for (num_records = 0; num_records < 20000; num_records++) {
     size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
     if (!bytes_read) break;
     tot_bytes_read += bytes_read;
   }
   int64_t bytes_per_record = tot_bytes_read / num_records;
   int64_t estimated_records = fqr.my_file_size() / bytes_per_record;
-  int64_t reserve_records = estimated_records * 1.05 + 10000; // reserve more so there is not a big reallocation if it is under
+  int64_t reserve_records = estimated_records * 1.10 + 10000; // reserve more so there is not a big reallocation if it is under
   packed_reads.reserve(reserve_records); 
   fqr.reset();
   ProgressBar progbar(fqr.my_file_size(), "Loading reads from " + fname + " " + get_size_str(fqr.my_file_size()));
@@ -241,10 +242,11 @@ upcxx::future<> PackedReads::load_reads_nb() {
     progbar.update(tot_bytes_read);
     add_read(id, seq, quals);
   }
+  fqr.advise(false);
   FastqReaders::close(fname);
   auto fut = progbar.set_done();
-  auto underestimate = estimated_records - packed_reads.size();
-  if (underestimate) LOG("NOTICE Underestimated by ", underestimate, " estimated ", estimated_records, " found ", packed_reads.size(), "\n");
+  int64_t underestimate = estimated_records - packed_reads.size();
+  if (underestimate < 0 && reserve_records < packed_reads.size()) LOG("NOTICE Underestimated by ", -underestimate, " estimated ", estimated_records, " found ", packed_reads.size(), "\n");
   auto all_under_estimated_fut = upcxx::reduce_one(underestimate < 0 ? 1 : 0, upcxx::op_fast_add, 0);
   auto all_estimated_records_fut = upcxx::reduce_one(estimated_records, upcxx::op_fast_add, 0);
   auto all_num_records_fut = upcxx::reduce_one(packed_reads.size(), upcxx::op_fast_add, 0);

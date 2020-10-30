@@ -84,22 +84,31 @@ add_definitions(-DALL_DEFNS=\"${all_defs}\")
 include_directories("ssw")
 add_subdirectory(ssw)
 
-set(TGTS)
+set(MHM2_TARGET_OBJECTS)
 add_library(hash_funcs OBJECT hash_funcs.c)
-list(APPEND TGTS $<TARGET_OBJECTS:hash_funcs>)
+list(APPEND MHM2_TARGET_OBJECTS $<TARGET_OBJECTS:hash_funcs>)
 
 # build all the extern template souce code instantiation explosion
 set(EXTERN_TEMPLATE_FILES)
 foreach(KMER_LENGTH ${MHM2_KMER_LENGTHS})
-  foreach(TEMPLATE "kmer_dht" "kcount" "kmer" "klign" "scaffolding" "contigging" "post_assembly")
+  foreach(TEMPLATE "kmer_dht" "kmer")
     set(TEMPLATE_FILE "${TEMPLATE}-extern-template-${KMER_LENGTH}")
     configure_file("${TEMPLATE}-extern-template.in.cpp" "${TEMPLATE_FILE}.cpp" @ONLY)
     list(APPEND EXTERN_TEMPLATE_FILES ${TEMPLATE_FILE})
   endforeach()
 endforeach()
 
+foreach(KMER_LENGTH ${MHM2_KMER_LENGTHS})
+  foreach(TEMPLATE "kcount" "klign" "contigging" "scaffolding" "post_assembly")
+    set(TEMPLATE_FILE "${TEMPLATE}-extern-template-${KMER_LENGTH}")
+    string(TOUPPER ${TEMPLATE} TEMPLATE_UPPER)
+    configure_file("extern_template.in.cpp" "${TEMPLATE_FILE}.cpp" @ONLY)
+    list(APPEND EXTERN_TEMPLATE_FILES ${TEMPLATE_FILE})
+  endforeach()
+endforeach()
 
-foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options kmer kcount kmer_dht 
+
+foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options
             merge_reads dbjg_traversal klign cgraph build_ctg_graph
             walk_ctg_graph spanner splinter localassm histogrammer aln_depths
             ${EXTERN_TEMPLATE_FILES}
@@ -108,34 +117,31 @@ foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options 
   if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13 AND DEFINED UPCXX_LIBRARIES)
     target_link_libraries(${tgt} ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
   endif()
-  list(APPEND TGTS $<TARGET_OBJECTS:${tgt}>)
+  list(APPEND MHM2_TARGET_OBJECTS $<TARGET_OBJECTS:${tgt}>)
 endforeach()
 
-add_executable(mhm2 main.cpp ${TGTS})
+set(MHM2_TARGET_OBJECTS ${MHM2_TARGET_OBJECTS} PARENT_SCOPE)
+add_executable(mhm2 main.cpp ${MHM2_TARGET_OBJECTS})
+
+set(MHM2_LINK_LIBRARIES Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} MHM2_VERSION_LIB)
 
 if(ENABLE_CUDA)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR})
     include_directories("adept-sw")
     add_subdirectory(adept-sw)
     set_property(TARGET mhm2 PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # just to be sure. It should be off in parent dir
+    set(MHM2_LINK_LIBRARIES ${MHM2_LINK_LIBRARIES} ADEPT_SW_LIBRARY_static)
     target_link_libraries(mhm2
-        Threads::Threads
-        SSW_LIBRARY
-        ${ZLIB_LIBRARIES}
-        ${UPCXX_LIBRARIES}
-        ${UPCXX_UTILS_LIBRARIES}
-        MHM2_VERSION_LIB
-        ADEPT_SW_LIBRARY_static)
+        ${MHM2_LINK_LIBRARIES}
+        ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
 
 else()
     target_link_libraries(mhm2
-        Threads::Threads
-        SSW_LIBRARY
-        ${ZLIB_LIBRARIES}
-        ${UPCXX_LIBRARIES}
-        ${UPCXX_UTILS_LIBRARIES}
-        MHM2_VERSION_LIB)
+        ${MHM2_LINK_LIBRARIES}
+        ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
 endif()
+
+set(MHM2_LINK_LIBRARIES ${MHM2_LINK_LIBRARIES} PARENT_SCOPE)
 
 install(TARGETS mhm2 DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 

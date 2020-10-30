@@ -115,7 +115,7 @@ struct CidPair {
   }*/
 };
 
-extern const CidPair NULL_CIDS;
+inline const CidPair NULL_CIDS = CidPair{-1, -1};
 
 namespace std {
 template <>

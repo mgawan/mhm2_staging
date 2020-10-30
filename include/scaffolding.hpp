@@ -42,112 +42,32 @@
  form.
 */
 
-#include <chrono>
-
-#include "main.hpp"
-#include "upcxx_utils/timers.hpp"
-
-using namespace upcxx;
-using namespace upcxx_utils;
-
-using std::tie;
+#include "contigs.hpp"
+#include "options.hpp"
+#include "packed_reads.hpp"
 
 template <int MAX_K>
+void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, std::vector<PackedReads *> packed_reads_list, Contigs &ctgs,
+                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, std::shared_ptr<Options> options);
 
-void scaffolding(int scaff_i, int max_kmer_len, int rlen_limit, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
-                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
-  auto loop_start_t = std::chrono::high_resolution_clock::now();
-  unsigned scaff_kmer_len = options->scaff_kmer_lens[scaff_i];
-  bool gfa_iter = (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) ? true : false;
-  SLOG(KBLUE, "_________________________", KNORM, "\n");
-  if (gfa_iter)
-    SLOG(KBLUE, "Computing contig graph for GFA output, k = ", scaff_kmer_len, KNORM, "\n\n");
-  else
-    SLOG(KBLUE, "Scaffolding k = ", scaff_kmer_len, KNORM, "\n\n");
-  bool is_debug = false;
-#ifdef DEBUG
-  is_debug = true;
-#endif
-  string scaff_contigs_fname("scaff-contigs-" + to_string(scaff_kmer_len) + ".fasta");
-  if ((options->restart || is_debug) && file_exists(scaff_contigs_fname)) {
-    SLOG_VERBOSE("(Re)loading scaffold contigs ", scaff_contigs_fname, "\n");
-    ctgs.load_contigs(scaff_contigs_fname);
-  } else {
-    Alns alns;
-    stage_timers.alignments->start();
-    auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-    int seed_space = KLIGN_SEED_SPACE;
-    if (options->dump_gfa && scaff_i == options->scaff_kmer_lens.size() - 1) seed_space = 1;
-    BEGIN_GASNET_STATS("alignment");
-    double kernel_elapsed = find_alignments<MAX_K>(scaff_kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight,
-                                                   ctgs, alns, seed_space, rlen_limit, false, 0, options->ranks_per_gpu);
-    END_GASNET_STATS();
-    stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
-    stage_timers.alignments->stop();
-#ifdef DEBUG
-    alns.dump_rank_file("scaff-" + to_string(scaff_kmer_len) + ".alns.gz");
-#endif
-    BEGIN_GASNET_STATS("alignment_depths");
-    compute_aln_depths("", ctgs, alns, max_kmer_len, 0, options->reads_fnames, true);
-    END_GASNET_STATS();
-    // always recalculate the insert size because we may need it for resumes of failed runs
-    BEGIN_GASNET_STATS("insert_size");
-    tie(ins_avg, ins_stddev) = calculate_insert_size(alns, options->insert_size[0], options->insert_size[1], max_expected_ins_size);
-    END_GASNET_STATS();
-    // insert size should never be larger than this; if it is that signals some
-    // error in the assembly
-    max_expected_ins_size = ins_avg + 8 * ins_stddev;
-    int break_scaff_Ns = (scaff_kmer_len == options->scaff_kmer_lens.back() ? options->break_scaff_Ns : 1);
-    stage_timers.cgraph->start();
-    BEGIN_GASNET_STATS("traverse_ctg_graph");
-    traverse_ctg_graph(ins_avg, ins_stddev, max_kmer_len, scaff_kmer_len, options->min_ctg_print_len, packed_reads_list,
-                       break_scaff_Ns, ctgs, alns, (gfa_iter ? "final_assembly" : ""));
-    END_GASNET_STATS();
-    stage_timers.cgraph->stop();
-    ctgs.print_stats(options->min_ctg_print_len);
-    int max_scaff_i = (options->dump_gfa ? options->scaff_kmer_lens.size() - 2 : options->scaff_kmer_lens.size() - 1);
-    if ((is_debug || options->checkpoint) && scaff_i < max_scaff_i) {
-      SLOG_VERBOSE("Saving scaffold contigs ", scaff_contigs_fname, "\n");
-      stage_timers.dump_ctgs->start();
-      ctgs.dump_contigs(scaff_contigs_fname, 0);
-      stage_timers.dump_ctgs->stop();
-    }
-  }
-
-  std::chrono::duration<double> loop_t_elapsed = std::chrono::high_resolution_clock::now() - loop_start_t;
-  SLOG("\n");
-  SLOG(KBLUE, "Completed ", (gfa_iter ? "GFA output" : "scaffolding"), " round k = ", scaff_kmer_len, " in ", setprecision(2),
-       fixed, loop_t_elapsed.count(), " s at ", get_current_time(), " (", get_size_str(get_free_mem()), " free memory on node 0)",
-       KNORM, "\n");
-  barrier();
-}
-
-#define __MACRO_SCAFFOLDING__(KMER_LEN, MODIFIER) \
-  MODIFIER void scaffolding<KMER_LEN>(int, int, int, vector<PackedReads *>, Contigs &, int &, int &, int &, shared_ptr<Options>);
+#define __MACRO_SCAFFOLDING__(KMER_LEN, MODIFIER)                                                                \
+  MODIFIER void scaffolding<KMER_LEN>(int, int, int, std::vector<PackedReads *>, Contigs &, int &, int &, int &, \
+                                      std::shared_ptr<Options>);
 
 // Reduce compile time by instantiating templates of common types
 // extern template declarations are in scaffolding.hpp
 // template instantiations each happen in src/CMakeLists via scaffolding-extern-template.in.cpp
 
 __MACRO_SCAFFOLDING__(32, extern template);
-
 #if MAX_BUILD_KMER >= 64
-
 __MACRO_SCAFFOLDING__(64, extern template);
-
 #endif
 #if MAX_BUILD_KMER >= 96
-
 __MACRO_SCAFFOLDING__(96, extern template);
-
 #endif
 #if MAX_BUILD_KMER >= 128
-
 __MACRO_SCAFFOLDING__(128, extern template);
-
 #endif
 #if MAX_BUILD_KMER >= 160
-
 __MACRO_SCAFFOLDING__(160, extern template);
-
 #endif

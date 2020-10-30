@@ -49,6 +49,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <upcxx/upcxx.hpp>
 
 #include "CLI11.hpp"
@@ -151,67 +152,117 @@ void Options::get_restart_options() {
 }
 
 void Options::setup_output_dir() {
+  if (output_dir.empty()) DIE("Invalid empty ouput_dir");
   if (!upcxx::rank_me()) {
-    // create the output directory and stripe it if not doing a restart
+    // create the output directory (and possibly stripe it)
+
     if (restart) {
+      // it must already exist for a restart
       if (access(output_dir.c_str(), F_OK) == -1) {
         SDIE("Output directory ", output_dir, " for restart does not exist");
       }
-    } else {
-      if (mkdir(output_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */) == -1) {
-        // could not create the directory
-        if (errno == EEXIST) {
-          cerr << KLRED << "WARNING: " << KNORM << "Output directory " << output_dir
-               << " already exists. May overwrite existing files\n";
-        } else {
-          ostringstream oss;
-          oss << KLRED << "ERROR: " << KNORM << " Could not create output directory " << output_dir << ": " << strerror(errno)
-              << endl;
-          throw std::runtime_error(oss.str());
-        }
-      } else {
-        // created the directory - now stripe it if possible
-        auto status = std::system("which lfs 2>&1 > /dev/null");
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-          string cmd = "lfs setstripe -c -1 " + output_dir;
-          auto status = std::system(cmd.c_str());
-          if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            cout << "Set Lustre striping on the output directory\n";
-          else
-            cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
+    }
 
-          // ensure per_thread dir exists and has stripe 1
-          string per_thread = output_dir + "/per_thread";
-          mkdir(per_thread.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);  // ignore any errors
-          cmd = "lfs setstripe -c 1 " + per_thread;
-          status = std::system(cmd.c_str());
-          if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            cout << "Set Lustre striping on the per_thread output directory\n";
-          else
-            cout << "Failed to set Lustre striping on per_thread output directory: " << WEXITSTATUS(status) << endl;
-          // this should avoid contention on the filesystem when ranks start racing to creating these top levels
-          for (int i = 0; i < rank_n(); i += 1000) {
-            char basepath[256];
-            sprintf(basepath, "%s/%08d", per_thread.c_str(), i);
-            auto ret = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
-            if (ret != 0) break;  // ignore any errors, just stop
-          }
+    // always try to make the output_dir
+    if (mkdir(output_dir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */) == -1) {
+      // could not create the directory
+      if (errno == EEXIST) {
+        // okay but warn if not restarting
+        if (!restart) SWARN("Output directory ", output_dir, " already exists. May overwrite existing files\n");
+      } else {
+        SDIE("Could not create output directory '", output_dir, "': ", strerror(errno), "\n");
+      }
+    } else {
+      cout << "Created " << output_dir << "\n";
+    }
+
+    // always ensure striping is set or reset wide when lustre is available
+    auto status = std::system("which lfs 2>&1 > /dev/null");
+    bool set_lfs_stripe = WIFEXITED(status) & (WEXITSTATUS(status) == 0);
+    int num_osts = 0;
+    if (set_lfs_stripe) {
+      // detect the number of OSTs with "lfs df -l $output_dir" and count the entries with OST:
+      string cmd("lfs df -l ");
+      cmd += output_dir;
+      FILE *f_osts = popen(cmd.c_str(), "r");
+      if (f_osts) {
+        char buf[256];
+        while (char *ret = fgets(buf, 256, f_osts)) {
+          std::string_view s(buf);
+          if (s.find("OST:") != string::npos) num_osts++;
         }
+        fclose(f_osts);
+      }
+      // reduce to the minimum of 90% or rank_n()
+      num_osts = std::min(9 * num_osts / 10, std::min((int)72, (int)rank_n()));  // see Issue #70
+    }
+    set_lfs_stripe &= num_osts > 0;
+    if (set_lfs_stripe) {
+      // stripe with count -1 to use all the OSTs
+      string cmd = "lfs setstripe --stripe-count " + std::to_string(num_osts) + " --stripe-size 16M " + output_dir;
+      auto status = std::system(cmd.c_str());
+      if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        cout << "Set Lustre striping on the output directory: count=" << num_osts << ", size=16M\n";
+      else
+        cout << "Failed to set Lustre striping on output directory: " << WEXITSTATUS(status) << endl;
+    }
+
+    // ensure per_rank dir exists (and additionally has stripe 1, if lfs exists)
+    string per_rank = output_dir + "/per_rank";
+    status = mkdir(per_rank.c_str(), S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+    if (status != 0 && errno != EEXIST) SDIE("Could not create '", per_rank, "'! ", strerror(errno));
+    if (set_lfs_stripe) {
+      // stripe per_rank directory with count 1
+      string cmd = "lfs setstripe --stripe-count 1 " + per_rank;
+      status = std::system(cmd.c_str());
+      if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        cout << "Set Lustre striping on the per_rank output directory: " << per_rank << "\n";
+      else
+        cout << "Failed to set Lustre striping on per_rank output directory: " << WEXITSTATUS(status) << endl;
+    }
+
+    // this should avoid contention on the filesystem when ranks start racing to creating these top levels
+    char basepath[256];
+    for (int i = 0; i < rank_n(); i += 1000) {
+      sprintf(basepath, "%s/%08d", per_rank.c_str(), i);
+      status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+      if (status != 0 && errno != EEXIST) {
+        SWARN("Could not create '", basepath, "'! ", strerror(errno));
+        break;  // ignore any errors, just stop
       }
     }
+    sprintf(basepath, "%s/00000000/%08d", per_rank.c_str(), 0);
+    status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
+    if (status != 0 && errno != EEXIST) SDIE("Could not mkdir rank 0 per thread directory '", basepath, "'! ", strerror(errno));
+
+    cout.flush();
+    cerr.flush();
   }
 
   upcxx::barrier();
   // after we change to the output directory, relative paths could be incorrect, so make sure we have the correct path of the
   // reads files
   char cwd_str[FILENAME_MAX];
-  if (!getcwd(cwd_str, FILENAME_MAX)) SDIE("Cannot get current working directory: ", strerror(errno));
+  if (!getcwd(cwd_str, FILENAME_MAX)) DIE("Cannot get current working directory: ", strerror(errno));
   for (auto &fname : reads_fnames) {
-    if (fname[0] != '/') fname = string(cwd_str) + "/" + fname;
+    if (fname[0] != '/') {
+      string dir = string(cwd_str) + "/";
+      auto spos = fname.find_first_of(':');
+      if (spos == string::npos || spos == fname.size() - 1) {
+        // interleaved (no colon) or single read (colon at the end)
+        fname = dir + fname;
+      } else {
+        // paired read (colon in between)
+        fname = dir + fname.substr(0, spos) + ":" + dir + fname.substr(spos + 1);
+      }
+    }
   }
   // all change to the output directory
-  if (chdir(output_dir.c_str()) == -1 && !upcxx::rank_me()) {
-    DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
+  auto chdir_attempts = 0;
+  while (chdir(output_dir.c_str()) != 0) {
+    // failed, retry for 5 more seconds - Issue #69
+    if (chdir_attempts++ > 10) DIE("Cannot change to output directory ", output_dir, ": ", strerror(errno));
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
   upcxx::barrier();
 }
@@ -224,8 +275,10 @@ void Options::setup_log_file() {
       cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhm2.log exists. Renaming to " << output_dir << "/" << new_log_fname
            << endl;
       if (rename("mhm2.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhm2.log: ", strerror(errno));
+      // also unlink the rank0 per_rank file (a hard link if it exists)
+      unlink("per_rank/00000000/00000000/mhm2.log");  // ignore any errors
     } else if (!file_exists("mhm2.log") && restart) {
-      DIE("Could not restart - missing mhm2.log in tis directory");
+      DIE("Could not restart - missing mhm2.log in this directory");
     }
   }
   upcxx::barrier();
@@ -262,6 +315,9 @@ bool Options::load(int argc, char **argv) {
                  "Alternating read files containing separate paired reads in FASTQ format (comma or space separated).")
       ->delimiter(',')
       ->check(CLI::ExistingFile);
+  app.add_option("-u, --unpaired-reads", unpaired_fnames, "Unpaired or single reads in FASTQ format (comma or space separated).")
+      ->delimiter(',')
+      ->check(CLI::ExistingFile);
   app.add_option("-i, --insert", insert_size, "Insert size (average:stddev) (autodetected by default).")
       ->delimiter(':')
       ->expected(2)
@@ -279,6 +335,10 @@ bool Options::load(int argc, char **argv) {
   auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory.")->capture_default_str();
   app.add_flag("--checkpoint", checkpoint, "Enable checkpointing.")
       ->default_val(checkpoint ? "true" : "false")
+      ->capture_default_str()
+      ->multi_option_policy();
+  app.add_flag("--checkpoint-merged", checkpoint_merged,
+               "(debugging option) enables checkpointing of merged fastq files in the output directory")
       ->capture_default_str()
       ->multi_option_policy();
   app.add_flag("--restart", restart,
@@ -318,8 +378,8 @@ bool Options::load(int argc, char **argv) {
   app.add_option("--ranks-per-gpu", ranks_per_gpu, "Number of processes multiplexed to each GPU (default depends on hardware).")
       ->check(CLI::Range(0, (int)upcxx::local_team().rank_n() * 8));
   auto *bloom_opt = app.add_flag("--force-bloom", force_bloom, "Always use bloom filters.")
-//      ->default_val(force_bloom ? "true" : "false")
-      ->multi_option_policy();
+                        //      ->default_val(force_bloom ? "true" : "false")
+                        ->multi_option_policy();
   app.add_flag("--pin", pin_by,
                "Restrict processes according to logical CPUs, cores (groups of hardware threads), "
                "or NUMA domains (cpu, core, numa, none).")
@@ -335,7 +395,7 @@ bool Options::load(int argc, char **argv) {
   }
 
   if (!paired_fnames.empty()) {
-    // convert pairs to colon ':' separated single files for FastqReader to process
+    // convert pairs to colon ':' separated unpaired/single files for FastqReader to process
     if (paired_fnames.size() % 2 != 0) {
       if (!rank_me()) cerr << "Did not get pairs of files in -p: " << paired_fnames.size() << endl;
       return false;
@@ -345,6 +405,15 @@ bool Options::load(int argc, char **argv) {
       paired_fnames.erase(paired_fnames.begin());
       paired_fnames.erase(paired_fnames.begin());
     }
+  }
+
+  if (!unpaired_fnames.empty()) {
+    // append a ':' to the file name, signaling to FastqReader that this is a unpaired/single file
+    // a paired file would have another name after the ':'
+    for (auto name : unpaired_fnames) {
+      reads_fnames.push_back(name + ":");
+    }
+    unpaired_fnames.clear();
   }
 
   // we can get restart incorrectly set in the config file from restarted runs
@@ -369,23 +438,20 @@ bool Options::load(int argc, char **argv) {
         cerr << "\nError in command line:\nRequire output directory when restarting run\nRun with --help for more information\n";
       return false;
     }
-    string first_read_fname = remove_file_ext(get_basename(reads_fnames[0]));
+    string first_read_fname = reads_fnames[0];
+    // strip out the paired or unpaired/single the possible ':' in the name string
+    auto colpos = first_read_fname.find_last_of(':');
+    if (colpos != string::npos) first_read_fname = first_read_fname.substr(0, colpos);
+    first_read_fname = remove_file_ext(get_basename(first_read_fname));
+    auto spos = first_read_fname.find_first_of(':');
+    if (spos != string::npos) first_read_fname = first_read_fname.substr(0, spos);
     output_dir = "mhm2-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
                  to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
     output_dir_opt->default_val(output_dir);
   }
 
-  if (restart) {
-    try {
-      app.parse_config(output_dir + "/mhm2.config");
-    } catch (const CLI::ConfigError &e) {
-      if (!upcxx::rank_me()) {
-        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << output_dir << "/mhm2.config" << "):\n";
-        app.exit(e);
-      }
-      return false;
-    }
-  }
+  setup_output_dir();
+  setup_log_file();
 
   // make sure we only use defaults for kmer lens if none of them were set by the user
   if (!*kmer_lens_opt && !*scaff_kmer_lens_opt) {
@@ -409,8 +475,21 @@ bool Options::load(int argc, char **argv) {
     scaff_kmer_lens.clear();
   }
 
-  setup_output_dir();
-  setup_log_file();
+  // save to per_rank, but hardlink to output_dir
+  string config_file = "per_rank/mhm2.config";
+  string linked_config_file = "mhm2.config";
+  if (restart) {
+    // use per_rank to read/write this small file, hardlink to top run level
+    try {
+      app.parse_config(linked_config_file);
+    } catch (const CLI::ConfigError &e) {
+      if (!upcxx::rank_me()) {
+        cerr << "\nError (" << e.get_exit_code() << ") in config file (" << config_file << "):\n";
+        app.exit(e);
+      }
+      return false;
+    }
+  }
 
   if (max_kmer_store_mb == 0) {
     // use 1% of the minimum available memory
@@ -421,8 +500,18 @@ bool Options::load(int argc, char **argv) {
   auto logger_t = chrono::high_resolution_clock::now();
   if (upcxx::local_team().rank_me() == 0) {
     // open 1 log per node
-    // rank0 has mhm2.log in rundir, all others have logs in per_thread
-    init_logger("mhm2.log", verbose, rank_me());
+    // all have logs in per_rank
+    if (rank_me() == 0 && restart) {
+      auto ret = rename("mhm2.log", "per_rank/00000000/00000000/mhm2.log");
+      if (ret != 0) SWARN("For this restart, could not rename mhm2.log to per_rank/00000000/00000000/mhm2.log\n");
+    }
+    init_logger("mhm2.log", verbose, true);
+    // if not restarting, hardlink just the rank0 log to the output dir
+    // this ensures a stripe count of 1 even when the output dir is striped wide
+    if (rank_me() == 0) {
+      auto ret = link("per_rank/00000000/00000000/mhm2.log", "mhm2.log");
+      if (ret != 0) SWARN("Could not hard link mhm2.log from per_rank/00000000/00000000/mhm2.log\n");
+    }
   }
 
   barrier();
@@ -458,8 +547,12 @@ bool Options::load(int argc, char **argv) {
 #endif
   if (!upcxx::rank_me()) {
     // write out configuration file for restarts
-    ofstream ofs("mhm2.config");
+    ofstream ofs(config_file);
     ofs << app.config_to_str(true, true);
+    ofs.close();
+    unlink(linked_config_file.c_str());  // ignore errors
+    auto ret = link(config_file.c_str(), linked_config_file.c_str());
+    if (ret != 0 && !restart) LOG("Could not hard link config file, continuing\n");
   }
   upcxx::barrier();
   return true;

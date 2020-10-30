@@ -43,43 +43,6 @@
 */
 
 #include "alignments.hpp"
-#include "contigs.hpp"
-#include "packed_reads.hpp"
 
-struct AlnScoring {
-  int match, mismatch, gap_opening, gap_extending, ambiguity;
-
-  string to_string() {
-    std::ostringstream oss;
-    oss << "match " << match << " mismatch " << mismatch << " gap open " << gap_opening << " gap extend " << gap_extending
-        << " ambiguity " << ambiguity;
-    return oss.str();
-  }
-};
-
-template <int MAX_K>
-double find_alignments(unsigned kmer_len, std::vector<PackedReads *> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar = false, int min_ctg_len = 0,
-                       int ranks_per_gpu = 0);
-
-// Reduce compile time by instantiating templates of common types
-// extern template declarations are in kmer.hpp
-// template instantiations each happen in src/CMakeLists via kmer-extern-template.in.cpp
-
-#define __MACRO_KLIGN__(KMER_LEN, MODIFIER)                                                                                      \
-  MODIFIER double find_alignments<KMER_LEN>(unsigned, std::vector<PackedReads *> &, int, int, Contigs &, Alns &, int, int, bool, \
-                                            int, int);
-
-__MACRO_KLIGN__(32, extern template);
-#if MAX_BUILD_KMER >= 64
-__MACRO_KLIGN__(64, extern template);
-#endif
-#if MAX_BUILD_KMER >= 96
-__MACRO_KLIGN__(96, extern template);
-#endif
-#if MAX_BUILD_KMER >= 128
-__MACRO_KLIGN__(128, extern template);
-#endif
-#if MAX_BUILD_KMER >= 160
-__MACRO_KLIGN__(160, extern template);
-#endif
+std::pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
+                                          const string &dump_large_alns_fname = "");

@@ -1,0 +1,9 @@
+build-*
+build_*
+.build*
+build
+install*
+.vscode
+nbproject
+.dir-locals.el
+upcxx-utils/build*

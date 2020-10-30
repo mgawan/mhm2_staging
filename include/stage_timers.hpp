@@ -42,44 +42,26 @@
  form.
 */
 
-#include "alignments.hpp"
-#include "contigs.hpp"
-#include "packed_reads.hpp"
+#include "upcxx_utils.hpp"
 
-struct AlnScoring {
-  int match, mismatch, gap_opening, gap_extending, ambiguity;
+using upcxx_utils::IntermittentTimer;
 
-  string to_string() {
-    std::ostringstream oss;
-    oss << "match " << match << " mismatch " << mismatch << " gap open " << gap_opening << " gap extend " << gap_extending
-        << " ambiguity " << ambiguity;
-    return oss.str();
-  }
+inline bool _verbose = false;
+
+struct StageTimers {
+  IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
+      *cgraph, *dump_ctgs, *compute_kmer_depths;
 };
 
-template <int MAX_K>
-double find_alignments(unsigned kmer_len, std::vector<PackedReads *> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar = false, int min_ctg_len = 0,
-                       int ranks_per_gpu = 0);
-
-// Reduce compile time by instantiating templates of common types
-// extern template declarations are in kmer.hpp
-// template instantiations each happen in src/CMakeLists via kmer-extern-template.in.cpp
-
-#define __MACRO_KLIGN__(KMER_LEN, MODIFIER)                                                                                      \
-  MODIFIER double find_alignments<KMER_LEN>(unsigned, std::vector<PackedReads *> &, int, int, Contigs &, Alns &, int, int, bool, \
-                                            int, int);
-
-__MACRO_KLIGN__(32, extern template);
-#if MAX_BUILD_KMER >= 64
-__MACRO_KLIGN__(64, extern template);
-#endif
-#if MAX_BUILD_KMER >= 96
-__MACRO_KLIGN__(96, extern template);
-#endif
-#if MAX_BUILD_KMER >= 128
-__MACRO_KLIGN__(128, extern template);
-#endif
-#if MAX_BUILD_KMER >= 160
-__MACRO_KLIGN__(160, extern template);
-#endif
+inline StageTimers stage_timers = {
+    .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
+    .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
+    .load_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Load contigs", "Loading contigs"),
+    .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
+    .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
+    .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
+    .kernel_alns = new IntermittentTimer(__FILENAME__ + string(":") + "Kernel alignments", ""),
+    .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
+    .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
+    .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
+    .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")};

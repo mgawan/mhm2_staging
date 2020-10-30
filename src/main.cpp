@@ -1,34 +1,72 @@
-#include "main.hpp"
+/*
+ HipMer v 2.0, Copyright (c) 2020, The Regents of the University of California,
+ through Lawrence Berkeley National Laboratory (subject to receipt of any required
+ approvals from the U.S. Dept. of Energy).  All rights reserved."
+
+ Redistribution and use in source and binary forms, with or without modification,
+ are permitted provided that the following conditions are met:
+
+ (1) Redistributions of source code must retain the above copyright notice, this
+ list of conditions and the following disclaimer.
+
+ (2) Redistributions in binary form must reproduce the above copyright notice,
+ this list of conditions and the following disclaimer in the documentation and/or
+ other materials provided with the distribution.
+
+ (3) Neither the name of the University of California, Lawrence Berkeley National
+ Laboratory, U.S. Dept. of Energy nor the names of its contributors may be used to
+ endorse or promote products derived from this software without specific prior
+ written permission.
+
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+ EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ DAMAGE.
+
+ You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
+ to the features, functionality or performance of the source code ("Enhancements") to
+ anyone; however, if you choose to make your Enhancements available either publicly,
+ or directly to Lawrence Berkeley National Laboratory, without imposing a separate
+ written license agreement for such Enhancements, then you hereby grant the following
+ license: a  non-exclusive, royalty-free perpetual license to install, use, modify,
+ prepare derivative works, incorporate into other computer software, distribute, and
+ sublicense such enhancements or derivative works thereof, in binary and source code
+ form.
+*/
 
 #include <sys/resource.h>
 
 #include "contigging.hpp"
+#include "fastq.hpp"
 #include "post_assembly.hpp"
 #include "scaffolding.hpp"
-
+#include "stage_timers.hpp"
+#include "gasnet_stats.hpp"
+#include "upcxx_utils.hpp"
 #include "upcxx_utils/thread_pool.hpp"
+#include "utils.hpp"
 
-bool _verbose = false;
+using std::fixed;
+using std::setprecision;
 
-StageTimers stage_timers = {
-    .merge_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Merge reads", "Merging reads"),
-    .cache_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Load reads into cache", "Loading reads into cache"),
-    .load_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Load contigs", "Loading contigs"),
-    .analyze_kmers = new IntermittentTimer(__FILENAME__ + string(":") + "Analyze kmers", "Analyzing kmers"),
-    .dbjg_traversal = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse deBruijn graph", "Traversing deBruijn graph"),
-    .alignments = new IntermittentTimer(__FILENAME__ + string(":") + "Alignments", "Aligning reads to contigs"),
-    .kernel_alns = new IntermittentTimer(__FILENAME__ + string(":") + "Kernel alignments", ""),
-    .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
-    .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
-    .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
-    .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")};
+using namespace upcxx_utils;
+
+void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
+                 vector<PackedReads *> &packed_reads_list, bool checkpoint);
 
 int main(int argc, char **argv) {
   upcxx::init();
 #if defined(ENABLE_GASNET_STATS)
   const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
-  if (gasnet_stats_stage) {
-    mhm2_trace_set_mask("");
+  const char *gasnet_statsfile = getenv("GASNET_STATSFILE");
+  if (gasnet_stats_stage && gasnet_statsfile) {
+    mhm2_stats_set_mask("");
     _gasnet_stats_stage = string(gasnet_stats_stage);
   }
 #endif
@@ -77,7 +115,20 @@ int main(int argc, char **argv) {
     // get total file size across all libraries
     double tot_file_size = 0;
     for (auto const &reads_fname : options->reads_fnames) {
-      tot_file_size += get_file_size(reads_fname);
+      auto spos = reads_fname.find_first_of(':');  // support paired reads
+      if (spos == string::npos) {
+        auto sz = get_file_size(reads_fname);
+        SLOG("Reads file ", reads_fname, " is ", get_size_str(sz), "\n");
+        tot_file_size += sz;
+      } else {
+        // paired files
+        auto r1 = reads_fname.substr(0, spos);
+        auto s1 = get_file_size(r1);
+        auto r2 = reads_fname.substr(spos + 1);
+        auto s2 = get_file_size(r2);
+        SLOG("Paired files ", r1, " and ", r2, " are ", get_size_str(s1), " and ", get_size_str(s2), "\n");
+        tot_file_size += s1 + s2;
+      }
     }
     SOUT("Total size of ", options->reads_fnames.size(), " input file", (options->reads_fnames.size() > 1 ? "s" : ""), " is ",
          get_size_str(tot_file_size), "\n");
@@ -111,7 +162,7 @@ int main(int argc, char **argv) {
   int max_kmer_len = 0;
   int max_expected_ins_size = 0;
   if (!options->post_assm_only) {
-    MemoryTrackerThread memory_tracker("memory_tracker.log");
+    MemoryTrackerThread memory_tracker;  // write only to mhm2.log file(s), not a separate one too
     memory_tracker.start();
     SLOG(KBLUE, "Starting with ", get_size_str(get_free_mem()), " free on node 0", KNORM, "\n");
     PackedReads::PackedReadsList packed_reads_list;
@@ -119,15 +170,16 @@ int main(int argc, char **argv) {
       packed_reads_list.push_back(new PackedReads(options->qual_offset, get_merged_reads_fname(reads_fname)));
     }
     double elapsed_write_io_t = 0;
-    if (!options->restart) {
+    if (!options->restart | !options->checkpoint_merged) {
       // merge the reads and insert into the packed reads memory cache
       BEGIN_GASNET_STATS("merge_reads");
       stage_timers.merge_reads->start();
-      merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint);
+      merge_reads(options->reads_fnames, options->qual_offset, elapsed_write_io_t, packed_reads_list, options->checkpoint_merged);
       stage_timers.merge_reads->stop();
       END_GASNET_STATS();
     } else {
-      // since this is a restart, the merged reads should be on disk already
+      // since this is a restart with checkpoint_merged true, the merged reads should be on disk already
+      // load the merged reads instead of merge the original ones again
       stage_timers.cache_reads->start();
       double free_mem = (!rank_me() ? get_free_mem() : 0);
       upcxx::barrier();
@@ -317,6 +369,7 @@ int main(int argc, char **argv) {
   }
 
   upcxx_utils::ThreadPool::join_single_pool();  // cleanup singleton thread pool
+  upcxx_utils::Timings::wait_pending();         // ensure all outstanding timing summaries have printed
   barrier();
 
 #ifdef DEBUG
@@ -327,18 +380,3 @@ int main(int argc, char **argv) {
   upcxx::finalize();
   return 0;
 }
-
-#if defined(ENABLE_GASNET_STATS)
-
-// We may be compiling with debug-mode GASNet with optimization.
-// GASNet has checks to prevent users from blindly doing this,
-// because it's a bad idea to run that way in production.
-// However in this case we know what we are doing...
-#undef NDEBUG
-#undef __OPTIMIZE__
-#include <gasnetex.h>
-#include <gasnet_tools.h>
-string _gasnet_stats_stage = "";
-void mhm2_trace_set_mask(const char *newmask) { GASNETT_TRACE_SETMASK(newmask); }
-
-#endif

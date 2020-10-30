@@ -373,7 +373,11 @@ def print_err_msgs(err_msgs, return_status):
             print_red("MHM2 failed")
         # keep track of all msg copies so we don't print duplicates
         seen_msgs = {}
-        with open(_output_dir + 'err.log', 'a') as f:
+        per_rank_dir = _output_dir + 'per_rank/'
+        if not os.path.exists(per_rank_dir):
+            per_rank_dir = _output_dir
+        err_log = per_rank_dir + 'err.log'
+        with open(err_log, 'a') as f:
             for msg in err_msgs:
                 clean_msg = msg.strip()
                 #clean_msg = re.sub('\(proc .+\)', '(proc XX)', msg.strip())
@@ -388,7 +392,7 @@ def print_err_msgs(err_msgs, return_status):
                 f.write("Out of memory is suspected because of: %s\n" %(suspect_oom))
                 print_red("Out of memory is suspected based on the errors in err.log such as: ", suspect_oom, "\n")
         if num_problems > 0:
-            print_red("Check " + _output_dir + "err.log for details")
+            print_red("Check " + err_log + " for details")
 
 def main():
     global _orig_sighdlr
@@ -521,7 +525,7 @@ def main():
                     # get rid of any leftover error logs if not restarting
                     try:
                         if not restarting:
-                            os.rename(_output_dir + 'err.log', _output_dir + 'err.log' + str(datetime.datetime.now().isoformat()))
+                            os.rename(_output_dir + '/per_rank/err.log', _output_dir + '/per_rank/err.log' + str(datetime.datetime.now().isoformat()))
                     except:
                         pass
 

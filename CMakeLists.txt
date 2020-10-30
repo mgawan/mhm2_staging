@@ -85,7 +85,7 @@ if(CMAKE_CUDA_COMPILER)
     option(ENABLE_CUDA "Enable CUDA" ON)
     if (ENABLE_CUDA)
       SET(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-      SET(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # only build device link objects for GPU targets 
+      SET(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # only build device link objects for GPU targets
       enable_language(CUDA)
     endif()
 else()
@@ -98,49 +98,64 @@ else()
   message(STATUS "Building for CPU only")
 endif()
 
-find_package(CpuArch
-  REQUIRED
-  COMPONENTS
-  OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
+option(MHM2_VECTORS "Test for optimal arch-specific compiler flags" ON)
+if (MHM2_VECTORS)
+  find_package(CpuArch
+    REQUIRED
+    COMPONENTS
+    OPTIONAL_COMPONENTS mmx avx sse sse2 fma ssse3 avx2 avx512f powerpc64 altivec vsx power8-fusion power8-vector )
 
-if (NOT APPLE)
-  LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
-endif()
-
-option(MHM2_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
-foreach(_ARCH ${CpuArch_FEATURES})
-  check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
-  if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug" AND NOT MHM2_DEBUG_VECTORS)
-    message("NOT enabling -m${_ARCH} compile option in this Debug build")
-  else()
-    if (HAVE_C_OPT_${_ARCH})
-      message(STATUS "Compiling C with -m${_ARCH} option")
-      string(APPEND CMAKE_C_FLAGS " -m${_ARCH}")
-    endif()
-    check_cxx_compiler_flag(-m${_ARCH} HAVE_CXX_OPT_${_ARCH})
-    if (HAVE_CXX_OPT_${_ARCH})
-      message(STATUS "Compiling CXX with -m${_ARCH} option")
-      string(APPEND CMAKE_CXX_FLAGS " -m${_ARCH}")
-    endif()
+  if (NOT APPLE)
+    LIST(APPEND CpuArch_FEATURES vsx powerpc64 power8-fusion power8-vector) # CpuArch sometimes does not find it
   endif()
-endforeach()
 
+  option(MHM2_DEBUG_VECTORS "Turn on vectorization compile flags for Debug build" OFF)
+  foreach(_ARCH ${CpuArch_FEATURES})
+    check_c_compiler_flag(-m${_ARCH} HAVE_C_OPT_${_ARCH})
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug" AND NOT MHM2_DEBUG_VECTORS)
+      message("NOT enabling -m${_ARCH} compile option in this Debug build")
+    else()
+      if (HAVE_C_OPT_${_ARCH})
+        message(STATUS "Compiling C with -m${_ARCH} option")
+        string(APPEND CMAKE_C_FLAGS " -m${_ARCH}")
+      endif()
+      check_cxx_compiler_flag(-m${_ARCH} HAVE_CXX_OPT_${_ARCH})
+      if (HAVE_CXX_OPT_${_ARCH})
+        message(STATUS "Compiling CXX with -m${_ARCH} option")
+        string(APPEND CMAKE_CXX_FLAGS " -m${_ARCH}")
+      endif()
+    endif()
+  endforeach()
+endif()
 
 option(ENABLE_GASNET_STATS "Turn on gasnet stats recording" OFF)
 message("Building ${CMAKE_BUILD_TYPE} version")
 if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   add_definitions(-DDEBUG)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG}")
-  set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
+  #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG}")
+  #set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_DEBUG}")
   set(ENABLE_GASNET_STATS ON)
 elseif("${CMAKE_BUILD_TYPE}" STREQUAL "RelWithDebInfo")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-  set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+  #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+  #set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBINFO}")
   set(ENABLE_GASNET_STATS ON)
   set(ENV{UPCXX_CODEMODE} "debug")  # build with all upcxx assertions turned on (may still be necessary to build with in older CMake versions)
+elseif("${CMAKE_BUILD_TYPE}" STREQUAL "RelWithDebug")
+  # suggested by https://stackoverflow.com/questions/48754619/what-are-cmake-build-type-debug-release-relwithdebinfo-and-minsizerel
+  # RelWithDebug [`-O2 -g -DDEBUG`] - aka RelWithDebInfo but `-DNDEBUG` removed and `-DDEBUG` added.
+  # Additionally DBG logs are disabled BUT dbg files might be made for all ranks to capture all higher level log messages
+  string(REGEX REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBUG "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DDEBUG" )
+  string(REGEX REPLACE "-DNDEBUG" "" CMAKE_C_FLAGS_RELWITHDEBUG "${CMAKE_C_FLAGS_RELWITHDEBINFO} -DDEBUG" )
+  add_definitions(-DNO_DBG_LOGS)
+  set(ENABLE_GASNET_STATS ON)
+  set(ENV{UPCXX_CODEMODE} "debug")  # build with all upcxx assertions turned on
+  set(CMAKE_CXX_FLAGS_RELWITHDEBUG "${CMAKE_CXX_FLAGS_RELWITHDEBUG}" CACHE STRING "CXX flags in RelWithDebug build mode" FORCE)
+  set(CMAKE_C_FLAGS_RELWITHDEBUG "${CMAKE_C_FLAGS_RELWITHDEBUG}" CACHE STRING "C flags in RelWithDebug build mode" FORCE)
+  #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBUG}")
+  #set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_RELWITHDEBUG}")
 elseif("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}")
-  set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_RELEASE}")
+  #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}")
+  #set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS_RELEASE}")
 endif()
 
 if(ENABLE_GASNET_STATS)
@@ -148,10 +163,16 @@ if(ENABLE_GASNET_STATS)
 endif()
 
 option(UPCXX_VERBOSE "" ON)
-find_package(UPCXX 2020.3 REQUIRED)
+set(MIN_UPCXX_VERSION "2020.3" CACHE STRING "Minimum version of UPCXX required for MHM2")
+find_package(UPCXX ${MIN_UPCXX_VERSION})
 if(NOT UPCXX_FOUND)
-  message(FATAL_ERROR "UPCXX is required to build and it should have been found in the upcxx-utils submodule under src")
+  message(FATAL_ERROR "UPCXX (version ${MIN_UPCXX_VERSION}) is required to build.
+  Please verify the installation of upcxx
+  and verify that upcxx is in your PATH: which upcxx && upcxx --version
+  and has been installed in the correct location: find $(dirname $(which upcxx))/../share -name 'UPCXX*' -type f
+    which should discover UPCXXConfig.cmake and UPCXXConfigVersion.cmake")
 endif()
+find_package(UPCXX ${MIN_UPCXX_VERSION} REQUIRED)
 
 message(STATUS "Building for ${CMAKE_BUILD_TYPE}: CMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}")
 
@@ -192,10 +213,10 @@ include(CMakeDefinitions.txt)
 
 # verify submodules
 include(CheckSubmodules)
-CHECK_SUBMODULES(zstr upcxx-utils)# todo klign
+CHECK_SUBMODULES(zstr upcxx-utils test/googletest)# todo klign
 
 # set version
-include_directories(include)
+include_directories(include src)
 GET_GIT_VERSION(MHM2)
 
 # add upcxx-utils
@@ -235,3 +256,8 @@ add_subdirectory(src)
 install(PROGRAMS upcxx-run-summit DESTINATION ${CMAKE_INSTALL_PREFIX}/bin RENAME mhm2-upcxx-run-summit)
 install(PROGRAMS ci/check_asm_quality.py ci/ci_asm_qual_test.sh DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 install(FILES ci/good-arctic-sample0.txt ci/good-arctic-sample0-k63.txt ci/good-arctic-sample0-k31k63.txt ci/good-arcticsynth.txt DESTINATION ${CMAKE_INSTALL_PREFIX}/share)
+
+option(MHM2_ENABLE_TESTING "Enable testing in MHM2" ON)
+if (MHM2_ENABLE_TESTING)
+  add_subdirectory(test)
+endif()

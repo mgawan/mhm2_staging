@@ -79,8 +79,7 @@ class ReadsToCtgsDHT {
 
   void add(const string &read_id, int64_t cid, char orient, char side) {
     CtgInfo ctg_info = {.cid = cid, .orient = orient, .side = side};
-    rpc(
-        get_target_rank(read_id),
+    rpc(get_target_rank(read_id),
         [](dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id, CtgInfo ctg_info) {
           const auto it = reads_to_ctgs_map->find(read_id);
           if (it == reads_to_ctgs_map->end())
@@ -95,14 +94,13 @@ class ReadsToCtgsDHT {
   int64_t get_num_mappings() { return reduce_one(reads_to_ctgs_map->size(), op_fast_add, 0).wait(); }
 
   vector<CtgInfo> get_ctgs(string &read_id) {
-    return upcxx::rpc(
-               get_target_rank(read_id),
-               [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id) -> vector<CtgInfo> {
-                 const auto it = reads_to_ctgs_map->find(read_id);
-                 if (it == reads_to_ctgs_map->end()) return {};
-                 return it->second;
-               },
-               reads_to_ctgs_map, read_id)
+    return upcxx::rpc(get_target_rank(read_id),
+                      [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id) -> vector<CtgInfo> {
+                        const auto it = reads_to_ctgs_map->find(read_id);
+                        if (it == reads_to_ctgs_map->end()) return {};
+                        return it->second;
+                      },
+                      reads_to_ctgs_map, read_id)
         .wait();
   }
 };
@@ -136,8 +134,7 @@ class CtgsWithReadsDHT {
   }
 
   void add_ctg(Contig &ctg) {
-    rpc(
-        get_target_rank(ctg.id),
+    rpc(get_target_rank(ctg.id),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
           const auto it = ctgs_map->find(cid);
           if (it != ctgs_map->end()) DIE("Found duplicate ctg ", cid);
@@ -149,8 +146,7 @@ class CtgsWithReadsDHT {
   }
 
   void add_read(int64_t cid, char side, ReadSeq read_seq) {
-    rpc(
-        get_target_rank(cid),
+    rpc(get_target_rank(cid),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
           const auto it = ctgs_map->find(cid);
           if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
@@ -597,10 +593,12 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();
   auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
   auto tot_excess_reads = reduce_one(excess_reads, op_fast_add, 0).wait();
+  auto num_ctgs = ctgs_dht.get_num_ctgs();
+  auto tot_num_sides = reduce_one(num_sides, op_fast_add, 0).wait();
   SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", max_num_reads, " avg per ctg ",
-               (tot_num_reads / ctgs_dht.get_num_ctgs()), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
+               (num_ctgs > 0  ? (tot_num_reads / num_ctgs) : 0), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
                " excess reads\n");
-  SLOG_VERBOSE("Could walk ", perc_str(reduce_one(num_sides, op_fast_add, 0).wait(), ctgs_dht.get_num_ctgs() * 2),
+  SLOG_VERBOSE("Could walk ", perc_str(tot_num_sides, num_ctgs * 2),
                " contig sides\n");
   if (tot_sum_clen)
     SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ",

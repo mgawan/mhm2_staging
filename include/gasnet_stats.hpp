@@ -42,82 +42,34 @@
  form.
 */
 
-#include <fcntl.h>
-#include <math.h>
-#include <stdarg.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <upcxx/upcxx.hpp>
-
-#include "alignments.hpp"
-#include "contigs.hpp"
-#include "fastq.hpp"
-#include "kcount.hpp"
-#include "klign.hpp"
-#include "kmer.hpp"
-#include "kmer_dht.hpp"
-#include "options.hpp"
-#include "packed_reads.hpp"
 #include "upcxx_utils.hpp"
-
-#ifdef ENABLE_GPUS
-#include <thread>
-
-#include "adept-sw/driver.hpp"
-#endif
 
 #if defined(ENABLE_GASNET_STATS)
 
-extern string _gasnet_stats_stage;
-extern void mhm2_trace_set_mask(const char *newmask);
+// We may be compiling with debug-mode GASNet with optimization.
+// GASNet has checks to prevent users from blindly doing this,
+// because it's a bad idea to run that way in production.
+// However in this case we know what we are doing...
+#undef NDEBUG
+#undef __OPTIMIZE__
+
+#include <gasnetex.h>
+#include <gasnet_tools.h>
+
+inline string _gasnet_stats_stage = "";
+inline void mhm2_stats_set_mask(const char *newmask) { GASNETT_STATS_SETMASK(newmask); }
 
 // ALL collects stats for the whole execution, including between stages
 // ANY collects stats for each of the named stages
-#define BEGIN_GASNET_STATS(stage)                        \
-  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") {                    \
-    mhm2_trace_set_mask("PGA");                        \
-    SWARN("Collecting communication stats for ", stage); \
+#define BEGIN_GASNET_STATS(stage)                                                                     \
+  if (_gasnet_stats_stage == stage || _gasnet_stats_stage == "ALL" || _gasnet_stats_stage == "ANY") { \
+    mhm2_stats_set_mask("PGA");                                                                       \
+    SWARN("Collecting communication stats for ", stage);                                              \
   }
 #define END_GASNET_STATS() \
-  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_trace_set_mask("")
+  if (_gasnet_stats_stage != "" && _gasnet_stats_stage != "ALL") mhm2_stats_set_mask("")
 
 #else
 #define BEGIN_GASNET_STATS(stage)
 #define END_GASNET_STATS()
 #endif
-
-
-using namespace upcxx;
-using namespace upcxx_utils;
-
-extern bool _verbose;
-
-// Implementations in various .cpp files. Declarations here to prevent explosion of header files with one function in each one
-void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
-                 vector<PackedReads *> &packed_reads_list, bool checkpoint);
-uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &packed_reads_list);
-template <int MAX_K>
-void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
-void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_reads_list, int insert_avg, int insert_stddev,
-               int qual_offset, Contigs &ctgs, Alns &alns);
-void traverse_ctg_graph(int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len, int min_ctg_print_len,
-                        vector<PackedReads *> &packed_reads_list, int break_scaffolds, Contigs &ctgs, Alns &alns,
-                        const string &graph_fname);
-pair<int, int> calculate_insert_size(Alns &alns, int ins_avg, int ins_stddev, int max_expected_ins_size,
-                                     const string &dump_large_alns_fname = "");
-void compute_aln_depths(const string &fname, Contigs &ctgs, Alns &alns, int kmer_len, int min_ctg_len, vector<string> &filenames, bool double_count_merged_region);
-
-struct StageTimers {
-  IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
-      *cgraph, *dump_ctgs, *compute_kmer_depths;
-};
-
-extern StageTimers stage_timers;
-
-void mhm2_trace_setmask(const char *newmask);

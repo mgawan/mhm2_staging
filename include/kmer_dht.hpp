@@ -103,8 +103,8 @@ enum PASS_TYPE { BLOOM_SET_PASS, BLOOM_COUNT_PASS, NO_BLOOM_PASS, CTG_BLOOM_SET_
 using ext_count_t = uint16_t;
 
 // global variables to avoid passing dist objs to rpcs
-extern double _dynamic_min_depth;
-extern int _dmin_thres;
+inline double _dynamic_min_depth = 0;
+inline int _dmin_thres = 2.0;
 
 struct ExtCounts {
   ext_count_t count_A;
@@ -112,13 +112,54 @@ struct ExtCounts {
   ext_count_t count_G;
   ext_count_t count_T;
 
-  array<pair<char, int>, 4> get_sorted();
+  array<pair<char, int>, 4> get_sorted() {
+    array<pair<char, int>, 4> counts = {make_pair('A', (int)count_A), make_pair('C', (int)count_C), make_pair('G', (int)count_G),
+                                        make_pair('T', (int)count_T)};
+    sort(std::begin(counts), std::end(counts), [](const auto &elem1, const auto &elem2) {
+      if (elem1.second == elem2.second)
+        return elem1.first > elem2.first;
+      else
+        return elem1.second > elem2.second;
+    });
+    return counts;
+  }
 
-  bool is_zero();
+  bool is_zero() {
+    if (count_A + count_C + count_G + count_T == 0) return true;
+    return false;
+  }
 
-  void inc(char ext, int count);
+  void inc(char ext, int count) {
+    switch (ext) {
+      case 'A':
+        count += count_A;
+        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'C':
+        count += count_C;
+        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'G':
+        count += count_G;
+        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+      case 'T':
+        count += count_T;
+        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
+        break;
+    }
+  }
 
-  char get_ext(uint16_t count);
+  char get_ext(uint16_t count) {
+    auto sorted_counts = get_sorted();
+    int top_count = sorted_counts[0].second;
+    int runner_up_count = sorted_counts[1].second;
+    // set dynamic_min_depth to 1.0 for single depth data (non-metagenomes)
+    int dmin_dyn = max((int)((1.0 - _dynamic_min_depth) * count), _dmin_thres);
+    if (top_count < dmin_dyn) return 'X';
+    if (runner_up_count >= dmin_dyn) return 'F';
+    return sorted_counts[0].first;
+  }
 };
 
 struct FragElem;
