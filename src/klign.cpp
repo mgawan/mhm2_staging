@@ -92,7 +92,7 @@ struct ReadAndCtgLoc {
 };
 
 template <int MAX_K>
-struct KmerCtgLoc {
+struct KmerAndCtgLoc {
   Kmer<MAX_K> kmer;
   CtgLoc ctg_loc;
   UPCXX_SERIALIZED_FIELDS(kmer, ctg_loc);
@@ -103,12 +103,6 @@ static int64_t _num_dropped_seed_to_ctgs = 0;
 
 template <int MAX_K>
 class KmerCtgDHT {
-  struct KmerAndCtgLoc {
-    Kmer<MAX_K> kmer;
-    CtgLoc ctg_loc;
-    UPCXX_SERIALIZED_FIELDS(kmer, ctg_loc);
-  };
-
   // maps a kmer to a contig - the first part of the pair is set to true if this is a conflict,
   // with a kmer mapping to multiple contigs
   using local_kmer_map_t = HASH_TABLE<Kmer<MAX_K>, pair<bool, CtgLoc>>;
@@ -116,9 +110,9 @@ class KmerCtgDHT {
   kmer_map_t kmer_map;
 
 #ifndef FLAT_AGGR_STORE
-  ThreeTierAggrStore<KmerAndCtgLoc, kmer_map_t &> kmer_store;
+  ThreeTierAggrStore<KmerAndCtgLoc<MAX_K>, kmer_map_t &> kmer_store;
 #else
-  FlatAggrStore<KmerAndCtgLoc, kmer_map_t &> kmer_store;
+  FlatAggrStore<KmerAndCtgLoc<MAX_K>, kmer_map_t &> kmer_store;
 #endif
 
   int64_t num_alns;
@@ -433,7 +427,7 @@ class KmerCtgDHT {
     this->aln_scoring = aln_scoring;
     ssw_filter.report_cigar = compute_cigar;
     kmer_store.set_size("insert ctg seeds", max_store_size, max_rpcs_in_flight);
-    kmer_store.set_update_func([](KmerAndCtgLoc kmer_and_ctg_loc, kmer_map_t &kmer_map) {
+    kmer_store.set_update_func([](KmerAndCtgLoc<MAX_K> kmer_and_ctg_loc, kmer_map_t &kmer_map) {
       CtgLoc ctg_loc = kmer_and_ctg_loc.ctg_loc;
       const auto it = kmer_map->find(kmer_and_ctg_loc.kmer);
       if (it == kmer_map->end()) {
@@ -516,7 +510,7 @@ class KmerCtgDHT {
       kmer = kmer_rc;
       ctg_loc.is_rc = true;
     }
-    KmerAndCtgLoc kmer_and_ctg_loc = {kmer, ctg_loc};
+    KmerAndCtgLoc<MAX_K> kmer_and_ctg_loc = {kmer, ctg_loc};
     kmer_store.update(get_target_rank(kmer), kmer_and_ctg_loc);
   }
 
@@ -605,11 +599,11 @@ class KmerCtgDHT {
     }
   }
 
-  future<vector<KmerCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
+  future<vector<KmerAndCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
     return rpc(
         target_rank,
         [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
-          vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs;
+          vector<KmerAndCtgLoc<MAX_K>> kmer_ctg_locs;
           kmer_ctg_locs.reserve(kmers.size());
           for (auto &kmer : kmers) {
             const auto it = kmer_map->find(kmer);
@@ -801,7 +795,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
     if (kmer_lists[target_rank].empty()) continue;
     auto fut_get_ctgs = kmer_ctg_dht.get_ctgs_with_kmers(target_rank, kmer_lists[target_rank]);
     auto fut_rpc_returned =
-        fut_get_ctgs.then([&kmer_read_map, &num_excess_alns_reads](const vector<KmerCtgLoc<MAX_K>> kmer_ctg_locs) {
+        fut_get_ctgs.then([&kmer_read_map, &num_excess_alns_reads](const vector<KmerAndCtgLoc<MAX_K>> kmer_ctg_locs) {
           // iterate through the kmers, each one has an associated ctg location
           for (auto &kmer_ctg_loc : kmer_ctg_locs) {
             // get the reads that this kmer mapped to
