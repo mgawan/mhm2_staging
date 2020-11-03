@@ -87,10 +87,12 @@ class Alns {
 
   void append(Alns &more_alns);
 
+  const Aln &get_aln(int64_t i) const;
+
   Aln &get_aln(int64_t i);
 
-  size_t size();
-  
+  size_t size() const;
+
   void reserve(size_t capacity);
 
   void reset();
