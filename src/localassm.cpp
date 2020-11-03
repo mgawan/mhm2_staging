@@ -51,6 +51,7 @@
 #include "packed_reads.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/three_tier_aggr_store.hpp"
 #include "utils.hpp"
 
 using namespace std;
@@ -59,36 +60,56 @@ using namespace upcxx_utils;
 
 enum class AlnStatus { NO_ALN, OVERLAPS_CONTIG, EXTENDS_CONTIG };
 
+struct CtgInfo {
+  int64_t cid;
+  char orient;
+  char side;
+  UPCXX_SERIALIZED_FIELDS(cid, orient, side);
+};
+struct ReadCtgInfo {
+  string read_id;
+  CtgInfo ctg_info;
+  UPCXX_SERIALIZED_FIELDS(read_id, ctg_info);
+};
+
 class ReadsToCtgsDHT {
-  struct CtgInfo {
-    int64_t cid;
-    char orient;
-    char side;
-  };
+ public:
+  using reads_to_ctgs_map_t = HASH_TABLE<string, vector<CtgInfo>>;
+  using dist_reads_to_ctgs_map_t = dist_object<reads_to_ctgs_map_t>;
+  static size_t get_target_rank(const string &read_id) { return std::hash<string>{}(read_id) % rank_n(); }
 
-  using reads_to_ctgs_map_t = HASH_TABLE<string, vector<CtgInfo> >;
-  dist_object<reads_to_ctgs_map_t> reads_to_ctgs_map;
-
-  size_t get_target_rank(const string &read_id) { return std::hash<string>{}(read_id) % rank_n(); }
+ private:
+  dist_reads_to_ctgs_map_t reads_to_ctgs_map;
+  ThreeTierAggrStore<ReadCtgInfo> rtc_store;
 
  public:
   ReadsToCtgsDHT(int64_t initial_size)
-      : reads_to_ctgs_map({}) {
+      : reads_to_ctgs_map({})
+      , rtc_store() {
     reads_to_ctgs_map->reserve(initial_size);
+    rtc_store.set_update_func([&reads_to_ctgs_map = this->reads_to_ctgs_map](const ReadCtgInfo &read_ctg_info) {
+      const auto it = reads_to_ctgs_map->find(read_ctg_info.read_id);
+      if (it == reads_to_ctgs_map->end())
+        reads_to_ctgs_map->insert({read_ctg_info.read_id, {read_ctg_info.ctg_info}});
+      else
+        it->second.push_back(read_ctg_info.ctg_info);
+    });
+    // TODO rtc_store.set_size();
+  }
+
+  void clear() {
+    reads_to_ctgs_map_t().swap(*reads_to_ctgs_map);
+    rtc_store.clear();
   }
 
   void add(const string &read_id, int64_t cid, char orient, char side) {
-    CtgInfo ctg_info = {.cid = cid, .orient = orient, .side = side};
-    rpc(get_target_rank(read_id),
-        [](dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id, CtgInfo ctg_info) {
-          const auto it = reads_to_ctgs_map->find(read_id);
-          if (it == reads_to_ctgs_map->end())
-            reads_to_ctgs_map->insert({read_id, {ctg_info}});
-          else
-            it->second.push_back(ctg_info);
-        },
-        reads_to_ctgs_map, read_id, ctg_info)
-        .wait();
+    ReadCtgInfo read_ctg_info = {.read_id = read_id, .ctg_info = {.cid = cid, .orient = orient, .side = side}};
+    rtc_store.update(get_target_rank(read_id), read_ctg_info);
+  }
+
+  void flush_updates() {
+    rtc_store.flush_updates();
+    rtc_store.clear();
   }
 
   int64_t get_num_mappings() { return reduce_one(reads_to_ctgs_map->size(), op_fast_add, 0).wait(); }
@@ -103,12 +124,30 @@ class ReadsToCtgsDHT {
                       reads_to_ctgs_map, read_id)
         .wait();
   }
+
+  future<vector<vector<CtgInfo>>> get_ctgs(intrank_t target_rank, vector<string> &read_ids) {
+    return upcxx::rpc(
+        target_rank,
+        [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, view<string> read_ids) -> vector<vector<CtgInfo>> {
+          vector<vector<CtgInfo>> results(read_ids.size());
+          size_t i = 0;
+          for (const auto &read_id : read_ids) {
+            assert(get_target_rank(read_id) == rank_me());
+            const auto it = reads_to_ctgs_map->find(read_id);
+            if (it != reads_to_ctgs_map->end()) results[i] = it->second;
+            i++;
+          }
+          return results;
+        },
+        reads_to_ctgs_map, make_view(read_ids.begin(), read_ids.end()));
+  }
 };
 
 struct ReadSeq {
   string read_id;
   string seq;
   string quals;
+  UPCXX_SERIALIZED_FIELDS(read_id, seq, quals);
 };
 
 struct CtgWithReads {
@@ -119,21 +158,63 @@ struct CtgWithReads {
   vector<ReadSeq> reads_right;
 };
 
+struct CtgData {
+  int64_t cid;
+  string seq;
+  double depth;
+  UPCXX_SERIALIZED_FIELDS(cid, seq, depth);
+};
+
+struct CtgReadData {
+  int64_t cid;
+  char side;
+  ReadSeq read_seq;
+  UPCXX_SERIALIZED_FIELDS(cid, side, read_seq);
+};
+
 class CtgsWithReadsDHT {
+ public:
   using ctgs_map_t = HASH_TABLE<int64_t, CtgWithReads>;
+  static size_t get_target_rank(int64_t cid) { return std::hash<int64_t>{}(cid) % rank_n(); }
+
+ private:
   dist_object<ctgs_map_t> ctgs_map;
   ctgs_map_t::iterator ctgs_map_iter;
-
-  size_t get_target_rank(int64_t cid) { return std::hash<int64_t>{}(cid) % rank_n(); }
+  ThreeTierAggrStore<CtgData> ctg_store;
+  ThreeTierAggrStore<CtgReadData> ctg_read_store;
 
  public:
   CtgsWithReadsDHT(int64_t num_ctgs)
-      : ctgs_map({}) {
+      : ctgs_map({})
+      , ctg_store()
+      , ctg_read_store() {
     // pad the local ctg count a bit for this estimate
     ctgs_map->reserve(num_ctgs * 1.2);
+
+    ctg_store.set_update_func([&ctgs_map = this->ctgs_map](const CtgData &ctg_data) {
+      const auto it = ctgs_map->find(ctg_data.cid);
+      if (it != ctgs_map->end()) DIE("Found duplicate ctg ", ctg_data.cid);
+      CtgWithReads ctg_with_reads = {
+          .cid = ctg_data.cid, .seq = ctg_data.seq, .depth = ctg_data.depth, .reads_left = {}, .reads_right = {}};
+      ctgs_map->insert({ctg_data.cid, ctg_with_reads});
+    });
+    // TODO ctg_store.set_size();
+
+    ctg_read_store.set_update_func([&ctgs_map = this->ctgs_map](const CtgReadData &ctg_read_data) {
+      const auto it = ctgs_map->find(ctg_read_data.cid);
+      if (it == ctgs_map->end()) DIE("Could not find ctg ", ctg_read_data.cid);
+      const ReadSeq &read_seq = ctg_read_data.read_seq;
+      if (ctg_read_data.side == 'L')
+        it->second.reads_left.push_back(read_seq);
+      else
+        it->second.reads_right.push_back(read_seq);
+    });
   }
 
   void add_ctg(Contig &ctg) {
+    CtgData ctg_data = {ctg.id, ctg.seq, ctg.depth};
+    ctg_store.update(get_target_rank(ctg.id), ctg_data);
+    /*
     rpc(get_target_rank(ctg.id),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
           const auto it = ctgs_map->find(cid);
@@ -143,9 +224,16 @@ class CtgsWithReadsDHT {
         },
         ctgs_map, ctg.id, ctg.seq, ctg.depth)
         .wait();
+        */
   }
 
   void add_read(int64_t cid, char side, ReadSeq read_seq) {
+    CtgReadData ctg_read_data = {.cid = cid, .side = side, .read_seq = read_seq};
+    add_read(ctg_read_data);
+  }
+  void add_read(CtgReadData &ctg_read_data) {
+    ctg_read_store.update(get_target_rank(ctg_read_data.cid), ctg_read_data);
+    /*
     rpc(get_target_rank(cid),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
           const auto it = ctgs_map->find(cid);
@@ -157,6 +245,25 @@ class CtgsWithReadsDHT {
         },
         ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals)
         .wait();
+        */
+  }
+
+  void add_reads(vector<CtgReadData> &ctg_read_datas) {
+    for (auto &ctg_read_data : ctg_read_datas) {
+      add_read(ctg_read_data);
+    }
+    ctg_read_datas.clear();
+  }
+
+  void flush_ctg_updates() {
+    ctg_store.flush_updates();
+    ctg_store.clear();
+    // TODO ctg_read_store.set_size();
+  }
+
+  void flush_read_updates() {
+    ctg_read_store.flush_updates();
+    ctg_read_store.clear();
   }
 
   int64_t get_num_ctgs() { return reduce_one(ctgs_map->size(), op_fast_add, 0).wait(); }
@@ -267,42 +374,99 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
   BarrierTimer timer(__FILEFUNC__);
   int64_t num_reads = 0;
   int64_t num_read_maps_found = 0;
+  future<> all_done = make_future();
+  vector<CtgReadData> ctgs_to_add;
+
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
     string id, seq, quals;
-    ProgressBar progbar(packed_reads->get_local_num_reads(), "Processing reads");
-    size_t tot_bytes_read = 0;
+    ProgressBar progbar(packed_reads->get_local_num_reads() * 2, "Processing reads - two stage");
+    vector<vector<string>> rank_read_ids;
+    vector<vector<uint64_t>> rank_read_idx;
+    rank_read_ids.resize(rank_n());
+    rank_read_idx.resize(rank_n());
     while (true) {
       progress();
+      auto read_idx = packed_reads->get_read_index();
       if (!packed_reads->get_next_read(id, seq, quals)) break;
       progbar.update();
       // this happens when we have a placeholder entry because reads merged
       if (kmer_len > seq.length()) continue;
       num_reads++;
-      string seq_rc = revcomp(seq);
-      string quals_rc = quals;
-      reverse(quals_rc.begin(), quals_rc.end());
-      auto ctgs = reads_to_ctgs.get_ctgs(id);
-      if (ctgs.size()) {
-        num_read_maps_found++;
-        for (auto &ctg : ctgs) {
-          if ((ctg.orient == '-' && ctg.side == 'R') || (ctg.orient == '+' && ctg.side == 'L'))
-            ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq_rc, quals_rc});
-          else
-            ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq, quals});
-        }
-      }
+      auto target_rank = ReadsToCtgsDHT::get_target_rank(id);
+      rank_read_ids[target_rank].push_back(id);
+      rank_read_idx[target_rank].push_back(read_idx);
     }
-    progbar.done();
+
+    for (auto target_rank : foreach_rank_by_node()) {
+      progress();
+      auto &read_ids = rank_read_ids[target_rank];
+      auto &read_idxs = rank_read_idx[target_rank];
+      assert(read_ids.size() == read_idxs.size());
+      if (read_ids.empty()) continue;
+      auto read_ctgs_fut = reads_to_ctgs.get_ctgs(target_rank, read_ids);
+      auto fut = read_ctgs_fut.then(
+          [&read_ids, &read_idxs, &progbar, &packed_reads, &num_read_maps_found, &ctgs_to_add](vector<vector<CtgInfo>> read_ctgs) {
+            assert(read_ctgs.size() == read_ids.size());
+            string id, seq, quals, seq_rc, quals_rc;
+            for (size_t i = 0; i < read_ctgs.size(); i++) {
+              progbar.update();
+              auto &read_id = read_ids[i];
+              auto &read_idx = read_idxs[i];
+              auto &ctgs = read_ctgs[i];
+              if (ctgs.size()) {
+                num_read_maps_found++;
+                packed_reads->get_read(read_idx, id, seq, quals);
+                assert(id.compare(read_id) == 0);
+                bool was_revcomp = false;
+                for (auto &ctg : ctgs) {
+                  if ((ctg.orient == '-' && ctg.side == 'R') || (ctg.orient == '+' && ctg.side == 'L')) {
+                    if (!was_revcomp) {
+                      seq_rc = revcomp(seq);
+                      quals_rc = quals;
+                      reverse(quals_rc.begin(), quals_rc.end());
+                      was_revcomp = true;
+                    }
+                    ctgs_to_add.push_back({ctg.cid, ctg.side, {id, seq_rc, quals_rc}});
+                    // ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq_rc, quals_rc});
+                  } else {
+                    ctgs_to_add.push_back({ctg.cid, ctg.side, {id, seq, quals}});
+                    // ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq, quals});
+                  }
+                }
+              }
+              // clear out some memory
+              vector<string>().swap(read_ids);
+              vector<uint64_t>().swap(read_idxs);
+            }
+          });
+      limit_outstanding_futures(fut).wait();
+      ctgs_dht.add_reads(ctgs_to_add);
+    }
+
+    auto tot_num_reads_fut = reduce_one(num_reads, op_fast_add, 0);
+    auto tot_num_read_maps_found_fut = reduce_one(num_read_maps_found, op_fast_add, 0);
+    all_done = when_all(all_done, tot_num_reads_fut, tot_num_read_maps_found_fut)
+                   .then([](int64_t tot_num_reads, int64_t tot_num_read_maps_found) {
+                     SLOG_VERBOSE("Found ", perc_str(tot_num_read_maps_found, tot_num_reads), " reads that map to contigs\n");
+                   });
+    all_done = when_all(all_done, progbar.set_done());
   }
-  barrier();
-  auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Found ", perc_str(reduce_one(num_read_maps_found, op_fast_add, 0).wait(), tot_num_reads),
-               " reads that map to contigs\n");
+  auto all_outstanding = flush_outstanding_futures_async();
+  while (!all_outstanding.ready()) {
+    ctgs_dht.add_reads(ctgs_to_add);
+    progress();
+  }
+  ctgs_dht.add_reads(ctgs_to_add);
+  assert(flush_outstanding_futures_async().ready());
+  assert(ctgs_to_add.empty());
+  ctgs_dht.flush_read_updates();
+  all_done.wait();
+  // implicit barrier on exit
 }
 
-static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStatus &best_start_status, AlnStatus &best_end_status,
-                                  int64_t &num_alns_found, int64_t &num_alns_invalid) {
+static void get_best_aln_for_read(const Alns &alns, int64_t &i, Aln &best_aln, AlnStatus &best_start_status,
+                                  AlnStatus &best_end_status, int64_t &num_alns_found, int64_t &num_alns_invalid) {
   auto classify_aln = [](int runaligned, int cunaligned) -> AlnStatus {
     if (runaligned > cunaligned && cunaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::EXTENDS_CONTIG;
     if (runaligned <= cunaligned && runaligned < KLIGN_UNALIGNED_THRES) return AlnStatus::OVERLAPS_CONTIG;
@@ -316,7 +480,7 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
   int best_aln_score = 0;
   best_aln.read_id = "";
   for (; i < (int64_t)alns.size(); i++) {
-    Aln aln = alns.get_aln(i);
+    const Aln aln = alns.get_aln(i);
     // alns for a new read
     if (start_read_id != "" && aln.read_id != start_read_id) return;
     num_alns_found++;
@@ -342,7 +506,7 @@ static void get_best_aln_for_read(Alns &alns, int64_t &i, Aln &best_aln, AlnStat
   }
 }
 
-void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int insert_stddev) {
+void process_alns(const Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int insert_stddev) {
   auto pair_overlap = [](Aln &aln, int min_pair_len) -> bool {
     // make sure that the mate won't overlap the same contig
     if (aln.orient == '+') {
@@ -392,6 +556,7 @@ void process_alns(Alns &alns, ReadsToCtgsDHT &reads_to_ctgs, int insert_avg, int
       num_proj++;
     }
   }
+  reads_to_ctgs.flush_updates();
   progbar.done();
   barrier();
   t_get_alns.done_all();
@@ -412,6 +577,7 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
     ctgs_dht.add_ctg(*it);
     progress();
   }
+  ctgs_dht.flush_ctg_updates();
   progbar.done();
   barrier();
   SLOG_VERBOSE("Added ", ctgs_dht.get_num_ctgs(), " contigs\n");
@@ -538,68 +704,93 @@ static string iterative_walks(string &seq, int seq_depth, vector<ReadSeq> &reads
   return longest_walk;
 }
 
+struct WalkMetrics {
+  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0,
+          excess_reads = 0;
+  array<int64_t, 3> term_counts = {0};
+  WalkMetrics &operator+(const WalkMetrics &wm) {
+    num_walks += wm.num_walks;
+    sum_clen += wm.sum_clen;
+    max_walk_len += wm.max_walk_len;
+    num_reads += wm.num_reads;
+    num_sides += wm.num_sides;
+    max_num_reads = std::max(max_num_reads, wm.max_num_reads);
+    excess_reads += wm.excess_reads;
+    term_counts[0] += wm.term_counts[0];
+    term_counts[1] += wm.term_counts[1];
+    term_counts[2] += wm.term_counts[2];
+    return *this;
+  }
+};
+
+static void extend_ctg(CtgWithReads *ctg, WalkMetrics &wm, int insert_avg, int insert_stddev, int max_kmer_len, int kmer_len,
+                       int qual_offset, int walk_len_limit, IntermittentTimer &count_mers_timer,
+                       IntermittentTimer &walk_mers_timer) {
+  wm.sum_clen += ctg->seq.length();
+  if (ctg->reads_right.size()) {
+    wm.num_sides++;
+    wm.num_reads += ctg->reads_right.size();
+    wm.max_num_reads = max(wm.max_num_reads, (int64_t)ctg->reads_right.size());
+    DBG_VERBOSE("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
+    // have to do right first because the contig needs to be revcomped for the left
+    string right_walk =
+        iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset, walk_len_limit, wm.term_counts,
+                        wm.num_walks, wm.max_walk_len, wm.sum_ext, count_mers_timer, walk_mers_timer, wm.excess_reads);
+    if (!right_walk.empty()) ctg->seq += right_walk;
+  }
+  if (ctg->reads_left.size()) {
+    wm.num_sides++;
+    wm.num_reads += ctg->reads_left.size();
+    wm.max_num_reads = max(wm.max_num_reads, (int64_t)ctg->reads_left.size());
+    string seq_rc = revcomp(ctg->seq);
+    DBG_VERBOSE("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
+    string left_walk =
+        iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset, walk_len_limit, wm.term_counts,
+                        wm.num_walks, wm.max_walk_len, wm.sum_ext, count_mers_timer, walk_mers_timer, wm.excess_reads);
+    if (!left_walk.empty()) {
+      left_walk = revcomp(left_walk);
+      ctg->seq.insert(0, left_walk);
+    }
+  }
+}
+
 static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_avg, int insert_stddev, int max_kmer_len,
                         int kmer_len, int qual_offset) {
   BarrierTimer timer(__FILEFUNC__);
   // walk should never be more than this. Note we use the maximum insert size from all libraries
   int walk_len_limit = insert_avg + 2 * insert_stddev;
-  int64_t num_walks = 0, sum_clen = 0, sum_ext = 0, max_walk_len = 0, num_reads = 0, num_sides = 0, max_num_reads = 0,
-          excess_reads = 0;
-  array<int64_t, 3> term_counts = {0};
+  WalkMetrics wm;
+
   IntermittentTimer count_mers_timer(__FILENAME__ + string(":") + "count_mers"),
       walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
     progress();
     progbar.update();
-    sum_clen += ctg->seq.length();
-    if (ctg->reads_right.size()) {
-      num_sides++;
-      num_reads += ctg->reads_right.size();
-      max_num_reads = max(max_num_reads, (int64_t)ctg->reads_right.size());
-      DBG_VERBOSE("walk right ctg ", ctg->cid, " ", ctg->depth, "\n", ctg->seq, "\n");
-      // have to do right first because the contig needs to be revcomped for the left
-      string right_walk =
-          iterative_walks(ctg->seq, ctg->depth, ctg->reads_right, max_kmer_len, kmer_len, qual_offset, walk_len_limit, term_counts,
-                          num_walks, max_walk_len, sum_ext, count_mers_timer, walk_mers_timer, excess_reads);
-      if (!right_walk.empty()) ctg->seq += right_walk;
-    }
-    if (ctg->reads_left.size()) {
-      num_sides++;
-      num_reads += ctg->reads_left.size();
-      max_num_reads = max(max_num_reads, (int64_t)ctg->reads_left.size());
-      string seq_rc = revcomp(ctg->seq);
-      DBG_VERBOSE("walk left ctg ", ctg->cid, " ", ctg->depth, "\n", seq_rc, "\n");
-      string left_walk =
-          iterative_walks(seq_rc, ctg->depth, ctg->reads_left, max_kmer_len, kmer_len, qual_offset, walk_len_limit, term_counts,
-                          num_walks, max_walk_len, sum_ext, count_mers_timer, walk_mers_timer, excess_reads);
-      if (!left_walk.empty()) {
-        left_walk = revcomp(left_walk);
-        ctg->seq.insert(0, left_walk);
-      }
-    }
+    Contig ext_contig;
+    extend_ctg(ctg, wm, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, walk_len_limit, count_mers_timer,
+               walk_mers_timer);
     ctgs.add_contig({.id = ctg->cid, .seq = ctg->seq, .depth = ctg->depth});
   }
   progbar.done();
   count_mers_timer.done_all();
   walk_mers_timer.done_all();
   barrier();
-  SLOG_VERBOSE("Walk terminations: ", reduce_one(term_counts[0], op_fast_add, 0).wait(), " X, ",
-               reduce_one(term_counts[1], op_fast_add, 0).wait(), " F, ", reduce_one(term_counts[2], op_fast_add, 0).wait(),
+  SLOG_VERBOSE("Walk terminations: ", reduce_one(wm.term_counts[0], op_fast_add, 0).wait(), " X, ",
+               reduce_one(wm.term_counts[1], op_fast_add, 0).wait(), " F, ", reduce_one(wm.term_counts[2], op_fast_add, 0).wait(),
                " R\n");
-  auto tot_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto tot_num_walks = reduce_one(num_walks, op_fast_add, 0).wait();
-  auto tot_sum_ext = reduce_one(sum_ext, op_fast_add, 0).wait();
-  auto tot_sum_clen = reduce_one(sum_clen, op_fast_add, 0).wait();
-  auto tot_max_walk_len = reduce_one(max_walk_len, op_fast_max, 0).wait();
-  auto tot_excess_reads = reduce_one(excess_reads, op_fast_add, 0).wait();
+  auto tot_num_reads = reduce_one(wm.num_reads, op_fast_add, 0).wait();
+  auto tot_num_walks = reduce_one(wm.num_walks, op_fast_add, 0).wait();
+  auto tot_sum_ext = reduce_one(wm.sum_ext, op_fast_add, 0).wait();
+  auto tot_sum_clen = reduce_one(wm.sum_clen, op_fast_add, 0).wait();
+  auto tot_max_walk_len = reduce_one(wm.max_walk_len, op_fast_max, 0).wait();
+  auto tot_excess_reads = reduce_one(wm.excess_reads, op_fast_add, 0).wait();
   auto num_ctgs = ctgs_dht.get_num_ctgs();
-  auto tot_num_sides = reduce_one(num_sides, op_fast_add, 0).wait();
-  SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", max_num_reads, " avg per ctg ",
-               (num_ctgs > 0  ? (tot_num_reads / num_ctgs) : 0), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
+  auto tot_num_sides = reduce_one(wm.num_sides, op_fast_add, 0).wait();
+  SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", wm.max_num_reads, " avg per ctg ",
+               (num_ctgs > 0 ? (tot_num_reads / num_ctgs) : 0), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
                " excess reads\n");
-  SLOG_VERBOSE("Could walk ", perc_str(tot_num_sides, num_ctgs * 2),
-               " contig sides\n");
+  SLOG_VERBOSE("Could walk ", perc_str(tot_num_sides, num_ctgs * 2), " contig sides\n");
   if (tot_sum_clen)
     SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ",
                  (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
@@ -608,7 +799,7 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 }
 
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_reads_list, int insert_avg, int insert_stddev,
-               int qual_offset, Contigs &ctgs, Alns &alns) {
+               int qual_offset, Contigs &ctgs, const Alns &alns) {
   BarrierTimer timer(__FILEFUNC__);
   CtgsWithReadsDHT ctgs_dht(ctgs.size());
   add_ctgs(ctgs_dht, ctgs);
@@ -617,6 +808,8 @@ void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_rea
   process_alns(alns, reads_to_ctgs, insert_avg, insert_stddev);
   // extract read seqs and add to ctgs
   process_reads(max_kmer_len, packed_reads_list, reads_to_ctgs, ctgs_dht);
+  // free the reads_to_contigs map
+  reads_to_ctgs.clear();
   // clear out the local contigs
   ctgs.clear();
   ctgs.set_capacity(ctgs_dht.get_local_num_ctgs());
