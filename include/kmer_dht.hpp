@@ -187,7 +187,7 @@ class KmerDHT {
  public:
   using KmerMap = HASH_TABLE<Kmer<MAX_K>, KmerCounts, KmerHash<MAX_K>, KmerEqual<MAX_K>>;
 
-  // total bytes for k = 51: 16+18+18=52
+  // total bytes for k = 51: 16+2+2=20
   struct KmerAndExt {
     Kmer<MAX_K> kmer;
     char left, right;
