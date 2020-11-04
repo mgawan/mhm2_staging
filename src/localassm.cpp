@@ -79,7 +79,8 @@ class ReadsToCtgsDHT {
 
   void add(const string &read_id, int64_t cid, char orient, char side) {
     CtgInfo ctg_info = {.cid = cid, .orient = orient, .side = side};
-    rpc(get_target_rank(read_id),
+    rpc(
+        get_target_rank(read_id),
         [](dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id, CtgInfo ctg_info) {
           const auto it = reads_to_ctgs_map->find(read_id);
           if (it == reads_to_ctgs_map->end())
@@ -94,13 +95,14 @@ class ReadsToCtgsDHT {
   int64_t get_num_mappings() { return reduce_one(reads_to_ctgs_map->size(), op_fast_add, 0).wait(); }
 
   vector<CtgInfo> get_ctgs(string &read_id) {
-    return upcxx::rpc(get_target_rank(read_id),
-                      [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id) -> vector<CtgInfo> {
-                        const auto it = reads_to_ctgs_map->find(read_id);
-                        if (it == reads_to_ctgs_map->end()) return {};
-                        return it->second;
-                      },
-                      reads_to_ctgs_map, read_id)
+    return upcxx::rpc(
+               get_target_rank(read_id),
+               [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, string read_id) -> vector<CtgInfo> {
+                 const auto it = reads_to_ctgs_map->find(read_id);
+                 if (it == reads_to_ctgs_map->end()) return {};
+                 return it->second;
+               },
+               reads_to_ctgs_map, read_id)
         .wait();
   }
 };
@@ -134,7 +136,8 @@ class CtgsWithReadsDHT {
   }
 
   void add_ctg(Contig &ctg) {
-    rpc(get_target_rank(ctg.id),
+    rpc(
+        get_target_rank(ctg.id),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
           const auto it = ctgs_map->find(cid);
           if (it != ctgs_map->end()) DIE("Found duplicate ctg ", cid);
@@ -146,7 +149,8 @@ class CtgsWithReadsDHT {
   }
 
   void add_read(int64_t cid, char side, ReadSeq read_seq) {
-    rpc(get_target_rank(cid),
+    rpc(
+        get_target_rank(cid),
         [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
           const auto it = ctgs_map->find(cid);
           if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
@@ -185,8 +189,6 @@ struct MerFreqs {
   ExtCounts hi_q_exts, low_q_exts;
   // the final extensions chosen - A,C,G,T, or F,X
   char ext;
-  // the count of the final extension
-  int count;
 
   struct MerBase {
     char base;
@@ -228,7 +230,6 @@ struct MerFreqs {
     assert(top_rating >= runner_up_rating);
     int top_rated_base = mer_bases[0].base;
     ext = 'X';
-    count = 0;
     // no extension (base = 0) if the runner up is close to the top rating
     // except, if rating is 7 (best quality), then all bases of rating 7 are forks
     if (top_rating > LASSM_RATING_THRES) {  // must have at least minViable bases
@@ -249,12 +250,6 @@ struct MerFreqs {
           else if (mer_bases[1].nvotes > mer_bases[0].nvotes)
             ext = mer_bases[1].base;
         }
-      }
-    }
-    for (int i = 0; i < 4; i++) {
-      if (mer_bases[i].base == ext) {
-        count = mer_bases[i].nvotes;
-        break;
       }
     }
   }
@@ -420,6 +415,12 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
                        int64_t &excess_reads) {
   int num_reads = 0;
+  // rough estimate of number of kmers
+  int max_mers = 0;
+  for (int i = 0; i < min((int)reads.size(), (int)LASSM_MAX_COUNT_MERS_READS); i++) {
+    max_mers += reads[i].seq.length() - mer_len;
+  }
+  mers_ht.reserve(max_mers);
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
     num_reads++;
@@ -431,14 +432,11 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
     if (mer_len >= (int)read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
-      // skip mers that contain Ns
-      if (read_seq.seq.find("N", start) != string::npos) continue;
       string mer = read_seq.seq.substr(start, mer_len);
+      // skip mers that contain Ns
+      if (mer.find("N") != string::npos) continue;
       auto it = mers_ht.find(mer);
-      if (it == mers_ht.end()) {
-        mers_ht.insert({mer, {.hi_q_exts = {0}, .low_q_exts = {0}, .ext = 0, .count = 0}});
-        it = mers_ht.find(mer);
-      }
+      if (it == mers_ht.end()) it = mers_ht.insert({mer, {.hi_q_exts = {0}, .low_q_exts = {0}, .ext = 0}}).first;
       int ext_pos = start + mer_len;
       assert(ext_pos < (int)read_seq.seq.length());
       char ext = read_seq.seq[ext_pos];
@@ -596,10 +594,9 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   auto num_ctgs = ctgs_dht.get_num_ctgs();
   auto tot_num_sides = reduce_one(num_sides, op_fast_add, 0).wait();
   SLOG_VERBOSE("Used a total of ", tot_num_reads, " reads, max per ctg ", max_num_reads, " avg per ctg ",
-               (num_ctgs > 0  ? (tot_num_reads / num_ctgs) : 0), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
+               (num_ctgs > 0 ? (tot_num_reads / num_ctgs) : 0), ", dropped ", perc_str(tot_excess_reads, tot_num_reads),
                " excess reads\n");
-  SLOG_VERBOSE("Could walk ", perc_str(tot_num_sides, num_ctgs * 2),
-               " contig sides\n");
+  SLOG_VERBOSE("Could walk ", perc_str(tot_num_sides, num_ctgs * 2), " contig sides\n");
   if (tot_sum_clen)
     SLOG_VERBOSE("Found ", tot_num_walks, " walks, total extension length ", tot_sum_ext, " extended ",
                  (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
