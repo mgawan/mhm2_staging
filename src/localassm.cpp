@@ -428,7 +428,6 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
       excess_reads += reads.size() - LASSM_MAX_COUNT_MERS_READS;
       break;
     }
-    progress();
     if (mer_len >= (int)read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
@@ -457,7 +456,6 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, i
   HASH_TABLE<string, bool> loop_check_ht;
   char walk_result = 'X';
   for (int nsteps = 0; nsteps < walk_len_limit; nsteps++) {
-    if (!(nsteps % 10)) progress();
     // check for a cycle in the graph
     if (loop_check_ht.find(mer) != loop_check_ht.end()) {
       walk_result = 'R';
@@ -548,7 +546,6 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
-    progress();
     progbar.update();
     sum_clen += ctg->seq.length();
     if (ctg->reads_right.size()) {
