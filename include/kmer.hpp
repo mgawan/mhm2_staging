@@ -235,14 +235,25 @@ class Kmer {
   }
 
   uint64_t minimizer_hash() const {
-    const int M = 11;
+    const int M = 15;
     char s[200];
     to_string(s);
     char *min_s = s;
-    for (int i = 1; i <= Kmer::k - M; i++) {
+    for (int i = 1; i < Kmer::k - M; i++) {
       if (strncmp(s + i, min_s, M) < 0) min_s = s + i;
     }
     return MurmurHash3_x64_64(reinterpret_cast<const void *>(min_s), M);
+  }
+
+  std::string get_minimizer(int m) {
+    char s[200];
+    to_string(s);
+    char *min_s = s;
+    for (int i = 1; i < Kmer::k - m; i++) {
+      if (strncmp(s + i, min_s, m) < 0) min_s = s + i;
+    }
+    min_s[m] = '\0';
+    return std::string(min_s);
   }
 
   uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }

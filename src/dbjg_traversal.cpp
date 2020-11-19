@@ -147,13 +147,13 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 }
 #endif
 
-static int64_t _num_local_rpcs = 0;
+static int64_t _num_rank_me_rpcs = 0;
 static int64_t _num_node_rpcs = 0;
 static int64_t _num_rpcs = 0;
 
 template <int MAX_K>
-static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext,
-                                      global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
+static StepInfo get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext,
+                              global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
   auto kmer_rc = kmer.revcomp();
   bool is_rc = false;
   if (kmer_rc < kmer) {
@@ -162,11 +162,40 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kme
   }
   auto target_rank = kmer_dht->get_kmer_target_rank(kmer);
   if (target_rank == rank_me())
-    _num_local_rpcs++;
+    _num_rank_me_rpcs++;
   else if (local_team_contains(target_rank))
     _num_node_rpcs++;
   else
     _num_rpcs++;
+  if (target_rank == rank_me()) {
+    KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
+    // this kmer doesn't exist, abort
+    if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND, };
+    char left = kmer_counts->left;
+    char right = kmer_counts->right;
+    if (left == 'X' || right == 'X') return {.walk_status = WalkStatus::DEADEND};
+    if (left == 'F' || right == 'F') return {.walk_status = WalkStatus::FORK};
+    if (is_rc) {
+      left = comp_nucleotide(left);
+      right = comp_nucleotide(right);
+      swap(left, right);
+    }
+    // check for conflicts
+    if (prev_ext && ((dirn == Dirn::LEFT && prev_ext != right) || (dirn == Dirn::RIGHT && prev_ext != left)))
+      return {.walk_status = WalkStatus::CONFLICT};
+    // if visited by another rank first
+    if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
+      return {.walk_status = WalkStatus::VISITED,
+          .count = 0,
+          .left = 0,
+          .right = 0,
+          .visited_frag_elem_gptr = kmer_counts->uutig_frag};
+    // a repeat, abort (but allowed if traversing right after adding start kmer previously)
+    if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) return {.walk_status = WalkStatus::REPEAT};
+    // mark as visited
+    kmer_counts->uutig_frag = frag_elem_gptr;
+    return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
+  }
   return rpc(
       target_rank,
       [](dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, bool revisit_allowed, bool is_rc,
@@ -202,7 +231,7 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kme
         kmer_counts->uutig_frag = frag_elem_gptr;
         return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .left = left, .right = right};
       },
-      kmer_dht, kmer, dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr);
+      kmer_dht, kmer, dirn, prev_ext, revisit_allowed, is_rc, frag_elem_gptr).wait();
 }
 
 template <int MAX_K>
@@ -216,7 +245,7 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
   if (dirn == Dirn::RIGHT) uutig += substr_view(kmer_str, 1, kmer_str.length() - 2);
   while (true) {
     // progress();
-    auto step_info = get_next_step(kmer_dht, kmer, dirn, prev_ext, frag_elem_gptr, revisit_allowed).wait();
+    auto step_info = get_next_step(kmer_dht, kmer, dirn, prev_ext, frag_elem_gptr, revisit_allowed);
     revisit_allowed = false;
     if (step_info.walk_status != WalkStatus::RUNNING) {
       walk_term_stats.update(step_info.walk_status);
@@ -246,7 +275,7 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
 template <int MAX_K>
 static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
   BarrierTimer timer(__FILEFUNC__);
-  _num_local_rpcs = 0;
+  _num_rank_me_rpcs = 0;
   _num_node_rpcs = 0;
   _num_rpcs = 0;
   // allocate space for biggest possible uutig in global storage
@@ -281,12 +310,13 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer
   }
   progbar.done();
   barrier();
-  auto tot_local_rpcs = reduce_one(_num_local_rpcs, op_fast_add, 0).wait();
+  auto tot_rank_me_rpcs = reduce_one(_num_rank_me_rpcs, op_fast_add, 0).wait();
   auto tot_node_rpcs = reduce_one(_num_node_rpcs, op_fast_add, 0).wait();
   auto tot_other_rpcs = reduce_one(_num_rpcs, op_fast_add, 0).wait();
-  auto tot_rpcs = tot_local_rpcs + tot_node_rpcs + tot_other_rpcs;
-  SLOG(KLRED, "Required ", tot_rpcs, " rpcs, of which ", perc_str(tot_local_rpcs, tot_rpcs), " were local and ",
-       perc_str(tot_node_rpcs, tot_rpcs), " were intra-node", KNORM, "\n");
+  auto tot_rpcs = tot_rank_me_rpcs + tot_node_rpcs + tot_other_rpcs;
+  SLOG(KLRED, "Required ", tot_rpcs, " rpcs, of which ", perc_str(tot_rank_me_rpcs, tot_rpcs), " were same rank, ",
+       perc_str(tot_node_rpcs, tot_rpcs), " were intra-node, and ", perc_str(tot_rpcs - tot_node_rpcs - tot_rank_me_rpcs, tot_rpcs),
+       " were inter-node", KNORM, "\n");
   walk_term_stats.print();
 }
 

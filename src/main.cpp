@@ -53,6 +53,8 @@
 #include "upcxx_utils/thread_pool.hpp"
 #include "utils.hpp"
 
+#include "kmer.hpp"
+
 using std::fixed;
 using std::setprecision;
 
@@ -71,6 +73,19 @@ int main(int argc, char **argv) {
     _gasnet_stats_stage = string(gasnet_stats_stage);
   }
 #endif
+
+  if (!rank_me()) {
+    string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCCCCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAA");
+    Kmer<64>::set_k(21);
+    vector<Kmer<64>> kmers;
+    Kmer<64>::get_kmers(21, seq, kmers);
+
+    for (auto &kmer : kmers) {
+      cout << kmer.to_string() << " " << kmer.get_minimizer(11) << endl;
+    }
+  }
+  
+  
   // we wish to have all ranks start at the same time to determine actual timing
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();

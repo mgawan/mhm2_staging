@@ -501,7 +501,7 @@ class KmerDHT {
 
   double get_estimated_error_rate() { return estimated_error_rate; }
 
-  // upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
+  //upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
   upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return kmer.minimizer_hash() % rank_n(); }
 
   KmerCounts *get_local_kmer_counts(Kmer<MAX_K> &kmer) {
