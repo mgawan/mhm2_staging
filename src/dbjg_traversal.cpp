@@ -147,6 +147,10 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 }
 #endif
 
+static int64_t _num_local_rpcs = 0;
+static int64_t _num_node_rpcs = 0;
+static int64_t _num_rpcs = 0;
+
 template <int MAX_K>
 static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext,
                                       global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
@@ -156,8 +160,15 @@ static future<StepInfo> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kme
     kmer = kmer_rc;
     is_rc = true;
   }
+  auto target_rank = kmer_dht->get_kmer_target_rank(kmer);
+  if (target_rank == rank_me())
+    _num_local_rpcs++;
+  else if (local_team_contains(target_rank))
+    _num_node_rpcs++;
+  else
+    _num_rpcs++;
   return rpc(
-      kmer_dht->get_kmer_target_rank(kmer),
+      target_rank,
       [](dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, bool revisit_allowed, bool is_rc,
          global_ptr<FragElem> frag_elem_gptr) -> StepInfo {
         KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
@@ -235,6 +246,9 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
 template <int MAX_K>
 static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
   BarrierTimer timer(__FILEFUNC__);
+  _num_local_rpcs = 0;
+  _num_node_rpcs = 0;
+  _num_rpcs = 0;
   // allocate space for biggest possible uutig in global storage
   WalkTermStats walk_term_stats = {0};
   int64_t num_walks = 0;
@@ -267,6 +281,12 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer
   }
   progbar.done();
   barrier();
+  auto tot_local_rpcs = reduce_one(_num_local_rpcs, op_fast_add, 0).wait();
+  auto tot_node_rpcs = reduce_one(_num_node_rpcs, op_fast_add, 0).wait();
+  auto tot_other_rpcs = reduce_one(_num_rpcs, op_fast_add, 0).wait();
+  auto tot_rpcs = tot_local_rpcs + tot_node_rpcs + tot_other_rpcs;
+  SLOG(KLRED, "Required ", tot_rpcs, " rpcs, of which ", perc_str(tot_local_rpcs, tot_rpcs), " were local and ",
+       perc_str(tot_node_rpcs, tot_rpcs), " were intra-node", KNORM, "\n");
   walk_term_stats.print();
 }
 

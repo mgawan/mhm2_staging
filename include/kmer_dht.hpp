@@ -501,7 +501,8 @@ class KmerDHT {
 
   double get_estimated_error_rate() { return estimated_error_rate; }
 
-  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
+  // upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
+  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return kmer.minimizer_hash() % rank_n(); }
 
   KmerCounts *get_local_kmer_counts(Kmer<MAX_K> &kmer) {
     const auto it = kmers->find(kmer);
@@ -509,34 +510,7 @@ class KmerDHT {
     return &it->second;
   }
 
-  int32_t get_kmer_count(Kmer<MAX_K> &kmer) {
-    return rpc(
-               get_kmer_target_rank(kmer),
-               [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> uint16_t {
-                 const auto it = kmers->find(kmer);
-                 if (it == kmers->end())
-                   return 0;
-                 else
-                   return it->second.count;
-               },
-               kmer, kmers)
-        .wait();
-  }
-
-  global_ptr<FragElem> get_kmer_uutig_frag(Kmer<MAX_K> kmer) {
-    Kmer<MAX_K> kmer_rc = kmer.revcomp();
-    if (kmer_rc < kmer) kmer = kmer_rc;
-    return rpc(
-               get_kmer_target_rank(kmer),
-               [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> global_ptr<FragElem> {
-                 const auto it = kmers->find(kmer);
-                 if (it == kmers->end()) DIE("kmer not found ", kmer);
-                 return it->second.uutig_frag;
-               },
-               kmer, kmers)
-        .wait();
-  }
-
+#ifdef DEBUG
   bool kmer_exists(Kmer<MAX_K> kmer) {
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer = kmer_rc;
@@ -550,6 +524,7 @@ class KmerDHT {
                kmer, kmers)
         .wait();
   }
+#endif
 
   void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, uint16_t count) {
     // get the lexicographically smallest
