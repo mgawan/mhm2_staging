@@ -370,6 +370,29 @@ class Kmer {
     return km;
   }
 
+  char front() {
+    switch (((longs[0]) >> (2 * (31))) & 0x03) {
+      case 0x00: return 'A';
+      case 0x01: return 'C';
+      case 0x02: return 'G';
+      case 0x03: return 'T';
+      default: return 'N';
+    }
+  }
+
+  char back() {
+    size_t i = Kmer::k - 1;
+    int j = i % 32;
+    int l = i / 32;
+    switch (((longs[l]) >> (2 * (31 - j))) & 0x03) {
+      case 0x00: return 'A';
+      case 0x01: return 'C';
+      case 0x02: return 'G';
+      case 0x03: return 'T';
+      default: return 'N';
+    }
+  }
+  
   void to_string(char *s) const {
     size_t i, j, l;
     for (i = 0; i < Kmer::k; i++) {

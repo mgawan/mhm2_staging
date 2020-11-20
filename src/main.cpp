@@ -76,12 +76,16 @@ int main(int argc, char **argv) {
 /*
   barrier();
   if (!rank_me()) {
-    int kmer_len = 99;
+    int kmer_len = 33;
     int m_len = 11;
     string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCCCCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAA");
     Kmer<128>::set_k(kmer_len);
     vector<Kmer<128>> kmers;
     Kmer<128>::get_kmers(kmer_len, seq, kmers);
+    for (auto &kmer : kmers) {
+      cout << kmer.back() << " " << kmer << " " << kmer.front() << endl;
+    }
+
 
     auto t = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 100000; i++) {
@@ -147,6 +151,7 @@ int main(int argc, char **argv) {
     cout << "opt mers: found " << kmers.size() << " kmers (" << tot_kmer_lens << " bytes) and reduced to "
          << opt_supermers.size() << " supermers (" << tot_slen_opt << " bytes). Reduction in size is "
          << (double)tot_slen_opt / tot_kmer_lens << "\n";
+
   }
   barrier();
   return 0;
