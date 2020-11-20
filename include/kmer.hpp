@@ -234,26 +234,78 @@ class Kmer {
     }
   }
 
-  uint64_t minimizer_hash() const {
-    const int M = 15;
-    char s[200];
-    to_string(s);
-    char *min_s = s;
-    for (int i = 1; i < Kmer::k - M; i++) {
-      if (strncmp(s + i, min_s, M) < 0) min_s = s + i;
+  std::string mer_to_string(longs_t mmer, int m) {
+    char buf[33] = "";
+    char *s = buf;
+    for (int j = 0; j < m; j++) {
+      switch ((mmer >> (2 * (31 - j))) & 0x03) {
+        case 0x00:
+          *s = 'A';
+          ++s;
+          break;
+        case 0x01:
+          *s = 'C';
+          ++s;
+          break;
+        case 0x02:
+          *s = 'G';
+          ++s;
+          break;
+        case 0x03:
+          *s = 'T';
+          ++s;
+          break;
+      }
     }
-    return MurmurHash3_x64_64(reinterpret_cast<const void *>(min_s), M);
+    *s = '\0';
+    return std::string(buf);
   }
-
+  
   std::string get_minimizer(int m) {
     char s[200];
     to_string(s);
     char *min_s = s;
-    for (int i = 1; i < Kmer::k - m; i++) {
-      if (strncmp(s + i, min_s, m) < 0) min_s = s + i;
+    for (int i = 1; i <= Kmer::k - m; i++) {
+      if (strncmp(s + i, min_s, m) > 0) min_s = s + i;
     }
     min_s[m] = '\0';
     return std::string(min_s);
+  }
+
+  std::string get_minimizer_opt(int m) {
+    uint64_t minimizer = 0;
+//    std::cout << std::endl;
+    for (int i = 0; i <= Kmer::k - m; i++) {
+      int j = i % 32;
+      int l = i / 32;
+      longs_t mmer = ((longs[l]) << (2 * j)) & ZERO_MASK[m];
+//      std::cout << std::string(i, ' ') << mer_to_string(mmer, m) << "\n";
+      if (mmer > minimizer) minimizer = mmer;
+    }
+//    std::cout << minimizer << " ";
+    return mer_to_string(minimizer, m);
+  }
+
+  uint64_t minimizer_hash(int m) const {
+    char s[200];
+    to_string(s);
+    char *min_s = s;
+    for (int i = 1; i <= Kmer::k - m; i++) {
+      if (strncmp(s + i, min_s, m) > 0) min_s = s + i;
+    }
+    min_s[m] = '\0';
+    return MurmurHash3_x64_64(reinterpret_cast<const void *>(min_s), m);
+  }
+
+  uint64_t minimizer_hash_opt(int m) const {
+    uint64_t minimizer = 0;
+    for (int i = 0; i <= Kmer::k - m; i++) {
+      int j = i % 32;
+      int l = i / 32;
+      longs_t mmer = ((longs[l]) << (2 * j)) & ZERO_MASK[m];
+      if (mmer > minimizer) minimizer = mmer;
+    }
+    return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
   }
 
   uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }

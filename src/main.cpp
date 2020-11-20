@@ -73,19 +73,84 @@ int main(int argc, char **argv) {
     _gasnet_stats_stage = string(gasnet_stats_stage);
   }
 #endif
-
+/*
+  barrier();
   if (!rank_me()) {
+    int kmer_len = 99;
+    int m_len = 11;
     string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCCCCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAA");
-    Kmer<64>::set_k(21);
-    vector<Kmer<64>> kmers;
-    Kmer<64>::get_kmers(21, seq, kmers);
+    Kmer<128>::set_k(kmer_len);
+    vector<Kmer<128>> kmers;
+    Kmer<128>::get_kmers(kmer_len, seq, kmers);
 
-    for (auto &kmer : kmers) {
-      cout << kmer.to_string() << " " << kmer.get_minimizer(11) << endl;
+    auto t = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 100000; i++) {
+      for (auto &kmer : kmers) {
+        kmer.minimizer_hash(11);
+      }
     }
+    std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
+    cout << "kmer unpacked minimizers took " << t_elapsed.count() << endl;
+
+    t = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 100000; i++) {
+      for (auto &kmer : kmers) {
+        kmer.minimizer_hash_opt(11);
+      }
+    }
+    t_elapsed = std::chrono::high_resolution_clock::now() - t;
+    cout << "kmer opt minimizers took " << t_elapsed.count() << endl;
+
+    vector<int> supermers;
+    vector<int> opt_supermers;
+    string prev_minimizer = "";
+    string prev_minz_opt = "";
+    supermers.push_back(kmer_len);
+    opt_supermers.push_back(kmer_len);
+    for (auto &kmer : kmers) {
+      auto minimizer = kmer.get_minimizer(m_len);
+      if (prev_minimizer == "") {
+        prev_minimizer = minimizer;
+      } else {
+        if (prev_minimizer == minimizer) {
+          supermers.back()++;
+        } else {
+          supermers.push_back(kmer_len);
+          prev_minimizer = minimizer;
+        }
+      }
+      auto opt_minimizer = kmer.get_minimizer_opt(m_len);
+      if (prev_minz_opt == "") {
+        prev_minz_opt = opt_minimizer;
+      } else {
+        if (prev_minz_opt == opt_minimizer) {
+          opt_supermers.back()++;
+        } else {
+          opt_supermers.push_back(kmer_len);
+          prev_minz_opt = opt_minimizer;
+        }
+      }
+      auto minz = kmer.minimizer_hash(m_len);
+      auto opt_minz = kmer.minimizer_hash_opt(m_len);
+      cout << kmer.to_string() << " " << minimizer << " " << opt_minimizer << (opt_minimizer != minimizer ? " * " : " ")
+           << minz << " " << opt_minz << endl << std::flush; 
+    }
+    int tot_slen = 0;
+    int tot_kmer_lens = kmer_len * kmers.size();
+    for (auto l : supermers) tot_slen += l;
+    cout << "Unpacked mers: found " << kmers.size() << " kmers (" << tot_kmer_lens << " bytes) and reduced to "
+         << supermers.size() << " supermers (" << tot_slen << " bytes). Reduction in size is "
+         << (double)tot_slen / tot_kmer_lens << "\n";
+    
+    int tot_slen_opt = 0;
+    for (auto l : opt_supermers) tot_slen_opt += l;
+    cout << "opt mers: found " << kmers.size() << " kmers (" << tot_kmer_lens << " bytes) and reduced to "
+         << opt_supermers.size() << " supermers (" << tot_slen_opt << " bytes). Reduction in size is "
+         << (double)tot_slen_opt / tot_kmer_lens << "\n";
   }
-  
-  
+  barrier();
+  return 0;
+*/
   // we wish to have all ranks start at the same time to determine actual timing
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
