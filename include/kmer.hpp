@@ -265,24 +265,37 @@ class Kmer {
     char s[200];
     to_string(s);
     char *min_s = s;
+    //std::cout << std::endl;
     for (int i = 1; i <= Kmer::k - m; i++) {
+      char *minimizer = strndup(s + i, m);
+      //std::cout << std::string(i, ' ') << minimizer << "\n";
       if (strncmp(s + i, min_s, m) > 0) min_s = s + i;
     }
     min_s[m] = '\0';
+    //std::cout << min_s << " ";
     return std::string(min_s);
   }
 
   std::string get_minimizer_opt(int m) {
     uint64_t minimizer = 0;
-//    std::cout << std::endl;
+    //std::cout << std::endl;
     for (int i = 0; i <= Kmer::k - m; i++) {
       int j = i % 32;
       int l = i / 32;
       longs_t mmer = ((longs[l]) << (2 * j)) & ZERO_MASK[m];
-//      std::cout << std::string(i, ' ') << mer_to_string(mmer, m) << "\n";
+      if (j > 32 - m) {
+        // short minimizer - need to get extra from next long
+        if (l < N_LONGS - 1) {
+          int m_overlap = j + m - 32;
+          longs_t next_mmer = (((longs[l + 1]) << (2 * (l * 32))) & ZERO_MASK[m_overlap]) >> 2 * (m - m_overlap);
+          //std::cout << std::string(i, ' ') << mer_to_string(next_mmer, m) << "\n";
+          mmer |= next_mmer;
+        }
+      }
+      //std::cout << std::string(i, ' ') << mer_to_string(mmer, m) << " " << l << " " << i << " " << j << "\n";
       if (mmer > minimizer) minimizer = mmer;
     }
-//    std::cout << minimizer << " ";
+    //std::cout << minimizer << " ";
     return mer_to_string(minimizer, m);
   }
 
@@ -303,6 +316,13 @@ class Kmer {
       int j = i % 32;
       int l = i / 32;
       longs_t mmer = ((longs[l]) << (2 * j)) & ZERO_MASK[m];
+      if (j > 32 - m) {
+        if (l < N_LONGS - 1) {
+          int m_overlap = j + m - 32;
+          longs_t next_mmer = (((longs[l + 1]) << (64 * l)) & ZERO_MASK[m_overlap]) >> 2 * (m - m_overlap);
+          mmer |= next_mmer;
+        }
+      }
       if (mmer > minimizer) minimizer = mmer;
     }
     return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));

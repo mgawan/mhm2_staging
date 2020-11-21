@@ -63,30 +63,24 @@ using namespace upcxx_utils;
 void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elapsed_write_io_t,
                  vector<PackedReads *> &packed_reads_list, bool checkpoint);
 
-int main(int argc, char **argv) {
-  upcxx::init();
-#if defined(ENABLE_GASNET_STATS)
-  const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
-  const char *gasnet_statsfile = getenv("GASNET_STATSFILE");
-  if (gasnet_stats_stage && gasnet_statsfile) {
-    mhm2_stats_set_mask("");
-    _gasnet_stats_stage = string(gasnet_stats_stage);
-  }
-#endif
-/*
+
+static void test_kmer_hashes() {
   barrier();
   if (!rank_me()) {
-    int kmer_len = 33;
-    int m_len = 11;
-    string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCCCCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAA");
+    int kmer_len = 77;
+    int m_len = 15;
+    string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCCCCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAC");
     Kmer<128>::set_k(kmer_len);
     vector<Kmer<128>> kmers;
     Kmer<128>::get_kmers(kmer_len, seq, kmers);
+    /*
     for (auto &kmer : kmers) {
-      cout << kmer.back() << " " << kmer << " " << kmer.front() << endl;
+      cout << kmer << kmer.get_minimizer_opt(m_len) << endl << kmer << endl;
+ //      cout << kmer << kmer.get_minimizer(11) << endl << kmer << endl;
+      break;
     }
-
-
+    */
+    
     auto t = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 100000; i++) {
       for (auto &kmer : kmers) {
@@ -154,8 +148,21 @@ int main(int argc, char **argv) {
 
   }
   barrier();
-  return 0;
-*/
+  upcxx::finalize();
+  exit(0);
+}
+
+int main(int argc, char **argv) {
+  upcxx::init();
+#if defined(ENABLE_GASNET_STATS)
+  const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
+  const char *gasnet_statsfile = getenv("GASNET_STATSFILE");
+  if (gasnet_stats_stage && gasnet_statsfile) {
+    mhm2_stats_set_mask("");
+    _gasnet_stats_stage = string(gasnet_stats_stage);
+  }
+#endif
+  //test_kmer_hashes();
   // we wish to have all ranks start at the same time to determine actual timing
   barrier();
   auto start_t = std::chrono::high_resolution_clock::now();
