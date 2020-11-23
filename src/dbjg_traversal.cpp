@@ -88,13 +88,16 @@ struct FragElem {
       , visited(false) {}
 };
 
+template <int MAX_K>
 struct StepInfo {
   WalkStatus walk_status;
   ext_count_t count;
+  char prev_ext;
   char next_ext;
   global_ptr<FragElem> visited_frag_elem_gptr;
-  string uutig_frag;
-  UPCXX_SERIALIZED_FIELDS(walk_status, count, next_ext, visited_frag_elem_gptr, uutig_frag);
+  string uutig;
+  Kmer<MAX_K> kmer;
+  UPCXX_SERIALIZED_FIELDS(walk_status, count, prev_ext, next_ext, visited_frag_elem_gptr, uutig, kmer);
 };
 
 struct WalkTermStats {
@@ -149,88 +152,87 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 }
 #endif
 
+template <int MAX_K>
+StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, char next_ext,
+                              bool revisit_allowed, bool is_rc, global_ptr<FragElem> frag_elem_gptr) {
+  KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
+  // this kmer doesn't exist, abort
+  if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND};
+  char left = kmer_counts->left;
+  char right = kmer_counts->right;
+  if (left == 'X' || right == 'X') return {.walk_status = WalkStatus::DEADEND};
+  if (left == 'F' || right == 'F') return {.walk_status = WalkStatus::FORK};
+  if (is_rc) {
+    left = comp_nucleotide(left);
+    right = comp_nucleotide(right);
+    swap(left, right);
+  }
+  // check for conflicts
+  if (prev_ext && ((dirn == Dirn::LEFT && prev_ext != right) || (dirn == Dirn::RIGHT && prev_ext != left)))
+    return {.walk_status = WalkStatus::CONFLICT};
+  // if visited by another rank first
+  if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
+    return {.walk_status = WalkStatus::VISITED,
+            //            .count = 0,
+            //.prev_ext = 0,
+            //.next_ext = 0,
+            .visited_frag_elem_gptr = kmer_counts->uutig_frag};
+  // a repeat, abort (but allowed if traversing right after adding start kmer previously)
+  if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) return {.walk_status = WalkStatus::REPEAT};
+  // mark as visited
+  kmer_counts->uutig_frag = frag_elem_gptr;
+  string uutig;
+  uutig += next_ext;
+  next_ext = (dirn == Dirn::LEFT ? left : right);
+  if (is_rc) kmer = kmer.revcomp();
+  if (dirn == Dirn::LEFT) {
+    prev_ext = kmer.back();
+    kmer = kmer.backward_base(next_ext);
+  } else {
+    prev_ext = kmer.front();
+    kmer = kmer.forward_base(next_ext);
+  }
+  return {.walk_status = WalkStatus::RUNNING,
+          .count = kmer_counts->count,
+          .prev_ext = prev_ext,
+          .next_ext = next_ext,
+          .uutig = uutig,
+          .kmer = kmer};
+}
+
 static int64_t _num_rank_me_rpcs = 0;
 static int64_t _num_node_rpcs = 0;
 static int64_t _num_rpcs = 0;
 
 template <int MAX_K>
-static StepInfo get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, char next_ext,
-                              global_ptr<FragElem> frag_elem_gptr, bool revisit_allowed) {
-  auto kmer_rc = kmer.revcomp();
-  bool is_rc = false;
-  if (kmer_rc < kmer) {
-    kmer = kmer_rc;
-    is_rc = true;
-  }
-  auto target_rank = kmer_dht->get_kmer_target_rank(kmer);
-  if (target_rank == rank_me())
-    _num_rank_me_rpcs++;
-  else if (local_team_contains(target_rank))
-    _num_node_rpcs++;
-  else
-    _num_rpcs++;
-  auto get_ext = [](dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, char next_ext,
-                    bool revisit_allowed, bool is_rc, global_ptr<FragElem> frag_elem_gptr) -> StepInfo {
-    /*
-    auto target_rank = rank_me();
-    int64_t sum_depths = 0;
-    string uutig = "";
-        while (true) {
-          */
-    KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
-    // this kmer doesn't exist, abort
-    if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND};
-    char left = kmer_counts->left;
-    char right = kmer_counts->right;
-    if (left == 'X' || right == 'X') return {.walk_status = WalkStatus::DEADEND};
-    if (left == 'F' || right == 'F') return {.walk_status = WalkStatus::FORK};
-    if (is_rc) {
-      left = comp_nucleotide(left);
-      right = comp_nucleotide(right);
-      swap(left, right);
-    }
-    // check for conflicts
-    if (prev_ext && ((dirn == Dirn::LEFT && prev_ext != right) || (dirn == Dirn::RIGHT && prev_ext != left)))
-      return {.walk_status = WalkStatus::CONFLICT};
-    // if visited by another rank first
-    if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
-      return {.walk_status = WalkStatus::VISITED, .count = 0, .next_ext = 0, .visited_frag_elem_gptr = kmer_counts->uutig_frag};
-    // a repeat, abort (but allowed if traversing right after adding start kmer previously)
-    if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) return {.walk_status = WalkStatus::REPEAT};
-    // mark as visited
-    kmer_counts->uutig_frag = frag_elem_gptr;
-    return {.walk_status = WalkStatus::RUNNING, .count = kmer_counts->count, .next_ext = (dirn == Dirn::LEFT ? left : right)};
-    /*
-          sum_depths += step_info.count;
-          uutig += next_ext;
-          next_ext = step_info.next_ext;
-          if (dirn == Dirn::LEFT) {
-            prev_ext = kmer.back();
-            kmer = kmer.backward_base(next_ext);
-          } else {
-            prev_ext = kmer.front();
-            kmer = kmer.forward_base(next_ext);
-          }
-          if (next_ext == 'X' || next_ext == 'F') DIE("Found X or F");
-          target_rank = 1;
-          if (target_rank != rank_me())
-          */
-    //}
-  };
-  return rpc(target_rank, get_ext, kmer_dht, kmer, dirn, prev_ext, next_ext, revisit_allowed, is_rc, frag_elem_gptr).wait();
-}
-
-template <int MAX_K>
 static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer,
                                           global_ptr<FragElem> frag_elem_gptr, Dirn dirn, string &uutig, int64_t &sum_depths,
                                           WalkTermStats &walk_term_stats) {
-  auto kmer_str = kmer.to_string();
   char prev_ext = 0;
-  char next_ext = (dirn == Dirn::LEFT ? kmer_str.front() : kmer_str.back());
+  char next_ext = (dirn == Dirn::LEFT ? kmer.front() : kmer.back());
   bool revisit_allowed = (dirn == Dirn::LEFT ? false : true);
-  if (dirn == Dirn::RIGHT) uutig += substr_view(kmer_str, 1, kmer_str.length() - 2);
+  if (dirn == Dirn::RIGHT) {
+    string kmer_str = kmer.to_string();
+    uutig += substr_view(kmer_str, 1, kmer_str.length() - 2);
+  }
   while (true) {
-    auto step_info = get_next_step(kmer_dht, kmer, dirn, prev_ext, next_ext, frag_elem_gptr, revisit_allowed);
+    Kmer<MAX_K> next_kmer = kmer;
+    auto kmer_rc = kmer.revcomp();
+    bool is_rc = false;
+    if (kmer_rc < kmer) {
+      next_kmer = kmer_rc;
+      is_rc = true;
+    }
+    auto target_rank = kmer_dht->get_kmer_target_rank(next_kmer);
+    if (target_rank == rank_me())
+      _num_rank_me_rpcs++;
+    else if (local_team_contains(target_rank))
+      _num_node_rpcs++;
+    else
+      _num_rpcs++;
+    auto step_info = rpc(target_rank, get_next_step<MAX_K>, kmer_dht, next_kmer, dirn, prev_ext, next_ext, revisit_allowed, is_rc,
+                         frag_elem_gptr)
+                         .wait();
     revisit_allowed = false;
     if (step_info.walk_status != WalkStatus::RUNNING) {
       walk_term_stats.update(step_info.walk_status);
@@ -239,19 +241,11 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
       return step_info.visited_frag_elem_gptr;
     }
     sum_depths += step_info.count;
-    // add the last nucleotide to the uutig
-    uutig += next_ext;
+    uutig += step_info.uutig;
     // now attempt to walk to next kmer
-    // get next extension
     next_ext = step_info.next_ext;
-    if (dirn == Dirn::LEFT) {
-      prev_ext = kmer.back();
-      kmer = kmer.backward_base(next_ext);
-    } else {
-      prev_ext = kmer.front();
-      kmer = kmer.forward_base(next_ext);
-    }
-    if (next_ext == 'X' || next_ext == 'F') DIE("Found X or F");
+    prev_ext = step_info.prev_ext;
+    kmer = step_info.kmer;
   }
 }
 
