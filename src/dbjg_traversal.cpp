@@ -91,13 +91,13 @@ struct FragElem {
 template <int MAX_K>
 struct StepInfo {
   WalkStatus walk_status;
-  ext_count_t count;
+  uint32_t sum_depths;
   char prev_ext;
   char next_ext;
   global_ptr<FragElem> visited_frag_elem_gptr;
   string uutig;
   Kmer<MAX_K> kmer;
-  UPCXX_SERIALIZED_FIELDS(walk_status, count, prev_ext, next_ext, visited_frag_elem_gptr, uutig, kmer);
+  UPCXX_SERIALIZED_FIELDS(walk_status, sum_depths, prev_ext, next_ext, visited_frag_elem_gptr, uutig, kmer);
 };
 
 struct WalkTermStats {
@@ -155,6 +155,7 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 template <int MAX_K>
 StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, char next_ext,
                               bool revisit_allowed, bool is_rc, global_ptr<FragElem> frag_elem_gptr) {
+  uint32_t sum_depths = 0;
   KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
   // this kmer doesn't exist, abort
   if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND};
@@ -172,11 +173,7 @@ StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K>
     return {.walk_status = WalkStatus::CONFLICT};
   // if visited by another rank first
   if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
-    return {.walk_status = WalkStatus::VISITED,
-            //            .count = 0,
-            //.prev_ext = 0,
-            //.next_ext = 0,
-            .visited_frag_elem_gptr = kmer_counts->uutig_frag};
+    return {.walk_status = WalkStatus::VISITED, .visited_frag_elem_gptr = kmer_counts->uutig_frag};
   // a repeat, abort (but allowed if traversing right after adding start kmer previously)
   if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) return {.walk_status = WalkStatus::REPEAT};
   // mark as visited
@@ -192,8 +189,9 @@ StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K>
     prev_ext = kmer.front();
     kmer = kmer.forward_base(next_ext);
   }
+  sum_depths += kmer_counts->count;
   return {.walk_status = WalkStatus::RUNNING,
-          .count = kmer_counts->count,
+          .sum_depths = sum_depths,
           .prev_ext = prev_ext,
           .next_ext = next_ext,
           .uutig = uutig,
@@ -224,12 +222,9 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
       is_rc = true;
     }
     auto target_rank = kmer_dht->get_kmer_target_rank(next_kmer);
-    if (target_rank == rank_me())
-      _num_rank_me_rpcs++;
-    else if (local_team_contains(target_rank))
-      _num_node_rpcs++;
-    else
-      _num_rpcs++;
+    if (target_rank == rank_me()) _num_rank_me_rpcs++;
+    if (local_team_contains(target_rank)) _num_node_rpcs++;
+    _num_rpcs++;
     auto step_info = rpc(target_rank, get_next_step<MAX_K>, kmer_dht, next_kmer, dirn, prev_ext, next_ext, revisit_allowed, is_rc,
                          frag_elem_gptr)
                          .wait();
@@ -240,7 +235,7 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
       if (dirn == Dirn::LEFT) reverse(uutig.begin(), uutig.end());
       return step_info.visited_frag_elem_gptr;
     }
-    sum_depths += step_info.count;
+    sum_depths += step_info.sum_depths;
     uutig += step_info.uutig;
     // now attempt to walk to next kmer
     next_ext = step_info.next_ext;
@@ -289,10 +284,9 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer
   barrier();
   auto tot_rank_me_rpcs = reduce_one(_num_rank_me_rpcs, op_fast_add, 0).wait();
   auto tot_node_rpcs = reduce_one(_num_node_rpcs, op_fast_add, 0).wait();
-  auto tot_other_rpcs = reduce_one(_num_rpcs, op_fast_add, 0).wait();
-  auto tot_rpcs = tot_rank_me_rpcs + tot_node_rpcs + tot_other_rpcs;
+  auto tot_rpcs = reduce_one(_num_rpcs, op_fast_add, 0).wait();
   SLOG(KLRED, "Required ", tot_rpcs, " rpcs, of which ", perc_str(tot_rank_me_rpcs, tot_rpcs), " were same rank, ",
-       perc_str(tot_node_rpcs, tot_rpcs), " were intra-node, and ", perc_str(tot_rpcs - tot_node_rpcs - tot_rank_me_rpcs, tot_rpcs),
+       perc_str(tot_node_rpcs, tot_rpcs), " were intra-node, and ", perc_str(tot_rpcs - tot_node_rpcs, tot_rpcs),
        " were inter-node", KNORM, "\n");
   walk_term_stats.print();
 }
