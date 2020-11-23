@@ -155,47 +155,74 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 template <int MAX_K>
 StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer, Dirn dirn, char prev_ext, char next_ext,
                               bool revisit_allowed, bool is_rc, global_ptr<FragElem> frag_elem_gptr) {
-  uint32_t sum_depths = 0;
-  KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
-  // this kmer doesn't exist, abort
-  if (!kmer_counts) return {.walk_status = WalkStatus::DEADEND};
-  char left = kmer_counts->left;
-  char right = kmer_counts->right;
-  if (left == 'X' || right == 'X') return {.walk_status = WalkStatus::DEADEND};
-  if (left == 'F' || right == 'F') return {.walk_status = WalkStatus::FORK};
-  if (is_rc) {
-    left = comp_nucleotide(left);
-    right = comp_nucleotide(right);
-    swap(left, right);
-  }
-  // check for conflicts
-  if (prev_ext && ((dirn == Dirn::LEFT && prev_ext != right) || (dirn == Dirn::RIGHT && prev_ext != left)))
-    return {.walk_status = WalkStatus::CONFLICT};
-  // if visited by another rank first
-  if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr)
-    return {.walk_status = WalkStatus::VISITED, .visited_frag_elem_gptr = kmer_counts->uutig_frag};
-  // a repeat, abort (but allowed if traversing right after adding start kmer previously)
-  if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) return {.walk_status = WalkStatus::REPEAT};
-  // mark as visited
-  kmer_counts->uutig_frag = frag_elem_gptr;
-  string uutig;
-  uutig += next_ext;
-  next_ext = (dirn == Dirn::LEFT ? left : right);
-  if (is_rc) kmer = kmer.revcomp();
-  if (dirn == Dirn::LEFT) {
-    prev_ext = kmer.back();
-    kmer = kmer.backward_base(next_ext);
-  } else {
-    prev_ext = kmer.front();
-    kmer = kmer.forward_base(next_ext);
-  }
-  sum_depths += kmer_counts->count;
-  return {.walk_status = WalkStatus::RUNNING,
-          .sum_depths = sum_depths,
-          .prev_ext = prev_ext,
-          .next_ext = next_ext,
-          .uutig = uutig,
-          .kmer = kmer};
+  StepInfo<MAX_K> step_info = {.prev_ext = prev_ext, .next_ext = next_ext};
+  do {
+    KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(kmer);
+    // this kmer doesn't exist, abort
+    if (!kmer_counts) {
+      step_info.walk_status = WalkStatus::DEADEND;
+      break;
+    }
+    char left = kmer_counts->left;
+    char right = kmer_counts->right;
+    if (left == 'X' || right == 'X') {
+      step_info.walk_status = WalkStatus::DEADEND;
+      break;
+    }
+    if (left == 'F' || right == 'F') {
+      step_info.walk_status = WalkStatus::FORK;
+      break;
+    }
+    if (is_rc) {
+      left = comp_nucleotide(left);
+      right = comp_nucleotide(right);
+      swap(left, right);
+    }
+    // check for conflicts
+    if (step_info.prev_ext &&
+        ((dirn == Dirn::LEFT && step_info.prev_ext != right) || (dirn == Dirn::RIGHT && step_info.prev_ext != left))) {
+      step_info.walk_status = WalkStatus::CONFLICT;
+      break;
+    }
+    // if visited by another rank first
+    if (kmer_counts->uutig_frag && kmer_counts->uutig_frag != frag_elem_gptr) {
+      step_info.walk_status = WalkStatus::VISITED;
+      step_info.visited_frag_elem_gptr = kmer_counts->uutig_frag;
+      break;
+    }
+    // a repeat, abort (but allowed if traversing right after adding start kmer previously)
+    if (kmer_counts->uutig_frag == frag_elem_gptr && !revisit_allowed) {
+      step_info.walk_status = WalkStatus::REPEAT;
+      break;
+    }
+    // mark as visited
+    kmer_counts->uutig_frag = frag_elem_gptr;
+    step_info.uutig += next_ext;
+    step_info.next_ext = (dirn == Dirn::LEFT ? left : right);
+    if (is_rc) kmer = kmer.revcomp();
+    if (dirn == Dirn::LEFT) {
+      step_info.prev_ext = kmer.back();
+      kmer = kmer.backward_base(step_info.next_ext);
+    } else {
+      step_info.prev_ext = kmer.front();
+      kmer = kmer.forward_base(step_info.next_ext);
+    }
+    step_info.walk_status = WalkStatus::RUNNING;
+    step_info.sum_depths += kmer_counts->count;
+    step_info.kmer = kmer;
+
+    /*
+    revisit_allowed = false;
+    Kmer<MAX_K> next_kmer = kmer;
+    auto kmer_rc = kmer.revcomp();
+    is_rc = false;
+    if (kmer_rc < kmer) {
+      next_kmer = kmer_rc;
+      is_rc = true;
+    }
+    */
+  } while (false);  // while (kmer_dht->get_kmer_target_rank(next_kmer) == rank_me());
+  return step_info;
 }
 
 static int64_t _num_rank_me_rpcs = 0;
@@ -229,14 +256,14 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
                          frag_elem_gptr)
                          .wait();
     revisit_allowed = false;
+    sum_depths += step_info.sum_depths;
+    uutig += step_info.uutig;
     if (step_info.walk_status != WalkStatus::RUNNING) {
       walk_term_stats.update(step_info.walk_status);
       // reverse it because we were walking backwards
       if (dirn == Dirn::LEFT) reverse(uutig.begin(), uutig.end());
       return step_info.visited_frag_elem_gptr;
     }
-    sum_depths += step_info.sum_depths;
-    uutig += step_info.uutig;
     // now attempt to walk to next kmer
     next_ext = step_info.next_ext;
     prev_ext = step_info.prev_ext;
