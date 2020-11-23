@@ -52,6 +52,9 @@ add_definitions(-DKCOUNT_BLOOM_FP=0.05)
 # dynamic min depth used in debruijn graph traversal
 add_definitions(-DDYN_MIN_DEPTH=0.9)
 
+# use minimizers for kcount and debruijn graph traversal
+add_definitions(-DUSE_MINIMIZERS)
+
 # use depths calculated from kmers, not alignments
 # add_definitions(-DUSE_KMER_DEPTHS)
 

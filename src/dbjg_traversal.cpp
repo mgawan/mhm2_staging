@@ -211,6 +211,10 @@ StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, const Kmer<
     step_info.walk_status = WalkStatus::RUNNING;
     step_info.sum_depths += kmer_counts->count;
 
+#ifndef USE_MINIMIZERS
+    break;
+#endif
+
     revisit_allowed = false;
     auto kmer = step_info.kmer;
     auto kmer_rc = kmer.revcomp();
@@ -319,9 +323,9 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer
   auto tot_rank_me_rpcs = reduce_one(_num_rank_me_rpcs, op_fast_add, 0).wait();
   auto tot_node_rpcs = reduce_one(_num_node_rpcs, op_fast_add, 0).wait();
   auto tot_rpcs = reduce_one(_num_rpcs, op_fast_add, 0).wait();
-  SLOG(KLRED, "Required ", tot_rpcs, " rpcs, of which ", perc_str(tot_rank_me_rpcs, tot_rpcs), " were same rank, ",
-       perc_str(tot_node_rpcs, tot_rpcs), " were intra-node, and ", perc_str(tot_rpcs - tot_node_rpcs, tot_rpcs),
-       " were inter-node", KNORM, "\n");
+  SLOG_VERBOSE("Required ", tot_rpcs, " rpcs, of which ", perc_str(tot_rank_me_rpcs, tot_rpcs), " were same rank, ",
+               perc_str(tot_node_rpcs, tot_rpcs), " were intra-node, and ", perc_str(tot_rpcs - tot_node_rpcs, tot_rpcs),
+               " were inter-node\n");
   walk_term_stats.print();
 }
 

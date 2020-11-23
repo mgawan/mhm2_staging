@@ -260,7 +260,7 @@ class Kmer {
     *s = '\0';
     return std::string(buf);
   }
-  
+
   std::string get_minimizer(int m) {
     char s[200];
     to_string(s);
@@ -412,7 +412,7 @@ class Kmer {
       default: return 'N';
     }
   }
-  
+
   void to_string(char *s) const {
     size_t i, j, l;
     for (i = 0; i < Kmer::k; i++) {
