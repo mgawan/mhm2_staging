@@ -220,7 +220,9 @@ StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, const Kmer<
       is_rc = true;
     }
     auto target_rank = kmer_dht->get_kmer_target_rank(kmer);
+    // next kmer is remote, return to rpc caller
     if (target_rank != rank_me()) break;
+    // next kmer is local to this rank, continue walking
     step_info.kmer = kmer;
   }
   return step_info;
