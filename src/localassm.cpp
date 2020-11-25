@@ -53,6 +53,7 @@
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
 #include "upcxx_utils/three_tier_aggr_store.hpp"
+#include "upcxx_utils/limit_outstanding.hpp"
 #include "utils.hpp"
 
 using namespace std;
@@ -65,7 +66,13 @@ struct CtgInfo {
   int64_t cid;
   char orient;
   char side;
+#if UPCXX_VERSION <= 20201100L
+  char pad[6];  // FIXME necessary in upcxx <= 2020.10 see upcxx Issue #427
+  UPCXX_SERIALIZED_FIELDS(cid, orient, side, pad);
+#else
+#error "Not fixed in any version yet"
   UPCXX_SERIALIZED_FIELDS(cid, orient, side);
+#endif
 };
 struct ReadCtgInfo {
   string read_id;
@@ -81,7 +88,7 @@ class ReadsToCtgsDHT {
 
  private:
   dist_reads_to_ctgs_map_t reads_to_ctgs_map;
-  FlatAggrStore<ReadCtgInfo> rtc_store;  // FIXME ThreeTierAggrStore<ReadCtgInfo> rtc_store;
+  ThreeTierAggrStore<ReadCtgInfo> rtc_store;
 
  public:
   ReadsToCtgsDHT(int64_t initial_size)
@@ -132,20 +139,31 @@ class ReadsToCtgsDHT {
   }
 
   future<vector<vector<CtgInfo>>> get_ctgs(intrank_t target_rank, vector<string> &read_ids) {
-    return upcxx::rpc(
-        target_rank,
-        [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, view<string> read_ids) -> vector<vector<CtgInfo>> {
-          vector<vector<CtgInfo>> results(read_ids.size());
-          size_t i = 0;
-          for (const auto &read_id : read_ids) {
-            assert(get_target_rank(read_id) == rank_me());
-            const auto it = reads_to_ctgs_map->find(read_id);
-            if (it != reads_to_ctgs_map->end()) results[i] = it->second;
-            i++;
-          }
-          return results;
-        },
-        reads_to_ctgs_map, make_view(read_ids.begin(), read_ids.end()));
+    DBG_VERBOSE("Sending get_ctgs ", read_ids.size(), " to ", target_rank, "\n");
+    return upcxx::rpc(target_rank,
+                      [](upcxx::dist_object<reads_to_ctgs_map_t> &reads_to_ctgs_map, intrank_t source_rank,
+                         view<string> read_ids) -> vector<vector<CtgInfo>> {
+                        DBG_VERBOSE("Received request for ", read_ids.size(), " reads from ", source_rank, "\n");
+                        size_t bytes = 0, nonempty = 0;
+                        vector<vector<CtgInfo>> results(read_ids.size());
+                        size_t i = 0;
+                        for (const auto &read_id : read_ids) {
+                          assert(get_target_rank(read_id) == rank_me());
+                          const auto it = reads_to_ctgs_map->find(read_id);
+                          assert(i < results.size());
+                          assert(results[i].empty());
+                          if (it != reads_to_ctgs_map->end()) {
+                            nonempty++;
+                            bytes += it->second.size() * sizeof(CtgInfo);
+                            results[i] = it->second;
+                          }
+                          i++;
+                        }
+                        DBG_VERBOSE("Returning ", results.size(), " results nonempty=", nonempty, " bytes=", bytes, " to ",
+                                    source_rank, "\n");
+                        return results;
+                      },
+                      reads_to_ctgs_map, rank_me(), make_view(read_ids.begin(), read_ids.end()));
   }
 };
 
@@ -174,8 +192,15 @@ struct CtgData {
 struct CtgReadData {
   int64_t cid;
   char side;
+#if UPCXX_VERSION <= 20201100L
+  char pad[7];  // FIXME necessary in upcxx <= 2020.10 see upcxx Issue #427
+  ReadSeq read_seq;
+  UPCXX_SERIALIZED_FIELDS(cid, side, pad, read_seq);
+#else
+#error "Not fixed in any version yet"
   ReadSeq read_seq;
   UPCXX_SERIALIZED_FIELDS(cid, side, read_seq);
+#endif
 };
 
 class CtgsWithReadsDHT {
@@ -186,8 +211,8 @@ class CtgsWithReadsDHT {
  private:
   dist_object<ctgs_map_t> ctgs_map;
   ctgs_map_t::iterator ctgs_map_iter;
-  FlatAggrStore<CtgData> ctg_store;           // FIXME ThreeTierAggrStore<CtgData> ctg_store;
-  FlatAggrStore<CtgReadData> ctg_read_store;  // FIXME ThreeTierAggrStore<CtgReadData> ctg_read_store;
+  ThreeTierAggrStore<CtgData> ctg_store;
+  ThreeTierAggrStore<CtgReadData> ctg_read_store;
 
  public:
   CtgsWithReadsDHT(int64_t num_ctgs)
@@ -205,7 +230,7 @@ class CtgsWithReadsDHT {
       ctgs_map->insert({ctg_data.cid, ctg_with_reads});
       DBG("Added contig cid=", ctg_data.cid, ": ", ctg_data.seq, " depth=", ctg_data.depth, "\n");
     });
-    int est_update_size = sizeof(CtgData) + 500 /* seq */;
+    int est_update_size = sizeof(CtgData) + 750 /* contig sequence size */;
     auto max_store_bytes =
         sizeof(CtgData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 1% of free memory
     ctg_store.set_size("CtgsWithReads add ctg", max_store_bytes);
@@ -227,54 +252,30 @@ class CtgsWithReadsDHT {
     DBG_VERBOSE("updating contig to ", get_target_rank(ctg.id), " cid=", ctg.id, " seq=", ctg_data.seq, " depth=", ctg_data.depth,
                 "\n");
     ctg_store.update(get_target_rank(ctg.id), ctg_data);
-    /*
-    rpc(get_target_rank(ctg.id),
-        [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, string seq, double depth) {
-          const auto it = ctgs_map->find(cid);
-          if (it != ctgs_map->end()) DIE("Found duplicate ctg ", cid);
-          CtgWithReads ctg_with_reads = {.cid = cid, .seq = seq, .depth = depth, .reads_left = {}, .reads_right = {}};
-          ctgs_map->insert({cid, ctg_with_reads});
-        },
-        ctgs_map, ctg.id, ctg.seq, ctg.depth)
-        .wait();
-        */
   }
 
   void add_read(int64_t cid, char side, const ReadSeq read_seq) {
-    CtgReadData ctg_read_data = {.cid = cid, .side = side, .read_seq = read_seq};
+    CtgReadData ctg_read_data = {.cid = cid, .side = side, .pad = {}, .read_seq = read_seq};
     add_read(ctg_read_data);
   }
-  void add_read(const CtgReadData &ctg_read_data) {
-    ctg_read_store.update(get_target_rank(ctg_read_data.cid), ctg_read_data);
-    /*
-    rpc(get_target_rank(cid),
-        [](dist_object<ctgs_map_t> &ctgs_map, int64_t cid, char side, string read_id, string seq, string quals) {
-          const auto it = ctgs_map->find(cid);
-          if (it == ctgs_map->end()) DIE("Could not find ctg ", cid);
-          if (side == 'L')
-            it->second.reads_left.push_back({read_id, seq, quals});
-          else
-            it->second.reads_right.push_back({read_id, seq, quals});
-        },
-        ctgs_map, cid, side, read_seq.read_id, read_seq.seq, read_seq.quals)
-        .wait();
-        */
-  }
+  void add_read(const CtgReadData &ctg_read_data) { ctg_read_store.update(get_target_rank(ctg_read_data.cid), ctg_read_data); }
 
-  void add_reads(vector<CtgReadData> &ctg_read_datas) {
+  void add_reads(vector<CtgReadData> &_ctg_read_datas) {
+    vector<CtgReadData> ctg_read_datas;
+    ctg_read_datas.swap(_ctg_read_datas);  // swap first since add_read may call progress and modify ctg_read_datas in flight
+    DBG_VERBOSE("add_reads ", ctg_read_datas.size(), "\n");
     for (auto &ctg_read_data : ctg_read_datas) {
       add_read(ctg_read_data);
     }
-    ctg_read_datas.clear();
   }
 
   void flush_ctg_updates() {
     ctg_store.flush_updates();
     ctg_store.clear();
-    int est_update_size = sizeof(ctg_read_store) + 300 /* read seq + qual */;
+    int est_update_size = sizeof(CtgReadData) + 500 /* read seq + qual sequences*/;
     auto max_store_bytes =
-        sizeof(ctg_read_store) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 1% of free memory
-    ctg_read_store.set_size("CtgsWithReads add read", 0);                                         // FIXME max_store_bytes);
+        sizeof(CtgReadData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 1% of free memory
+    ctg_read_store.set_size("CtgsWithReads add read", max_store_bytes);
   }
 
   void flush_read_updates() {
@@ -392,12 +393,16 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
   int64_t num_read_maps_found = 0;
   future<> all_done = make_future();
   vector<CtgReadData> ctgs_to_add;
+  int64_t num_local_reads = 0;
+  for (auto packed_reads : packed_reads_list) {
+    num_local_reads += packed_reads->get_local_num_reads();
+  }
+  ProgressBar progbar(num_local_reads * 2, "Processing reads - two stage");
 
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
-    LOG("Processing packed_reads=", packed_reads, " with ", packed_reads->get_local_num_reads(), "\n");
+    DBG_VERBOSE("Processing packed_reads=", packed_reads, " with ", packed_reads->get_local_num_reads(), "\n");
     string id, seq, quals;
-    ProgressBar progbar(packed_reads->get_local_num_reads() * 2, "Processing reads - two stage");
     auto sh_rank_read_ids = make_shared<vector<vector<pair<string, uint64_t>>>>(rank_n());
     vector<vector<pair<string, uint64_t>>> &rank_read_ids = *sh_rank_read_ids;
     assert(rank_read_ids.size() == rank_n());
@@ -415,26 +420,25 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
 
     for (auto target_rank : foreach_rank_by_node()) {
       progress();
+      ctgs_dht.add_reads(ctgs_to_add);
       auto &read_ids = rank_read_ids[target_rank];
       if (read_ids.empty()) continue;
       vector<string> just_ids(read_ids.size());
       for (int i = 0; i < read_ids.size(); i++) {
         just_ids[i] = read_ids[i].first;
       }
+      DBG_VERBOSE("Getting contigs from ", target_rank, " for ", just_ids.size(), " reads\n");
       auto read_ctgs_fut = reads_to_ctgs.get_ctgs(target_rank, just_ids);
-
-      // auto fut = read_ctgs_fut.then([sh_rank_read_ids, target_rank, &progbar, packed_reads, &num_read_maps_found,
-      //                               &ctgs_to_add](vector<vector<CtgInfo>> read_ctgs) {
-      auto read_ctgs = read_ctgs_fut.wait();
-      {
-        DBG("Processing gotten contigs: ", read_ctgs.size(), "\n");
+      auto fut = read_ctgs_fut.then([sh_rank_read_ids, target_rank, packed_reads, &progbar, &num_read_maps_found,
+                                     &ctgs_to_add](vector<vector<CtgInfo>> read_ctgs) {
+        DBG("Processing gotten contigs from ", target_rank, " for ", read_ctgs.size(), "\n");
         auto &read_ids = (*sh_rank_read_ids)[target_rank];
         assert(read_ctgs.size() == read_ids.size());
         string id, seq, quals, seq_rc, quals_rc;
         for (size_t i = 0; i < read_ctgs.size(); i++) {
           DBG_VERBOSE("processing i=", i, " of ", read_ctgs.size(), "\n");
-          assert(read_ctgs.size() == read_ids.size());
           progbar.update();
+          assert(read_ctgs.size() == read_ids.size());
           assert(i < read_ids.size());
           const auto &read_id = read_ids[i].first;
           const auto &read_idx = read_ids[i].second;
@@ -456,11 +460,9 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
                   reverse(quals_rc.begin(), quals_rc.end());
                   was_revcomp = true;
                 }
-                ctgs_to_add.push_back({ctg.cid, ctg.side, {id, seq_rc, quals_rc}});
-                // ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq_rc, quals_rc});
+                ctgs_to_add.push_back({ctg.cid, ctg.side, {}, {id, seq_rc, quals_rc}});
               } else {
-                ctgs_to_add.push_back({ctg.cid, ctg.side, {id, seq, quals}});
-                // ctgs_dht.add_read(ctg.cid, ctg.side, {id, seq, quals});
+                ctgs_to_add.push_back({ctg.cid, ctg.side, {}, {id, seq, quals}});
               }
             }
           }
@@ -468,20 +470,12 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
         // clear out some memory
         DBG("Clearing memory\n");
         vector<pair<string, uint64_t>>().swap(read_ids);
-      }
-      //});
-      // limit_outstanding_futures(fut).wait();
+      });
+      upcxx_utils::limit_outstanding_futures(fut).wait();
       ctgs_dht.add_reads(ctgs_to_add);
     }
-
-    auto tot_num_reads_fut = reduce_one(num_reads, op_fast_add, 0);
-    auto tot_num_read_maps_found_fut = reduce_one(num_read_maps_found, op_fast_add, 0);
-    all_done = when_all(all_done, tot_num_reads_fut, tot_num_read_maps_found_fut)
-                   .then([](int64_t tot_num_reads, int64_t tot_num_read_maps_found) {
-                     SLOG_VERBOSE("Found ", perc_str(tot_num_read_maps_found, tot_num_reads), " reads that map to contigs\n");
-                   });
-    all_done = when_all(all_done, progbar.set_done());
   }
+  all_done = when_all(all_done, progbar.set_done());
   auto all_outstanding = flush_outstanding_futures_async();
   while (!all_outstanding.ready()) {
     ctgs_dht.add_reads(ctgs_to_add);
@@ -491,6 +485,14 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
   assert(flush_outstanding_futures_async().ready());
   assert(ctgs_to_add.empty());
   ctgs_dht.flush_read_updates();
+
+  auto tot_num_reads_fut = reduce_one(num_reads, op_fast_add, 0);
+  auto tot_num_read_maps_found_fut = reduce_one(num_read_maps_found, op_fast_add, 0);
+  all_done = when_all(all_done, tot_num_reads_fut, tot_num_read_maps_found_fut)
+                 .then([](int64_t tot_num_reads, int64_t tot_num_read_maps_found) {
+                   SLOG_VERBOSE("Found ", perc_str(tot_num_read_maps_found, tot_num_reads), " reads that map to contigs\n");
+                 });
+
   all_done.wait();
   // implicit barrier on exit
 }
