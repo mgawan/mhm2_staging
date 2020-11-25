@@ -95,14 +95,12 @@ class ReadsToCtgsDHT {
       : reads_to_ctgs_map({})
       , rtc_store() {
     reads_to_ctgs_map->reserve(initial_size);
-    rtc_store.set_update_func([&reads_to_ctgs_map = this->reads_to_ctgs_map](const ReadCtgInfo &read_ctg_info) {
+    rtc_store.set_update_func([&reads_to_ctgs_map = this->reads_to_ctgs_map](ReadCtgInfo &&read_ctg_info) {
       const auto it = reads_to_ctgs_map->find(read_ctg_info.read_id);
       if (it == reads_to_ctgs_map->end())
-        reads_to_ctgs_map->insert({read_ctg_info.read_id, {read_ctg_info.ctg_info}});
+        reads_to_ctgs_map->insert({std::move(read_ctg_info.read_id), {std::move(read_ctg_info.ctg_info)}});
       else
-        it->second.push_back(read_ctg_info.ctg_info);
-      DBG_VERBOSE("Added read_id=", read_ctg_info.read_id, ": ", read_ctg_info.ctg_info.cid, read_ctg_info.ctg_info.orient,
-                  read_ctg_info.ctg_info.side, "\n");
+        it->second.push_back(std::move(read_ctg_info.ctg_info));
     });
     int est_update_size = sizeof(ReadCtgInfo) + 13 /* read_id */;
     auto max_store_bytes =
@@ -222,28 +220,30 @@ class CtgsWithReadsDHT {
     // pad the local ctg count a bit for this estimate
     ctgs_map->reserve(num_ctgs * 1.2);
 
-    ctg_store.set_update_func([&ctgs_map = this->ctgs_map](const CtgData &ctg_data) {
-      const auto it = ctgs_map->find(ctg_data.cid);
+    ctg_store.set_update_func([&ctgs_map = this->ctgs_map](CtgData &&ctg_data) {
+      auto it = ctgs_map->find(ctg_data.cid);
       if (it != ctgs_map->end()) DIE("Found duplicate ctg ", ctg_data.cid);
-      CtgWithReads ctg_with_reads = {
-          .cid = ctg_data.cid, .seq = ctg_data.seq, .depth = ctg_data.depth, .reads_left = {}, .reads_right = {}};
-      ctgs_map->insert({ctg_data.cid, ctg_with_reads});
-      DBG("Added contig cid=", ctg_data.cid, ": ", ctg_data.seq, " depth=", ctg_data.depth, "\n");
+      ctgs_map_t::value_type record = {
+          .first = ctg_data.cid,
+          .second = {
+              .cid = ctg_data.cid, .seq = std::move(ctg_data.seq), .depth = ctg_data.depth, .reads_left = {}, .reads_right = {}}};
+      it = ctgs_map->insert(it, std::move(record));
+      DBG_VERBOSE("Added contig cid=", it->first, ": ", it->second.seq, " depth=", it->second.depth, "\n");
     });
     int est_update_size = sizeof(CtgData) + 400 /* contig sequence size */;
     auto max_store_bytes =
         3 * sizeof(CtgData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 3% of free memory
     ctg_store.set_size("CtgsWithReads add ctg", max_store_bytes);
 
-    ctg_read_store.set_update_func([&ctgs_map = this->ctgs_map](const CtgReadData &ctg_read_data) {
+    ctg_read_store.set_update_func([&ctgs_map = this->ctgs_map](CtgReadData &&ctg_read_data) {
       const auto it = ctgs_map->find(ctg_read_data.cid);
       if (it == ctgs_map->end()) DIE("Could not find ctg ", ctg_read_data.cid);
-      const ReadSeq &read_seq = ctg_read_data.read_seq;
+      ReadSeq &read_seq = ctg_read_data.read_seq;
       if (ctg_read_data.side == 'L')
-        it->second.reads_left.push_back(read_seq);
+        it->second.reads_left.push_back(std::move(read_seq));
       else
-        it->second.reads_right.push_back(read_seq);
-      DBG_VERBOSE("Added read_seq cid=", ctg_read_data.cid, " read_id=", read_seq.read_id, " seq=", read_seq.seq, "\n");
+        it->second.reads_right.push_back(std::move(read_seq));
+      DBG_VERBOSE("Added read_seq cid=", ctg_read_data.cid, " read_id=", read_seq.read_id, "\n");
     });
   }
 
@@ -422,7 +422,7 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
       auto read_ctgs_fut = reads_to_ctgs.get_ctgs(target_rank, just_ids);
       auto fut = read_ctgs_fut.then([sh_rank_read_ids, target_rank, packed_reads, &progbar, &num_read_maps_found,
                                      &ctgs_to_add](vector<vector<CtgInfo>> read_ctgs) {
-        DBG("Processing gotten contigs from ", target_rank, " for ", read_ctgs.size(), "\n");
+        DBG_VERBOSE("Processing gotten contigs from ", target_rank, " for ", read_ctgs.size(), "\n");
         auto &read_ids = (*sh_rank_read_ids)[target_rank];
         assert(read_ctgs.size() == read_ids.size());
         string id, seq, quals, seq_rc, quals_rc;
@@ -459,7 +459,6 @@ static void process_reads(unsigned kmer_len, vector<PackedReads *> &packed_reads
           }
         }
         // clear out some memory
-        DBG("Clearing memory\n");
         vector<pair<string, uint64_t>>().swap(read_ids);
       });
       upcxx_utils::limit_outstanding_futures(fut).wait();
