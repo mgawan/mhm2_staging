@@ -104,9 +104,9 @@ class ReadsToCtgsDHT {
       DBG_VERBOSE("Added read_id=", read_ctg_info.read_id, ": ", read_ctg_info.ctg_info.cid, read_ctg_info.ctg_info.orient,
                   read_ctg_info.ctg_info.side, "\n");
     });
-    int est_update_size = sizeof(ReadCtgInfo) + 15 /* read_id */;
+    int est_update_size = sizeof(ReadCtgInfo) + 13 /* read_id */;
     auto max_store_bytes =
-        sizeof(ReadCtgInfo) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 1% of free memory
+        2 * sizeof(ReadCtgInfo) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 2% of free memory
     rtc_store.set_size("ReadsToContigs", max_store_bytes);
   }
 
@@ -230,9 +230,9 @@ class CtgsWithReadsDHT {
       ctgs_map->insert({ctg_data.cid, ctg_with_reads});
       DBG("Added contig cid=", ctg_data.cid, ": ", ctg_data.seq, " depth=", ctg_data.depth, "\n");
     });
-    int est_update_size = sizeof(CtgData) + 750 /* contig sequence size */;
+    int est_update_size = sizeof(CtgData) + 400 /* contig sequence size */;
     auto max_store_bytes =
-        sizeof(CtgData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 1% of free memory
+        3 * sizeof(CtgData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 3% of free memory
     ctg_store.set_size("CtgsWithReads add ctg", max_store_bytes);
 
     ctg_read_store.set_update_func([&ctgs_map = this->ctgs_map](const CtgReadData &ctg_read_data) {
@@ -274,7 +274,7 @@ class CtgsWithReadsDHT {
     ctg_store.clear();
     int est_update_size = sizeof(CtgReadData) + 500 /* read seq + qual sequences*/;
     auto max_store_bytes =
-        sizeof(CtgReadData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 1% of free memory
+        3 * sizeof(CtgReadData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 3% of free memory
     ctg_read_store.set_size("CtgsWithReads add read", max_store_bytes);
   }
 
