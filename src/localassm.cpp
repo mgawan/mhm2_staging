@@ -309,8 +309,6 @@ struct MerFreqs {
   ExtCounts hi_q_exts, low_q_exts;
   // the final extensions chosen - A,C,G,T, or F,X
   char ext;
-  // the count of the final extension
-  int count;
 
   struct MerBase {
     char base;
@@ -352,7 +350,6 @@ struct MerFreqs {
     assert(top_rating >= runner_up_rating);
     int top_rated_base = mer_bases[0].base;
     ext = 'X';
-    count = 0;
     // no extension (base = 0) if the runner up is close to the top rating
     // except, if rating is 7 (best quality), then all bases of rating 7 are forks
     if (top_rating > LASSM_RATING_THRES) {  // must have at least minViable bases
@@ -373,12 +370,6 @@ struct MerFreqs {
           else if (mer_bases[1].nvotes > mer_bases[0].nvotes)
             ext = mer_bases[1].base;
         }
-      }
-    }
-    for (int i = 0; i < 4; i++) {
-      if (mer_bases[i].base == ext) {
-        count = mer_bases[i].nvotes;
-        break;
       }
     }
   }
@@ -617,6 +608,12 @@ static void add_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs) {
 static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, int mer_len, int qual_offset,
                        int64_t &excess_reads) {
   int num_reads = 0;
+  // rough estimate of number of kmers
+  int max_mers = 0;
+  for (int i = 0; i < min((int)reads.size(), (int)LASSM_MAX_COUNT_MERS_READS); i++) {
+    max_mers += reads[i].seq.length() - mer_len;
+  }
+  mers_ht.reserve(max_mers);
   // split reads into kmers and count frequency of high quality extensions
   for (auto &read_seq : reads) {
     num_reads++;
@@ -624,18 +621,14 @@ static void count_mers(vector<ReadSeq> &reads, MerMap &mers_ht, int seq_depth, i
       excess_reads += reads.size() - LASSM_MAX_COUNT_MERS_READS;
       break;
     }
-    progress();
     if (mer_len >= (int)read_seq.seq.length()) continue;
     int num_mers = read_seq.seq.length() - mer_len;
     for (int start = 0; start < num_mers; start++) {
-      // skip mers that contain Ns
-      if (read_seq.seq.find("N", start) != string::npos) continue;
       string mer = read_seq.seq.substr(start, mer_len);
+      // skip mers that contain Ns
+      if (mer.find("N") != string::npos) continue;
       auto it = mers_ht.find(mer);
-      if (it == mers_ht.end()) {
-        mers_ht.insert({mer, {.hi_q_exts = {0}, .low_q_exts = {0}, .ext = 0, .count = 0}});
-        it = mers_ht.find(mer);
-      }
+      if (it == mers_ht.end()) it = mers_ht.insert({mer, {.hi_q_exts = {0}, .low_q_exts = {0}, .ext = 0}}).first;
       int ext_pos = start + mer_len;
       assert(ext_pos < (int)read_seq.seq.length());
       char ext = read_seq.seq[ext_pos];
@@ -656,7 +649,6 @@ static char walk_mers(MerMap &mers_ht, string &mer, string &walk, int mer_len, i
   HASH_TABLE<string, bool> loop_check_ht;
   char walk_result = 'X';
   for (int nsteps = 0; nsteps < walk_len_limit; nsteps++) {
-    if (!(nsteps % 10)) progress();
     // check for a cycle in the graph
     if (loop_check_ht.find(mer) != loop_check_ht.end()) {
       walk_result = 'R';
@@ -796,7 +788,6 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
       walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
-    progress();
     progbar.update();
     Contig ext_contig;
     extend_ctg(ctg, wm, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, walk_len_limit, count_mers_timer,
