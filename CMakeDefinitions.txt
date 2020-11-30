@@ -54,6 +54,7 @@ add_definitions(-DDYN_MIN_DEPTH=0.9)
 
 # use minimizers for kcount and debruijn graph traversal
 add_definitions(-DUSE_MINIMIZERS)
+add_definitions(-DMINIMIZER_LEN=15)
 
 # use depths calculated from kmers, not alignments
 # add_definitions(-DUSE_KMER_DEPTHS)
@@ -61,7 +62,7 @@ add_definitions(-DUSE_MINIMIZERS)
 # use colors in the output
 add_definitions(-DCONFIG_USE_COLORS)
 
-# use the bytell hash table implementation
+cea# use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
 
 # max allowed alignments per read (to reduce overhead & imbalance) - set to 0 to have no limit
