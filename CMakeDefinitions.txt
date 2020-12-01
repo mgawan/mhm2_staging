@@ -62,7 +62,7 @@ add_definitions(-DMINIMIZER_LEN=15)
 # use colors in the output
 add_definitions(-DCONFIG_USE_COLORS)
 
-cea# use the bytell hash table implementation
+# use the bytell hash table implementation
 add_definitions(-DUSE_BYTELL)
 
 # max allowed alignments per read (to reduce overhead & imbalance) - set to 0 to have no limit

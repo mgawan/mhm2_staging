@@ -4,9 +4,9 @@
 #include <map>
 #include <string>
 #include <vector>
+using std::map;
 using std::string;
 using std::vector;
-using std::map;
 
 const char *As = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -144,8 +144,8 @@ void check_kmer(const K &kmer, string seq) {
   K cpy2(kmer.to_string().c_str());
   EXPECT_EQ(kmer.get_k(), cpy2.get_k());
   EXPECT_EQ(kmer.get_N_LONGS(), cpy2.get_N_LONGS());
-  EXPECT_EQ(cpy2.hash(), kmer.hash()) << "Copy hashes equal " << cpy2.to_string() << " v " << kmer.to_string() << " " <<
-  cpy2.to_hex() << " v " << kmer.to_hex();
+  EXPECT_EQ(cpy2.hash(), kmer.hash()) << "Copy hashes equal " << cpy2.to_string() << " v " << kmer.to_string() << " "
+                                      << cpy2.to_hex() << " v " << kmer.to_hex();
   EXPECT_EQ(memcmp(kmer.get_bytes().first, cpy2.get_bytes().first, nbytes), 0);
   EXPECT_STREQ(cpy2.to_string().c_str(), seq.c_str());
   auto cpy2bytes = cpy2.get_bytes();
@@ -244,6 +244,59 @@ void test_kmer(int klen) {
   }
 };
 
+template <int MAX_K>
+void test_kmer_minimizers(int kmer_len) {
+  int m_len = 15;
+  if (kmer_len < 17) return;
+  string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCC"
+             "CCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAC");
+  Kmer<MAX_K>::set_k(kmer_len);
+  vector<Kmer<MAX_K>> kmers;
+  Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
+  string prev_minimizer = "";
+  string prev_minz_opt = "";
+  for (auto &kmer : kmers) {
+    auto minimizer = kmer.get_minimizer_slow(m_len);
+    if (prev_minimizer == "") {
+      prev_minimizer = minimizer;
+    } else {
+      if (prev_minimizer != minimizer) prev_minimizer = minimizer;
+    }
+    auto opt_minimizer = kmer.get_minimizer(m_len);
+    if (prev_minz_opt == "") {
+      prev_minz_opt = opt_minimizer;
+    } else {
+      if (prev_minz_opt != opt_minimizer) prev_minz_opt = opt_minimizer;
+    }
+    EXPECT_EQ(minimizer, opt_minimizer) << "Minimizers are equal for slow and opt " << minimizer << " " << opt_minimizer;
+  }
+}
+
+/*
+template <int MAX_K>
+void test_minimizer_performance(int kmer_len) {
+  int m_len = 15;
+  if (kmer_len < 17) return;
+  string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCC"
+             "CCTGACTTGTAAAGGGAATAGTTCCCTAAAATTAC");
+  Kmer<MAX_K>::set_k(kmer_len);
+  vector<Kmer<MAX_K>> kmers;
+  Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
+  for (int i = 0; i < 50000; i++) {
+    for (auto &kmer : kmers) {
+      // kmer.minimizer_hash_slow(m_len);
+      kmer.minimizer_hash(m_len);
+    }
+  }
+}
+
+TEST(MHMTest, minimizer_performance) {
+  test_minimizer_performance<32>(21);
+  test_minimizer_performance<64>(55);
+  test_minimizer_performance<96>(77);
+}
+*/
+
 TEST(MHMTest, kmer) {
   // arrange
   // act
@@ -252,14 +305,17 @@ TEST(MHMTest, kmer) {
     if (i <= 32) {
       test_kmer<32>(i);
       test_get_kmers<32>(i);
+      test_kmer_minimizers<32>(i);
     }
     if (i <= 64) {
       test_kmer<64>(i);
       test_get_kmers<64>(i);
+      test_kmer_minimizers<64>(i);
     }
     if (i <= 96) {
       test_kmer<96>(i);
       test_get_kmers<96>(i);
+      test_kmer_minimizers<96>(i);
     }
   }
 }
