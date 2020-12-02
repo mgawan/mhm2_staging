@@ -18,26 +18,10 @@
  endorse or promote products derived from this software without specific prior
  written permission.
 
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
- EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
- SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
- DAMAGE.
-
- You are under no obligation whatsoever to provide any bug fixes, patches, or upgrades
- to the features, functionality or performance of the source code ("Enhancements") to
- anyone; however, if you choose to make your Enhancements available either publicly,
- or directly to Lawrence Berkeley National Laboratory, without imposing a separate
- written license agreement for such Enhancements, then you hereby grant the following
- license: a  non-exclusive, royalty-free perpetual license to install, use, modify,
- prepare derivative works, incorporate into other computer software, distribute, and
- sublicense such enhancements or derivative works thereof, in binary and source code
- form.
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORvoid shuffle_reads(int kmer_len, vector<PackedReads *>
+&packed_reads_list, Alns &alns) { rant the following license: a  non-exclusive, royalty-free perpetual license to install, use,
+modify, prepare derivative works, incorporate into other computer software, distribute, and sublicense such enhancements or
+derivative works thereof, in binary and source code form.
 */
 
 #include "contigging.hpp"
@@ -63,6 +47,7 @@ template <int MAX_K>
 void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs);
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_reads_list, int insert_avg, int insert_stddev,
                int qual_offset, Contigs &ctgs, Alns &alns);
+void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Alns &alns);
 
 static uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &packed_reads_list) {
   BarrierTimer timer(__FILEFUNC__);
@@ -149,6 +134,11 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
+    if (kmer_len == options->kmer_lens.front()) {
+      stage_timers.shuffle_reads->start();
+      shuffle_reads(options->qual_offset, packed_reads_list, alns);
+      stage_timers.shuffle_reads->stop();
+    }
 #ifdef DEBUG
     alns.dump_rank_file("ctg-" + to_string(kmer_len) + ".alns.gz");
 #endif

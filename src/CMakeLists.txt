@@ -110,7 +110,7 @@ endforeach()
 
 foreach(tgt fastq alignments contigs packed_reads utils bloom ctg_graph options
             merge_reads dbjg_traversal klign cgraph build_ctg_graph
-            walk_ctg_graph spanner splinter localassm histogrammer aln_depths
+            walk_ctg_graph spanner splinter localassm histogrammer aln_depths shuffle_reads
             ${EXTERN_TEMPLATE_FILES}
         )
   add_library(${tgt} OBJECT ${tgt}.cpp)
