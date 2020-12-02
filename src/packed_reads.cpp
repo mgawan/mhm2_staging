@@ -167,7 +167,7 @@ string PackedRead::get_str_id() {
 
 int64_t PackedRead::to_packed_id(const string &id_str) {
   int offset = (id_str[0] == '@' ? 2 : 1);
-  int64_t read_id = strtol(id_str.c_str() + offset, nullptr, 10);
+  int64_t read_id = strtol(id_str.c_str() + offset, nullptr, 10) + 1;
   if (id_str[id_str.length() - 1] == '1') read_id *= -1;
   return read_id;
 }
