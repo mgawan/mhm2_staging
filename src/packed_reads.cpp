@@ -73,7 +73,8 @@ PackedRead::PackedRead()
     , bytes(nullptr) {}
 
 PackedRead::PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset) {
-  read_id = PackedRead::to_packed_id(id_str);
+  read_id = strtol(id_str.c_str() + 1, nullptr, 10) + 1;
+  if (id_str[id_str.length() - 1] == '1') read_id *= -1;
   // read_id = strtol(id_str.c_str() + 1, nullptr, 10);
   // this uses from_chars because it's the fastest option out there
   // auto res = std::from_chars(id_str.data() + 2, id_str.data() + id_str.size() - 2, read_id);
@@ -167,8 +168,8 @@ string PackedRead::get_str_id() {
 }
 
 int64_t PackedRead::to_packed_id(const string &id_str) {
-  int offset = (id_str[0] == '@' ? 2 : 1);
-  int64_t read_id = strtol(id_str.c_str() + offset, nullptr, 10) + 1;
+  assert(id_str[0] == '@');
+  int64_t read_id = strtol(id_str.c_str() + 2, nullptr, 10);
   if (id_str[id_str.length() - 1] == '1') read_id *= -1;
   return read_id;
 }

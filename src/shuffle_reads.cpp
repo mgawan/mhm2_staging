@@ -63,42 +63,41 @@ intrank_t get_target_rank(int64_t val) {
 
 void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Alns &alns) {
   BarrierTimer timer(__FILEFUNC__);
-  using read_to_target_map_t = HASH_TABLE<int64_t, pair<int, int>>;
+  using read_to_target_map_t = HASH_TABLE<int64_t, pair<int, int64_t>>;
   dist_object<read_to_target_map_t> read_to_target_map({});
-
   auto num_reads = 0;
   for (auto packed_reads : packed_reads_list) num_reads += packed_reads->get_local_num_reads();
+  read_to_target_map->reserve(num_reads);
 
-  string prev_read_id;
   // FIXME: this should use an TTAS
 
   for (auto &aln : alns) {
     progress();
-    if (aln.read_id == prev_read_id) continue;
     // using abs ensures that both reads in a pair are mapped to the same location
     int64_t packed_read_id = abs(PackedRead::to_packed_id(aln.read_id));
+    // DBG("shuffle insert read id ", aln.read_id, " packed ", packed_read_id, "\n");
     rpc(
         get_target_rank(packed_read_id),
-        [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id, int score, int ctg_target_rank) {
+        [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id, int score, int64_t cid) {
           const auto it = read_to_target_map->find(read_id);
           if (it == read_to_target_map->end()) {
-            read_to_target_map->insert({read_id, {score, ctg_target_rank}});
+            read_to_target_map->insert({read_id, {score, cid}});
           } else {
             if (it->second.first < score) {
               it->second.first = score;
-              it->second.second = ctg_target_rank;
+              it->second.second = cid;
             }
           }
         },
-        read_to_target_map, packed_read_id, aln.score1, get_target_rank(aln.cid))
+        read_to_target_map, packed_read_id, aln.score1, aln.cid)
         .wait();
-    prev_read_id = aln.read_id;
   }
   barrier();
   auto tot_aln_reads = reduce_one(read_to_target_map->size(), op_fast_add, 0).wait();
   auto tot_read_pairs = reduce_one(num_reads, op_fast_add, 0).wait() / 2;
   SLOG_VERBOSE("Number of read pairs with alignments ", perc_str(tot_aln_reads, tot_read_pairs), "\n");
   barrier();
+  int64_t num_not_found = 0;
   dist_object<vector<PackedRead>> new_packed_reads({});
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
@@ -106,19 +105,18 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
       auto &packed_read1 = (*packed_reads)[i];
       auto &packed_read2 = (*packed_reads)[i + 1];
       auto read_id = abs(packed_read1.get_id());
-      int target_ctg_rank = rpc(
-                                get_target_rank(read_id),
-                                [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id) -> int {
-                                  const auto it = read_to_target_map->find(read_id);
-                                  if (it == read_to_target_map->end()) return -1;
-                                  return it->second.second;
-                                },
-                                read_to_target_map, read_id)
-                                .wait();
-      if (target_ctg_rank == -1) {
-        // choose random target
-        target_ctg_rank = std::experimental::randint(0, rank_n() - 1);
-      }
+      // DBG("shuffle find read id ", packed_read1.get_str_id(), " packed ", packed_read1.get_id(), "\n");
+      int64_t cid = rpc(
+                        get_target_rank(read_id),
+                        [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id) -> int64_t {
+                          const auto it = read_to_target_map->find(read_id);
+                          if (it == read_to_target_map->end()) return -1;
+                          return it->second.second;
+                        },
+                        read_to_target_map, read_id)
+                        .wait();
+      if (cid == -1) num_not_found++;
+      int target_ctg_rank = (cid == -1 ? std::experimental::randint(0, rank_n() - 1) : get_target_rank(cid));
       if (target_ctg_rank < 0 || target_ctg_rank >= rank_n())
         DIE("target ctg rank out of range [0, ", rank_n(), "] ", target_ctg_rank);
       rpc(
@@ -132,6 +130,8 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
     }
   }
   barrier();
+  auto tot_num_not_found = reduce_one(num_not_found, op_fast_add, 0).wait();
+  SLOG("Didn't find contig targets for ", perc_str(tot_num_not_found, tot_read_pairs), " pairs\n");
   // now copy the new packed reads to the old
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
