@@ -150,7 +150,8 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
 #ifdef COUNT_UNIQUE_KMERS
   auto tot_unique_kmers = reduce_one(local_kmer_counts.size(), op_fast_add, 0).wait();
   auto max_unique_kmers = reduce_one(local_kmer_counts.size(), op_fast_max, 0).wait();
-  SLOG("Found ", tot_unique_kmers, " unique kmers, load balance ", (double)tot_unique_kmers / rank_n() / max_unique_kmers, "\n");
+  SLOG("Found ", tot_unique_kmers / rank_n(), " unique kmers per rank, load balance ",
+       (double)tot_unique_kmers / rank_n() / max_unique_kmers, "\n");
 #endif
   DBG("This rank processed ", num_reads, " reads\n");
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();

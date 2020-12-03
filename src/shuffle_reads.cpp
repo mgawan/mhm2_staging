@@ -61,14 +61,17 @@ intrank_t get_target_rank(int64_t val) {
   return MurmurHash3_x64_64(reinterpret_cast<const void *>(&val), sizeof(int64_t)) % rank_n();
 }
 
-void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Alns &alns) {
+void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Alns &alns, size_t num_ctgs) {
   BarrierTimer timer(__FILEFUNC__);
   using read_to_target_map_t = HASH_TABLE<int64_t, pair<int, int64_t>>;
   dist_object<read_to_target_map_t> read_to_target_map({});
   auto num_reads = 0;
   for (auto packed_reads : packed_reads_list) num_reads += packed_reads->get_local_num_reads();
   read_to_target_map->reserve(num_reads);
-
+  using ctg_to_reads_map_t = HASH_TABLE<int64_t, vector<int64_t>>;
+  dist_object<ctg_to_reads_map_t> ctg_to_reads_map({});
+  auto tot_num_ctgs = reduce_all(num_ctgs, op_fast_add).wait();
+  ctg_to_reads_map->reserve((int64_t)ceil((double)tot_num_ctgs / rank_n()));
   // FIXME: this should use an TTAS
 
   for (auto &aln : alns) {
@@ -91,11 +94,31 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
         },
         read_to_target_map, packed_read_id, aln.score1, aln.cid)
         .wait();
+    rpc(
+        get_target_rank(aln.cid),
+        [](dist_object<ctg_to_reads_map_t> &ctg_to_reads_map, int64_t cid, int64_t read_id) {
+          const auto it = ctg_to_reads_map->find(read_id);
+          if (it == ctg_to_reads_map->end())
+            ctg_to_reads_map->insert({cid, {read_id}});
+          else
+            it->second.push_back(read_id);
+        },
+        ctg_to_reads_map, aln.cid, packed_read_id)
+        .wait();
   }
   barrier();
   auto tot_aln_reads = reduce_one(read_to_target_map->size(), op_fast_add, 0).wait();
   auto tot_read_pairs = reduce_one(num_reads, op_fast_add, 0).wait() / 2;
   SLOG_VERBOSE("Number of read pairs with alignments ", perc_str(tot_aln_reads, tot_read_pairs), "\n");
+  int64_t num_target_reads = 0;
+  for (auto &[cid, reads] : *ctg_to_reads_map) {
+    num_target_reads += reads.size();
+  }
+  auto tot_num_target_reads = reduce_one(num_target_reads, op_fast_add, 0).wait();
+  auto avg_num_target_reads = tot_num_target_reads / rank_n();
+  auto max_num_target_reads = reduce_one(num_target_reads, op_fast_max, 0).wait();
+  SLOG("Avg number of reads per rank ", avg_num_target_reads, " balance ", (double)avg_num_target_reads / max_num_target_reads,
+       "\n");
   barrier();
   int64_t num_not_found = 0;
   dist_object<vector<PackedRead>> new_packed_reads({});
