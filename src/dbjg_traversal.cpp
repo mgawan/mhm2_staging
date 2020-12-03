@@ -90,6 +90,14 @@ struct FragElem {
 
 template <int MAX_K>
 struct StepInfo {
+  StepInfo() = default;
+  StepInfo(Kmer<MAX_K> kmer, char prev_ext, char next_ext)
+      : walk_status{}
+      , prev_ext(prev_ext)
+      , next_ext(next_ext)
+      , visited_frag_elem_gptr{}
+      , uutig{}
+      , kmer(kmer) {}
   WalkStatus walk_status;
   uint32_t sum_depths;
   char prev_ext;
@@ -156,7 +164,7 @@ template <int MAX_K>
 StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, const Kmer<MAX_K> start_kmer, const Dirn dirn,
                               const char start_prev_ext, const char start_next_ext, bool revisit_allowed, bool is_rc,
                               const global_ptr<FragElem> frag_elem_gptr) {
-  StepInfo<MAX_K> step_info = {.prev_ext = start_prev_ext, .next_ext = start_next_ext, .kmer = start_kmer};
+  StepInfo<MAX_K> step_info(start_kmer, start_prev_ext, start_next_ext);
   while (true) {
     KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(step_info.kmer);
     // this kmer doesn't exist, abort
