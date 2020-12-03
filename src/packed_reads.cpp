@@ -73,7 +73,7 @@ PackedRead::PackedRead()
     , packed_read(nullptr) {}
 
 PackedRead::PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset) {
-  read_id = strtol(id_str.c_str() + 1, nullptr, 10);
+  read_id = strtol(id_str.c_str() + 1, nullptr, 10) + 1;
   // this uses from_chars because it's the fastest option out there
   // auto res = std::from_chars(id_str.data() + 2, id_str.data() + id_str.size() - 2, read_id);
   // if (res.ec != std::errc()) DIE("Failed to convert string to int64_t, ", res.ec);
@@ -144,7 +144,7 @@ void PackedRead::clear() {
   read_id = 0;
 }
 
-void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) {
+void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) const {
   char pair_id = (read_id < 0 ? '1' : '2');
   read_id_str = "@r" + to_string(labs(read_id)) + '/' + pair_id;
   seq.resize(read_len);
@@ -160,8 +160,7 @@ void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qua
 PackedReads::PackedReads(int qual_offset, const string &fname, bool str_ids)
     : qual_offset(qual_offset)
     , fname(fname)
-    , str_ids(str_ids) {
-    }
+    , str_ids(str_ids) {}
 
 PackedReads::~PackedReads() { clear(); }
 
@@ -171,6 +170,14 @@ bool PackedReads::get_next_read(string &id, string &seq, string &quals) {
   if (str_ids) id = read_id_idx_to_str[index];
   index++;
   return true;
+}
+
+uint64_t PackedReads::get_read_index() const { return index; }
+
+void PackedReads::get_read(uint64_t index, string &id, string &seq, string &quals) const {
+  if (index >= packed_reads.size()) DIE("Invalid get_read(", index, ") - size=", packed_reads.size());
+  packed_reads[index].unpack(id, seq, quals, qual_offset);
+  if (str_ids) id = read_id_idx_to_str[index];
 }
 
 void PackedReads::reset() { index = 0; }
@@ -230,8 +237,8 @@ upcxx::future<> PackedReads::load_reads_nb() {
   }
   int64_t bytes_per_record = tot_bytes_read / num_records;
   int64_t estimated_records = fqr.my_file_size() / bytes_per_record;
-  int64_t reserve_records = estimated_records * 1.10 + 10000; // reserve more so there is not a big reallocation if it is under
-  packed_reads.reserve(reserve_records); 
+  int64_t reserve_records = estimated_records * 1.10 + 10000;  // reserve more so there is not a big reallocation if it is under
+  packed_reads.reserve(reserve_records);
   fqr.reset();
   ProgressBar progbar(fqr.my_file_size(), "Loading reads from " + fname + " " + get_size_str(fqr.my_file_size()));
   tot_bytes_read = 0;
@@ -246,15 +253,17 @@ upcxx::future<> PackedReads::load_reads_nb() {
   FastqReaders::close(fname);
   auto fut = progbar.set_done();
   int64_t underestimate = estimated_records - packed_reads.size();
-  if (underestimate < 0 && reserve_records < packed_reads.size()) LOG("NOTICE Underestimated by ", -underestimate, " estimated ", estimated_records, " found ", packed_reads.size(), "\n");
+  if (underestimate < 0 && reserve_records < packed_reads.size())
+    LOG("NOTICE Underestimated by ", -underestimate, " estimated ", estimated_records, " found ", packed_reads.size(), "\n");
   auto all_under_estimated_fut = upcxx::reduce_one(underestimate < 0 ? 1 : 0, upcxx::op_fast_add, 0);
   auto all_estimated_records_fut = upcxx::reduce_one(estimated_records, upcxx::op_fast_add, 0);
   auto all_num_records_fut = upcxx::reduce_one(packed_reads.size(), upcxx::op_fast_add, 0);
   auto all_num_bases_fut = upcxx::reduce_one(bases, upcxx::op_fast_add, 0);
   return when_all(fut, all_under_estimated_fut, all_estimated_records_fut, all_num_records_fut, all_num_bases_fut)
-      .then([max_read_len = this->max_read_len](int64_t all_under_estimated, int64_t all_estimated_records, int64_t all_num_records, int64_t all_num_bases) {
-        SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, " with ", all_under_estimated, " ranks underestimated) max_read=", max_read_len,
-                     " tot_bases=", all_num_bases, "\n");
+      .then([max_read_len = this->max_read_len](int64_t all_under_estimated, int64_t all_estimated_records, int64_t all_num_records,
+                                                int64_t all_num_bases) {
+        SLOG_VERBOSE("Loaded ", all_num_records, " reads (estimated ", all_estimated_records, " with ", all_under_estimated,
+                     " ranks underestimated) max_read=", max_read_len, " tot_bases=", all_num_bases, "\n");
       });
 }
 
