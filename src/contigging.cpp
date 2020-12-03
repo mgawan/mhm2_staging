@@ -134,6 +134,14 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();
     barrier();
+    size_t num_reads = 0;
+    for (auto packed_reads : packed_reads_list) {
+      num_reads += packed_reads->get_local_num_reads();
+    }
+    auto avg_num_reads = reduce_one(num_reads, op_fast_add, 0).wait() / rank_n();
+    auto max_num_reads = reduce_one(num_reads, op_fast_max, 0).wait();
+    SLOG("Before shuffle: avg reads per rank ", avg_num_reads, " max ", max_num_reads,
+         " load balance ", (double)avg_num_reads / max_num_reads, "\n");
     if (kmer_len == options->kmer_lens.front()) {
       if (options->shuffle_reads) {
         stage_timers.shuffle_reads->start();
@@ -141,6 +149,14 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
         stage_timers.shuffle_reads->stop();
       }
     }
+    num_reads = 0;
+    for (auto packed_reads : packed_reads_list) {
+      num_reads += packed_reads->get_local_num_reads();
+    }
+    avg_num_reads = reduce_one(num_reads, op_fast_add, 0).wait() / rank_n();
+    max_num_reads = reduce_one(num_reads, op_fast_max, 0).wait();
+    SLOG("After shuffle: avg reads per rank ", avg_num_reads, " max ", max_num_reads,
+         " load balance ", (double)avg_num_reads / max_num_reads, "\n");
 #ifdef DEBUG
     alns.dump_rank_file("ctg-" + to_string(kmer_len) + ".alns.gz");
 #endif

@@ -147,15 +147,15 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
     progbar.done();
   }
   kmer_dht->flush_updates();
+  auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
 #ifdef COUNT_UNIQUE_KMERS
   auto tot_unique_kmers = reduce_one(local_kmer_counts.size(), op_fast_add, 0).wait();
   auto max_unique_kmers = reduce_one(local_kmer_counts.size(), op_fast_max, 0).wait();
-  SLOG("Found ", tot_unique_kmers / rank_n(), " unique kmers per rank, load balance ",
-       (double)tot_unique_kmers / rank_n() / max_unique_kmers, "\n");
+  SLOG("Found ", perc_str(tot_unique_kmers / rank_n(), all_num_kmers / rank_n()), " unique kmers per rank, max ", max_unique_kmers,
+       " load balance ", (double)tot_unique_kmers / rank_n() / max_unique_kmers, "\n");
 #endif
   DBG("This rank processed ", num_reads, " reads\n");
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto all_num_bad_quals = reduce_one(num_bad_quals, op_fast_add, 0).wait();
   auto all_num_Ns = reduce_one(num_Ns, op_fast_add, 0).wait();
   auto all_distinct_kmers = kmer_dht->get_num_kmers();
