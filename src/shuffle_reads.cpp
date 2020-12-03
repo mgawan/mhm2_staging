@@ -96,8 +96,8 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
   }
   barrier();
   auto tot_aln_reads = reduce_one(read_to_target_map->size(), op_fast_add, 0).wait();
-  auto tot_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  SLOG("Number of reads with alignments ", perc_str(tot_aln_reads, tot_reads), "\n");
+  auto tot_read_pairs = reduce_one(num_reads, op_fast_add, 0).wait() / 2;
+  SLOG_VERBOSE("Number of read pairs with alignments ", perc_str(tot_aln_reads, tot_read_pairs), "\n");
   barrier();
   dist_object<vector<PackedRead>> new_packed_reads({});
   for (auto packed_reads : packed_reads_list) {
@@ -132,22 +132,6 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
     }
   }
   barrier();
-
-  string read_id, seq, quals;
-  ofstream ofs("reads_new_" + to_string(rank_me()) + ".fastq");
-  for (auto &packed_read : *new_packed_reads) {
-    packed_read.unpack(read_id, seq, quals, qual_offset);
-    ofs << read_id << " " << seq << " " << quals << endl;
-  }
-  ofs.close();
-  packed_reads_list[0]->reset();
-  ofstream ofs2("reads_old_" + to_string(rank_me()) + ".fastq");
-  while (packed_reads_list[0]->get_next_read(read_id, seq, quals)) {
-    ofs2 << read_id << " " << seq << " " << quals << endl;
-  }
-  ofs2.close();
-  barrier();
-
   // now copy the new packed reads to the old
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
@@ -159,11 +143,9 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
   auto num_reads_received = new_packed_reads->size();
   double avg_num_received = (double)reduce_one(num_reads_received, op_fast_add, 0).wait() / rank_n();
   auto max_num_received = reduce_one(num_reads_received, op_fast_max, 0).wait();
-  SLOG("Balance in reads ", fixed, setprecision(3), avg_num_received / max_num_received, "\n");
+  SLOG_VERBOSE("Balance in reads ", fixed, setprecision(3), avg_num_received / max_num_received, "\n");
   auto tot_num_new_reads = reduce_one(new_packed_reads->size(), op_fast_add, 0).wait();
-  if (tot_num_new_reads != tot_reads)
-    SWARN("Not all reads shuffled, expected ", tot_reads, " but only shuffled ", tot_num_new_reads);
+  if (tot_num_new_reads != tot_read_pairs * 2)
+    SWARN("Not all reads shuffled, expected ", tot_read_pairs * 2, " but only shuffled ", tot_num_new_reads);
   barrier();
-  upcxx::finalize();
-  exit(0);
 }

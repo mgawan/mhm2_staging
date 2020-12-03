@@ -335,7 +335,7 @@ int main(int argc, char **argv) {
     SLOG("    ", stage_timers.alignments->get_final(), "\n");
     SLOG("      -> ", stage_timers.kernel_alns->get_final(), "\n");
     SLOG("    ", stage_timers.localassm->get_final(), "\n");
-    SLOG("    ", stage_timers.shuffle_reads->get_final(), "\n");
+    if (options->shuffle_reads) SLOG("    ", stage_timers.shuffle_reads->get_final(), "\n");
     SLOG("    ", stage_timers.cgraph->get_final(), "\n");
     SLOG("    FASTQ total read time: ", FastqReader::get_io_time(), "\n");
     SLOG("    merged FASTQ write time: ", elapsed_write_io_t, "\n");

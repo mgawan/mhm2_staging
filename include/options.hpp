@@ -110,6 +110,7 @@ class Options {
   int break_scaff_Ns = 10;
   string output_dir;
   bool restart = false;
+  bool shuffle_reads = false;
 
   Options();
   ~Options();

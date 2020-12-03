@@ -89,6 +89,8 @@ class PackedRead {
   string get_str_id();
   static int64_t to_packed_id(const string &id_str);
 
+  uint16_t get_read_len();
+
   struct upcxx_serialization {
     template <typename Writer>
     static void serialize(Writer &writer, PackedRead const &packed_read) {
@@ -121,7 +123,7 @@ class PackedReads {
   uint64_t index = 0;
   uint64_t bases = 0;
   uint64_t name_bytes = 0;
-  unsigned qual_offset;
+  int qual_offset;
   string fname;
   bool str_ids;
 

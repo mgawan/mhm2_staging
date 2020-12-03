@@ -146,6 +146,7 @@ void PackedRead::clear() {
 }
 
 void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) {
+  assert(bytes != nullptr);
   char pair_id = (read_id < 0 ? '1' : '2');
   read_id_str = "@r" + to_string(labs(read_id)) + '/' + pair_id;
   seq.resize(read_len);
@@ -172,18 +173,31 @@ int64_t PackedRead::to_packed_id(const string &id_str) {
   return read_id;
 }
 
+uint16_t PackedRead::get_read_len() { return read_len; }
+
 PackedReads::PackedReads(int qual_offset, const string &fname, bool str_ids)
     : qual_offset(qual_offset)
     , fname(fname)
     , str_ids(str_ids) {}
 
-PackedReads::PackedReads(int qual_offset, vector<PackedRead> &packed_reads)
-    : qual_offset(qual_offset)
-    , packed_reads(packed_reads) {}
+PackedReads::PackedReads(int qual_offset, vector<PackedRead> &new_packed_reads)
+    : packed_reads(new_packed_reads)
+    , index(0)
+    , qual_offset(qual_offset)
+    , fname("")
+    , str_ids(false) {
+  max_read_len = 0;
+  // assert(!packed_reads.size());
+  for (auto &packed_read : new_packed_reads) {
+    // packed_reads.push_back(packed_read);
+    max_read_len = max((unsigned)packed_read.get_read_len(), max_read_len);
+  }
+}
 
 PackedReads::~PackedReads() { clear(); }
 
 bool PackedReads::get_next_read(string &id, string &seq, string &quals) {
+  assert(qual_offset == 33 || qual_offset == 64);
   if (index == packed_reads.size()) return false;
   packed_reads[index].unpack(id, seq, quals, qual_offset);
   if (str_ids) id = read_id_idx_to_str[index];

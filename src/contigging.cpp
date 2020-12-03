@@ -82,7 +82,7 @@ static uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &pac
 }
 
 template <int MAX_K>
-void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
+void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads *> &packed_reads_list, Contigs &ctgs,
                 double &num_kmers_factor, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = std::chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
@@ -135,9 +135,11 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     stage_timers.alignments->stop();
     barrier();
     if (kmer_len == options->kmer_lens.front()) {
-      stage_timers.shuffle_reads->start();
-      shuffle_reads(options->qual_offset, packed_reads_list, alns);
-      stage_timers.shuffle_reads->stop();
+      if (options->shuffle_reads) {
+        stage_timers.shuffle_reads->start();
+        shuffle_reads(options->qual_offset, packed_reads_list, alns);
+        stage_timers.shuffle_reads->stop();
+      }
     }
 #ifdef DEBUG
     alns.dump_rank_file("ctg-" + to_string(kmer_len) + ".alns.gz");
