@@ -80,7 +80,7 @@ class PackedRead {
 
   ~PackedRead();
 
-  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset);
+  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset) const;
   void clear();
 };
 
@@ -97,11 +97,13 @@ class PackedReads {
   bool str_ids;
 
  public:
-  using PackedReadsList = vector<PackedReads*>;
+  using PackedReadsList = vector<PackedReads *>;
   PackedReads(int qual_offset, const string &fname, bool str_ids = false);
   ~PackedReads();
 
   bool get_next_read(string &id, string &seq, string &quals);
+  uint64_t get_read_index() const;
+  void get_read(uint64_t index, string &id, string &seq, string &quals) const;
 
   void reset();
 
@@ -119,7 +121,7 @@ class PackedReads {
 
   upcxx::future<> load_reads_nb();
 
-  static void load_reads(PackedReadsList&);
+  static void load_reads(PackedReadsList &);
 
   void report_size();
 };

@@ -161,9 +161,11 @@ void Alns::append(Alns &more_alns) {
   more_alns.clear();
 }
 
+const Aln &Alns::get_aln(int64_t i) const { return alns[i]; }
+
 Aln &Alns::get_aln(int64_t i) { return alns[i]; }
 
-size_t Alns::size() { return alns.size(); }
+size_t Alns::size() const { return alns.size(); }
 
 void Alns::reserve(size_t capacity) { alns.reserve(capacity); }
 
@@ -216,7 +218,7 @@ void Alns::dump_sam_file(const string fname, const vector<string> &read_group_na
 
   // next alignments.  rank0 will be first with the remaining header fields
   dump_all(of, true, min_ctg_len);
-  
+
   all_done = when_all(all_done, of.close_async());
   all_done.wait();
   of.report_timings().wait();
@@ -250,7 +252,7 @@ int Alns::calculate_unmerged_rlen() {
 future<> Alns::sort_alns() {
   AsyncTimer timer(__FILEFUNC__);
   // execute this in a separate thread so master can continue to communicate freely
-  auto fut = execute_in_thread_pool([&alns=this->alns, timer]() {
+  auto fut = execute_in_thread_pool([&alns = this->alns, timer]() {
     timer.start();
     // sort the alns by name and then for the read from best score to worst - this is needed in later stages
     std::sort(alns.begin(), alns.end(), [](const Aln &elem1, const Aln &elem2) {
@@ -273,7 +275,7 @@ future<> Alns::sort_alns() {
     timer.stop();
     return timer;
   });
-  return fut.then([](AsyncTimer timer){
+  return fut.then([](AsyncTimer timer) {
     // TODO record timer and initate reports after waiting...
   });
 }
