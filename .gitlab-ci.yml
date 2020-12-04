@@ -20,6 +20,7 @@ Cori:build:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - when: on_success
   tags:
     - Cori
   script:
@@ -91,6 +92,7 @@ Cori:validation:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - when: on_success
   tags:
     - Cori
   script:
@@ -148,6 +150,7 @@ Cori:accuracy:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - when: on_success
   tags:
     - Cori
   script:
@@ -219,6 +222,7 @@ HULK:build:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - when: on_success
   tags:
     - HULK
   script:
@@ -296,6 +300,7 @@ HULK:validation:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - when: on_success
   tags:
     - HULK
   script:
@@ -344,6 +349,7 @@ HULK:accuracy:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - when: on_success
   tags:
     - HULK
   script:
