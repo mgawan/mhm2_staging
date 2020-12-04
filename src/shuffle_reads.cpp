@@ -131,7 +131,7 @@ dist_object<ctg_to_targets_map_t> generate_ctg_to_targets_map(dist_object<read_t
        (double)avg_num_rank_reads / max_num_rank_reads, "\n");
   int64_t block_size = tot_reads / rank_n();
   for (auto &[cid, target_pair] : *ctg_to_targets_map) {
-    auto new_target_rank = offset / block_size;
+    auto new_target_rank = (offset + target_pair.first) / block_size;
     DBG("got block ", offset, " size ", target_pair.first * 2, " target is ", new_target_rank, "\n");
     target_pair.second = new_target_rank;
     offset += target_pair.first * 2;
