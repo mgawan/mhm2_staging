@@ -6,6 +6,11 @@ variables:
   RELEASE_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:$CI_BUILD_REF_NAME
   HULK_UPCXX_VER: 2020.3.8
 
+workflow:
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
+      when: never
+    - when: always
 
 stages:
   - build
