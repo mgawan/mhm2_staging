@@ -90,14 +90,6 @@ struct FragElem {
 
 template <int MAX_K>
 struct StepInfo {
-  StepInfo() = default;
-  StepInfo(Kmer<MAX_K> kmer, char prev_ext, char next_ext)
-      : walk_status{}
-      , prev_ext(prev_ext)
-      , next_ext(next_ext)
-      , visited_frag_elem_gptr{}
-      , uutig{}
-      , kmer(kmer) {}
   WalkStatus walk_status;
   uint32_t sum_depths;
   char prev_ext;
@@ -105,6 +97,17 @@ struct StepInfo {
   global_ptr<FragElem> visited_frag_elem_gptr;
   string uutig;
   Kmer<MAX_K> kmer;
+
+  StepInfo() = default;
+  StepInfo(Kmer<MAX_K> kmer, char prev_ext, char next_ext)
+      : walk_status{}
+      , sum_depths(0)
+      , prev_ext(prev_ext)
+      , next_ext(next_ext)
+      , visited_frag_elem_gptr{}
+      , uutig{}
+      , kmer(kmer) {}
+
   UPCXX_SERIALIZED_FIELDS(walk_status, sum_depths, prev_ext, next_ext, visited_frag_elem_gptr, uutig, kmer);
 };
 
