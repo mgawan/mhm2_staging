@@ -3,7 +3,6 @@ workflow:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
     - if: '$CI_PIPELINE_SOURCE == "push"'
-      when: on_success
 
 variables:
   GIT_STRATEGY: fetch
