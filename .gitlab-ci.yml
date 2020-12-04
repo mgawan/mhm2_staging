@@ -1,6 +1,5 @@
 workflow:
   rules:
-    - when: always
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
 
