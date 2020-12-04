@@ -2,6 +2,8 @@ workflow:
   rules:
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
 
 variables:
   GIT_STRATEGY: fetch
