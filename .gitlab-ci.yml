@@ -1,6 +1,6 @@
 workflow:
   rules:
-    - if: '$CI_COMMIT_MESSAGE == "WIP"'
+    - if: $CI_COMMIT_BRANCH =~ /-WIP$/
       when: never
     - when: always
 
