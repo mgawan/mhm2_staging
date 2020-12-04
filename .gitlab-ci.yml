@@ -1,3 +1,9 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /-WIP$/'
+      when: never
+    - when: always
+
 variables:
   GIT_STRATEGY: fetch
   REGISTRY: registry.gitlab.com
@@ -17,10 +23,6 @@ stages:
 
 Cori:build:
   stage: build
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
-      when: never
-    - when: on_success
   tags:
     - Cori
   script:
@@ -89,10 +91,6 @@ Cori:build:
 
 Cori:validation:
   stage: validation
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
-      when: never
-    - when: on_success
   tags:
     - Cori
   script:
@@ -147,10 +145,6 @@ Cori:validation:
 
 Cori:accuracy:
   stage: accuracy
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
-      when: never
-    - when: on_success
   tags:
     - Cori
   script:
@@ -219,10 +213,6 @@ Cori:accuracy:
 
 HULK:build:
   stage: build
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
-      when: never
-    - when: on_success
   tags:
     - HULK
   script:
@@ -297,10 +287,6 @@ HULK:build:
 
 HULK:validation:
   stage: validation
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
-      when: never
-    - when: on_success
   tags:
     - HULK
   script:
@@ -346,10 +332,6 @@ HULK:validation:
 
 HULK:accuracy:
   stage: accuracy
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
-      when: never
-    - when: on_success
   tags:
     - HULK
   script:
