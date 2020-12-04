@@ -373,5 +373,7 @@ HULK:accuracy:
     - echo "Completed"
 
 after_script:
+  - date
   - echo "Done"
+
 
