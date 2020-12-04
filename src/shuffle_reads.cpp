@@ -117,22 +117,26 @@ dist_object<ctg_to_targets_map_t> generate_ctg_to_targets_map(dist_object<read_t
   atomic_domain<int64_t> fetch_add_domain({atomic_op::fetch_add});
   dist_object<global_ptr<int64_t>> ctg_counter_dobj = (!rank_me() ? new_<int64_t>(0) : nullptr);
   global_ptr<int64_t> ctg_counter = ctg_counter_dobj.fetch(0).wait();
-
-  int64_t block_size = tot_reads / rank_n();
-  int64_t tot_target_reads = 0;
+  barrier();
+  int64_t num_rank_reads = 0;
   for (auto &[cid, target_pair] : *ctg_to_targets_map) {
-    auto num_target_reads = target_pair.first * 2;
-    tot_target_reads += num_target_reads;
-    auto offset = fetch_add_domain.fetch_add(ctg_counter, num_target_reads, memory_order_relaxed).wait();
-    auto new_target_rank = offset / block_size;
-    DBG("got block ", offset, " ", offset + target_pair.first, " size ", target_pair.first, " target is ", new_target_rank, "\n");
-    target_pair.second = new_target_rank;
+    num_rank_reads += target_pair.first * 2;
   }
-  auto tot_num_target_reads = reduce_one(tot_target_reads, op_fast_add, 0).wait();
-  auto avg_num_target_reads = tot_num_target_reads / rank_n();
-  auto max_num_target_reads = reduce_one(tot_target_reads, op_fast_max, 0).wait();
-  SLOG("Avg number of reads per rank ", avg_num_target_reads, " max ", max_num_target_reads, " balance ",
-       (double)avg_num_target_reads / max_num_target_reads, "\n");
+  auto offset = fetch_add_domain.fetch_add(ctg_counter, num_rank_reads, memory_order_relaxed).wait();
+  barrier();
+  auto tot_num_rank_reads = reduce_one(num_rank_reads, op_fast_add, 0).wait();
+  auto avg_num_rank_reads = tot_num_rank_reads / rank_n();
+  auto max_num_rank_reads = reduce_one(num_rank_reads, op_fast_max, 0).wait();
+  SLOG("Avg number of reads per rank ", avg_num_rank_reads, " max ", max_num_rank_reads, " balance ",
+       (double)avg_num_rank_reads / max_num_rank_reads, "\n");
+  int64_t block_size = tot_reads / rank_n();
+  for (auto &[cid, target_pair] : *ctg_to_targets_map) {
+    auto new_target_rank = offset / block_size;
+    DBG("got block ", offset, " size ", target_pair.first * 2, " target is ", new_target_rank, "\n");
+    target_pair.second = new_target_rank;
+    offset += target_pair.first * 2;
+  }
+  barrier();
   fetch_add_domain.destroy();
   return ctg_to_targets_map;
 }
