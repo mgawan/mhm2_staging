@@ -384,9 +384,6 @@ HULK:accuracy:
     - echo "Completed"
 
 after_script:
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
-      when: never
   - date
   - echo "Done"
 
