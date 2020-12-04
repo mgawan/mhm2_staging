@@ -1,3 +1,9 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /-WIP$/
+      when: never
+    - when: always
+
 variables:
   GIT_STRATEGY: fetch
   REGISTRY: registry.gitlab.com
@@ -5,7 +11,6 @@ variables:
   TEST_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:latest
   RELEASE_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:$CI_BUILD_REF_NAME
   HULK_UPCXX_VER: 2020.3.8
-
 
 stages:
   - build
@@ -367,5 +372,7 @@ HULK:accuracy:
     - echo "Completed"
 
 after_script:
+  - date
   - echo "Done"
+
 
