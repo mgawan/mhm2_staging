@@ -1,8 +1,8 @@
 workflow:
   rules:
+    - when: on_success
     - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
       when: never
-    - when: always
 
 variables:
   GIT_STRATEGY: fetch
