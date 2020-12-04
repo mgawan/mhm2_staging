@@ -61,25 +61,23 @@ intrank_t get_target_rank(int64_t val) {
   return MurmurHash3_x64_64(reinterpret_cast<const void *>(&val), sizeof(int64_t)) % rank_n();
 }
 
-void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Alns &alns, size_t num_ctgs) {
-  BarrierTimer timer(__FILEFUNC__);
-  using read_to_target_map_t = HASH_TABLE<int64_t, pair<int, int64_t>>;
-  dist_object<read_to_target_map_t> read_to_target_map({});
-  auto num_reads = 0;
-  for (auto packed_reads : packed_reads_list) num_reads += packed_reads->get_local_num_reads();
-  read_to_target_map->reserve(num_reads);
-  // FIXME: this should use an TTAS
+using read_to_cid_map_t = HASH_TABLE<int64_t, pair<int, int64_t>>;
+using ctg_to_targets_map_t = HASH_TABLE<int64_t, pair<int, int>>;
 
+dist_object<read_to_cid_map_t> generate_read_to_cid_map(vector<PackedReads *> &packed_reads_list, Alns &alns, int64_t tot_reads) {
+  dist_object<read_to_cid_map_t> read_to_cid_map({});
+  read_to_cid_map->reserve(tot_reads / rank_n() + 1);
+  // FIXME: this should use an TTAS
   for (auto &aln : alns) {
     progress();
     // using abs ensures that both reads in a pair are mapped to the same location
     int64_t packed_read_id = abs(PackedRead::to_packed_id(aln.read_id));
     rpc(
         get_target_rank(packed_read_id),
-        [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id, int score, int64_t cid) {
-          auto it = read_to_target_map->find(read_id);
-          if (it == read_to_target_map->end()) {
-            read_to_target_map->insert({read_id, {score, cid}});
+        [](dist_object<read_to_cid_map_t> &read_to_cid_map, int64_t read_id, int score, int64_t cid) {
+          auto it = read_to_cid_map->find(read_id);
+          if (it == read_to_cid_map->end()) {
+            read_to_cid_map->insert({read_id, {score, cid}});
           } else {
             if (it->second.first < score) {
               it->second.first = score;
@@ -87,42 +85,61 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
             }
           }
         },
-        read_to_target_map, packed_read_id, aln.score1, aln.cid)
+        read_to_cid_map, packed_read_id, aln.score1, aln.cid)
         .wait();
   }
   barrier();
-  auto tot_aln_reads = reduce_one(read_to_target_map->size(), op_fast_add, 0).wait();
-  auto tot_read_pairs = reduce_one(num_reads, op_fast_add, 0).wait() / 2;
-  SLOG("Number of read pairs with alignments ", perc_str(tot_aln_reads, tot_read_pairs), "\n");
-  using ctg_to_reads_map_t = HASH_TABLE<int64_t, vector<int64_t>>;
-  dist_object<ctg_to_reads_map_t> ctg_to_reads_map({});
+  auto tot_aln_reads = reduce_one(read_to_cid_map->size(), op_fast_add, 0).wait();
+  SLOG("Number of read pairs with alignments ", perc_str(tot_aln_reads, tot_reads / 2), "\n");
+  return read_to_cid_map;
+}
+
+dist_object<ctg_to_targets_map_t> generate_ctg_to_targets_map(dist_object<read_to_cid_map_t> &read_to_cid_map, int64_t num_ctgs,
+                                                              int64_t tot_reads) {
+  barrier();
   auto tot_num_ctgs = reduce_all(num_ctgs, op_fast_add).wait();
-  ctg_to_reads_map->reserve((int64_t)ceil((double)tot_num_ctgs / rank_n()));
-  for (auto &[read_id, score_cid_pair] : *read_to_target_map) {
+  dist_object<ctg_to_targets_map_t> ctg_to_targets_map({});
+  ctg_to_targets_map->reserve((int64_t)ceil((double)tot_num_ctgs / rank_n()));
+  for (auto &[read_id, score_cid_pair] : *read_to_cid_map) {
     rpc(
         get_target_rank(score_cid_pair.second),
-        [](dist_object<ctg_to_reads_map_t> &ctg_to_reads_map, int64_t cid, int64_t read_id) {
-          auto it = ctg_to_reads_map->find(cid);
-          if (it == ctg_to_reads_map->end())
-            ctg_to_reads_map->insert({cid, {read_id}});
+        [](dist_object<ctg_to_targets_map_t> &ctg_to_targets_map, int64_t cid) {
+          auto it = ctg_to_targets_map->find(cid);
+          if (it == ctg_to_targets_map->end())
+            ctg_to_targets_map->insert({cid, {1, rank_me()}});
           else
-            it->second.push_back(read_id);
+            it->second.first++;
         },
-        ctg_to_reads_map, score_cid_pair.second, read_id)
+        ctg_to_targets_map, score_cid_pair.second)
         .wait();
   }
   barrier();
-  int64_t num_target_reads = 0;
-  for (auto &[cid, reads] : *ctg_to_reads_map) {
-    num_target_reads += reads.size();
+  atomic_domain<int64_t> fetch_add_domain({atomic_op::fetch_add});
+  dist_object<global_ptr<int64_t>> ctg_counter_dobj = (!rank_me() ? new_<int64_t>(0) : nullptr);
+  global_ptr<int64_t> ctg_counter = ctg_counter_dobj.fetch(0).wait();
+
+  int64_t block_size = tot_reads / rank_n();
+  int64_t tot_target_reads = 0;
+  for (auto &[cid, target_pair] : *ctg_to_targets_map) {
+    auto num_target_reads = target_pair.first * 2;
+    tot_target_reads += num_target_reads;
+    auto offset = fetch_add_domain.fetch_add(ctg_counter, num_target_reads, memory_order_relaxed).wait();
+    auto new_target_rank = offset / block_size;
+    DBG("got block ", offset, " ", offset + target_pair.first, " size ", target_pair.first, " target is ", new_target_rank, "\n");
+    target_pair.second = new_target_rank;
   }
-  num_target_reads *= 2;
-  auto tot_num_target_reads = reduce_one(num_target_reads, op_fast_add, 0).wait();
+  auto tot_num_target_reads = reduce_one(tot_target_reads, op_fast_add, 0).wait();
   auto avg_num_target_reads = tot_num_target_reads / rank_n();
-  auto max_num_target_reads = reduce_one(num_target_reads, op_fast_max, 0).wait();
-  SLOG("Avg number of reads per rank ", avg_num_target_reads,
-       " max ", max_num_target_reads, " balance ", (double)avg_num_target_reads / max_num_target_reads,
-       "\n");
+  auto max_num_target_reads = reduce_one(tot_target_reads, op_fast_max, 0).wait();
+  SLOG("Avg number of reads per rank ", avg_num_target_reads, " max ", max_num_target_reads, " balance ",
+       (double)avg_num_target_reads / max_num_target_reads, "\n");
+  fetch_add_domain.destroy();
+  return ctg_to_targets_map;
+}
+
+dist_object<vector<PackedRead>> shuffle_reads_to_targets(vector<PackedReads *> &packed_reads_list,
+                                                         dist_object<read_to_cid_map_t> &read_to_cid_map,
+                                                         dist_object<ctg_to_targets_map_t> &ctg_to_targets_map, int64_t tot_reads) {
   barrier();
   int64_t num_not_found = 0;
   dist_object<vector<PackedRead>> new_packed_reads({});
@@ -134,15 +151,29 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
       auto read_id = abs(packed_read1.get_id());
       int64_t cid = rpc(
                         get_target_rank(read_id),
-                        [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id) -> int64_t {
-                          const auto it = read_to_target_map->find(read_id);
-                          if (it == read_to_target_map->end()) return -1;
+                        [](dist_object<read_to_cid_map_t> &read_to_cid_map, int64_t read_id) -> int64_t {
+                          const auto it = read_to_cid_map->find(read_id);
+                          if (it == read_to_cid_map->end()) return -1;
                           return it->second.second;
                         },
-                        read_to_target_map, read_id)
+                        read_to_cid_map, read_id)
                         .wait();
-      if (cid == -1) num_not_found++;
-      int target_ctg_rank = (cid == -1 ? std::experimental::randint(0, rank_n() - 1) : get_target_rank(cid));
+      int target_ctg_rank;
+      if (cid != -1) {
+        target_ctg_rank = rpc(
+                              get_target_rank(cid),
+                              [](dist_object<ctg_to_targets_map_t> &ctg_to_targets_map, int64_t cid) -> int {
+                                const auto it = ctg_to_targets_map->find(cid);
+                                if (it == ctg_to_targets_map->end()) return -1;
+                                return it->second.second;
+                              },
+                              ctg_to_targets_map, cid)
+                              .wait();
+      }
+      if (cid == -1) {
+        num_not_found++;
+        target_ctg_rank = std::experimental::randint(0, rank_n() - 1);
+      }
       assert(target_ctg_rank >= 0 && target_ctg_rank < rank_n());
       rpc(
           target_ctg_rank,
@@ -156,7 +187,21 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
   }
   barrier();
   auto tot_num_not_found = reduce_one(num_not_found, op_fast_add, 0).wait();
-  SLOG("Didn't find contig targets for ", perc_str(tot_num_not_found, tot_read_pairs), " pairs\n");
+  SLOG("Didn't find contig targets for ", perc_str(tot_num_not_found, tot_reads / 2), " pairs\n");
+  return new_packed_reads;
+}
+
+void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Alns &alns, size_t num_ctgs) {
+  BarrierTimer timer(__FILEFUNC__);
+
+  auto num_reads = 0;
+  for (auto packed_reads : packed_reads_list) num_reads += packed_reads->get_local_num_reads();
+  auto tot_reads = reduce_all(num_reads, op_fast_add).wait();
+
+  auto read_to_cid_map = generate_read_to_cid_map(packed_reads_list, alns, tot_reads);
+  auto ctg_to_targets_map = generate_ctg_to_targets_map(read_to_cid_map, num_ctgs, tot_reads);
+  auto new_packed_reads = shuffle_reads_to_targets(packed_reads_list, read_to_cid_map, ctg_to_targets_map, tot_reads);
+
   // now copy the new packed reads to the old
   for (auto packed_reads : packed_reads_list) {
     delete packed_reads;
@@ -170,7 +215,7 @@ void shuffle_reads(int qual_offset, vector<PackedReads *> &packed_reads_list, Al
   auto max_num_received = reduce_one(num_reads_received, op_fast_max, 0).wait();
   SLOG_VERBOSE("Balance in reads ", fixed, setprecision(3), avg_num_received / max_num_received, "\n");
   auto tot_num_new_reads = reduce_one(new_packed_reads->size(), op_fast_add, 0).wait();
-  if (tot_num_new_reads != tot_read_pairs * 2)
-    SWARN("Not all reads shuffled, expected ", tot_read_pairs * 2, " but only shuffled ", tot_num_new_reads);
+  if (tot_num_new_reads != tot_reads)
+    SWARN("Not all reads shuffled, expected ", tot_reads, " but only shuffled ", tot_num_new_reads);
   barrier();
 }
