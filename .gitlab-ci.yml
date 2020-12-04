@@ -18,7 +18,7 @@ stages:
 Cori:build:
   stage: build
   rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
       when: never
     - when: on_success
   tags:
@@ -90,7 +90,7 @@ Cori:build:
 Cori:validation:
   stage: validation
   rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
       when: never
     - when: on_success
   tags:
@@ -148,7 +148,7 @@ Cori:validation:
 Cori:accuracy:
   stage: accuracy
   rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
       when: never
     - when: on_success
   tags:
@@ -220,7 +220,7 @@ Cori:accuracy:
 HULK:build:
   stage: build
   rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
       when: never
     - when: on_success
   tags:
@@ -298,7 +298,7 @@ HULK:build:
 HULK:validation:
   stage: validation
   rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
       when: never
     - when: on_success
   tags:
@@ -347,7 +347,7 @@ HULK:validation:
 HULK:accuracy:
   stage: accuracy
   rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+    - if: $CI_COMMIT_MESSAGE =~ /-wip$/
       when: never
     - when: on_success
   tags:
