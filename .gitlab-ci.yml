@@ -1,9 +1,3 @@
-workflow:
-  rules:
-    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
-      when: never
-    - when: always
-
 variables:
   GIT_STRATEGY: fetch
   REGISTRY: registry.gitlab.com
@@ -23,6 +17,10 @@ stages:
 
 Cori:build:
   stage: build
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+      when: never
+    - when: always
   tags:
     - Cori
   script:
@@ -213,6 +211,10 @@ Cori:accuracy:
 
 HULK:build:
   stage: build
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /-WIP$/
+      when: never
+    - when: always
   tags:
     - HULK
   script:
