@@ -263,14 +263,44 @@ void test_kmer_minimizers(int kmer_len) {
     } else {
       if (prev_minimizer != minimizer) prev_minimizer = minimizer;
     }
-    auto opt_minimizer = Kmer<MAX_K>::mer_to_string(kmer.get_minimizer(m_len), m_len);
+    auto minz_fast = kmer.get_minimizer_fast(m_len, false);
+    auto fast_minimizer = Kmer<MAX_K>::mer_to_string(minz_fast, m_len);
+
+    auto minz = kmer.get_minimizer(m_len);
+    auto opt_minimizer = Kmer<MAX_K>::mer_to_string(minz, m_len);
     if (prev_minz_opt == "") {
       prev_minz_opt = opt_minimizer;
     } else {
       if (prev_minz_opt != opt_minimizer) prev_minz_opt = opt_minimizer;
     }
-    auto minz = kmer.get_minimizer(m_len);
+
+    EXPECT_EQ(minz_fast, minz) << "Fast and original minimizers should be equal without rc check " << fast_minimizer << " "
+                               << opt_minimizer;
+
+    auto minz_fast_lc = kmer.get_minimizer_fast(m_len, true);
+    auto fast_minimizer_lc = Kmer<MAX_K>::mer_to_string(minz_fast_lc, m_len);
+    EXPECT_LE(minz_fast_lc, minz_fast) << "Fast with least complement should be LE fast without " << minz_fast_lc << " "
+                                       << minz_fast << " orig " << opt_minimizer;
+
     auto minz_rc = Kmer<MAX_K>::revcomp_minimizer(minz, m_len);
+    auto opt_minimizer_rc = Kmer<MAX_K>::mer_to_string(minz_rc, m_len);
+
+    Kmer revcomp = kmer.revcomp();
+    auto rc_minz = revcomp.get_minimizer(m_len);
+    auto rc_minz_fast = revcomp.get_minimizer_fast(m_len, false);
+    EXPECT_EQ(rc_minz, rc_minz_fast) << "revcomp fast and revcomp orig should be the same";
+
+    auto rc_minz_fast_lc = revcomp.get_minimizer_fast(m_len, true);
+    EXPECT_EQ(minz_fast_lc, rc_minz_fast_lc) << "fast with lc check should be same with fwd and rc kmer";
+
+    if (minz < minz_rc) {
+      EXPECT_TRUE((minz_fast_lc >= minz) & (minz_fast_lc <= minz_rc))
+          << "fast with lc is between minz and minz_rc " << fast_minimizer_lc << " " << opt_minimizer << " " << opt_minimizer_rc;
+    } else {
+      EXPECT_TRUE((minz_fast_lc <= minz) & (minz_fast_lc >= minz_rc))
+          << "fast with lc is between minz and minz_rc " << fast_minimizer_lc << " " << opt_minimizer << " " << opt_minimizer_rc;
+    }
+
     auto minz_rc_back = Kmer<MAX_K>::revcomp_minimizer(minz_rc, m_len);
     EXPECT_EQ(minz, minz_rc_back) << "Revcomp of minimizers should be equal " << minz << " " << minz_rc_back;
     // if (!i && kmer_len == 55) {
