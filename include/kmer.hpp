@@ -300,6 +300,18 @@ class Kmer {
     return rc_minz << (2 * (32 - m));
   }
 
+  uint64_t quick_hash(uint64_t v) const {
+    v = v * 3935559000370003845 + 2691343689449507681;
+    v ^= v >> 21;
+    v ^= v << 37;
+    v ^= v >> 4;
+    v *= 4768777513237032717;
+    v ^= v << 20;
+    v ^= v >> 41;
+    v ^= v << 5;
+    return v;
+  }
+
   uint64_t minimizer_hash(int m) const {
     static uint64_t seed = upcxx::rank_me();
     uint64_t minimizer = 0;
@@ -315,7 +327,8 @@ class Kmer {
       if (mmer_rc < mmer) mmer = mmer_rc;
       if (mmer > minimizer) minimizer = mmer;
     }
-    return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
+    return quick_hash(minimizer);
+    //return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
   }
 
   uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }

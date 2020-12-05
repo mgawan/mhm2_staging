@@ -292,17 +292,21 @@ void test_minimizer_performance(int kmer_len) {
   Kmer<MAX_K>::set_k(kmer_len);
   vector<Kmer<MAX_K>> kmers;
   Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
+  auto t = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < 50000; i++) {
     for (auto &kmer : kmers) {
       kmer.minimizer_hash(m_len);
     }
   }
+  std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
+  std::cout << "Minimizers for k=" << kmer_len << " took " << t_elapsed.count() << " s\n";
 }
 
 TEST(MHMTest, minimizer_performance) {
   test_minimizer_performance<32>(21);
   test_minimizer_performance<64>(55);
   test_minimizer_performance<96>(77);
+  test_minimizer_performance<96>(99);
 }
 */
 
