@@ -141,8 +141,8 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
       }
       auto avg_num_reads = reduce_one(num_reads, op_fast_add, 0).wait() / rank_n();
       auto max_num_reads = reduce_one(num_reads, op_fast_max, 0).wait();
-      SLOG("Avg reads per rank ", avg_num_reads, " max ", max_num_reads, " load balance ", (double)avg_num_reads / max_num_reads,
-           "\n");
+      SLOG("Avg reads per rank ", avg_num_reads, " max ", max_num_reads, " (balance ", (double)avg_num_reads / max_num_reads,
+           ")\n");
       if (options->shuffle_reads) {
         stage_timers.shuffle_reads->start();
         shuffle_reads(options->qual_offset, packed_reads_list, alns, ctgs.size());
@@ -153,8 +153,8 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
         }
         avg_num_reads = reduce_one(num_reads, op_fast_add, 0).wait() / rank_n();
         max_num_reads = reduce_one(num_reads, op_fast_max, 0).wait();
-        SLOG("After shuffle: avg reads per rank ", avg_num_reads, " max ", max_num_reads, " load balance ",
-             (double)avg_num_reads / max_num_reads, "\n");
+        SLOG("After shuffle: avg reads per rank ", avg_num_reads, " max ", max_num_reads, " (load balance ",
+             (double)avg_num_reads / max_num_reads, ")\n");
       }
     }
 #ifdef DEBUG
