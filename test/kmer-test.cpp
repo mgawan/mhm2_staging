@@ -255,6 +255,7 @@ void test_kmer_minimizers(int kmer_len) {
   Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
   string prev_minimizer = "";
   string prev_minz_opt = "";
+  int i = 0;
   for (auto &kmer : kmers) {
     auto minimizer = kmer.get_minimizer_slow(m_len);
     if (prev_minimizer == "") {
@@ -262,13 +263,22 @@ void test_kmer_minimizers(int kmer_len) {
     } else {
       if (prev_minimizer != minimizer) prev_minimizer = minimizer;
     }
-    auto opt_minimizer = kmer.get_minimizer(m_len);
+    auto opt_minimizer = Kmer<MAX_K>::mer_to_string(kmer.get_minimizer(m_len), m_len);
     if (prev_minz_opt == "") {
       prev_minz_opt = opt_minimizer;
     } else {
       if (prev_minz_opt != opt_minimizer) prev_minz_opt = opt_minimizer;
     }
+    auto minz = kmer.get_minimizer(m_len);
+    auto minz_rc = Kmer<MAX_K>::revcomp_minimizer(minz, m_len);
+    auto minz_rc_back = Kmer<MAX_K>::revcomp_minimizer(minz_rc, m_len);
+    EXPECT_EQ(minz, minz_rc_back) << "Revcomp of minimizers should be equal " << minz << " " << minz_rc_back;
+    // if (!i && kmer_len == 55) {
+    //  std::cout << Kmer<MAX_K>::mer_to_string(minz, m_len) << std::endl << Kmer<MAX_K>::mer_to_string(minz_rc, m_len) <<
+    //  std::endl;
+    //}
     EXPECT_EQ(minimizer, opt_minimizer) << "Minimizers are equal for slow and opt " << minimizer << " " << opt_minimizer;
+    i++;
   }
 }
 
@@ -282,18 +292,21 @@ void test_minimizer_performance(int kmer_len) {
   Kmer<MAX_K>::set_k(kmer_len);
   vector<Kmer<MAX_K>> kmers;
   Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
+  auto t = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < 50000; i++) {
     for (auto &kmer : kmers) {
-      // kmer.minimizer_hash_slow(m_len);
       kmer.minimizer_hash(m_len);
     }
   }
+  std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
+  std::cout << "Minimizers for k=" << kmer_len << " took " << t_elapsed.count() << " s\n";
 }
 
 TEST(MHMTest, minimizer_performance) {
   test_minimizer_performance<32>(21);
   test_minimizer_performance<64>(55);
   test_minimizer_performance<96>(77);
+  test_minimizer_performance<96>(99);
 }
 */
 

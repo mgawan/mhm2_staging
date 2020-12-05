@@ -306,7 +306,11 @@ def capture_err(err_msgs):
     global _proc
     global _stop_thread
     for line in iter(_proc.stderr.readline, b''):
-        line = line.decode()
+        try:
+            line = line.decode()
+        except:
+            print("WARNING could not decode binary output: ", line)
+            pass
         # filter out all but warnings
         # errors causing crashes will come to light later
         if 'WARNING' in line:
@@ -391,6 +395,12 @@ def print_err_msgs(err_msgs, return_status):
             if suspect_oom is not None:
                 f.write("Out of memory is suspected because of: %s\n" %(suspect_oom))
                 print_red("Out of memory is suspected based on the errors in err.log such as: ", suspect_oom, "\n")
+        if per_rank_dir != _output_dir:
+            new_err_log = _output_dir + "err.log"
+            if os.path.exists(new_err_log):
+                os.unlink(new_err_log)
+            os.link(err_log, new_err_log)
+            err_log = new_err_log
         if num_problems > 0:
             print_red("Check " + err_log + " for details")
 
@@ -411,6 +421,7 @@ def main():
     argparser.add_argument("--procs", default=0, type=int, help="Total numer of processes")
     argparser.add_argument("--trace-dir", default=None, help="Output directory for stacktrace")
     argparser.add_argument("--stats-dir", default=None, help="Output directory for stacktrace")
+    argparser.add_argument("--preproc", default=None, help="Comma separated preprocesses and options like (valgrind,--leak-check=full) or options to upcxx-run before binary")
 
     options, unknown_options = argparser.parse_known_args()
 
@@ -443,7 +454,12 @@ def main():
     if 'UPCXX_SHARED_HEAP_SIZE' not in os.environ:
         cmd.extend(['-shared-heap', options.shared_heap]) # both upcxx-run and upcxx-run-summit support this
 
+    if options.preproc:
+        print("Executing preprocess options: ", options.preproc)
+        pplist = options.preproc.split(',')
+        cmd.extend(pplist)
     cmd.extend(['--', mhm2_binary_path])
+
     cmd.extend(unknown_options)
 
     print("Executing mhm2 with " + get_job_desc() + " on " + str(num_nodes) + " nodes.")
@@ -524,8 +540,11 @@ def main():
                         _output_dir += '/'
                     # get rid of any leftover error logs if not restarting
                     try:
-                        if not restarting:
-                            os.rename(_output_dir + '/per_rank/err.log', _output_dir + '/per_rank/err.log' + str(datetime.datetime.now().isoformat()))
+                        # always rename the error log if it already exists
+                        new_err_log = _output_dir + 'err.log' + str(datetime.datetime.now().isoformat())
+                        os.rename(_output_dir + 'err.log', new_err_log)
+                        print("Renamed old err.log to ", new_err_log)
+                        os.unlink(_output_dir + '/rank_path/err.log')
                     except:
                         pass
 

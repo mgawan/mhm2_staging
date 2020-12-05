@@ -82,7 +82,7 @@ class PackedRead {
 
   ~PackedRead();
 
-  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset);
+  void unpack(string &read_id_str, string &seq, string &quals, int qual_offset) const;
   void clear();
 
   int64_t get_id();
@@ -134,6 +134,8 @@ class PackedReads {
   ~PackedReads();
 
   bool get_next_read(string &id, string &seq, string &quals);
+  uint64_t get_read_index() const;
+  void get_read(uint64_t index, string &id, string &seq, string &quals) const;
 
   PackedRead &operator[](int index);
 

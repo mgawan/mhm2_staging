@@ -234,7 +234,7 @@ class Kmer {
     }
   }
 
-  std::string mer_to_string(longs_t mmer, int m) {
+  static std::string mer_to_string(longs_t mmer, int m) {
     char buf[33] = "";
     char *s = buf;
     for (int j = 0; j < m; j++) {
@@ -273,7 +273,7 @@ class Kmer {
     return std::string(min_s);
   }
 
-  std::string get_minimizer(int m) {
+  uint64_t get_minimizer(int m) {
     uint64_t minimizer = 0;
     for (int i = 0; i <= Kmer::k - m; i++) {
       int j = i % 32;
@@ -288,18 +288,28 @@ class Kmer {
       }
       if (mmer > minimizer) minimizer = mmer;
     }
-    return mer_to_string(minimizer, m);
+    return minimizer;
   }
 
-  uint64_t minimizer_hash_slow(int m) const {
-    char s[200];
-    to_string(s);
-    char *min_s = s;
-    for (int i = 1; i <= Kmer::k - m; i++) {
-      if (strncmp(s + i, min_s, m) > 0) min_s = s + i;
-    }
-    min_s[m] = '\0';
-    return MurmurHash3_x64_64(reinterpret_cast<const void *>(min_s), m);
+  static uint64_t revcomp_minimizer(uint64_t minimizer, int m) {
+    uint64_t rc_minz = 0;
+    uint64_t v = minimizer;
+    rc_minz = (TWIN_TABLE[v & 0xFF] << 56) | (TWIN_TABLE[(v >> 8) & 0xFF] << 48) | (TWIN_TABLE[(v >> 16) & 0xFF] << 40) |
+              (TWIN_TABLE[(v >> 24) & 0xFF] << 32) | (TWIN_TABLE[(v >> 32) & 0xFF] << 24) | (TWIN_TABLE[(v >> 40) & 0xFF] << 16) |
+              (TWIN_TABLE[(v >> 48) & 0xFF] << 8) | (TWIN_TABLE[(v >> 56)]);
+    return rc_minz << (2 * (32 - m));
+  }
+
+  uint64_t quick_hash(uint64_t v) const {
+    v = v * 3935559000370003845 + 2691343689449507681;
+    v ^= v >> 21;
+    v ^= v << 37;
+    v ^= v >> 4;
+    v *= 4768777513237032717;
+    v ^= v << 20;
+    v ^= v >> 41;
+    v ^= v << 5;
+    return v;
   }
 
   uint64_t minimizer_hash(int m) const {
@@ -313,9 +323,12 @@ class Kmer {
         int m_overlap = j + m - 32;
         mmer |= ((((longs[l + 1]) << (64 * l)) & ZERO_MASK[m_overlap]) >> 2 * (m - m_overlap));
       }
+      auto mmer_rc = Kmer<MAX_K>::revcomp_minimizer(mmer, m);
+      if (mmer_rc < mmer) mmer = mmer_rc;
       if (mmer > minimizer) minimizer = mmer;
     }
-    return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
+    return quick_hash(minimizer);
+    //return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
   }
 
   uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }

@@ -146,7 +146,7 @@ void PackedRead::clear() {
   read_id = 0;
 }
 
-void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) {
+void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) const {
   assert(bytes != nullptr);
   char pair_id = (read_id < 0 ? '1' : '2');
   read_id_str = "@r" + to_string(labs(read_id)) + '/' + pair_id;
@@ -204,6 +204,14 @@ bool PackedReads::get_next_read(string &id, string &seq, string &quals) {
   if (str_ids) id = read_id_idx_to_str[index];
   index++;
   return true;
+}
+
+uint64_t PackedReads::get_read_index() const { return index; }
+
+void PackedReads::get_read(uint64_t index, string &id, string &seq, string &quals) const {
+  if (index >= packed_reads.size()) DIE("Invalid get_read(", index, ") - size=", packed_reads.size());
+  packed_reads[index].unpack(id, seq, quals, qual_offset);
+  if (str_ids) id = read_id_idx_to_str[index];
 }
 
 void PackedReads::reset() { index = 0; }
