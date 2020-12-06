@@ -312,9 +312,8 @@ void test_kmer_minimizers(int kmer_len) {
   }
 }
 
-/*
 template <int MAX_K>
-void test_minimizer_performance(int kmer_len) {
+void test_minimizer_performance(int kmer_len, bool fast) {
   int m_len = 15;
   if (kmer_len < 17) return;
   string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCC"
@@ -323,20 +322,29 @@ void test_minimizer_performance(int kmer_len) {
   vector<Kmer<MAX_K>> kmers;
   Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
   auto t = std::chrono::high_resolution_clock::now();
+  uint64_t max_h = 0;
   for (int i = 0; i < 50000; i++) {
     for (auto &kmer : kmers) {
-      kmer.minimizer_hash(m_len);
+      if (fast)
+        max_h = std::max(max_h, kmer.minimizer_hash_fast(m_len));
+      else
+        max_h = std::max(max_h, kmer.minimizer_hash(m_len));
     }
   }
   std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
-  std::cout << "Minimizers for k=" << kmer_len << " took " << t_elapsed.count() << " s\n";
+  std::cout << "Minimizer hash" << (fast ? " (fast) " : " ") << "for k=" << kmer_len << " took " << t_elapsed.count()
+            << " s, max hash " << max_h << "\n";
 }
-
+/*
 TEST(MHMTest, minimizer_performance) {
-  test_minimizer_performance<32>(21);
-  test_minimizer_performance<64>(55);
-  test_minimizer_performance<96>(77);
-  test_minimizer_performance<96>(99);
+  test_minimizer_performance<32>(21, false);
+  test_minimizer_performance<32>(21, true);
+  test_minimizer_performance<64>(55, false);
+  test_minimizer_performance<64>(55, true);
+  test_minimizer_performance<96>(77, false);
+  test_minimizer_performance<96>(77, true);
+  test_minimizer_performance<96>(99, false);
+  test_minimizer_performance<96>(99, true);
 }
 */
 
