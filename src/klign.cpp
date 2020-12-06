@@ -143,6 +143,10 @@ class KmerCtgDHT {
 
   Alns *alns;
 
+  int64_t ctg_bytes_fetched = 0;
+  int64_t ctg_subseq_bytes_fetched = 0;
+  HASH_TABLE<cid_t, string> ctg_cache;
+
   int get_cigar_length(const string &cigar) {
     // check that cigar string length is the same as the sequence, but only if the sequence is included
     int base_count = 0;
@@ -408,7 +412,7 @@ class KmerCtgDHT {
   // aligner construction: SSW internal defaults are 2 2 3 1
 
   KmerCtgDHT(int kmer_len, int max_store_size, int max_rpcs_in_flight, Alns &alns, AlnScoring &aln_scoring, int rlen_limit,
-             bool compute_cigar, int ranks_per_gpu = 0)
+             bool compute_cigar, int all_num_ctgs, int ranks_per_gpu = 0)
       : kmer_map({})
       , kmer_store(kmer_map)
       , num_alns(0)
@@ -458,6 +462,7 @@ class KmerCtgDHT {
 #else
     gpu_mem_avail = 32 * 1024 * 1024;
 #endif
+    ctg_cache.reserve(all_num_ctgs / rank_n());
   }
 
   void clear() {
@@ -651,7 +656,9 @@ class KmerCtgDHT {
                              int read_group_id, IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer) {
     int rlen = rseq.length();
     string rseq_rc = revcomp(rseq);
-    char *seq_buf = new char[2 * rlen + 1];
+    // make the buffer pretty big, but expand in the loop if it's too small for any one contig
+    int buf_len = 1000000;
+    char *seq_buf = reinterpret_cast<char *>(malloc(buf_len));
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -682,17 +689,27 @@ class KmerCtgDHT {
 
       assert(cstart >= 0 && cstart + overlap_len <= ctg_loc.clen);
       assert(overlap_len <= 2 * rlen);
-      // fetch only the substring
-      fetch_ctg_seqs_timer.start();
-      rget(ctg_loc.seq_gptr + cstart, seq_buf, overlap_len).wait();
-      fetch_ctg_seqs_timer.stop();
-      string ctg_subseq(seq_buf, overlap_len);
-      ctg_seq_bytes_fetched += overlap_len;
+
+      string ctg_subseq;
+      auto it = ctg_cache.find(ctg_loc.cid);
+      if (it == ctg_cache.end()) {
+        if (ctg_loc.clen > buf_len) seq_buf = reinterpret_cast<char *>(realloc(seq_buf, ctg_loc.clen));
+        fetch_ctg_seqs_timer.start();
+        rget(ctg_loc.seq_gptr, seq_buf, ctg_loc.clen).wait();
+        fetch_ctg_seqs_timer.stop();
+        ctg_bytes_fetched += ctg_loc.clen;
+        string ctg_seq = string(seq_buf, ctg_loc.clen);
+        ctg_cache.insert({ctg_loc.cid, ctg_seq});
+        ctg_subseq = ctg_seq.substr(cstart, overlap_len);
+      } else {
+        ctg_subseq = it->second.substr(cstart, overlap_len);
+      }
+      ctg_subseq_bytes_fetched += overlap_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, overlap_len,
                  read_group_id, aln_kernel_timer);
       num_alns++;
     }
-    delete[] seq_buf;
+    free(seq_buf);
   }
 
   void sort_alns() {
@@ -707,6 +724,15 @@ class KmerCtgDHT {
   }
 
   int get_gpu_mem_avail() { return gpu_mem_avail; }
+
+  void log_ctg_bytes_fetched() {
+    auto all_ctg_bytes_fetched = reduce_one(ctg_bytes_fetched, op_fast_add, 0).wait();
+    auto max_ctg_bytes_fetched = reduce_one(ctg_bytes_fetched, op_fast_max, 0).wait();
+    auto all_ctg_subseq_bytes_fetched = reduce_one(ctg_subseq_bytes_fetched, op_fast_add, 0).wait();
+    auto max_ctg_subseq_bytes_fetched = reduce_one(ctg_subseq_bytes_fetched, op_fast_max, 0).wait();
+    SLOG("Fulseq contig bytes fetched ", all_ctg_bytes_fetched, " max ", max_ctg_bytes_fetched, "\n");
+    SLOG("Subseq contig bytes fetched ", all_ctg_subseq_bytes_fetched, " max ", max_ctg_subseq_bytes_fetched, "\n");
+  }
 };
 
 template <int MAX_K>
@@ -948,6 +974,8 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads 
   SLOG_VERBOSE("Average mappings per read ", (double)tot_num_alns / tot_num_reads_aligned, "\n");
   SLOG_VERBOSE("Fetched ", get_size_str(kmer_ctg_dht.get_ctg_seq_bytes_fetched()), " of contig sequences\n");
 
+  kmer_ctg_dht.log_ctg_bytes_fetched();
+
   get_ctgs_timer.done_all();
   fetch_ctg_seqs_timer.done_all();
   compute_alns_timer.done_all();
@@ -974,9 +1002,10 @@ double find_alignments(unsigned kmer_len, vector<PackedReads *> &packed_reads_li
     AlnScoring alt_aln_scoring = {.match = 2, .mismatch = 4, .gap_opening = 4, .gap_extending = 2, .ambiguity = 1};
     aln_scoring = alt_aln_scoring;
   }
+  auto all_num_ctgs = reduce_all(ctgs.size(), op_fast_add).wait();
   SLOG_VERBOSE("Alignment scoring parameters: ", aln_scoring.to_string(), "\n");
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, rlen_limit, compute_cigar,
-                                 ranks_per_gpu);
+                                 all_num_ctgs, ranks_per_gpu);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
