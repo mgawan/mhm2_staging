@@ -502,7 +502,7 @@ class KmerDHT {
   double get_estimated_error_rate() { return estimated_error_rate; }
 
 #ifdef USE_MINIMIZERS
-  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return kmer.minimizer_hash(MINIMIZER_LEN) % rank_n(); }
+  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return kmer.minimizer_hash_fast(MINIMIZER_LEN) % rank_n(); }
 #else
   upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
 #endif
@@ -517,8 +517,7 @@ class KmerDHT {
   bool kmer_exists(Kmer<MAX_K> kmer) {
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer = kmer_rc;
-    return rpc(
-               get_kmer_target_rank(kmer),
+    return rpc(get_kmer_target_rank(kmer),
                [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> bool {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return false;

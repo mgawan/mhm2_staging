@@ -263,14 +263,44 @@ void test_kmer_minimizers(int kmer_len) {
     } else {
       if (prev_minimizer != minimizer) prev_minimizer = minimizer;
     }
-    auto opt_minimizer = Kmer<MAX_K>::mer_to_string(kmer.get_minimizer(m_len), m_len);
+    auto minz_fast = kmer.get_minimizer_fast(m_len, false);
+    auto fast_minimizer = Kmer<MAX_K>::mer_to_string(minz_fast, m_len);
+
+    auto minz = kmer.get_minimizer(m_len);
+    auto opt_minimizer = Kmer<MAX_K>::mer_to_string(minz, m_len);
     if (prev_minz_opt == "") {
       prev_minz_opt = opt_minimizer;
     } else {
       if (prev_minz_opt != opt_minimizer) prev_minz_opt = opt_minimizer;
     }
-    auto minz = kmer.get_minimizer(m_len);
+
+    EXPECT_EQ(minz_fast, minz) << "Fast and original minimizers should be equal without rc check " << fast_minimizer << " "
+                               << opt_minimizer;
+
+    auto minz_fast_lc = kmer.get_minimizer_fast(m_len, true);
+    auto fast_minimizer_lc = Kmer<MAX_K>::mer_to_string(minz_fast_lc, m_len);
+    EXPECT_LE(minz_fast_lc, minz_fast) << "Fast with least complement should be LE fast without " << minz_fast_lc << " "
+                                       << minz_fast << " orig " << opt_minimizer;
+
     auto minz_rc = Kmer<MAX_K>::revcomp_minimizer(minz, m_len);
+    auto opt_minimizer_rc = Kmer<MAX_K>::mer_to_string(minz_rc, m_len);
+
+    Kmer revcomp = kmer.revcomp();
+    auto rc_minz = revcomp.get_minimizer(m_len);
+    auto rc_minz_fast = revcomp.get_minimizer_fast(m_len, false);
+    EXPECT_EQ(rc_minz, rc_minz_fast) << "revcomp fast and revcomp orig should be the same";
+
+    auto rc_minz_fast_lc = revcomp.get_minimizer_fast(m_len, true);
+    EXPECT_EQ(minz_fast_lc, rc_minz_fast_lc) << "fast with lc check should be same with fwd and rc kmer";
+
+    if (minz < minz_rc) {
+      EXPECT_TRUE((minz_fast_lc >= minz) & (minz_fast_lc <= minz_rc))
+          << "fast with lc is between minz and minz_rc " << fast_minimizer_lc << " " << opt_minimizer << " " << opt_minimizer_rc;
+    } else {
+      EXPECT_TRUE((minz_fast_lc <= minz) & (minz_fast_lc >= minz_rc))
+          << "fast with lc is between minz and minz_rc " << fast_minimizer_lc << " " << opt_minimizer << " " << opt_minimizer_rc;
+    }
+
     auto minz_rc_back = Kmer<MAX_K>::revcomp_minimizer(minz_rc, m_len);
     EXPECT_EQ(minz, minz_rc_back) << "Revcomp of minimizers should be equal " << minz << " " << minz_rc_back;
     // if (!i && kmer_len == 55) {
@@ -282,9 +312,8 @@ void test_kmer_minimizers(int kmer_len) {
   }
 }
 
-/*
 template <int MAX_K>
-void test_minimizer_performance(int kmer_len) {
+void test_minimizer_performance(int kmer_len, bool fast) {
   int m_len = 15;
   if (kmer_len < 17) return;
   string seq("AACTGACCAGACGGGGAGGATGCCATGCTGTTGAATTCTCCCCTTTATTAAGTAAGGAAGTCCGGTGATCCAGAATATTCTGCGGAGTTTTCAAATTTATGTTTTTAATTGATCC"
@@ -293,20 +322,29 @@ void test_minimizer_performance(int kmer_len) {
   vector<Kmer<MAX_K>> kmers;
   Kmer<MAX_K>::get_kmers(kmer_len, seq, kmers);
   auto t = std::chrono::high_resolution_clock::now();
+  uint64_t max_h = 0;
   for (int i = 0; i < 50000; i++) {
     for (auto &kmer : kmers) {
-      kmer.minimizer_hash(m_len);
+      if (fast)
+        max_h = std::max(max_h, kmer.minimizer_hash_fast(m_len));
+      else
+        max_h = std::max(max_h, kmer.minimizer_hash(m_len));
     }
   }
   std::chrono::duration<double> t_elapsed = std::chrono::high_resolution_clock::now() - t;
-  std::cout << "Minimizers for k=" << kmer_len << " took " << t_elapsed.count() << " s\n";
+  std::cout << "Minimizer hash" << (fast ? " (fast) " : " ") << "for k=" << kmer_len << " took " << t_elapsed.count()
+            << " s, max hash " << max_h << "\n";
 }
-
+/*
 TEST(MHMTest, minimizer_performance) {
-  test_minimizer_performance<32>(21);
-  test_minimizer_performance<64>(55);
-  test_minimizer_performance<96>(77);
-  test_minimizer_performance<96>(99);
+  test_minimizer_performance<32>(21, false);
+  test_minimizer_performance<32>(21, true);
+  test_minimizer_performance<64>(55, false);
+  test_minimizer_performance<64>(55, true);
+  test_minimizer_performance<96>(77, false);
+  test_minimizer_performance<96>(77, true);
+  test_minimizer_performance<96>(99, false);
+  test_minimizer_performance<96>(99, true);
 }
 */
 
