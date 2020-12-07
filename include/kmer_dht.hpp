@@ -243,17 +243,19 @@ class KmerDHT {
     auto my_adjusted_num_kmers = my_num_kmers * adjustment_factor;
     double required_space =
         estimate_hashtable_memory(my_adjusted_num_kmers, sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
+
+    auto max_reqd_space = upcxx::reduce_all(required_space, upcxx::op_fast_max).wait();
     auto free_mem = get_free_mem();
-    auto lowest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_min).wait();
-    auto highest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_max).wait();
-    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ", get_size_str(required_space),
+    auto lowest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_fast_min).wait();
+    auto highest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_fast_max).wait();
+    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ", get_size_str(max_reqd_space),
                  " per node (", my_adjusted_num_kmers, " kmers per rank), and there is ", get_size_str(lowest_free_mem), " to ",
                  get_size_str(highest_free_mem), " available on the nodes\n");
     if (force_bloom) {
       use_bloom = true;
       SLOG_VERBOSE("Using bloom (--force-bloom set)\n");
     } else {
-      if (lowest_free_mem * 0.80 < required_space) {
+      if (lowest_free_mem * 0.80 < max_reqd_space) {
         use_bloom = true;
         SLOG_VERBOSE(
             "Insufficient memory available: enabling bloom filters assuming 80% of free mem is available for hashtables\n");
@@ -267,7 +269,7 @@ class KmerDHT {
       kmer_store_bloom.set_size("bloom", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
     else
       kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight, useHHSS);
-
+    
     if (use_bloom) {
       // in this case we get an accurate estimate of the hash table size after the first bloom round, so the hash table space
       // is reserved then
@@ -288,6 +290,7 @@ class KmerDHT {
       SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved), " for kmer hash tables with ",
                    node0_cores * my_adjusted_num_kmers, " entries on node 0\n");
       double init_free_mem = get_free_mem();
+      if (my_adjusted_num_kmers <= 0) DIE("no kmers to reserve space for");
       kmers->reserve(my_adjusted_num_kmers);
       SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
