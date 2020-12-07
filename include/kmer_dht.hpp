@@ -502,9 +502,13 @@ class KmerDHT {
   double get_estimated_error_rate() { return estimated_error_rate; }
 
 #ifdef USE_MINIMIZERS
-  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return kmer.minimizer_hash_fast(MINIMIZER_LEN) % rank_n(); }
+  upcxx::intrank_t get_kmer_target_rank(const Kmer<MAX_K> &kmer, const Kmer<MAX_K> *kmer_rc = nullptr) const {
+    return kmer.minimizer_hash_fast(MINIMIZER_LEN, kmer_rc) % rank_n();
+  }
 #else
-  upcxx::intrank_t get_kmer_target_rank(Kmer<MAX_K> &kmer) { return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n(); }
+  upcxx::intrank_t get_kmer_target_rank(const Kmer<MAX_K> &kmer, const Kmer<MAX_K> *ignored = nullptr) const {
+    return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
+  }
 #endif
 
   KmerCounts *get_local_kmer_counts(Kmer<MAX_K> &kmer) {
@@ -516,8 +520,8 @@ class KmerDHT {
 #ifdef DEBUG
   bool kmer_exists(Kmer<MAX_K> kmer) {
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
-    if (kmer_rc < kmer) kmer = kmer_rc;
-    return rpc(get_kmer_target_rank(kmer),
+    if (kmer_rc < kmer) kmer.swap(kmer_rc);
+    return rpc(get_kmer_target_rank(kmer, &kmer_rc),
                [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> bool {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return false;
@@ -532,12 +536,12 @@ class KmerDHT {
     // get the lexicographically smallest
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) {
-      kmer = kmer_rc;
+      kmer.swap(kmer_rc);
       swap(left_ext, right_ext);
       left_ext = comp_nucleotide(left_ext);
       right_ext = comp_nucleotide(right_ext);
     }
-    auto target_rank = get_kmer_target_rank(kmer);
+    auto target_rank = get_kmer_target_rank(kmer, &kmer_rc);
     KmerAndExt kmer_and_ext = {kmer, left_ext, right_ext, count};
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
       if (count) kmer_store_bloom.update(target_rank, kmer);

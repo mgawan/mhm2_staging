@@ -231,10 +231,10 @@ StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, const Kmer<
     auto kmer_rc = kmer.revcomp();
     is_rc = false;
     if (kmer_rc < kmer) {
-      kmer = kmer_rc;
+      kmer.swap(kmer_rc);
       is_rc = true;
     }
-    auto target_rank = kmer_dht->get_kmer_target_rank(kmer);
+    auto target_rank = kmer_dht->get_kmer_target_rank(kmer, &kmer_rc);
     // next kmer is remote, return to rpc caller
     if (target_rank != rank_me()) break;
     // next kmer is local to this rank, continue walking
@@ -263,10 +263,10 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
     auto kmer_rc = kmer.revcomp();
     bool is_rc = false;
     if (kmer_rc < kmer) {
-      next_kmer = kmer_rc;
+      next_kmer.swap(kmer_rc);
       is_rc = true;
     }
-    auto target_rank = kmer_dht->get_kmer_target_rank(next_kmer);
+    auto target_rank = kmer_dht->get_kmer_target_rank(next_kmer, &kmer_rc);
     if (target_rank == rank_me()) _num_rank_me_rpcs++;
     if (local_team_contains(target_rank)) _num_node_rpcs++;
     _num_rpcs++;
