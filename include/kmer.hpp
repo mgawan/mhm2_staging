@@ -125,6 +125,8 @@ class Kmer {
     set_kmer(s);
   }
 
+  void swap(Kmer &other) { std::swap(longs, other.longs); }
+
   static void set_k(unsigned int k) { Kmer::k = k; }
 
   static unsigned int get_k() { return Kmer::k; }
@@ -396,7 +398,15 @@ class Kmer {
     // return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
   }
 
-  uint64_t minimizer_hash_fast(int m) const { return quick_hash(get_minimizer_fast(m, true)); }
+  uint64_t minimizer_hash_fast(int m, const Kmer *revcomp = nullptr) const {
+    uint64_t minimizer;
+    if (revcomp == nullptr) {
+      minimizer = get_minimizer_fast(m, true);
+    } else {
+      minimizer = get_minimizer_fast(m, revcomp);
+    }
+    return quick_hash(minimizer);
+  }
 
   uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }
 
