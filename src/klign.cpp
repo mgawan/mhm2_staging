@@ -334,18 +334,20 @@ class KmerCtgDHT {
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut = upcxx_utils::execute_in_thread_pool([sh_abd, t, &aln_kernel_timer]() {
-                     t.start();
-                     assert(!sh_abd->kernel_alns.empty());
-                     _ssw_align_block(*sh_abd, aln_kernel_timer);
-                     t.stop();
-                   }).then([&myself, sh_abd, t]() {
-      SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
-                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
-      DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
-      myself.alns->append(*(sh_abd->alns));
-      // TODO collect and report on AsyncTimer t
-    });
+    future<> fut =
+        upcxx_utils::execute_in_thread_pool([sh_abd, t, &aln_kernel_timer]() {
+          t.start();
+          assert(!sh_abd->kernel_alns.empty());
+          _ssw_align_block(*sh_abd, aln_kernel_timer);
+          t.stop();
+        })
+            .then([&myself, sh_abd, t]() {
+              SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
+                           (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
+              DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+              myself.alns->append(*(sh_abd->alns));
+              // TODO collect and report on AsyncTimer t
+            });
     return fut;
   }
 
@@ -391,16 +393,18 @@ class KmerCtgDHT {
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut = upcxx_utils::execute_in_thread_pool([&myself, t, sh_abd, &aln_kernel_timer] {
-                     t.start();
-                     _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
-                     t.stop();
-                   }).then([&myself, t, sh_abd]() {
-      SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
-                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
-      DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
-      myself.alns->append(*(sh_abd->alns));
-    });
+    future<> fut =
+        upcxx_utils::execute_in_thread_pool([&myself, t, sh_abd, &aln_kernel_timer] {
+          t.start();
+          _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
+          t.stop();
+        })
+            .then([&myself, t, sh_abd]() {
+              SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
+                           (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
+              DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+              myself.alns->append(*(sh_abd->alns));
+            });
 
     return fut;
   }
@@ -605,22 +609,21 @@ class KmerCtgDHT {
   }
 
   future<vector<KmerAndCtgLoc<MAX_K>>> get_ctgs_with_kmers(int target_rank, vector<Kmer<MAX_K>> &kmers) {
-    return rpc(
-        target_rank,
-        [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
-          vector<KmerAndCtgLoc<MAX_K>> kmer_ctg_locs;
-          kmer_ctg_locs.reserve(kmers.size());
-          for (auto &kmer : kmers) {
-            const auto it = kmer_map->find(kmer);
-            if (it == kmer_map->end()) continue;
-            // skip conflicts
-            if (it->second.first) continue;
-            // now add it
-            kmer_ctg_locs.push_back({kmer, it->second.second});
-          }
-          return kmer_ctg_locs;
-        },
-        kmers, kmer_map);
+    return rpc(target_rank,
+               [](vector<Kmer<MAX_K>> kmers, kmer_map_t &kmer_map) {
+                 vector<KmerAndCtgLoc<MAX_K>> kmer_ctg_locs;
+                 kmer_ctg_locs.reserve(kmers.size());
+                 for (auto &kmer : kmers) {
+                   const auto it = kmer_map->find(kmer);
+                   if (it == kmer_map->end()) continue;
+                   // skip conflicts
+                   if (it->second.first) continue;
+                   // now add it
+                   kmer_ctg_locs.push_back({kmer, it->second.second});
+                 }
+                 return kmer_ctg_locs;
+               },
+               kmers, kmer_map);
   }
 
 #ifdef DEBUG
@@ -816,11 +819,14 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
                        vector<ReadRecord *> &read_records, IntermittentTimer &compute_alns_timer, IntermittentTimer &get_ctgs_timer,
                        IntermittentTimer &fetch_ctg_seqs_timer, IntermittentTimer &aln_kernel_timer, int64_t &num_excess_alns_reads,
                        int &read_group_id) {
+  // get the contigs that match one read
   // extract a list of kmers for each target rank
   auto kmer_lists = new vector<Kmer<MAX_K>>[rank_n()];
   for (auto &elem : kmer_read_map) {
     auto kmer = elem.first;
     kmer_lists[kmer_ctg_dht.get_target_rank(kmer)].push_back(kmer);
+    // FIXME: when creating this list, look for kmers in cache.
+    // If found, don't add to the list instead add to read_record
   }
   get_ctgs_timer.start();
   future<> fut_serial_results = make_future();
@@ -855,6 +861,7 @@ static int align_kmers(KmerCtgDHT<MAX_K> &kmer_ctg_dht, HASH_TABLE<Kmer<MAX_K>, 
               }
               // this here ensures that we don't insert duplicate mappings
               read_record->aligned_ctgs_map.insert({kmer_ctg_loc.ctg_loc.cid, {pos_in_read, read_is_rc, kmer_ctg_loc.ctg_loc}});
+              // FIXME: if we are here it means the kmer was not found in the cache, so we must add it to the cache here
             }
           }
         });
