@@ -47,7 +47,7 @@
 //#define DBG_ADD_KMER DBG
 #define DBG_ADD_KMER(...)
 
-#define COUNT_UNIQUE_KMERS
+//#define COUNT_UNIQUE_KMERS
 
 template <int MAX_K>
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
