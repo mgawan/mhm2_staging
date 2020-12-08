@@ -219,8 +219,7 @@ class KmerDHT {
   bool use_bloom;
 
  public:
-  KmerDHT(uint64_t my_num_kmers, double num_kmers_factor, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom,
-          bool useHHSS = false)
+  KmerDHT(uint64_t my_num_kmers, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
       : kmers({})
       , bloom_filter1({})
       , bloom_filter2({})
@@ -237,7 +236,7 @@ class KmerDHT {
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
-    double adjustment_factor = num_kmers_factor;
+    double adjustment_factor = 1.0 / 3;
     // adjustment estimate should not exceed 85% of the raw count
     if (adjustment_factor > 0.85) adjustment_factor = 0.85;
     auto my_adjusted_num_kmers = my_num_kmers * adjustment_factor;
@@ -247,7 +246,7 @@ class KmerDHT {
     auto free_mem = get_free_mem();
     auto lowest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_fast_min).wait();
     auto highest_free_mem = upcxx::reduce_all(free_mem, upcxx::op_fast_max).wait();
-    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", num_kmers_factor, " require ", get_size_str(max_reqd_space),
+    SLOG_VERBOSE("Without bloom filters and adjustment factor of ", adjustment_factor, " require ", get_size_str(max_reqd_space),
                  " per node (", my_adjusted_num_kmers, " kmers per rank), and there is ", get_size_str(lowest_free_mem), " to ",
                  get_size_str(highest_free_mem), " available on the nodes\n");
     if (force_bloom) {
@@ -275,7 +274,7 @@ class KmerDHT {
       double init_mem_free = get_free_mem();
       bloom_filter1->init(my_num_kmers, KCOUNT_BLOOM_FP);
       // second bloom has far fewer kmers
-      bloom_filter2->init(my_num_kmers * num_kmers_factor, KCOUNT_BLOOM_FP);
+      bloom_filter2->init(my_num_kmers * adjustment_factor, KCOUNT_BLOOM_FP);
       SLOG_VERBOSE("Bloom filters used ", get_size_str(init_mem_free - get_free_mem()), " memory on node 0\n");
     } else {
       barrier();
@@ -492,12 +491,6 @@ class KmerDHT {
     SLOG_VERBOSE("kmer DHT load factor: ", avg_load_factor, "\n");
   }
 
-  double get_num_kmers_factor() {
-    if (use_bloom && bloom_filter1->is_initialized()) return (double)bloom_filter1->estimate_num_items() / my_num_kmers * 1.5;
-    // add in some slop so as not to get too close to the resize threshold
-    return (double)kmers->size() / my_num_kmers * 1.5;
-  }
-
   int64_t get_local_num_kmers(void) { return kmers->size(); }
 
   double get_estimated_error_rate() { return estimated_error_rate; }
@@ -522,7 +515,8 @@ class KmerDHT {
   bool kmer_exists(Kmer<MAX_K> kmer) {
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer.swap(kmer_rc);
-    return rpc(get_kmer_target_rank(kmer, &kmer_rc),
+    return rpc(
+               get_kmer_target_rank(kmer, &kmer_rc),
                [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> bool {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return false;
