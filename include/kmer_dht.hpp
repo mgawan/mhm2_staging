@@ -236,9 +236,7 @@ class KmerDHT {
     auto node0_cores = upcxx::local_team().rank_n();
     // check if we have enough memory to run without bloom - require 2x the estimate for non-bloom - conservative because we don't
     // want to run out of memory
-    double adjustment_factor = 1.0 / 3;
-    // adjustment estimate should not exceed 85% of the raw count
-    if (adjustment_factor > 0.85) adjustment_factor = 0.85;
+    double adjustment_factor = KCOUNT_NO_BLOOM_ADJUSTMENT_FACTOR;
     auto my_adjusted_num_kmers = my_num_kmers * adjustment_factor;
     double required_space =
         estimate_hashtable_memory(my_adjusted_num_kmers, sizeof(Kmer<MAX_K>) + sizeof(KmerCounts)) * node0_cores;
