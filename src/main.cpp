@@ -211,7 +211,6 @@ int main(int argc, char **argv) {
     SLOG(KBLUE, "Completed initialization in ", setprecision(2), fixed, init_t_elapsed.count(), " s at ", get_current_time(), " (",
          get_size_str(get_free_mem()), " free memory on node 0)", KNORM, "\n");
     int prev_kmer_len = options->prev_kmer_len;
-    double num_kmers_factor = 1.0 / 3;
     int ins_avg = 0;
     int ins_stddev = 0;
 
@@ -221,10 +220,10 @@ int main(int argc, char **argv) {
       for (auto kmer_len : options->kmer_lens) {
         auto max_k = (kmer_len / 32 + 1) * 32;
 
-#define CONTIG_K(KMER_LEN)                                                                                                      \
-  case KMER_LEN:                                                                                                                \
-    contigging<KMER_LEN>(kmer_len, prev_kmer_len, rlen_limit, packed_reads_list, ctgs, num_kmers_factor, max_expected_ins_size, \
-                         ins_avg, ins_stddev, options);                                                                         \
+#define CONTIG_K(KMER_LEN)                                                                                                         \
+  case KMER_LEN:                                                                                                                   \
+    contigging<KMER_LEN>(kmer_len, prev_kmer_len, rlen_limit, packed_reads_list, ctgs, max_expected_ins_size, ins_avg, ins_stddev, \
+                         options);                                                                                                 \
     break
 
         switch (max_k) {
