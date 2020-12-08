@@ -82,8 +82,8 @@ static uint64_t estimate_num_kmers(unsigned kmer_len, vector<PackedReads *> &pac
 }
 
 template <int MAX_K>
-void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads *> &packed_reads_list, Contigs &ctgs,
-                double &num_kmers_factor, int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
+void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedReads *> packed_reads_list, Contigs &ctgs,
+                int &max_expected_ins_size, int &ins_avg, int &ins_stddev, shared_ptr<Options> options) {
   auto loop_start_t = std::chrono::high_resolution_clock::now();
   SLOG(KBLUE, "_________________________", KNORM, "\n");
   SLOG(KBLUE, "Contig generation k = ", kmer_len, KNORM, "\n");
@@ -103,12 +103,11 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     int64_t my_num_kmers = estimate_num_kmers(kmer_len, packed_reads_list);
     // use the max among all ranks
     my_num_kmers = upcxx::reduce_all(my_num_kmers, upcxx::op_max).wait();
-    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, num_kmers_factor, max_kmer_store, options->max_rpcs_in_flight,
-                                         options->force_bloom, options->use_heavy_hitters);
+    dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->max_rpcs_in_flight, options->force_bloom,
+                                         options->use_heavy_hitters);
     barrier();
     BEGIN_GASNET_STATS("kmer_analysis");
-    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dmin_thres, ctgs, kmer_dht,
-                  num_kmers_factor);
+    analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dmin_thres, ctgs, kmer_dht);
     END_GASNET_STATS();
     stage_timers.analyze_kmers->stop();
     barrier();
