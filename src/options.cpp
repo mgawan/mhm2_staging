@@ -271,7 +271,7 @@ void Options::setup_log_file() {
   if (!upcxx::rank_me()) {
     // check to see if mhm2.log exists. If so, and not restarting, rename it
     if (file_exists("mhm2.log") && !restart) {
-      string new_log_fname = "mhm2-" + get_current_time(true) + ".log";
+      string new_log_fname = "mhm2-" + setup_time + ".log";
       cerr << KLRED << "WARNING: " << KNORM << output_dir << "/mhm2.log exists. Renaming to " << output_dir << "/" << new_log_fname
            << endl;
       if (rename("mhm2.log", new_log_fname.c_str()) == -1) DIE("Could not rename mhm2.log: ", strerror(errno));
@@ -285,8 +285,15 @@ void Options::setup_log_file() {
 }
 
 Options::Options() {
+  char buf[32];
+  if (!upcxx::rank_me()) {
+    setup_time = get_current_time(true);
+    strncpy(buf, setup_time.c_str(), sizeof(buf));
+  }
+  upcxx::broadcast(buf, sizeof(buf), 0, world()).wait();
+  setup_time = string(buf);
   output_dir = string("mhm2-run-<reads_fname[0]>-n") + to_string(upcxx::rank_n()) + "-N" +
-               to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+               to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + setup_time;
 }
 Options::~Options() {
   flush_logger();
@@ -446,7 +453,7 @@ bool Options::load(int argc, char **argv) {
     auto spos = first_read_fname.find_first_of(':');
     if (spos != string::npos) first_read_fname = first_read_fname.substr(0, spos);
     output_dir = "mhm2-run-" + first_read_fname + "-n" + to_string(upcxx::rank_n()) + "-N" +
-                 to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + get_current_time(true);
+                 to_string(upcxx::rank_n() / upcxx::local_team().rank_n()) + "-" + setup_time;
     output_dir_opt->default_val(output_dir);
   }
 

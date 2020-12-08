@@ -109,6 +109,7 @@ class Options {
   int min_ctg_print_len = 500;
   int break_scaff_Ns = 10;
   string output_dir;
+  string setup_time;
   bool restart = false;
 
   Options();
