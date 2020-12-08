@@ -658,7 +658,7 @@ class KmerCtgDHT {
     string rseq_rc = revcomp(rseq);
     // make the buffer pretty big, but expand in the loop if it's too small for any one contig
     int buf_len = 1000000;
-    char *seq_buf = reinterpret_cast<char *>(malloc(buf_len));
+    char *seq_buf = new char[2 * rlen + 1];
     for (auto &elem : *aligned_ctgs_map) {
       progress();
       int pos_in_read = elem.second.pos_in_read;
@@ -691,25 +691,37 @@ class KmerCtgDHT {
       assert(overlap_len <= 2 * rlen);
 
       string ctg_subseq;
+      bool found = false;
       auto it = ctg_cache.find(ctg_loc.cid);
-      if (it == ctg_cache.end()) {
-        if (ctg_loc.clen > buf_len) seq_buf = reinterpret_cast<char *>(realloc(seq_buf, ctg_loc.clen));
-        fetch_ctg_seqs_timer.start();
-        rget(ctg_loc.seq_gptr, seq_buf, ctg_loc.clen).wait();
-        fetch_ctg_seqs_timer.stop();
-        ctg_bytes_fetched += ctg_loc.clen;
-        string ctg_seq = string(seq_buf, ctg_loc.clen);
-        ctg_cache.insert({ctg_loc.cid, ctg_seq});
-        ctg_subseq = ctg_seq.substr(cstart, overlap_len);
+      if (it != ctg_cache.end()) {
+        found = true;
+        ctg_subseq.resize(overlap_len);
+        for (int i = 0; i < overlap_len; i++) {
+          if (it->second[i + cstart] == ' ') {
+            found = false;
+            break;
+          }
+          ctg_subseq[i] = it->second[i + cstart];
+        }
       } else {
-        ctg_subseq = it->second.substr(cstart, overlap_len);
+        it = ctg_cache.insert({ctg_loc.cid, string(ctg_loc.clen, ' ')}).first;
+      }
+      if (!found) {
+        fetch_ctg_seqs_timer.start();
+        rget(ctg_loc.seq_gptr + cstart, seq_buf, overlap_len).wait();
+        fetch_ctg_seqs_timer.stop();
+        ctg_bytes_fetched += overlap_len;
+        ctg_subseq = string(seq_buf);
+        for (int i = 0; i < overlap_len; i++) {
+          it->second[i + cstart] = ctg_subseq[i];
+        }
       }
       ctg_subseq_bytes_fetched += overlap_len;
       align_read(rname, ctg_loc.cid, read_subseq, ctg_subseq, rstart, rlen, cstart, ctg_loc.clen, orient, overlap_len,
                  read_group_id, aln_kernel_timer);
       num_alns++;
     }
-    free(seq_buf);
+    delete[] seq_buf;
   }
 
   void sort_alns() {
