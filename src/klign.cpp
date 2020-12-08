@@ -711,7 +711,7 @@ class KmerCtgDHT {
         rget(ctg_loc.seq_gptr + cstart, seq_buf, overlap_len).wait();
         fetch_ctg_seqs_timer.stop();
         ctg_bytes_fetched += overlap_len;
-        ctg_subseq = string(seq_buf);
+        ctg_subseq = string(seq_buf, overlap_len);
         for (int i = 0; i < overlap_len; i++) {
           it->second[i + cstart] = ctg_subseq[i];
         }
