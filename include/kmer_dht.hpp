@@ -224,6 +224,8 @@ class KmerDHT {
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
   bool use_bloom;
+  int64_t bytes_sent_kmers = 0;
+  int64_t bytes_sent_unique_kmers = 0;
   HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
 
   static void update_bloom_set(Kmer<MAX_K> kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
@@ -528,9 +530,6 @@ class KmerDHT {
   }
 #endif
 
-  int64_t bytes_sent_kmers = 0;
-  int64_t bytes_sent_unique_kmers = 0;
-
   void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, uint16_t count) {
     if (!count) count = 1;
     // get the lexicographically smallest
@@ -541,7 +540,15 @@ class KmerDHT {
       left_ext = comp_nucleotide(left_ext);
       right_ext = comp_nucleotide(right_ext);
     }
-    if (pass_type == NO_BLOOM_PASS) {
+    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
+      if (count) kmer_store_bloom.update(get_kmer_target_rank(kmer, &kmer_rc), kmer);
+    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS) {
+      KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
+      kmer_and_exts.left_exts.inc(left_ext, count);
+      kmer_and_exts.right_exts.inc(right_ext, count);
+      kmer_store.update(get_kmer_target_rank(kmer, &kmer_rc), kmer_and_exts);
+    } else {
+      // only cache kmers - there is no expected local aggregation of ctg kmers since they don't benefit from read shuffling
       auto it = kmer_cache.find(kmer);
       if (it == kmer_cache.end()) {
         KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
@@ -555,24 +562,16 @@ class KmerDHT {
         it->second.count += count;
       }
       bytes_sent_kmers += sizeof(KmerAndExts);
-    } else {
-      auto target_rank = get_kmer_target_rank(kmer, &kmer_rc);
-      if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
-        if (count) kmer_store_bloom.update(target_rank, kmer);
-      } else {
-        KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
-        kmer_and_exts.left_exts.inc(left_ext, count);
-        kmer_and_exts.right_exts.inc(right_ext, count);
-        kmer_store.update(target_rank, kmer_and_exts);
-        bytes_sent_unique_kmers += sizeof(KmerAndExts);
-        bytes_sent_kmers += sizeof(KmerAndExts);
-      }
     }
   }
 
   void flush_updates() {
     BarrierTimer timer(__FILEFUNC__);
-    if (pass_type == NO_BLOOM_PASS) {
+    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
+      kmer_store_bloom.flush_updates();
+    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS) {
+      kmer_store.flush_updates();
+    } else {
       int64_t tot_count = 0;
       for (auto &[kmer, kmer_and_exts] : kmer_cache) {
         progress();
@@ -580,6 +579,7 @@ class KmerDHT {
         auto target_rank = get_kmer_target_rank(kmer);
         kmer_store.update(target_rank, kmer_and_exts);
       }
+      kmer_store.flush_updates();
       auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
       auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
       auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
@@ -588,11 +588,6 @@ class KmerDHT {
       SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
       SLOG("Bytes sent for all kmers ", get_size_str(all_bytes_sent), " for unique ", get_size_str(all_bytes_sent_unique),
            " reduction ", 100.0 * all_bytes_sent_unique / all_bytes_sent, "%\n");
-    }
-    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
-      kmer_store_bloom.flush_updates();
-    } else {
-      kmer_store.flush_updates();
     }
   }
 
