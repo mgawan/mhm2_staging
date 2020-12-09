@@ -225,8 +225,8 @@ class KmerDHT {
   PASS_TYPE pass_type;
   bool use_bloom;
   bool use_kmer_cache;
-  int64_t bytes_sent_kmers = 0;
-  int64_t bytes_sent_unique_kmers = 0;
+  //int64_t bytes_sent_kmers = 0;
+  //int64_t bytes_sent_unique_kmers = 0;
   HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
 
   static void update_bloom_set(Kmer<MAX_K> kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
@@ -558,13 +558,13 @@ class KmerDHT {
         kmer_and_exts.left_exts.inc(left_ext, count);
         kmer_and_exts.right_exts.inc(right_ext, count);
         kmer_cache.insert({kmer, kmer_and_exts});
-        bytes_sent_unique_kmers += sizeof(KmerAndExts);
+        //bytes_sent_unique_kmers += sizeof(KmerAndExts);
       } else {
         it->second.left_exts.inc(left_ext, count);
         it->second.right_exts.inc(right_ext, count);
         it->second.count += count;
       }
-      bytes_sent_kmers += sizeof(KmerAndExts);
+      //bytes_sent_kmers += sizeof(KmerAndExts);
     }
   }
 
@@ -577,13 +577,15 @@ class KmerDHT {
     } else {
       auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
       auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
+      /*
       auto all_bytes_sent = reduce_one(bytes_sent_kmers, op_fast_add, 0).wait();
       auto all_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_add, 0).wait();
       auto max_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_max, 0).wait();
       auto comm_load_balance = (double)all_bytes_sent_unique / (rank_n() * max_bytes_sent_unique);
+      */
       int64_t tot_count = 0;
-      auto start_free_mem = get_free_mem();
-      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); it = kmer_cache.erase(it)) {
+//      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); it = kmer_cache.erase(it)) {
+      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); ++it) {
         progress();
         tot_count += it->second.count;
         auto target_rank = get_kmer_target_rank(it->first);
@@ -592,12 +594,10 @@ class KmerDHT {
       kmer_cache.clear();
       HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
       kmer_store.flush_updates();
-      barrier();
-      SLOG("After kmer cache updates, memory change is ", get_size_str(start_free_mem - get_free_mem()), "\n");
       auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
       SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
-      SLOG("Bytes sent ", get_size_str(all_bytes_sent_unique), std::setprecision(2), std::fixed, " reduction ",
-           (double)all_bytes_sent_unique / all_bytes_sent, " comm. load balance ", comm_load_balance, "\n");
+      //SLOG("Bytes sent ", get_size_str(all_bytes_sent_unique), std::setprecision(2), std::fixed, " reduction ",
+      //     (double)all_bytes_sent_unique / all_bytes_sent, " comm. load balance ", comm_load_balance, "\n");
     }
   }
 
