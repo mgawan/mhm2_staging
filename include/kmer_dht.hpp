@@ -572,22 +572,29 @@ class KmerDHT {
     } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS) {
       kmer_store.flush_updates();
     } else {
-      int64_t tot_count = 0;
-      for (auto &[kmer, kmer_and_exts] : kmer_cache) {
-        progress();
-        tot_count += kmer_and_exts.count;
-        auto target_rank = get_kmer_target_rank(kmer);
-        kmer_store.update(target_rank, kmer_and_exts);
-      }
-      kmer_store.flush_updates();
-      auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
       auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
       auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
       auto all_bytes_sent = reduce_one(bytes_sent_kmers, op_fast_add, 0).wait();
       auto all_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_add, 0).wait();
+      auto max_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_max, 0).wait();
+      auto comm_load_balance = (double)all_bytes_sent_unique / (rank_n() * max_bytes_sent_unique);
+      int64_t tot_count = 0;
+      auto start_free_mem = get_free_mem();
+      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); it = kmer_cache.erase(it)) {
+        progress();
+        tot_count += it->second.count;
+        auto target_rank = get_kmer_target_rank(it->first);
+        kmer_store.update(target_rank, it->second);
+      }
+      kmer_cache.clear();
+      HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
+      kmer_store.flush_updates();
+      barrier();
+      SLOG("After kmer cache updates, memory change is ", get_size_str(start_free_mem - get_free_mem()), "\n");
+      auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
       SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
-      SLOG("Bytes sent for all kmers ", get_size_str(all_bytes_sent), " for unique ", get_size_str(all_bytes_sent_unique),
-           " reduction ", 100.0 * all_bytes_sent_unique / all_bytes_sent, "%\n");
+      SLOG("Bytes sent ", get_size_str(all_bytes_sent_unique), std::setprecision(2), std::fixed, " reduction ",
+           (double)all_bytes_sent_unique / all_bytes_sent, " comm. load balance ", comm_load_balance, "\n");
     }
   }
 
