@@ -120,7 +120,7 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     // use the max among all ranks
     my_num_kmers = upcxx::reduce_all(my_num_kmers, upcxx::op_max).wait();
     dist_object<KmerDHT<MAX_K>> kmer_dht(world(), my_num_kmers, max_kmer_store, options->max_rpcs_in_flight, options->force_bloom,
-                                         options->use_heavy_hitters);
+                                         (options->kmer_lens[0] != kmer_len), options->use_heavy_hitters);
     barrier();
     BEGIN_GASNET_STATS("kmer_analysis");
     analyze_kmers(kmer_len, prev_kmer_len, options->qual_offset, packed_reads_list, options->dmin_thres, ctgs, kmer_dht);
