@@ -224,6 +224,7 @@ class KmerDHT {
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
   bool use_bloom;
+  HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
 
  public:
   KmerDHT(uint64_t my_num_kmers, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS = false)
@@ -260,8 +261,7 @@ class KmerDHT {
     } else {
       if (lowest_free_mem * 0.80 < max_reqd_space) {
         use_bloom = true;
-        SLOG_VERBOSE(
-            "Insufficient memory available: enabling bloom filters assuming 80% of free mem is available for hashtables\n");
+        SLOG("Insufficient memory available: enabling bloom filters assuming 80% of free mem is available for hashtables\n");
       } else {
         use_bloom = false;
         SLOG_VERBOSE("Sufficient memory available; not using bloom filters\n");
@@ -295,6 +295,8 @@ class KmerDHT {
       double init_free_mem = get_free_mem();
       if (my_adjusted_num_kmers <= 0) DIE("no kmers to reserve space for");
       kmers->reserve(my_adjusted_num_kmers);
+      // FIXME: I have no idea what this should be
+      if (!use_bloom) kmer_cache.reserve(my_adjusted_num_kmers);
       SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
     }
@@ -303,6 +305,10 @@ class KmerDHT {
 
   void clear() {
     kmers->clear();
+    if (!use_bloom) {
+      kmer_cache.clear();
+      HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
+    }
     KmerMap().swap(*kmers);
     clear_stores();
   }
@@ -313,6 +319,36 @@ class KmerDHT {
   }
 
   ~KmerDHT() { clear(); }
+
+  void reserve_space_and_clear_bloom1() {
+    BarrierTimer timer(__FILEFUNC__);
+    // at this point we're done with generating the bloom filters, so we can drop the first bloom filter and
+    // allocate the kmer hash table
+
+    // purge the kmer store and prep the kmer + count
+    kmer_store_bloom.clear();
+    kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
+
+    int64_t cardinality1 = bloom_filter1->estimate_num_items();
+    int64_t cardinality2 = bloom_filter2->estimate_num_items();
+    bloom1_cardinality = cardinality1;
+    SLOG_VERBOSE("Rank 0: first bloom filter size estimate is ", cardinality1, " and second size estimate is ", cardinality2,
+                 " ratio is ", (double)cardinality2 / cardinality1, "\n");
+    bloom_filter1->clear();  // no longer need it
+
+    barrier();
+    // two bloom false positive rates applied
+    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 20000);
+    auto node0_cores = upcxx::local_team().rank_n();
+    double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
+    SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved), " for kmer hash tables with ",
+                 node0_cores * initial_kmer_dht_reservation, " entries on node 0\n");
+    double init_free_mem = get_free_mem();
+    kmers->reserve(initial_kmer_dht_reservation);
+    if (!use_bloom) kmer_cache.reserve(initial_kmer_dht_reservation);
+    SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
+    barrier();
+  }
 
   bool get_use_bloom() { return use_bloom; }
 
@@ -524,6 +560,9 @@ class KmerDHT {
   }
 #endif
 
+  int64_t bytes_sent_kmers = 0;
+  int64_t bytes_sent_unique_kmers = 0;
+
   void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, uint16_t count) {
     if (!count) count = 1;
     // get the lexicographically smallest
@@ -534,48 +573,54 @@ class KmerDHT {
       left_ext = comp_nucleotide(left_ext);
       right_ext = comp_nucleotide(right_ext);
     }
-    auto target_rank = get_kmer_target_rank(kmer, &kmer_rc);
-    KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
-    kmer_and_exts.left_exts.inc(left_ext, count);
-    kmer_and_exts.right_exts.inc(right_ext, count);
-    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
-      if (count) kmer_store_bloom.update(target_rank, kmer);
+    if (pass_type == NO_BLOOM_PASS) {
+      auto it = kmer_cache.find(kmer);
+      if (it == kmer_cache.end()) {
+        KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
+        kmer_and_exts.left_exts.inc(left_ext, count);
+        kmer_and_exts.right_exts.inc(right_ext, count);
+        kmer_cache.insert({kmer, kmer_and_exts});
+        bytes_sent_unique_kmers += sizeof(KmerAndExts);
+      } else {
+        it->second.left_exts.inc(left_ext, count);
+        it->second.right_exts.inc(right_ext, count);
+        it->second.count += count;
+      }
+      bytes_sent_kmers += sizeof(KmerAndExts);
     } else {
-      kmer_store.update(target_rank, kmer_and_exts);
-    };
-  }
-
-  void reserve_space_and_clear_bloom1() {
-    BarrierTimer timer(__FILEFUNC__);
-    // at this point we're done with generating the bloom filters, so we can drop the first bloom filter and
-    // allocate the kmer hash table
-
-    // purge the kmer store and prep the kmer + count
-    kmer_store_bloom.clear();
-    kmer_store.set_size("kmers", max_kmer_store_bytes, max_rpcs_in_flight);
-
-    int64_t cardinality1 = bloom_filter1->estimate_num_items();
-    int64_t cardinality2 = bloom_filter2->estimate_num_items();
-    bloom1_cardinality = cardinality1;
-    SLOG_VERBOSE("Rank 0: first bloom filter size estimate is ", cardinality1, " and second size estimate is ", cardinality2,
-                 " ratio is ", (double)cardinality2 / cardinality1, "\n");
-    bloom_filter1->clear();  // no longer need it
-
-    barrier();
-    // two bloom false positive rates applied
-    initial_kmer_dht_reservation = (int64_t)(cardinality2 * (1 + KCOUNT_BLOOM_FP) * (1 + KCOUNT_BLOOM_FP) + 20000);
-    auto node0_cores = upcxx::local_team().rank_n();
-    double kmers_space_reserved = initial_kmer_dht_reservation * (sizeof(Kmer<MAX_K>) + sizeof(KmerCounts));
-    SLOG_VERBOSE("Reserving at least ", get_size_str(node0_cores * kmers_space_reserved), " for kmer hash tables with ",
-                 node0_cores * initial_kmer_dht_reservation, " entries on node 0\n");
-    double init_free_mem = get_free_mem();
-    kmers->reserve(initial_kmer_dht_reservation);
-    SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
-    barrier();
+      auto target_rank = get_kmer_target_rank(kmer, &kmer_rc);
+      if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
+        if (count) kmer_store_bloom.update(target_rank, kmer);
+      } else {
+        KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
+        kmer_and_exts.left_exts.inc(left_ext, count);
+        kmer_and_exts.right_exts.inc(right_ext, count);
+        kmer_store.update(target_rank, kmer_and_exts);
+        bytes_sent_unique_kmers += sizeof(KmerAndExts);
+        bytes_sent_kmers += sizeof(KmerAndExts);
+      }
+    }
   }
 
   void flush_updates() {
     BarrierTimer timer(__FILEFUNC__);
+    if (pass_type == NO_BLOOM_PASS) {
+      int64_t tot_count = 0;
+      for (auto &[kmer, kmer_and_exts] : kmer_cache) {
+        progress();
+        tot_count += kmer_and_exts.count;
+        auto target_rank = get_kmer_target_rank(kmer);
+        kmer_store.update(target_rank, kmer_and_exts);
+      }
+      auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
+      auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
+      auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
+      auto all_bytes_sent = reduce_one(bytes_sent_kmers, op_fast_add, 0).wait();
+      auto all_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_add, 0).wait();
+      SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
+      SLOG("Bytes sent for all kmers ", get_size_str(all_bytes_sent), " for unique ", get_size_str(all_bytes_sent_unique),
+           " reduction ", 100.0 * all_bytes_sent_unique / all_bytes_sent, "%\n");
+    }
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
       kmer_store_bloom.flush_updates();
     } else {
@@ -601,25 +646,6 @@ class KmerDHT {
     estimated_error_rate = 1.0 - pow(1.0 - (double)all_num_purged / (double)num_prior_kmers, 1.0 / (double)Kmer<MAX_K>::get_k());
     SLOG_VERBOSE("Estimated per-base error rate from purge: ", estimated_error_rate, "\n");
   }
-
-  /*
-  void purge_fx_kmers() {
-    BarrierTimer timer(__FILEFUNC__);
-    auto num_prior_kmers = get_num_kmers();
-    int64_t num_purged = 0;
-    for (auto it = kmers->begin(); it != kmers->end(); ) {
-      auto kmer_counts = make_shared<KmerCounts>(it->second);
-      if (kmer_counts->left == 'X' || kmer_counts->left == 'F' || kmer_counts->right == 'X' || kmer_counts->right == 'F') {
-        num_purged++;
-        it = kmers->erase(it);
-      } else {
-        ++it;
-      }
-    }
-    auto all_num_purged = reduce_one(num_purged, op_fast_add, 0).wait();
-    SLOG_VERBOSE("Purged ", perc_str(all_num_purged, num_prior_kmers), " kmers with F or X extensions\n");
-  }
-  */
 
   void compute_kmer_exts() {
     BarrierTimer timer(__FILEFUNC__);

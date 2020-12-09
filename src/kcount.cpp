@@ -47,8 +47,6 @@
 //#define DBG_ADD_KMER DBG
 #define DBG_ADD_KMER(...)
 
-//#define COUNT_UNIQUE_KMERS
-
 template <int MAX_K>
 static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *> &packed_reads_list,
                         dist_object<KmerDHT<MAX_K>> &kmer_dht, PASS_TYPE pass_type) {
@@ -73,9 +71,6 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
     default: DIE("Should never get here");
   };
   kmer_dht->set_pass(pass_type);
-#ifdef COUNT_UNIQUE_KMERS
-  HASH_TABLE<Kmer<MAX_K>, int> local_kmer_counts;
-#endif
   barrier();
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
@@ -120,26 +115,12 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
             num_Ns++;
           continue;
         }
-        int count = 1;
-#ifdef KCOUNT_FILTER_BAD_QUAL_IN_READ
-        if (pass_type != BLOOM_SET_PASS && i + kmer_len > found_bad_qual_pos) count = 0;
-#endif
         char left_base = seq[i - 1];
         if (quals[i - 1] < qual_offset + qual_cutoff) left_base = '0';
         char right_base = seq[i + kmer_len];
         if (quals[i + kmer_len] < qual_offset + qual_cutoff) right_base = '0';
-        kmer_dht->add_kmer(kmers[i], left_base, right_base, count);
-#ifdef COUNT_UNIQUE_KMERS
-        Kmer<MAX_K> kmer = kmers[i];
-        Kmer<MAX_K> kmer_rc = kmer.revcomp();
-        if (kmer_rc < kmer) kmer = kmer_rc;
-        auto it = local_kmer_counts.find(kmer);
-        if (it == local_kmer_counts.end())
-          local_kmer_counts.insert({kmer, count});
-        else
-          it->second += count;
-#endif
-        DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
+        kmer_dht->add_kmer(kmers[i], left_base, right_base, 1);
+        DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", 1, "\n");
         num_kmers++;
       }
       progress();
@@ -148,12 +129,6 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
   }
   kmer_dht->flush_updates();
   auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
-#ifdef COUNT_UNIQUE_KMERS
-  auto tot_unique_kmers = reduce_one(local_kmer_counts.size(), op_fast_add, 0).wait();
-  auto max_unique_kmers = reduce_one(local_kmer_counts.size(), op_fast_max, 0).wait();
-  SLOG("Found ", perc_str(tot_unique_kmers / rank_n(), all_num_kmers / rank_n()), " unique kmers per rank, max ", max_unique_kmers,
-       " load balance ", (double)tot_unique_kmers / rank_n() / max_unique_kmers, "\n");
-#endif
   DBG("This rank processed ", num_reads, " reads\n");
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
   auto all_num_bad_quals = reduce_one(num_bad_quals, op_fast_add, 0).wait();

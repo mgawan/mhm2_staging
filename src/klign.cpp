@@ -745,8 +745,8 @@ class KmerCtgDHT {
     auto max_ctg_bytes_fetched = reduce_one(ctg_bytes_fetched, op_fast_max, 0).wait();
     auto all_ctg_subseq_bytes_fetched = reduce_one(ctg_subseq_bytes_fetched, op_fast_add, 0).wait();
     auto max_ctg_subseq_bytes_fetched = reduce_one(ctg_subseq_bytes_fetched, op_fast_max, 0).wait();
-    SLOG("Fulseq contig bytes fetched ", all_ctg_bytes_fetched, " max ", max_ctg_bytes_fetched, "\n");
-    SLOG("Subseq contig bytes fetched ", all_ctg_subseq_bytes_fetched, " max ", max_ctg_subseq_bytes_fetched, "\n");
+    SLOG_VERBOSE("Fulseq contig bytes fetched ", all_ctg_bytes_fetched, " max ", max_ctg_bytes_fetched, "\n");
+    SLOG_VERBOSE("Subseq contig bytes fetched ", all_ctg_subseq_bytes_fetched, " max ", max_ctg_subseq_bytes_fetched, "\n");
   }
 };
 
