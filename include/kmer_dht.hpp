@@ -225,9 +225,8 @@ class KmerDHT {
   PASS_TYPE pass_type;
   bool use_bloom;
   bool use_kmer_cache;
-  //int64_t bytes_sent_kmers = 0;
-  //int64_t bytes_sent_unique_kmers = 0;
   HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
+  int num_cache_updates;
 
   static void update_bloom_set(Kmer<MAX_K> kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
     // look for it in the first bloom filter - if not found, add it just to the first bloom filter
@@ -356,7 +355,8 @@ class KmerDHT {
       , max_rpcs_in_flight(max_rpcs_in_flight)
       , bloom1_cardinality(0)
       , estimated_error_rate(0.0)
-      , use_kmer_cache(use_kmer_cache) {
+      , use_kmer_cache(use_kmer_cache)
+      , num_cache_updates(0) {
     // main purpose of the timer here is to track memory usage
     BarrierTimer timer(__FILEFUNC__);
     auto node0_cores = upcxx::local_team().rank_n();
@@ -414,7 +414,7 @@ class KmerDHT {
       if (my_adjusted_num_kmers <= 0) DIE("no kmers to reserve space for");
       kmers->reserve(my_adjusted_num_kmers);
       // FIXME: I have no idea what this should be
-      if (!use_bloom && use_kmer_cache) kmer_cache.reserve(my_adjusted_num_kmers);
+      if (!use_bloom && use_kmer_cache) kmer_cache.reserve(my_adjusted_num_kmers * KCOUNT_KMER_CACHE_FRACTION);
       SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
     }
@@ -463,7 +463,7 @@ class KmerDHT {
                  node0_cores * initial_kmer_dht_reservation, " entries on node 0\n");
     double init_free_mem = get_free_mem();
     kmers->reserve(initial_kmer_dht_reservation);
-    if (!use_bloom && use_kmer_cache) kmer_cache.reserve(initial_kmer_dht_reservation);
+    if (!use_bloom && use_kmer_cache) kmer_cache.reserve(initial_kmer_dht_reservation * KCOUNT_KMER_CACHE_FRACTION);
     SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
     barrier();
   }
@@ -551,6 +551,7 @@ class KmerDHT {
       kmer_and_exts.right_exts.inc(right_ext, count);
       kmer_store.update(get_kmer_target_rank(kmer, &kmer_rc), kmer_and_exts);
     } else {
+      auto prev_bucket_count = kmer_cache.bucket_count();
       // only cache kmers - there is no expected local aggregation of ctg kmers since they don't benefit from read shuffling
       auto it = kmer_cache.find(kmer);
       if (it == kmer_cache.end()) {
@@ -558,14 +559,33 @@ class KmerDHT {
         kmer_and_exts.left_exts.inc(left_ext, count);
         kmer_and_exts.right_exts.inc(right_ext, count);
         kmer_cache.insert({kmer, kmer_and_exts});
-        //bytes_sent_unique_kmers += sizeof(KmerAndExts);
       } else {
         it->second.left_exts.inc(left_ext, count);
         it->second.right_exts.inc(right_ext, count);
         it->second.count += count;
       }
-      //bytes_sent_kmers += sizeof(KmerAndExts);
+      auto end_bucket_count = kmer_cache.bucket_count();
+      if (prev_bucket_count < end_bucket_count) WARN("Hash table was resized from ", prev_bucket_count, " to ", end_bucket_count);
+      if (kmer_cache.load_factor() > KCOUNT_KMER_CACHE_MAX_LOAD) update_and_clear_kmer_cache();
     }
+  }
+
+  void update_and_clear_kmer_cache() {
+    // auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
+    // auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
+    int64_t tot_count = 0;
+    //      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); it = kmer_cache.erase(it)) {
+    for (auto it = kmer_cache.begin(); it != kmer_cache.end(); ++it) {
+      progress();
+      tot_count += it->second.count;
+      auto target_rank = get_kmer_target_rank(it->first);
+      kmer_store.update(target_rank, it->second);
+    }
+    SLOG("Cached ", perc_str(kmer_cache.size(), tot_count), " unique kmers on rank 0\n");
+    num_cache_updates++;
+    kmer_cache.clear();
+    // auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
+    // SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
   }
 
   void flush_updates() {
@@ -575,29 +595,12 @@ class KmerDHT {
     } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !use_kmer_cache) {
       kmer_store.flush_updates();
     } else {
-      auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
-      auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
-      /*
-      auto all_bytes_sent = reduce_one(bytes_sent_kmers, op_fast_add, 0).wait();
-      auto all_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_add, 0).wait();
-      auto max_bytes_sent_unique = reduce_one(bytes_sent_unique_kmers, op_fast_max, 0).wait();
-      auto comm_load_balance = (double)all_bytes_sent_unique / (rank_n() * max_bytes_sent_unique);
-      */
-      int64_t tot_count = 0;
-//      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); it = kmer_cache.erase(it)) {
-      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); ++it) {
-        progress();
-        tot_count += it->second.count;
-        auto target_rank = get_kmer_target_rank(it->first);
-        kmer_store.update(target_rank, it->second);
-      }
-      kmer_cache.clear();
+      update_and_clear_kmer_cache();
       HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
       kmer_store.flush_updates();
-      auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
-      SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
-      //SLOG("Bytes sent ", get_size_str(all_bytes_sent_unique), std::setprecision(2), std::fixed, " reduction ",
-      //     (double)all_bytes_sent_unique / all_bytes_sent, " comm. load balance ", comm_load_balance, "\n");
+      auto all_cache_updates = reduce_one(num_cache_updates, op_fast_add, 0).wait();
+      auto max_cache_updates = reduce_one(num_cache_updates, op_fast_max, 0).wait();
+      SLOG("Avg number of cache updates per rank ", all_cache_updates / rank_n(), " max ", max_cache_updates, "\n");
     }
   }
 
