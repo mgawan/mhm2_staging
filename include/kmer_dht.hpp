@@ -100,7 +100,8 @@ using namespace upcxx_utils;
 
 enum PASS_TYPE { BLOOM_SET_PASS, BLOOM_COUNT_PASS, NO_BLOOM_PASS, CTG_BLOOM_SET_PASS, CTG_KMERS_PASS };
 
-using ext_count_t = uint16_t;
+using ext_count_t = uint8_t;
+using kmer_count_t = uint8_t;
 
 // global variables to avoid passing dist objs to rpcs
 inline double _dynamic_min_depth = 0;
@@ -129,35 +130,28 @@ struct ExtCounts {
     return false;
   }
 
+  ext_count_t inc_with_limit(int count1, int count2) {
+    count1 += count2;
+    return std::min(count1, (int)numeric_limits<ext_count_t>::max());
+  }
+
   void inc(char ext, int count) {
     switch (ext) {
-      case 'A':
-        count += count_A;
-        count_A = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'C':
-        count += count_C;
-        count_C = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'G':
-        count += count_G;
-        count_G = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
-      case 'T':
-        count += count_T;
-        count_T = (count < numeric_limits<ext_count_t>::max()) ? count : numeric_limits<ext_count_t>::max();
-        break;
+      case 'A': count_A = inc_with_limit(count_A, count); break;
+      case 'C': count_C = inc_with_limit(count_C, count); break;
+      case 'G': count_G = inc_with_limit(count_G, count); break;
+      case 'T': count_T = inc_with_limit(count_T, count); break;
     }
   }
 
   void add(ExtCounts &ext_counts) {
-    count_A += ext_counts.count_A;
-    count_C += ext_counts.count_C;
-    count_G += ext_counts.count_G;
-    count_T += ext_counts.count_T;
+    count_A = inc_with_limit(count_A, ext_counts.count_A);
+    count_C = inc_with_limit(count_C, ext_counts.count_C);
+    count_G = inc_with_limit(count_G, ext_counts.count_G);
+    count_T = inc_with_limit(count_T, ext_counts.count_T);
   }
 
-  char get_ext(uint16_t count) {
+  char get_ext(kmer_count_t count) {
     auto sorted_counts = get_sorted();
     int top_count = sorted_counts[0].second;
     int runner_up_count = sorted_counts[1].second;
@@ -178,7 +172,7 @@ struct KmerCounts {
   ExtCounts left_exts;
   ExtCounts right_exts;
   global_ptr<FragElem> uutig_frag;
-  uint16_t count;
+  kmer_count_t count;
   // the final extensions chosen - A,C,G,T, or F,X
   char left, right;
   bool from_ctg;
@@ -197,7 +191,7 @@ class KmerDHT {
     Kmer<MAX_K> kmer;
     ExtCounts left_exts;
     ExtCounts right_exts;
-    uint16_t count;
+    kmer_count_t count;
     UPCXX_SERIALIZED_FIELDS(kmer, left_exts, right_exts, count);
   };
 
@@ -227,6 +221,7 @@ class KmerDHT {
   HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
   int num_cache_updates;
   bool use_minimizers;
+  int64_t bytes_sent = 0;
 
   static void update_bloom_set(Kmer<MAX_K> kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
     // look for it in the first bloom filter - if not found, add it just to the first bloom filter
@@ -271,7 +266,7 @@ class KmerDHT {
     } else {
       auto kmer = &it->second;
       int count = kmer->count + kmer_and_exts.count;
-      if (count > numeric_limits<uint16_t>::max()) count = numeric_limits<uint16_t>::max();
+      if (count > numeric_limits<kmer_count_t>::max()) count = numeric_limits<kmer_count_t>::max();
       kmer->count = count;
       kmer->left_exts.add(kmer_and_exts.left_exts);
       kmer->right_exts.add(kmer_and_exts.right_exts);
@@ -330,7 +325,7 @@ class KmerDHT {
       }
     }
     if (insert) {
-      uint16_t count = kmer_and_exts.count;
+      kmer_count_t count = kmer_and_exts.count;
       KmerCounts kmer_counts = {
           .left_exts = {0}, .right_exts = {0}, .uutig_frag = nullptr, .count = count, .left = 'X', .right = 'X', .from_ctg = true};
       char left_ext = kmer_and_exts.left_exts.get_ext(count);
@@ -472,6 +467,7 @@ class KmerDHT {
   bool get_use_bloom() { return use_bloom; }
 
   void set_pass(PASS_TYPE pass_type) {
+    bytes_sent = 0;
     this->pass_type = pass_type;
     switch (pass_type) {
       case BLOOM_SET_PASS: kmer_store_bloom.set_update_func(update_bloom_set); break;
@@ -531,7 +527,7 @@ class KmerDHT {
   }
 #endif
 
-  void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, uint16_t count) {
+  void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, kmer_count_t count) {
     if (!count) count = 1;
     // get the lexicographically smallest
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
@@ -542,12 +538,16 @@ class KmerDHT {
       right_ext = comp_nucleotide(right_ext);
     }
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
-      if (count) kmer_store_bloom.update(get_kmer_target_rank(kmer, &kmer_rc), kmer);
+      if (count) {
+        kmer_store_bloom.update(get_kmer_target_rank(kmer, &kmer_rc), kmer);
+        bytes_sent += sizeof(kmer);
+      }
     } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !local_kmer_counting) {
       KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
       kmer_and_exts.left_exts.inc(left_ext, count);
       kmer_and_exts.right_exts.inc(right_ext, count);
       kmer_store.update(get_kmer_target_rank(kmer, &kmer_rc), kmer_and_exts);
+      bytes_sent += sizeof(kmer_and_exts);
     } else {
       auto prev_bucket_count = kmer_cache.bucket_count();
       // only cache kmers - there is no expected local aggregation of ctg kmers since they don't benefit from read shuffling
@@ -578,6 +578,7 @@ class KmerDHT {
       tot_count += it->second.count;
       auto target_rank = get_kmer_target_rank(it->first);
       kmer_store.update(target_rank, it->second);
+      bytes_sent += sizeof(it->second);
     }
     SLOG("Cached ", perc_str(kmer_cache.size(), tot_count), " unique kmers on rank 0\n");
     num_cache_updates++;
@@ -600,6 +601,10 @@ class KmerDHT {
       auto max_cache_updates = reduce_one(num_cache_updates, op_fast_max, 0).wait();
       SLOG("Avg number of cache updates per rank ", all_cache_updates / rank_n(), " max ", max_cache_updates, "\n");
     }
+    auto all_bytes_sent = reduce_one(bytes_sent, op_fast_add, 0).wait();
+    auto max_bytes_sent = reduce_one(bytes_sent, op_fast_max, 0).wait();
+    SLOG("Total bytes sent ", get_size_str(all_bytes_sent), " balance ", (double)all_bytes_sent / (rank_n() * max_bytes_sent),
+         "\n");
   }
 
   void purge_kmers(int threshold) {

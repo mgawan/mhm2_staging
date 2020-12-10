@@ -193,9 +193,9 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < (int)(ctg->seq.length() - kmer_len); i++) {
-        uint16_t depth = ctg->depth;
+        kmer_count_t depth = ctg->depth;
 #ifdef USE_KMER_DEPTHS
-        uint16_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
+        kmer_count_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
         tot_depth_diff += (double)(kmer_depth - depth) / depth;
         max_depth_diff = max(max_depth_diff, (double)abs(kmer_depth - depth));
         depth = kmer_depth;
