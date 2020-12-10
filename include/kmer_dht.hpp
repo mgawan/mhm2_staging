@@ -262,11 +262,11 @@ class KmerDHT {
                                 .uutig_frag = nullptr};
       auto prev_bucket_count = kmers->bucket_count();
       kmers->insert({kmer_and_exts.kmer, kmer_counts});
-#ifdef DEBUG
+//#ifdef DEBUG
       // since sizes are an estimate this could happen, but it will impact performance
       if (prev_bucket_count < kmers->bucket_count())
         SWARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
-#endif
+//#endif
       DBG_INSERT_KMER("inserted kmer ", kmer_and_exts.kmer.to_string(), " with count ", kmer_counts.count, "\n");
     } else {
       auto kmer = &it->second;

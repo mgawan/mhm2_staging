@@ -231,9 +231,11 @@ class CtgsWithReadsDHT {
       it = ctgs_map->insert(it, std::move(record));
       DBG_VERBOSE("Added contig cid=", it->first, ": ", it->second.seq, " depth=", it->second.depth, "\n");
     });
-    int est_update_size = sizeof(CtgData) + 400 /* contig sequence size */;
-    auto max_store_bytes =
-        8 * sizeof(CtgData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 3% of free memory
+    // with contig sequence 
+    int est_update_size = sizeof(CtgData) + 400;
+    // approx 10% of free memory
+    int64_t mem_to_use = 0.1 * get_free_mem() / local_team().rank_n();
+    auto max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);  
     ctg_store.set_size("CtgsWithReads add ctg", max_store_bytes);
 
     ctg_read_store.set_update_func([&ctgs_map = this->ctgs_map](CtgReadData &&ctg_read_data) {

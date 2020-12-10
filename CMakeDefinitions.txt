@@ -49,7 +49,7 @@ add_definitions(-DKCOUNT_FILTER_BAD_QUAL_IN_READ)
 # false positive rate for bloom filter
 add_definitions(-DKCOUNT_BLOOM_FP=0.05)
 add_definitions(-DKCOUNT_NO_BLOOM_ADJUSTMENT_FACTOR=0.2)
-add_definitions(-DKCOUNT_KMER_CACHE_FRACTION=1.0)
+add_definitions(-DKCOUNT_KMER_CACHE_FRACTION=0.2)
 add_definitions(-DKCOUNT_KMER_CACHE_MAX_LOAD=0.8)
 
 # dynamic min depth used in debruijn graph traversal
