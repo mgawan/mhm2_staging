@@ -177,12 +177,11 @@ struct KmerCounts {
   // count of high quality forward and backward exts
   ExtCounts left_exts;
   ExtCounts right_exts;
-  // the final extensions chosen - A,C,G,T, or F,X
-  char left;
-  char right;
-  uint16_t count;
-  bool from_ctg;
   global_ptr<FragElem> uutig_frag;
+  uint16_t count;
+  // the final extensions chosen - A,C,G,T, or F,X
+  char left, right;
+  bool from_ctg;
 
   char get_left_ext() { return left_exts.get_ext(count); }
 
@@ -256,18 +255,18 @@ class KmerDHT {
     if (it == kmers->end()) {
       KmerCounts kmer_counts = {.left_exts = kmer_and_exts.left_exts,
                                 .right_exts = kmer_and_exts.right_exts,
+                                .uutig_frag = nullptr,
+                                .count = kmer_and_exts.count,
                                 .left = 'X',
                                 .right = 'X',
-                                .count = kmer_and_exts.count,
-                                .from_ctg = false,
-                                .uutig_frag = nullptr};
+                                .from_ctg = false};
       auto prev_bucket_count = kmers->bucket_count();
       kmers->insert({kmer_and_exts.kmer, kmer_counts});
-//#ifdef DEBUG
+      //#ifdef DEBUG
       // since sizes are an estimate this could happen, but it will impact performance
       if (prev_bucket_count < kmers->bucket_count())
         SWARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
-//#endif
+      //#endif
       DBG_INSERT_KMER("inserted kmer ", kmer_and_exts.kmer.to_string(), " with count ", kmer_counts.count, "\n");
     } else {
       auto kmer = &it->second;
@@ -333,7 +332,7 @@ class KmerDHT {
     if (insert) {
       uint16_t count = kmer_and_exts.count;
       KmerCounts kmer_counts = {
-          .left_exts = {0}, .right_exts = {0}, .left = 'X', .right = 'X', .count = count, .from_ctg = true, .uutig_frag = nullptr};
+          .left_exts = {0}, .right_exts = {0}, .uutig_frag = nullptr, .count = count, .left = 'X', .right = 'X', .from_ctg = true};
       char left_ext = kmer_and_exts.left_exts.get_ext(count);
       char right_ext = kmer_and_exts.right_exts.get_ext(count);
       kmer_counts.left_exts.inc(left_ext, count);
@@ -505,8 +504,10 @@ class KmerDHT {
   double get_estimated_error_rate() { return estimated_error_rate; }
 
   upcxx::intrank_t get_kmer_target_rank(const Kmer<MAX_K> &kmer, const Kmer<MAX_K> *kmer_rc = nullptr) const {
-    if (use_minimizers) return kmer.minimizer_hash_fast(MINIMIZER_LEN, kmer_rc) % rank_n();
-    else return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
+    if (use_minimizers)
+      return kmer.minimizer_hash_fast(MINIMIZER_LEN, kmer_rc) % rank_n();
+    else
+      return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
   }
 
   KmerCounts *get_local_kmer_counts(Kmer<MAX_K> &kmer) {
