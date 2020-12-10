@@ -145,8 +145,9 @@ void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, vector<PackedRe
     Alns alns;
     stage_timers.alignments->start();
     BEGIN_GASNET_STATS("alignment");
-    double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
-                                                   alns, KLIGN_SEED_SPACE, rlen_limit, false, 0, options->ranks_per_gpu);
+    double kernel_elapsed =
+        find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns,
+                               KLIGN_SEED_SPACE, rlen_limit, options->use_minimizers, false, 0, options->ranks_per_gpu);
     END_GASNET_STATS();
     stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
     stage_timers.alignments->stop();

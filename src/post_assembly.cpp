@@ -81,8 +81,9 @@ void post_assembly(int kmer_len, Contigs &ctgs, shared_ptr<Options> options, int
   Alns alns;
   stage_timers.alignments->start();
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
-  double kernel_elapsed = find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs,
-                                                 alns, 4, rlen_limit, true, options->min_ctg_print_len, options->ranks_per_gpu);
+  double kernel_elapsed =
+      find_alignments<MAX_K>(kmer_len, packed_reads_list, max_kmer_store, options->max_rpcs_in_flight, ctgs, alns, 4, rlen_limit,
+                             options->use_minimizers, true, options->min_ctg_print_len, options->ranks_per_gpu);
   stage_timers.kernel_alns->inc_elapsed(kernel_elapsed);
   stage_timers.alignments->stop();
   for (auto packed_reads : packed_reads_list) {

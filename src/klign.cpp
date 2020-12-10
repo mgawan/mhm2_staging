@@ -1013,8 +1013,8 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads 
 
 template <int MAX_K>
 double find_alignments(unsigned kmer_len, vector<PackedReads *> &packed_reads_list, int max_store_size, int max_rpcs_in_flight,
-                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool compute_cigar, int min_ctg_len,
-                       int ranks_per_gpu) {
+                       Contigs &ctgs, Alns &alns, int seed_space, int rlen_limit, bool use_minimizers, bool compute_cigar,
+                       int min_ctg_len, int ranks_per_gpu) {
   BarrierTimer timer(__FILEFUNC__);
   _num_dropped_seed_to_ctgs = 0;
   Kmer<MAX_K>::set_k(kmer_len);
@@ -1032,7 +1032,7 @@ double find_alignments(unsigned kmer_len, vector<PackedReads *> &packed_reads_li
   auto all_num_ctgs = reduce_all(ctgs.size(), op_fast_add).wait();
   SLOG_VERBOSE("Alignment scoring parameters: ", aln_scoring.to_string(), "\n");
   KmerCtgDHT<MAX_K> kmer_ctg_dht(kmer_len, max_store_size, max_rpcs_in_flight, alns, aln_scoring, rlen_limit, compute_cigar,
-                                 all_num_ctgs, ranks_per_gpu);
+                                 use_minimizers, all_num_ctgs, ranks_per_gpu);
   barrier();
   build_alignment_index(kmer_ctg_dht, ctgs, min_ctg_len);
 #ifdef DEBUG
