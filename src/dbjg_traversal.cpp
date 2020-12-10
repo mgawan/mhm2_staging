@@ -166,7 +166,7 @@ static bool check_kmers(const string &seq, dist_object<KmerDHT<MAX_K>> &kmer_dht
 template <int MAX_K>
 StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, const Kmer<MAX_K> start_kmer, const Dirn dirn,
                               const char start_prev_ext, const char start_next_ext, bool revisit_allowed, bool is_rc,
-                              const global_ptr<FragElem> frag_elem_gptr) {
+                              const global_ptr<FragElem> frag_elem_gptr, bool use_minimizers) {
   StepInfo<MAX_K> step_info(start_kmer, start_prev_ext, start_next_ext);
   while (true) {
     KmerCounts *kmer_counts = kmer_dht->get_local_kmer_counts(step_info.kmer);
@@ -222,9 +222,7 @@ StepInfo<MAX_K> get_next_step(dist_object<KmerDHT<MAX_K>> &kmer_dht, const Kmer<
     step_info.walk_status = WalkStatus::RUNNING;
     step_info.sum_depths += kmer_counts->count;
 
-#ifndef USE_MINIMIZERS
-    break;
-#endif
+    if (!use_minimizers) break;
 
     revisit_allowed = false;
     auto kmer = step_info.kmer;
@@ -250,7 +248,7 @@ static int64_t _num_rpcs = 0;
 template <int MAX_K>
 static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht, Kmer<MAX_K> kmer,
                                           global_ptr<FragElem> frag_elem_gptr, Dirn dirn, string &uutig, int64_t &sum_depths,
-                                          WalkTermStats &walk_term_stats) {
+                                          WalkTermStats &walk_term_stats, bool use_minimizers) {
   char prev_ext = 0;
   char next_ext = (dirn == Dirn::LEFT ? kmer.front() : kmer.back());
   bool revisit_allowed = (dirn == Dirn::LEFT ? false : true);
@@ -272,10 +270,11 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
     _num_rpcs++;
     StepInfo<MAX_K> step_info;
     if (target_rank == rank_me())
-      step_info = get_next_step<MAX_K>(kmer_dht, next_kmer, dirn, prev_ext, next_ext, revisit_allowed, is_rc, frag_elem_gptr);
+      step_info = get_next_step<MAX_K>(kmer_dht, next_kmer, dirn, prev_ext, next_ext, revisit_allowed, is_rc, frag_elem_gptr,
+                                       use_minimizers);
     else
       step_info = rpc(target_rank, get_next_step<MAX_K>, kmer_dht, next_kmer, dirn, prev_ext, next_ext, revisit_allowed, is_rc,
-                      frag_elem_gptr)
+                      frag_elem_gptr, use_minimizers)
                       .wait();
     revisit_allowed = false;
     sum_depths += step_info.sum_depths;
@@ -294,7 +293,8 @@ static global_ptr<FragElem> traverse_dirn(dist_object<KmerDHT<MAX_K>> &kmer_dht,
 }
 
 template <int MAX_K>
-static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems) {
+static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, vector<global_ptr<FragElem>> &frag_elems,
+                            bool use_minimizers) {
   BarrierTimer timer(__FILEFUNC__);
   _num_rank_me_rpcs = 0;
   _num_node_rpcs = 0;
@@ -316,8 +316,8 @@ static void construct_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer
     string uutig;
     int64_t sum_depths = 0;
     global_ptr<FragElem> frag_elem_gptr = new_<FragElem>();
-    auto left_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, Dirn::LEFT, uutig, sum_depths, walk_term_stats);
-    auto right_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, Dirn::RIGHT, uutig, sum_depths, walk_term_stats);
+    auto left_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, Dirn::LEFT, uutig, sum_depths, walk_term_stats, use_minimizers);
+    auto right_gptr = traverse_dirn(kmer_dht, kmer, frag_elem_gptr, Dirn::RIGHT, uutig, sum_depths, walk_term_stats, use_minimizers);
     FragElem *frag_elem = frag_elem_gptr.local();
     frag_elem->frag_seq = new_array<char>(uutig.length() + 1);
     strcpy(frag_elem->frag_seq.local(), uutig.c_str());
@@ -575,12 +575,12 @@ static void connect_frags(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_d
 }
 
 template <int MAX_K>
-void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs) {
+void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kmer_dht, Contigs &my_uutigs, bool use_minimizers) {
   BarrierTimer timer(__FILEFUNC__);
   {
     // scope for frag_elems
     vector<global_ptr<FragElem>> frag_elems;
-    construct_frags(kmer_len, kmer_dht, frag_elems);
+    construct_frags(kmer_len, kmer_dht, frag_elems, use_minimizers);
     clean_frag_links(kmer_len, kmer_dht, frag_elems);
     // put all the uutigs found by this rank into my_uutigs
     my_uutigs.clear();
@@ -604,8 +604,9 @@ void traverse_debruijn_graph(unsigned kmer_len, dist_object<KmerDHT<MAX_K>> &kme
 #endif
 }
 
-#define TDG_K(KMER_LEN) \
-  template void traverse_debruijn_graph<KMER_LEN>(unsigned kmer_len, dist_object<KmerDHT<KMER_LEN>> &kmer_dht, Contigs &my_uutigs)
+#define TDG_K(KMER_LEN)                                                 \
+  template void traverse_debruijn_graph<KMER_LEN>(unsigned kmer_len, dist_object<KmerDHT<KMER_LEN>> &kmer_dht, Contigs &my_uutigs, \
+                                                  bool use_minimizers)
 
 TDG_K(32);
 #if MAX_BUILD_KMER >= 64

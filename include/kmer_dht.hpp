@@ -224,9 +224,10 @@ class KmerDHT {
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
   bool use_bloom;
-  bool use_kmer_cache;
+  bool local_kmer_counting;
   HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
   int num_cache_updates;
+  bool use_minimizers;
 
   static void update_bloom_set(Kmer<MAX_K> kmer, dist_object<BloomFilter> &bloom_filter1, dist_object<BloomFilter> &bloom_filter2) {
     // look for it in the first bloom filter - if not found, add it just to the first bloom filter
@@ -342,8 +343,8 @@ class KmerDHT {
   }
 
  public:
-  KmerDHT(uint64_t my_num_kmers, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool use_kmer_cache,
-          bool useHHSS)
+  KmerDHT(uint64_t my_num_kmers, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool local_kmer_counting,
+          bool useHHSS, bool use_minimizers)
       : kmers({})
       , bloom_filter1({})
       , bloom_filter2({})
@@ -355,8 +356,9 @@ class KmerDHT {
       , max_rpcs_in_flight(max_rpcs_in_flight)
       , bloom1_cardinality(0)
       , estimated_error_rate(0.0)
-      , use_kmer_cache(use_kmer_cache)
-      , num_cache_updates(0) {
+      , local_kmer_counting(local_kmer_counting)
+      , num_cache_updates(0)
+      , use_minimizers(use_minimizers) {
     // main purpose of the timer here is to track memory usage
     BarrierTimer timer(__FILEFUNC__);
     auto node0_cores = upcxx::local_team().rank_n();
@@ -414,7 +416,7 @@ class KmerDHT {
       if (my_adjusted_num_kmers <= 0) DIE("no kmers to reserve space for");
       kmers->reserve(my_adjusted_num_kmers);
       // FIXME: I have no idea what this should be
-      if (!use_bloom && use_kmer_cache) kmer_cache.reserve(my_adjusted_num_kmers * KCOUNT_KMER_CACHE_FRACTION);
+      if (!use_bloom && local_kmer_counting) kmer_cache.reserve(my_adjusted_num_kmers * KCOUNT_KMER_CACHE_FRACTION);
       SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
     }
@@ -423,7 +425,7 @@ class KmerDHT {
 
   void clear() {
     kmers->clear();
-    if (!use_bloom && use_kmer_cache) {
+    if (!use_bloom && local_kmer_counting) {
       kmer_cache.clear();
       HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
     }
@@ -463,7 +465,7 @@ class KmerDHT {
                  node0_cores * initial_kmer_dht_reservation, " entries on node 0\n");
     double init_free_mem = get_free_mem();
     kmers->reserve(initial_kmer_dht_reservation);
-    if (!use_bloom && use_kmer_cache) kmer_cache.reserve(initial_kmer_dht_reservation * KCOUNT_KMER_CACHE_FRACTION);
+    if (!use_bloom && local_kmer_counting) kmer_cache.reserve(initial_kmer_dht_reservation * KCOUNT_KMER_CACHE_FRACTION);
     SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
     barrier();
   }
@@ -502,15 +504,10 @@ class KmerDHT {
 
   double get_estimated_error_rate() { return estimated_error_rate; }
 
-#ifdef USE_MINIMIZERS
   upcxx::intrank_t get_kmer_target_rank(const Kmer<MAX_K> &kmer, const Kmer<MAX_K> *kmer_rc = nullptr) const {
-    return kmer.minimizer_hash_fast(MINIMIZER_LEN, kmer_rc) % rank_n();
+    if (use_minimizers) return kmer.minimizer_hash_fast(MINIMIZER_LEN, kmer_rc) % rank_n();
+    else return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
   }
-#else
-  upcxx::intrank_t get_kmer_target_rank(const Kmer<MAX_K> &kmer, const Kmer<MAX_K> *ignored = nullptr) const {
-    return std::hash<Kmer<MAX_K>>{}(kmer) % rank_n();
-  }
-#endif
 
   KmerCounts *get_local_kmer_counts(Kmer<MAX_K> &kmer) {
     const auto it = kmers->find(kmer);
@@ -545,7 +542,7 @@ class KmerDHT {
     }
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
       if (count) kmer_store_bloom.update(get_kmer_target_rank(kmer, &kmer_rc), kmer);
-    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !use_kmer_cache) {
+    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !local_kmer_counting) {
       KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
       kmer_and_exts.left_exts.inc(left_ext, count);
       kmer_and_exts.right_exts.inc(right_ext, count);
@@ -592,7 +589,7 @@ class KmerDHT {
     BarrierTimer timer(__FILEFUNC__);
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
       kmer_store_bloom.flush_updates();
-    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !use_kmer_cache) {
+    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !local_kmer_counting) {
       kmer_store.flush_updates();
     } else {
       update_and_clear_kmer_cache();

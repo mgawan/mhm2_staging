@@ -161,10 +161,6 @@ int main(int argc, char **argv) {
   });
 #endif
 
-#ifdef USE_MINIMIZERS
-  SLOG_VERBOSE("Using minimizers for kmer analysis and deBruijn graph traversal\n");
-#endif
-
   Contigs ctgs;
   int max_kmer_len = 0;
   int max_expected_ins_size = 0;

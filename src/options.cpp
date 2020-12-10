@@ -334,6 +334,9 @@ bool Options::load(int argc, char **argv) {
       ->check(CLI::Range(0, 100000));
   auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory.")->capture_default_str();
   app.add_flag("--shuffle-reads", shuffle_reads, "Shuffle reads to improve locality")->capture_default_str();
+  app.add_flag("--minimizers", use_minimizers, "Use minimizers for kmer analysis and alignment")->capture_default_str();
+  app.add_flag("--local-kmer-counting", local_kmer_counting, "Locally count kmers before dispatch (only useful with read shuffling)")
+      ->capture_default_str();
   app.add_flag("--checkpoint", checkpoint, "Enable checkpointing.")
       ->default_val(checkpoint ? "true" : "false")
       ->capture_default_str()
@@ -476,6 +479,11 @@ bool Options::load(int argc, char **argv) {
     scaff_kmer_lens.clear();
   }
 
+  if (local_kmer_counting && !shuffle_reads) {
+    SLOG("Disabling local kmer counting because read shuffling is not enabled\n");
+    local_kmer_counting = false;
+  }
+    
   // save to per_rank, but hardlink to output_dir
   string config_file = "per_rank/mhm2.config";
   string linked_config_file = "mhm2.config";
