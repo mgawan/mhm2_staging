@@ -100,8 +100,8 @@ using namespace upcxx_utils;
 
 enum PASS_TYPE { BLOOM_SET_PASS, BLOOM_COUNT_PASS, NO_BLOOM_PASS, CTG_BLOOM_SET_PASS, CTG_KMERS_PASS };
 
-using ext_count_t = uint8_t;
-using kmer_count_t = uint8_t;
+using ext_count_t = uint16_t;
+using kmer_count_t = uint16_t;
 
 // global variables to avoid passing dist objs to rpcs
 inline double _dynamic_min_depth = 0;
