@@ -102,9 +102,9 @@ class ReadsToCtgsDHT {
       else
         it->second.push_back(std::move(read_ctg_info.ctg_info));
     });
-    int est_update_size = sizeof(ReadCtgInfo) + 13 /* read_id */;
-    auto max_store_bytes =
-        2 * sizeof(ReadCtgInfo) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 2% of free memory
+    int est_update_size = sizeof(ReadCtgInfo) + 13; // read_id 
+    int64_t mem_to_use = 0.05 * get_free_mem() / local_team().rank_n();
+    auto max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);  
     rtc_store.set_size("ReadsToContigs", max_store_bytes);
   }
 
@@ -234,10 +234,9 @@ class CtgsWithReadsDHT {
     // with contig sequence 
     int est_update_size = sizeof(CtgData) + 400;
     // approx 10% of free memory
-    int64_t mem_to_use = 0.1 * get_free_mem() / local_team().rank_n();
+    int64_t mem_to_use = 0.05 * get_free_mem() / local_team().rank_n();
     auto max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);  
     ctg_store.set_size("CtgsWithReads add ctg", max_store_bytes);
-
     ctg_read_store.set_update_func([&ctgs_map = this->ctgs_map](CtgReadData &&ctg_read_data) {
       const auto it = ctgs_map->find(ctg_read_data.cid);
       if (it == ctgs_map->end()) DIE("Could not find ctg ", ctg_read_data.cid);
@@ -275,9 +274,10 @@ class CtgsWithReadsDHT {
   void flush_ctg_updates() {
     ctg_store.flush_updates();
     ctg_store.clear();
-    int est_update_size = sizeof(CtgReadData) + 500 /* read seq + qual sequences*/;
-    auto max_store_bytes =
-        3 * sizeof(CtgReadData) * get_free_mem() / local_team().rank_n() / 100 / est_update_size;  // approx 3% of free memory
+    // read seq + qual sequences
+    int est_update_size = sizeof(CtgReadData) + 500;
+    int64_t mem_to_use = 0.05 * get_free_mem() / local_team().rank_n();
+    auto max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);
     ctg_read_store.set_size("CtgsWithReads add read", max_store_bytes);
   }
 
