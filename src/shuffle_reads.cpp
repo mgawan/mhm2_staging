@@ -50,6 +50,8 @@
 #include "packed_reads.hpp"
 #include "upcxx_utils/log.hpp"
 #include "upcxx_utils/progress_bar.hpp"
+#include "upcxx_utils/three_tier_aggr_store.hpp"
+#include "upcxx_utils/mem_profile.hpp"
 #include "utils.hpp"
 #include "hash_funcs.h"
 
@@ -70,49 +72,60 @@ using cid_to_reads_map_t = HASH_TABLE<int64_t, vector<int64_t>>;
 using read_to_target_map_t = HASH_TABLE<int64_t, int>;
 
 dist_object<cid_to_reads_map_t> process_alns(vector<PackedReads *> &packed_reads_list, Alns &alns, int64_t num_ctgs) {
+  BarrierTimer timer(__FILEFUNC__);
   using read_to_cid_map_t = HASH_TABLE<int64_t, pair<int64_t, int>>;
   dist_object<read_to_cid_map_t> read_to_cid_map({});
+  ThreeTierAggrStore<tuple<int64_t, int64_t, int>> read_cid_store;
+  read_cid_store.set_update_func([&read_to_cid_map](tuple<int64_t, int64_t, int> &&read_cid_info) {
+    auto &[read_id, cid, score] = read_cid_info;
+    auto it = read_to_cid_map->find(read_id);
+    if (it == read_to_cid_map->end()) {
+      read_to_cid_map->insert({read_id, {cid, score}});
+    } else if (it->second.second < score) {
+      it->second.first = cid;
+      it->second.second = score;
+    }
+  });
+  int est_update_size = sizeof(tuple<int64_t, int64_t, int>);
+  int64_t mem_to_use = 0.1 * get_free_mem() / local_team().rank_n();
+  auto max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);
+  read_cid_store.set_size("Read cid store", max_store_bytes);
+
   for (auto &aln : alns) {
     progress();
     // use abs to ensure both reads in a pair map to the same ctg
     int64_t packed_read_id = abs(PackedRead::to_packed_id(aln.read_id));
-    rpc(
-        get_target_rank(packed_read_id),
-        [](dist_object<read_to_cid_map_t> &read_to_cid_map, int64_t read_id, int64_t cid, int score) {
-          auto it = read_to_cid_map->find(read_id);
-          if (it == read_to_cid_map->end()) {
-            read_to_cid_map->insert({read_id, {cid, score}});
-          } else if (it->second.second < score) {
-            it->second.first = cid;
-            it->second.second = score;
-          }
-        },
-        read_to_cid_map, packed_read_id, aln.cid, aln.score1)
-        .wait();
+    read_cid_store.update(get_target_rank(packed_read_id), {packed_read_id, aln.cid, aln.score1});
   }
+  read_cid_store.flush_updates();
   barrier();
 
   dist_object<cid_to_reads_map_t> cid_to_reads_map({});
   cid_to_reads_map->reserve(num_ctgs);
+  ThreeTierAggrStore<pair<int64_t, int64_t>> cid_reads_store;
+  cid_reads_store.set_update_func([&cid_to_reads_map](pair<int64_t, int64_t> &&cid_reads_info) {
+    auto &[cid, read_id] = cid_reads_info;
+    auto it = cid_to_reads_map->find(cid);
+    if (it == cid_to_reads_map->end())
+      cid_to_reads_map->insert({cid, {read_id}});
+    else
+      it->second.push_back(read_id);
+  });
+  est_update_size = sizeof(pair<int64_t, int64_t>);
+  mem_to_use = 0.1 * get_free_mem() / local_team().rank_n();
+  max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);
+  cid_reads_store.set_size("Read cid store", max_store_bytes);
   for (auto &[read_id, cid_elem] : *read_to_cid_map) {
     progress();
-    rpc(
-        get_target_rank(cid_elem.first),
-        [](dist_object<cid_to_reads_map_t> &cid_to_reads_map, int64_t cid, int64_t read_id) {
-          auto it = cid_to_reads_map->find(cid);
-          if (it == cid_to_reads_map->end())
-            cid_to_reads_map->insert({cid, {read_id}});
-          else
-            it->second.push_back(read_id);
-        },
-        cid_to_reads_map, cid_elem.first, read_id)
-        .wait();
+    cid_reads_store.update(get_target_rank(cid_elem.first), {cid_elem.first, read_id});
   }
+  cid_reads_store.flush_updates();
   barrier();
   return cid_to_reads_map;
 }
 
 dist_object<read_to_target_map_t> compute_read_locations(dist_object<cid_to_reads_map_t> &cid_to_reads_map) {
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_mapped_reads = 0;
   for (auto &[cid, read_ids] : *cid_to_reads_map) num_mapped_reads += read_ids.size();
   // counted read pairs
@@ -134,8 +147,7 @@ dist_object<read_to_target_map_t> compute_read_locations(dist_object<cid_to_read
   for (auto &[cid, read_ids] : *cid_to_reads_map) {
     progress();
     for (auto read_id : read_ids) {
-      rpc(
-          get_target_rank(read_id),
+      rpc(get_target_rank(read_id),
           [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id, int target) {
             read_to_target_map->insert({read_id, target});
           },
@@ -153,8 +165,19 @@ dist_object<read_to_target_map_t> compute_read_locations(dist_object<cid_to_read
 dist_object<vector<PackedRead>> move_reads_to_targets(vector<PackedReads *> &packed_reads_list,
                                                       dist_object<read_to_target_map_t> &read_to_target_map,
                                                       int64_t all_num_reads) {
+  BarrierTimer timer(__FILEFUNC__);
   int64_t num_not_found = 0;
   dist_object<vector<PackedRead>> new_packed_reads({});
+  ThreeTierAggrStore<pair<PackedRead, PackedRead>> read_seq_store;
+  read_seq_store.set_update_func([&new_packed_reads](pair<PackedRead, PackedRead> &&read_pair_info) {
+    new_packed_reads->push_back(read_pair_info.first);
+    new_packed_reads->push_back(read_pair_info.second);
+  });
+  int est_update_size = 600;
+  int64_t mem_to_use = 0.1 * get_free_mem() / local_team().rank_n();
+  auto max_store_bytes = max(mem_to_use, (int64_t)est_update_size * 100);
+  read_seq_store.set_size("Read seq store", max_store_bytes);
+  future<> fut_chain = make_future();
   for (auto packed_reads : packed_reads_list) {
     packed_reads->reset();
     for (int i = 0; i < packed_reads->get_local_num_reads(); i += 2) {
@@ -162,31 +185,27 @@ dist_object<vector<PackedRead>> move_reads_to_targets(vector<PackedReads *> &pac
       auto &packed_read1 = (*packed_reads)[i];
       auto &packed_read2 = (*packed_reads)[i + 1];
       auto read_id = abs(packed_read1.get_id());
-      int target = rpc(
-                       get_target_rank(read_id),
-                       [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id) -> int {
-                         const auto it = read_to_target_map->find(read_id);
-                         if (it == read_to_target_map->end()) return -1;
-                         return it->second;
-                       },
-                       read_to_target_map, read_id)
-                       .wait();
-      if (target == -1) {
-        num_not_found++;
-        target = std::experimental::randint(0, rank_n() - 1);
-      }
-      if (target < 0 || target >= rank_n()) DIE("target out of range ", target);
-      assert(target >= 0 && target < rank_n());
-      rpc(
-          target,
-          [](dist_object<vector<PackedRead>> &new_packed_reads, PackedRead packed_read1, PackedRead packed_read2) {
-            new_packed_reads->push_back(packed_read1);
-            new_packed_reads->push_back(packed_read2);
-          },
-          new_packed_reads, packed_read1, packed_read2)
-          .wait();
+      auto fut = rpc(get_target_rank(read_id),
+                     [](dist_object<read_to_target_map_t> &read_to_target_map, int64_t read_id) -> int {
+                       const auto it = read_to_target_map->find(read_id);
+                       if (it == read_to_target_map->end()) return -1;
+                       return it->second;
+                     },
+                     read_to_target_map, read_id)
+                     .then([&num_not_found, &read_seq_store, packed_read1, packed_read2](int target) {
+                       if (target == -1) {
+                         num_not_found++;
+                         target = std::experimental::randint(0, rank_n() - 1);
+                       }
+                       if (target < 0 || target >= rank_n()) DIE("target out of range ", target);
+                       assert(target >= 0 && target < rank_n());
+                       read_seq_store.update(target, {packed_read1, packed_read2});
+                     });
+      fut_chain = when_all(fut_chain, fut);
     }
   }
+  fut_chain.wait();
+  read_seq_store.flush_updates();
   barrier();
   auto all_num_not_found = reduce_one(num_not_found, op_fast_add, 0).wait();
   SLOG("Didn't find contig targets for ", perc_str(all_num_not_found, all_num_reads / 2), " pairs\n");
