@@ -125,6 +125,8 @@ class Kmer {
     set_kmer(s);
   }
 
+  void swap(Kmer &other) { std::swap(longs, other.longs); }
+
   static void set_k(unsigned int k) { Kmer::k = k; }
 
   static unsigned int get_k() { return Kmer::k; }
@@ -234,6 +236,178 @@ class Kmer {
     }
   }
 
+  static std::string mer_to_string(longs_t mmer, int m) {
+    char buf[33] = "";
+    char *s = buf;
+    for (int j = 0; j < m; j++) {
+      switch ((mmer >> (2 * (31 - j))) & 0x03) {
+        case 0x00:
+          *s = 'A';
+          ++s;
+          break;
+        case 0x01:
+          *s = 'C';
+          ++s;
+          break;
+        case 0x02:
+          *s = 'G';
+          ++s;
+          break;
+        case 0x03:
+          *s = 'T';
+          ++s;
+          break;
+      }
+    }
+    *s = '\0';
+    return std::string(buf);
+  }
+
+  std::string get_minimizer_slow(int m) {
+    char s[200];
+    to_string(s);
+    char *min_s = s;
+    for (int i = 1; i <= Kmer::k - m; i++) {
+      char *minimizer = strndup(s + i, m);
+      if (strncmp(s + i, min_s, m) > 0) min_s = s + i;
+    }
+    min_s[m] = '\0';
+    return std::string(min_s);
+  }
+
+  // returns the *greatest* least-complement m-mer of this k-mer
+  // -- greatest in order to avoid the trivial poly-A mer prevalent as errors in Illumina reads
+  // -- least compliment should help smooth the distribution space of m-mers
+  // -- returns a m-mer between the minimizer of the trivial fwd and rc for this kmer
+  uint64_t get_minimizer_fast(int m, const Kmer *revcomp) const {
+    // static_assert(MINIMIZER_LEN <= 28);
+    assert(m <= Kmer::k);
+    assert(m <= 28);
+    // chunk is a uint64_t whose bases fully containing a series of chunk_step candidate minimizers
+    const int chunk = 32;
+    const int chunk_step = chunk - ((m + 3) / 4) * 4;  // chunk_step is a multiple of 4;
+
+    int base;
+    const int num_candidates = revcomp == nullptr ? 1 : Kmer::k - m + 1;
+    uint64_t revcomp_candidates[num_candidates];
+    if (revcomp != nullptr) {
+      // calculate and temporarily store all revcomp minimizer candidates on the stack
+      for (base = 0; base <= Kmer::k - m; base += chunk_step) {
+        int shift = base % 32;
+        int l = base / 32;
+        uint64_t tmp = revcomp->longs[l];
+        if (shift) {
+          tmp = (tmp << (shift * 2));
+          if (l < N_LONGS - 1) tmp |= revcomp->longs[l + 1] >> (64 - shift * 2);
+        }
+        for (int j = 0; j < chunk_step; j++) {
+          if (base + j + m > Kmer::k) break;
+          assert(base + j < num_candidates);
+          revcomp_candidates[base + j] = ((tmp << (j * 2)) & ZERO_MASK[m]);
+        }
+      }
+    }
+
+    uint64_t minimizer = 0;
+    // calculate and compare minimizers from revcomp
+    const uint8_t *data = (uint8_t *)longs.data();
+    for (base = 0; base <= Kmer::k - m; base += chunk_step) {
+      int shift = base % 32;
+      int l = base / 32;
+      uint64_t tmp = longs[l];
+      if (shift) {
+        tmp = (tmp << (shift * 2));
+        if (l < N_LONGS - 1) tmp |= longs[l + 1] >> (64 - shift * 2);
+      }
+      for (int j = 0; j < chunk_step; j++) {
+        if (base + j + m > Kmer::k) break;
+        uint64_t fwd_candidate = ((tmp << (j * 2)) & ZERO_MASK[m]);
+        auto &revcomp_candidate = revcomp == nullptr ? fwd_candidate : revcomp_candidates[num_candidates - base - j - 1];
+        uint64_t &least_candidate = (fwd_candidate < revcomp_candidate) ? fwd_candidate : revcomp_candidate;
+        if (least_candidate > minimizer) minimizer = least_candidate;
+      }
+    }
+    return minimizer;
+  }
+
+  uint64_t get_minimizer_fast(int m, bool least_complement = true) const {
+    if (least_complement) {
+      Kmer revcomp = this->revcomp();
+      return get_minimizer_fast(m, &revcomp);
+    } else {
+      return get_minimizer_fast(m, nullptr);
+    }
+  }
+
+  uint64_t get_minimizer(int m) const {
+    // if (m < 28) return get_minimizer_fast();
+    uint64_t minimizer = 0;
+    for (int i = 0; i <= Kmer::k - m; i++) {
+      int j = i % 32;
+      int l = i / 32;
+      longs_t mmer = ((longs[l]) << (2 * j)) & ZERO_MASK[m];
+      if (j > 32 - m) {
+        if (l < N_LONGS - 1) {
+          int m_overlap = j + m - 32;
+          longs_t next_mmer = (((longs[l + 1]) << (2 * (l * 32))) & ZERO_MASK[m_overlap]) >> 2 * (m - m_overlap);
+          mmer |= next_mmer;
+        }
+      }
+      if (mmer > minimizer) minimizer = mmer;
+    }
+    return minimizer;
+  }
+
+  static uint64_t revcomp_minimizer(uint64_t minimizer, int m) {
+    uint64_t rc_minz = 0;
+    uint64_t v = minimizer;
+    rc_minz = (TWIN_TABLE[v & 0xFF] << 56) | (TWIN_TABLE[(v >> 8) & 0xFF] << 48) | (TWIN_TABLE[(v >> 16) & 0xFF] << 40) |
+              (TWIN_TABLE[(v >> 24) & 0xFF] << 32) | (TWIN_TABLE[(v >> 32) & 0xFF] << 24) | (TWIN_TABLE[(v >> 40) & 0xFF] << 16) |
+              (TWIN_TABLE[(v >> 48) & 0xFF] << 8) | (TWIN_TABLE[(v >> 56)]);
+    return rc_minz << (2 * (32 - m));
+  }
+
+  uint64_t quick_hash(uint64_t v) const {
+    v = v * 3935559000370003845 + 2691343689449507681;
+    v ^= v >> 21;
+    v ^= v << 37;
+    v ^= v >> 4;
+    v *= 4768777513237032717;
+    v ^= v << 20;
+    v ^= v >> 41;
+    v ^= v << 5;
+    return v;
+  }
+
+  uint64_t minimizer_hash(int m) const {
+    static uint64_t seed = upcxx::rank_me();
+    uint64_t minimizer = 0;
+    for (int i = 0; i <= Kmer::k - m; i++) {
+      int j = i % 32;
+      int l = i / 32;
+      longs_t mmer = ((longs[l]) << (2 * j)) & ZERO_MASK[m];
+      if (j > 32 - m && l < N_LONGS - 1) {
+        int m_overlap = j + m - 32;
+        mmer |= ((((longs[l + 1]) << (64 * l)) & ZERO_MASK[m_overlap]) >> 2 * (m - m_overlap));
+      }
+      auto mmer_rc = Kmer<MAX_K>::revcomp_minimizer(mmer, m);
+      if (mmer_rc < mmer) mmer = mmer_rc;
+      if (mmer > minimizer) minimizer = mmer;
+    }
+    return quick_hash(minimizer);
+    // return MurmurHash3_x64_64(reinterpret_cast<const void *>(&minimizer), sizeof(minimizer));
+  }
+
+  uint64_t minimizer_hash_fast(int m, const Kmer *revcomp = nullptr) const {
+    uint64_t minimizer;
+    if (revcomp == nullptr) {
+      minimizer = get_minimizer_fast(m, true);
+    } else {
+      minimizer = get_minimizer_fast(m, revcomp);
+    }
+    return quick_hash(minimizer);
+  }
+
   uint64_t hash() const { return MurmurHash3_x64_64(reinterpret_cast<const void *>(longs.data()), N_LONGS * sizeof(longs_t)); }
 
   void set_zeros() {
@@ -294,6 +468,29 @@ class Kmer {
     longs_t x = (b & 4) >> 1;
     km.longs[0] |= (x + ((x ^ (b & 2)) >> 1)) << 62;
     return km;
+  }
+
+  char front() {
+    switch (((longs[0]) >> (2 * (31))) & 0x03) {
+      case 0x00: return 'A';
+      case 0x01: return 'C';
+      case 0x02: return 'G';
+      case 0x03: return 'T';
+      default: return 'N';
+    }
+  }
+
+  char back() {
+    size_t i = Kmer::k - 1;
+    int j = i % 32;
+    int l = i / 32;
+    switch (((longs[l]) >> (2 * (31 - j))) & 0x03) {
+      case 0x00: return 'A';
+      case 0x01: return 'C';
+      case 0x02: return 'G';
+      case 0x03: return 'T';
+      default: return 'N';
+    }
   }
 
   void to_string(char *s) const {

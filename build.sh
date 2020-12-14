@@ -42,8 +42,7 @@ else
     fi
     make -j ${MHM2_BUILD_THREADS} all install
     # this check could fail on cross-compiled systems, so don't abort
-    set +e
-    make -j ${MHM2_BUILD_THREADS} check
+#    make -j ${MHM2_BUILD_THREADS} check
 fi
 
 echo "Build took $((SECONDS))s"
