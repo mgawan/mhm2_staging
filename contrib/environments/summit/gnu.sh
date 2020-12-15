@@ -7,7 +7,7 @@ module load cmake/3.18.2
 module rm xl
 module load gcc/7.4.0
 module load cuda/10.1.243
-module load upcxx-cuda/2020.3.8-snapshot
+module load upcxx-cuda # default
 
 export MHM2_CMAKE_EXTRAS="-DCMAKE_C_COMPILER=$(which mpicc) -DCMAKE_CXX_COMPILER=$(which mpicxx) -DCMAKE_CUDA_COMPILER=$(which nvcc)"
 export MHM2_BUILD_THREADS=8
