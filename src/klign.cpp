@@ -138,6 +138,7 @@ class KmerCtgDHT {
   int64_t max_clen = 0;
   int64_t max_rlen = 0;
   size_t gpu_mem_avail = 0;
+  int gpu_devices = 0;
 
   Alns *alns;
 
@@ -333,20 +334,19 @@ class KmerCtgDHT {
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut =
-        upcxx_utils::execute_in_thread_pool([sh_abd, t, &aln_kernel_timer]() {
-          t.start();
-          assert(!sh_abd->kernel_alns.empty());
-          _ssw_align_block(*sh_abd, aln_kernel_timer);
-          t.stop();
-        })
-            .then([&myself, sh_abd, t]() {
-              SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
-                           (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
-              DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
-              myself.alns->append(*(sh_abd->alns));
-              // TODO collect and report on AsyncTimer t
-            });
+    future<> fut = upcxx_utils::execute_in_thread_pool([sh_abd, t, &aln_kernel_timer]() {
+      t.start();
+      assert(!sh_abd->kernel_alns.empty());
+      _ssw_align_block(*sh_abd, aln_kernel_timer);
+      t.stop();
+    });
+    fut = fut.then([&myself, sh_abd, t]() {
+      SLOG_VERBOSE("Finished CPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), " s (",
+                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
+      DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+      myself.alns->append(*(sh_abd->alns));
+    });
+
     return fut;
   }
 
@@ -392,18 +392,17 @@ class KmerCtgDHT {
     shared_ptr<AlignBlockData> sh_abd = make_shared<AlignBlockData>(myself, read_group_id);
     assert(kernel_alns.empty());
 
-    future<> fut =
-        upcxx_utils::execute_in_thread_pool([&myself, t, sh_abd, &aln_kernel_timer] {
-          t.start();
-          _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
-          t.stop();
-        })
-            .then([&myself, t, sh_abd]() {
-              SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
-                           (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
-              DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
-              myself.alns->append(*(sh_abd->alns));
-            });
+    future<> fut = upcxx_utils::execute_in_thread_pool([&myself, t, sh_abd, &aln_kernel_timer] {
+      t.start();
+      _gpu_align_block_kernel(*sh_abd, aln_kernel_timer);
+      t.stop();
+    });
+    fut = fut.then([&myself, t, sh_abd]() {
+      SLOG_VERBOSE("Finished GPU SSW aligning block of ", sh_abd->kernel_alns.size(), " in ", t.get_elapsed(), "s (",
+                   (t.get_elapsed() > 0 ? sh_abd->kernel_alns.size() / t.get_elapsed() : 0.0), " aln/s)\n");
+      DBG_VERBOSE("appending and returning ", sh_abd->alns->size(), "\n");
+      myself.alns->append(*(sh_abd->alns));
+    });
 
     return fut;
   }
@@ -445,25 +444,35 @@ class KmerCtgDHT {
         _num_dropped_seed_to_ctgs++;
       }
     });
+    gpu_devices = 0;
 #ifdef ENABLE_GPUS
-    auto device_count = adept_sw::get_num_node_gpus();
-    if (ranks_per_gpu == 0) {
-      // auto detect
-      gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(local_team().rank_n(), device_count);
+    gpu_devices = adept_sw::get_num_node_gpus();
+    if (gpu_devices <= 0) {
+      // CPU only
+      gpu_devices = 0;
     } else {
-      gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(ranks_per_gpu, 1);
+      if (ranks_per_gpu == 0) {
+        // auto detect
+        gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(local_team().rank_n(), gpu_devices);
+      } else {
+        gpu_mem_avail = adept_sw::get_avail_gpu_mem_per_rank(ranks_per_gpu, 1);
+      }
+      if (gpu_mem_avail) {
+        SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
+        auto init_time =
+            gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
+                            (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
+        SLOG_VERBOSE("Initialized adept_sw driver in ", init_time, " s\n");
+      } else {
+        gpu_devices = 0;
+      }
     }
-    if (gpu_mem_avail) {
-      SLOG_VERBOSE("GPU memory available: ", get_size_str(gpu_mem_avail), "\n");
-      auto init_time =
-          gpu_driver.init(local_team().rank_me(), local_team().rank_n(), (short)aln_scoring.match, (short)-aln_scoring.mismatch,
-                          (short)-aln_scoring.gap_opening, (short)-aln_scoring.gap_extending, rlen_limit);
-      SLOG_VERBOSE("Initialized adept_sw driver in ", init_time, " s\n");
-      //} else {
-      // SWARN("No GPU memory detected!  (", device_count, " devices detected)\n");
+    if (gpu_devices == 0) {
+      SWARN("No GPU will be used for alignments");
+      gpu_mem_avail = 32 * 1024 * 1024;  // cpu needs a block of memory
     }
 #else
-    gpu_mem_avail = 32 * 1024 * 1024;
+    gpu_mem_avail = 32 * 1024 * 1024;  // cpu needs a block of memory
 #endif
     ctg_cache.reserve(all_num_ctgs / rank_n());
   }
@@ -546,7 +555,7 @@ class KmerCtgDHT {
 
     // steal work from this kernel block if the previous kernel is still active
     // if true, this balances the block size that will be sent to the kernel
-    while (!active_kernel_fut.ready() && !kernel_alns.empty()) {
+    while ((gpu_devices == 0 || !active_kernel_fut.ready()) && !kernel_alns.empty()) {
       assert(!ctg_seqs.empty());
       assert(!read_seqs.empty());
 #ifndef NO_KLIGN_CPU_WORK_STEAL
@@ -577,7 +586,7 @@ class KmerCtgDHT {
       active_kernel_fut.wait();  // should be ready already
 #ifdef ENABLE_GPUS
       // for now, the GPU alignment doesn't support cigars
-      if (!ssw_filter.report_cigar && gpu_mem_avail) {
+      if (!ssw_filter.report_cigar && gpu_devices > 0) {
         active_kernel_fut = gpu_align_block(aln_kernel_timer, read_group_id);
       } else {
 #ifdef __PPC64__

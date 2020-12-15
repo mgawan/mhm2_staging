@@ -526,8 +526,11 @@ def main():
                 if not started_exec:
                     print('Started executing at ' + str(datetime.datetime.now()) + ' with PID ' + str(_proc.pid))
                     started_exec = True
-
-                line = line.decode()
+                try:
+                    line = line.decode()
+                except:
+                    print("WARNING could not decode binary output: ", line)
+                    pass
                 sys.stdout.write(line)
                 sys.stdout.flush()
                 if '  output = ' in line:
