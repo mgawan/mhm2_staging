@@ -2,7 +2,6 @@ module use /gpfs/alpine/world-shared/csc296/summit/modulefiles
 
 module load git/2.20.1
 module load cmake/3.18.2
-#module load cmake/3.17.3
 
 module rm xl
 module load gcc/7.4.0
