@@ -21,13 +21,50 @@ Options:
 
 "
 
-# TEMPORARY
-# for Issue #37 to scale up to 778 nodes 
-export GASNET_USE_SRQ=1 
-export GASNET_USE_XRC=1
-export GASNET_AM_CREDITS_PP=1
-export GASNET_RBUF_COUNT=$((1*778*42))
+# default is 2 HCAs
+export __UPCXX_RUN_SUMMIT_nHCAS=${__UPCXX_RUN_SUMMIT_nHCAS:=2}
+# default is lowlatency
+export __UPCXX_RUN_SUMMIT_MODE=${__UPCXX_RUN_SUMMIT_MODE:=lowlatency}
+# default is by gpu
+RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;
 
+while [ 1 ]
+do
+  # process and consume any options on the command line
+
+  __opt=$1
+  _opt=${__opt#-} # for 1 dash
+  opt=${_opt#-}  # for optional second dash
+  if [ "${__opt}" == "${opt}" ]
+  then
+    break
+  fi
+  shift
+
+  case $opt in
+    "by-gpu")    RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;;
+    "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;;
+
+    "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
+    "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
+
+    "shared-heap") export __UPCXX_RUN_SUMMIT_SHARED_HEAP=$1 ; shift ;;
+
+    "verbose") export __UPCXX_RUN_SUMMIT_VERBOSE=1 ;;
+
+    "use-odp") export GASNET_USE_XRC=0 ; export GASNET_USE_ODP=1 ;;
+
+    "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;;
+    "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;; #default
+    "4-hca") export __UPCXX_RUN_SUMMIT_nHCAS=4 ;;
+
+    "") break ;; # last option
+
+    "help") echo "$USAGE" ; exit 0 ;;
+
+    *) echo "Invalid option to $0: '$opt'" 1>&2 ; exit 1 ;;
+  esac
+done
 
 if [ -n "${__UPCXX_RUN_SUMMIT}" ]
 then
@@ -36,7 +73,6 @@ then
   if [ "${__UPCXX_RUN_SUMMIT_MODE}" == "highbandwidth" ]
   then
     # high bandwidth HCA from both sockets
-    __UPCXX_RUN_SUMMIT_nHCAS=2
     case $socket in
       1) export GASNET_IBV_PORTS=mlx5_1+mlx5_2 ;;
       *) export GASNET_IBV_PORTS=mlx5_0+mlx5_3 ;;
@@ -76,54 +112,27 @@ then
           export UPCXX_SHARED_HEAP_SIZE="${__UPCXX_RUN_SUMMIT_SHARED_HEAP}"
       fi
   fi
-  if [ "${PMIX_RANK}" == "0" ] || [ "${__UPCXX_RUN_SUMMIT_VERBOSE}" == "1" -a "${PMIX_RANK}" == "41" ]
+
+  # TEMPORARY
+  # for Issue #37 to scale up to 778 nodes 
+  export GASNET_USE_SRQ=${GASNET_USE_SRQ:=1} 
+  export GASNET_USE_XRC=${GASNET_USE_XRC:=1}
+  export GASNET_AM_CREDITS_PP=$__UPCXX_RUN_SUMMIT_nHCAS
+  export GASNET_RBUF_COUNT=$((GASNET_AM_CREDITS_PP*778*42))
+
+  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "41" ]
   then
-    echo "${PMIX_RANK}: pid=$$ GASNET_IBV_PORTS='$GASNET_IBV_PORTS' hwloc='$(hwloc-ps)' GASNET_MAX_SEGSIZE=${GASNET_MAX_SEGSIZE} UPCXX_SHARED_HEAP_SIZE=${UPCXX_SHARED_HEAP_SIZE}"
+    echo "${PMIX_RANK}: second invocation $(uname -n) pid=$$ hwloc='$(hwloc-ps)'" $(env | grep GASNET)
   fi
+
+  # actually run the program in this second invocation
   exec "$@"
 fi
 
 export __UPCXX_RUN_SUMMIT=1
 
-while [ 1 ]
-do
-  __opt=$1
-  _opt=${__opt#-} # for 1 dash
-  opt=${_opt#-}  # for optional second dash
-  if [ "${__opt}" == "${opt}" ]
-  then
-    break
-  fi
-  shift
-
-  case $opt in
-    "by-gpu")    RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;;
-    "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;;
-
-    "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
-    "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
-
-    "shared-heap") export __UPCXX_RUN_SUMMIT_SHARED_HEAP=$1 ; shift ;;
-
-    "verbose") export __UPCXX_RUN_SUMMIT_VERBOSE=1 ;;
-
-    "use-odp") export GASNET_USE_XRC=0 ; export GASNET_USE_ODP=1 ;;
-
-    "1-hca") export __UPCXX_RUN_SUMMIT_nHCAS=1 ;;
-    "2-hca") export __UPCXX_RUN_SUMMIT_nHCAS=2 ;; #default
-    "4-hca") export __UPCXX_RUN_SUMMIT_nHCAs=4 ;;
-
-    "") break ;; # last option
-
-    "help") echo "$USAGE" ; exit 0 ;;
-
-    *) echo "Invalid option to $0: '$opt'" 1>&2 ; exit 1 ;;
-  esac
-done
-
-# default is by gpu
-RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;
-
+# first invocation calls jsrun on the submit node
+echo "Executing first invocation on `uname -n`: " $(env | grep GASNET)
 set -x
 exec jsrun --rs_per_host $RS_PER_HOST --cpu_per_rs $CPU_PER_RS --gpu_per_rs $GPU_PER_RS --tasks_per_rs $CPU_PER_RS -d plane:$CPU_PER_RS --bind none $0 "$@"
 
