@@ -21,14 +21,6 @@ Options:
 
 "
 
-# TEMPORARY
-# for Issue #37 to scale up to 778 nodes 
-export GASNET_USE_SRQ=1 
-export GASNET_USE_XRC=1
-export GASNET_AM_CREDITS_PP=1
-export GASNET_RBUF_COUNT=$((1*778*42))
-
-
 if [ -n "${__UPCXX_RUN_SUMMIT}" ]
 then
   socket=$(hwloc-calc -I Node $(hwloc-bind --get))
@@ -120,6 +112,14 @@ do
     *) echo "Invalid option to $0: '$opt'" 1>&2 ; exit 1 ;;
   esac
 done
+
+# TEMPORARY
+# for Issue #37 to scale up to 778 nodes 
+export GASNET_USE_SRQ=1 
+export GASNET_USE_XRC=1
+#export GASNET_AM_CREDITS_PP=$__UPCXX_RUN_SUMMIT_nHCAS
+export GASNET_AM_CREDITS_PP=2
+export GASNET_RBUF_COUNT=$((GASNET_AM_CREDITS_PP*778*42))
 
 # default is by gpu
 RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;
