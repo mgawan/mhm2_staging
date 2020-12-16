@@ -288,7 +288,7 @@ Options::Options() {
   char buf[32];
   if (!upcxx::rank_me()) {
     setup_time = get_current_time(true);
-    strncpy(buf, setup_time.c_str(), sizeof(buf));
+    strncpy(buf, setup_time.c_str(), sizeof(buf) - 1);
   }
   upcxx::broadcast(buf, sizeof(buf), 0, world()).wait();
   setup_time = string(buf);
