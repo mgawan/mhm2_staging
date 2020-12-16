@@ -288,7 +288,7 @@ Options::Options() {
   char buf[32];
   if (!upcxx::rank_me()) {
     setup_time = get_current_time(true);
-    strncpy(buf, setup_time.c_str(), sizeof(buf));
+    strncpy(buf, setup_time.c_str(), sizeof(buf) - 1);
   }
   upcxx::broadcast(buf, sizeof(buf), 0, world()).wait();
   setup_time = string(buf);
@@ -342,7 +342,8 @@ bool Options::load(int argc, char **argv) {
   auto *output_dir_opt = app.add_option("-o,--output", output_dir, "Output directory.")->capture_default_str();
   app.add_flag("--shuffle-reads", shuffle_reads, "Shuffle reads to improve locality")->capture_default_str();
   app.add_flag("--minimizers", use_minimizers, "Use minimizers for kmer analysis and alignment")->capture_default_str();
-  app.add_flag("--local-kmer-counting", local_kmer_counting, "Locally count kmers before dispatch (only useful with read shuffling)")
+  app.add_flag("--local-kmer-counting", local_kmer_counting,
+               "Locally count kmers before dispatch (only useful with read shuffling)")
       ->capture_default_str();
   app.add_flag("--checkpoint", checkpoint, "Enable checkpointing.")
       ->default_val(checkpoint ? "true" : "false")
@@ -490,7 +491,7 @@ bool Options::load(int argc, char **argv) {
     SLOG("Disabling local kmer counting because read shuffling is not enabled\n");
     local_kmer_counting = false;
   }
-    
+
   // save to per_rank, but hardlink to output_dir
   string config_file = "per_rank/mhm2.config";
   string linked_config_file = "mhm2.config";
