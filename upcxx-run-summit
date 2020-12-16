@@ -5,14 +5,14 @@ USAGE="$0 <options> upcxx-executable <options>
 Options:
   --help            Print this message
 
-  --low-latency     Select the HCA(s) for lowest latency (default)
+  --low-latency     Select the HCA(s) for lowest latency  (default)
   --high-bandwidth  Select the HCA(s) for higest bandwidth
 
   --by-gpu          Resource Set by GPU    - Bind ranks to 7 cores on 1 socket with 1 GPU (default)
   --by-socket       Resource Set by socket - Bind ranks to 1 socket with 3 GPUs
 
-  --1-hca           Use 1 HCA per rank
-  --2-hca           Use 2 HCA per rank (default)
+  --1-hca           Use 1 HCA per rank (default)
+  --2-hca           Use 2 HCA per rank
   --4-hca           Use 4 HCA per rank (i.e. all)
 
   --use-odp         Use ODB instead of the default XRC
@@ -21,12 +21,12 @@ Options:
 
 "
 
-# default is 2 HCAs
-export __UPCXX_RUN_SUMMIT_nHCAS=${__UPCXX_RUN_SUMMIT_nHCAS:=2}
+# default is 1 HCAs
+export __UPCXX_RUN_SUMMIT_nHCAS=${__UPCXX_RUN_SUMMIT_nHCAS:=1}
 # default is lowlatency
 export __UPCXX_RUN_SUMMIT_MODE=${__UPCXX_RUN_SUMMIT_MODE:=lowlatency}
 # default is by gpu
-RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;
+RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7} ; GPU_PER_RS=${GPU_PER_RS:=1} 
 
 while [ 1 ]
 do
@@ -45,7 +45,7 @@ do
     "by-gpu")    RS_PER_HOST=${RS_PER_HOST:=6} ; CPU_PER_RS=${CPU_PER_RS:=7}  ; GPU_PER_RS=${GPU_PER_RS:=1} ;;
     "by-socket") RS_PER_HOST=${RS_PER_HOST:=2} ; CPU_PER_RS=${CPU_PER_RS:=21} ; GPU_PER_RS=${GPU_PER_RS:=3} ;;
 
-    "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; # default
+    "low-latency") export __UPCXX_RUN_SUMMIT_MODE="lowlatency" ;; #default
     "high-bandwidth") export __UPCXX_RUN_SUMMIT_MODE="highbandwidth" ;;
 
     "shared-heap") export __UPCXX_RUN_SUMMIT_SHARED_HEAP=$1 ; shift ;;
@@ -72,13 +72,13 @@ then
 
   if [ "${__UPCXX_RUN_SUMMIT_MODE}" == "highbandwidth" ]
   then
-    # high bandwidth HCA from both sockets
+    # high bandwidth HCA from both sockets (each use different rail)
     case $socket in
       1) export GASNET_IBV_PORTS=mlx5_1+mlx5_2 ;;
       *) export GASNET_IBV_PORTS=mlx5_0+mlx5_3 ;;
     esac
   else
-    # low latency only HCAs closest to socket
+    # low latency only HCAs closest to socket (both use same, single rail)
     case $socket in
       1) export GASNET_IBV_PORTS=mlx5_2+mlx5_3 ;;
       *) export GASNET_IBV_PORTS=mlx5_0+mlx5_1 ;;
@@ -120,7 +120,7 @@ then
   export GASNET_AM_CREDITS_PP=$__UPCXX_RUN_SUMMIT_nHCAS
   export GASNET_RBUF_COUNT=$((GASNET_AM_CREDITS_PP*778*42))
 
-  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "41" ]
+  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "20" ] || [ "${PMIX_RANK}" == "21" ] || [ "${PMIX_RANK}" == "41" ]
   then
     echo "${PMIX_RANK}: second invocation $(uname -n) pid=$$ hwloc='$(hwloc-ps)'" $(env | grep GASNET)
   fi
