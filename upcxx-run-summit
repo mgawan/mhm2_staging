@@ -120,7 +120,7 @@ then
   export GASNET_AM_CREDITS_PP=$__UPCXX_RUN_SUMMIT_nHCAS
   export GASNET_RBUF_COUNT=$((GASNET_AM_CREDITS_PP*778*42))
 
-  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "20" ] || [ "${PMIX_RANK}" == "21" ] || [ "${PMIX_RANK}" == "41" ]
+  if [ "${PMIX_RANK}" == "0" ] || [ "${PMIX_RANK}" == "1" ] || [ "${PMIX_RANK}" == "21" ] || [ "${PMIX_RANK}" == "22" ] 
   then
     echo "${PMIX_RANK}: second invocation $(uname -n) pid=$$ hwloc='$(hwloc-ps)'" $(env | grep GASNET)
   fi
