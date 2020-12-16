@@ -106,8 +106,8 @@ using kmer_count_t = uint16_t;
 // global variables to avoid passing dist objs to rpcs
 inline double _dynamic_min_depth = 0;
 inline int _dmin_thres = 2.0;
-inline int64_t _num_kmers_processed = 0;
-inline int64_t _num_local_kmers = 0;
+inline int64_t _num_kmers_counted = 0;
+inline int64_t _num_kmers_counted_locally = 0;
 
 struct ExtCounts {
   ext_count_t count_A;
@@ -470,8 +470,8 @@ class KmerDHT {
 
   void set_pass(PASS_TYPE pass_type) {
     bytes_sent = 0;
-    _num_kmers_processed = 0;
-    _num_local_kmers = 0;
+    _num_kmers_counted = 0;
+    _num_kmers_counted_locally = 0;
     this->pass_type = pass_type;
     switch (pass_type) {
       case BLOOM_SET_PASS: kmer_store_bloom.set_update_func(update_bloom_set); break;
@@ -532,7 +532,7 @@ class KmerDHT {
 #endif
 
   void add_kmer(Kmer<MAX_K> kmer, char left_ext, char right_ext, kmer_count_t count) {
-    _num_kmers_processed++;
+    _num_kmers_counted++;
     if (!count) count = 1;
     // get the lexicographically smallest
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
@@ -542,44 +542,35 @@ class KmerDHT {
       left_ext = comp_nucleotide(left_ext);
       right_ext = comp_nucleotide(right_ext);
     }
-    auto target_rank = get_kmer_target_rank(kmer, &kmer_rc);
-    if (target_rank == rank_me()) _num_local_kmers++;
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
       if (count) {
-        kmer_store_bloom.update(target_rank, kmer);
+        kmer_store_bloom.update(get_kmer_target_rank(kmer, &kmer_rc), kmer);
         bytes_sent += sizeof(kmer);
       }
     } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !local_kmer_counting) {
       KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
       kmer_and_exts.left_exts.inc(left_ext, count);
       kmer_and_exts.right_exts.inc(right_ext, count);
-      kmer_store.update(target_rank, kmer_and_exts);
+      kmer_store.update(get_kmer_target_rank(kmer, &kmer_rc), kmer_and_exts);
       bytes_sent += sizeof(kmer_and_exts);
     } else {
-      if (target_rank == upcxx::rank_me()) {
-        // call local update directly and skip the aggregating store
+      auto prev_bucket_count = kmer_cache.bucket_count();
+      // only cache kmers from reads - we don't expect local aggregation of ctg kmers since they don't benefit from read shuffling
+      auto it = kmer_cache.find(kmer);
+      if (it == kmer_cache.end()) {
         KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
         kmer_and_exts.left_exts.inc(left_ext, count);
         kmer_and_exts.right_exts.inc(right_ext, count);
-        update_count(kmer_and_exts, kmers, bloom_filter1);
+        kmer_cache.insert({kmer, kmer_and_exts});
       } else {
-        auto prev_bucket_count = kmer_cache.bucket_count();
-        // only cache kmers from reads - we don't expect local aggregation of ctg kmers since they don't benefit from read shuffling
-        auto it = kmer_cache.find(kmer);
-        if (it == kmer_cache.end()) {
-          KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
-          kmer_and_exts.left_exts.inc(left_ext, count);
-          kmer_and_exts.right_exts.inc(right_ext, count);
-          kmer_cache.insert({kmer, kmer_and_exts});
-        } else {
-          it->second.left_exts.inc(left_ext, count);
-          it->second.right_exts.inc(right_ext, count);
-          it->second.count += count;
-        }
-        auto end_bucket_count = kmer_cache.bucket_count();
-        if (prev_bucket_count < end_bucket_count) WARN("Hash table was resized from ", prev_bucket_count, " to ", end_bucket_count);
-        if (kmer_cache.load_factor() > KCOUNT_KMER_CACHE_MAX_LOAD) update_and_clear_kmer_cache();
+        it->second.left_exts.inc(left_ext, count);
+        it->second.right_exts.inc(right_ext, count);
+        it->second.count += count;
+        _num_kmers_counted_locally++;
       }
+      auto end_bucket_count = kmer_cache.bucket_count();
+      if (prev_bucket_count < end_bucket_count) WARN("Hash table was resized from ", prev_bucket_count, " to ", end_bucket_count);
+      if (kmer_cache.load_factor() > KCOUNT_KMER_CACHE_MAX_LOAD) update_and_clear_kmer_cache();
     }
   }
 
@@ -620,10 +611,10 @@ class KmerDHT {
     auto max_bytes_sent = reduce_one(bytes_sent, op_fast_max, 0).wait();
     SLOG("Total bytes sent ", get_size_str(all_bytes_sent), " balance ", (double)all_bytes_sent / (rank_n() * max_bytes_sent),
          "\n");
-    auto avg_kmers_processed = reduce_one(_num_kmers_processed, op_fast_add, 0).wait() / rank_n();
-    auto max_kmers_processed = reduce_one(_num_kmers_processed, op_fast_max, 0).wait();
-    auto avg_local_kmers = reduce_one(_num_local_kmers, op_fast_add, 0).wait() / rank_n();
-    auto max_local_kmers = reduce_one(_num_local_kmers, op_fast_max, 0).wait();
+    auto avg_kmers_processed = reduce_one(_num_kmers_counted, op_fast_add, 0).wait() / rank_n();
+    auto max_kmers_processed = reduce_one(_num_kmers_counted, op_fast_max, 0).wait();
+    auto avg_local_kmers = reduce_one(_num_kmers_counted_locally, op_fast_add, 0).wait() / rank_n();
+    auto max_local_kmers = reduce_one(_num_kmers_counted_locally, op_fast_max, 0).wait();
     SLOG("Avg kmers processed per rank ", avg_kmers_processed, " (balance ", (double)avg_kmers_processed / max_kmers_processed,
          ")\n");
     SLOG("Avg local kmers processed per rank ", perc_str(avg_local_kmers, avg_kmers_processed), " (balance ",
