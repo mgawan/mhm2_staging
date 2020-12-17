@@ -3,11 +3,13 @@
 
 This is the ChangeLog for MetaHipMer with development at [bitbucket](https://bitbucket.org/berkeleylab/mhm2)
 
-### 2.0.1 2020-10-16
+### 2.0.1 2020-12-17
+   * Use minimizer hashes to improve locality of kmers and greatly speed up deBruijn graph traversal - pull request #18
+   * Aggregate messages in LocalAssem reducing overall time other optimizations in preparation for GPU acceleration - pull request #17, #16
    * Fixed scaling Issues - #52, #54, #61, #72
    * Fixed cmake/build - Issues #20, #51, #55, #68, #67
    * Fixed paired read usage - Issue #58  
-   * Fixed minor UI Issues - #53, #33, #50, #46, #45
+   * Fixed minor UI Issues - #53, #33, #50, #46, #45, #80, #78, #77, #79
    * Fixed edge cases of improper lustre striping - Issue #62, #70
    * Added framework for unit tests
    * Added a ability to build a docker image
