@@ -7,7 +7,7 @@ use File::stat;
 
 our %stats;
 # translated modules from hipmer's parse_run_log.pl as best as possible with same number of columns
-our @modules = qw {ReadFastq MergeReads kcount TraverseDeBruijn klign LocalAssm oNo ParCC GapClosing Localize Checkpoint WriteOutputs PostAlignment TotalMinusIO NA4 CGraph};
+our @modules = qw {ReadFastq MergeReads kcount TraverseDeBruijn klign LocalAssm klign-kernel NA2 NA3 Localize Checkpoint WriteOutputs PostAlignment TotalMinusIO NA4 CGraph};
 
 # allow many names to map to a standard module
 our %module_map;
@@ -22,14 +22,17 @@ $module_map{'FindNewMers'} = 'Checkpoint';
 $module_map{'PrefixMerDepth'} = 'WriteOutputs';
 $module_map{'ProgressiveRelativeDepth'} = 'PostAlignment';
 $module_map{'ContigMerDepth'} = 'TotalMinusIO';
+$module_map{'oNo'} = 'klign-kernel';
+$module_map{'ParCC'} = 'NA2';
+$module_map{'GapClosing'} = 'NA3';
 $module_map{'ContigEndAnalyzer'} = 'NA4';
 
-our @metrics = qw {Date Operator DataSetName GBofFASTQ NumReads MinDepth ContigKmers DistinctKmersWithFP MinDepthKmers CachedIO Version HipmerWorkflow Nodes Threads CoresPerNode NumRestarts ManualRestarts TotalTime NodeHours CalculatedTotalTime NumStages StageTime };
+our @metrics = qw {Date Operator DataSetName GBofFASTQ NumReads MinDepth ContigKmers DistinctKmersWithFP MinDepthKmers Assembled>5kbp Version HipmerWorkflow Nodes Threads CoresPerNode NumRestarts ManualRestarts TotalTime NodeHours CalculatedTotalTime NumStages StageTime };
 our @fields = (@metrics, @modules, "RunDir", "RunOptions");
 foreach my $module (@modules) {
     $stats{$module} = 0;
 }
-$stats{'CachedIO'} = 'NA';
+$stats{'CachedIO'} = 'Assembled>5kbp';
 $stats{'NumStages'} = 0;
 $stats{'StageTime'} = 0;
 
@@ -46,6 +49,7 @@ $stats{"NumRestarts"} = 0;
 $stats{"ManualRestarts"} = 0;
 
 our %h_units = ( 'B' => 1./1024./1024./1024., 'K' => 1./1024./1024., 'M' => 1./1024., 'G' => 1., 'T' => 1024.);
+my $stage_pat = '\w+\.[hc]pp';
 
 my $post_processing = 0;
 my $knowGB = 0;
@@ -100,22 +104,25 @@ while (<>) {
         $stats{"Checkpoint"} = $1;
     }
     
-    if (/ stage_timers.hpp:Merge reads: ([\d\.]+) s/) {
+    if (/ ${stage_pat}:Merge reads: ([\d\.]+) s/) {
         $stats{"MergeReads"} = $1;
     }
-    if (/ stage_timers.hpp:Analyze kmers: ([\d\.]+) s/) {
+    if (/ ${stage_pat}:Analyze kmers: ([\d\.]+) s/) {
         $stats{"kcount"} = $1;
     }
-    if (/ stage_timers.hpp:Traverse deBruijn graph: ([\d\.]+) s/) {
+    if (/ ${stage_pat}:Traverse deBruijn graph: ([\d\.]+) s/) {
         $stats{"TraverseDeBruijn"} = $1;
     }
-    if (/ stage_timers.hpp:Alignments: ([\d\.]+) s/) {
+    if (/ ${stage_pat}:Alignments: ([\d\.]+) s/) {
         $stats{"klign"} = $1;
     }
-    if (/ stage_timers.hpp:Local assembly: ([\d\.]+) s/) {
+    if (/ ${stage_pat}:Kernel alignments: ([\d\.]+) s/) {
+        $stats{"klign-kernel"} = $1;
+    }
+    if (/ ${stage_pat}:Local assembly: ([\d\.]+) s/) {
         $stats{"LocalAssm"} = $1;
     }
-    if (/ stage_timers.hpp:Traverse contig graph: ([\d\.]+) s/) {
+    if (/ ${stage_pat}:Traverse contig graph: ([\d\.]+) s/) {
         $stats{"CGraph"} = $1;
     }
     if (/ FASTQ total read time: ([\d\.]+)/) {
@@ -127,9 +134,12 @@ while (<>) {
     if (/ merged FASTQ write time: ([\d\.]+)/ || / Contigs write time: ([\d\.]+)/) {
         $stats{'WriteOutputs'} += $1;
     }
+    if (/ > 5kbp: \s+(\d+) /) {
+        $stats{'Assembled>5kbp'} = $1;
+    }
 
     if (/Finished in ([\d\.]+) s at (\d+)\/(\d+)\/(\d+) /) {
-        $stats{"Date"} = "20" . $4 . "-" . $3 . "-" . $2;
+        $stats{"Date"} = "20" . $4 . "-" . $2 . "-" . $3;
         $stats{"CalculatedTotalTime"} = $1;
     }
     
@@ -150,7 +160,7 @@ while (<>) {
             $stats{"NumReads"} = $1;
         }
 
-        if (/Purged (\d+) .* kmers below frequency threshold of /) {
+        if (/Found (\d+) .* unique kmers/) {
             $stats{"DistinctKmersWithFP"} = $1;
         }
         if (/After purge of kmers < .*, there are (\d+) unique kmers/) {
@@ -173,8 +183,8 @@ if (not defined $stats{"TotalTime"}) {
 $stats{"TotalMinusIO"} = $stats{"TotalTime"} - $stats{"ReadFastq"} - $stats{"WriteOutputs"};
 
 $stats{"TotalTime"} =~ s/\..*//;
-$stats{"NodeHours"} = $stats{"TotalTime"} * $stats{"Nodes"} / 3600;
-$stats{"NodeHours"} =~ s/\..*//;
+$stats{"NodeHours"} = $stats{"TotalTime"} * $stats{"Nodes"} / 3600.0;
+$stats{"NodeHours"} =~ s/(\.\d)\d*/$1/;
 
 $stats{"HipmerWorkflow"} = "Normal";
 if ($post_processing) {
@@ -187,11 +197,7 @@ foreach my $module (@modules) {
     $stats{$module} =~ s/\..*//;
 }
 
-if (! -d $stats{"RunDir"}) {
-    print STDERR "Could not find rundir: " . $stats{"RunDir"} . "\n";
-}
-
-$stats{"GBofFASTQ"} =~ s/(\.\d).*/$1/;
+$stats{"GBofFASTQ"} =~ s/(\.\d)\d*/$1/;
 
 printStats();
 
