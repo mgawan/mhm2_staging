@@ -21,7 +21,7 @@ fi
 cd $pkg
 
 git clone --recurse-submodules https://bitbucket.org/berkeleylab/mhm2.git mhm2-$ver
-( cd mhm2-$ver && git checkout ${ver} && git submodule update && rm -rf .git)
+( cd mhm2-$ver && git checkout v${ver} && git submodule update && rm -rf .git)
 
 tar -cvzf mhm2-$ver.tar.gz mhm2-$ver
 
