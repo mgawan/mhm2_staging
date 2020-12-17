@@ -189,12 +189,11 @@ class KmerDHT {
  public:
   using KmerMap = HASH_TABLE<Kmer<MAX_K>, KmerCounts, KmerHash<MAX_K>, KmerEqual<MAX_K>>;
 
-  struct KmerAndExts {
+  struct KmerAndExt {
     Kmer<MAX_K> kmer;
-    ExtCounts left_exts;
-    ExtCounts right_exts;
     kmer_count_t count;
-    UPCXX_SERIALIZED_FIELDS(kmer, left_exts, right_exts, count);
+    char left, right;
+    UPCXX_SERIALIZED_FIELDS(kmer, count, left, right);
   };
 
  private:
@@ -205,10 +204,10 @@ class KmerDHT {
   dist_object<BloomFilter> bloom_filter2;
 #ifndef FLAT_AGGR_STORE
   ThreeTierAggrStore<Kmer<MAX_K>, dist_object<BloomFilter> &, dist_object<BloomFilter> &> kmer_store_bloom;
-  ThreeTierAggrStore<KmerAndExts, dist_object<KmerMap> &, dist_object<BloomFilter> &> kmer_store;
+  ThreeTierAggrStore<KmerAndExt, dist_object<KmerMap> &, dist_object<BloomFilter> &> kmer_store;
 #else
   FlatAggrStore<Kmer<MAX_K>, dist_object<BloomFilter> &, dist_object<BloomFilter> &> kmer_store_bloom;
-  FlatAggrStore<KmerAndExts, dist_object<KmerMap> &, dist_object<BloomFilter> &> kmer_store;
+  FlatAggrStore<KmerAndExt, dist_object<KmerMap> &, dist_object<BloomFilter> &> kmer_store;
 #endif
   int64_t max_kmer_store_bytes;
   int64_t initial_kmer_dht_reservation;
@@ -219,9 +218,6 @@ class KmerDHT {
   std::chrono::time_point<std::chrono::high_resolution_clock> start_t;
   PASS_TYPE pass_type;
   bool use_bloom;
-  bool local_kmer_counting;
-  HASH_TABLE<Kmer<MAX_K>, KmerAndExts> kmer_cache;
-  int num_cache_updates;
   bool use_minimizers;
   int64_t bytes_sent = 0;
 
@@ -240,45 +236,46 @@ class KmerDHT {
     bloom_filter2->add(kmer.get_bytes());
   }
 
-  static void update_bloom_count(KmerAndExts kmer_and_exts, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
+  static void update_bloom_count(KmerAndExt kmer_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
     // if the kmer is not found in the bloom filter, skip it
-    if (!bloom_filter->possibly_contains(kmer_and_exts.kmer.get_bytes())) return;
-    update_count(kmer_and_exts, kmers, bloom_filter);
+    if (!bloom_filter->possibly_contains(kmer_and_ext.kmer.get_bytes())) return;
+    update_count(kmer_and_ext, kmers, bloom_filter);
   }
 
-  static void update_count(KmerAndExts kmer_and_exts, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
+  static void update_count(KmerAndExt kmer_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
     // find it - if it isn't found then insert it, otherwise increment the counts
-    const auto it = kmers->find(kmer_and_exts.kmer);
+    const auto it = kmers->find(kmer_and_ext.kmer);
     if (it == kmers->end()) {
-      KmerCounts kmer_counts = {.left_exts = kmer_and_exts.left_exts,
-                                .right_exts = kmer_and_exts.right_exts,
+      KmerCounts kmer_counts = {.left_exts = {0},
+                                .right_exts = {0},
                                 .uutig_frag = nullptr,
-                                .count = kmer_and_exts.count,
+                                .count = kmer_and_ext.count,
                                 .left = 'X',
                                 .right = 'X',
                                 .from_ctg = false};
+      kmer_counts.left_exts.inc(kmer_and_ext.left, kmer_and_ext.count);
+      kmer_counts.right_exts.inc(kmer_and_ext.right, kmer_and_ext.count);
       auto prev_bucket_count = kmers->bucket_count();
-      kmers->insert({kmer_and_exts.kmer, kmer_counts});
+      kmers->insert({kmer_and_ext.kmer, kmer_counts});
       //#ifdef DEBUG
       // since sizes are an estimate this could happen, but it will impact performance
       if (prev_bucket_count < kmers->bucket_count())
         SWARN("Hash table on rank 0 was resized from ", prev_bucket_count, " to ", kmers->bucket_count());
       //#endif
-      DBG_INSERT_KMER("inserted kmer ", kmer_and_exts.kmer.to_string(), " with count ", kmer_counts.count, "\n");
+      DBG_INSERT_KMER("inserted kmer ", kmer_and_ext.kmer.to_string(), " with count ", kmer_counts.count, "\n");
     } else {
-      auto kmer = &it->second;
-      int count = kmer->count + kmer_and_exts.count;
+      auto kmer_count = &it->second;
+      int count = kmer_count->count + kmer_and_ext.count;
       if (count > numeric_limits<kmer_count_t>::max()) count = numeric_limits<kmer_count_t>::max();
-      kmer->count = count;
-      kmer->left_exts.add(kmer_and_exts.left_exts);
-      kmer->right_exts.add(kmer_and_exts.right_exts);
+      kmer_count->count = count;
+      kmer_count->left_exts.inc(kmer_and_ext.left, kmer_and_ext.count);
+      kmer_count->right_exts.inc(kmer_and_ext.right, kmer_and_ext.count);
     }
   }
 
-  static void update_ctg_kmers_count(KmerAndExts kmer_and_exts, dist_object<KmerMap> &kmers,
-                                     dist_object<BloomFilter> &bloom_filter) {
+  static void update_ctg_kmers_count(KmerAndExt kmer_and_ext, dist_object<KmerMap> &kmers, dist_object<BloomFilter> &bloom_filter) {
     // insert a new kmer derived from the previous round's contigs
-    const auto it = kmers->find(kmer_and_exts.kmer);
+    const auto it = kmers->find(kmer_and_ext.kmer);
     bool insert = false;
     if (it == kmers->end()) {
       // if it isn't found then insert it
@@ -299,8 +296,7 @@ class KmerDHT {
       } else {
         // existing kmer from previous round's contigs
         // update kmer counts
-        auto kmer = &it->second;
-        if (!kmer->count) {
+        if (!kmer_counts->count) {
           // previously must have been a conflict and set to zero, so don't do anything
           DBG_INS_CTG_KMER("skip conflicted kmer, depth 0\n");
         } else {
@@ -308,39 +304,35 @@ class KmerDHT {
           insert = true;
           char left_ext = kmer_counts->get_left_ext();
           char right_ext = kmer_counts->get_right_ext();
-          char new_left_ext = kmer_and_exts.left_exts.get_ext(kmer_and_exts.count);
-          char new_right_ext = kmer_and_exts.right_exts.get_ext(kmer_and_exts.count);
-          if (left_ext != new_left_ext || right_ext != new_right_ext) {
+          if (left_ext != kmer_and_ext.left || right_ext != kmer_and_ext.right) {
             // if the two contig kmers disagree on extensions, set up to purge by setting the count to 0
-            kmer_and_exts.count = 0;
-            DBG_INS_CTG_KMER("set to purge conflict: prev ", left_ext, ", ", right_ext, " new ", new_left_ext, ", ", new_right_ext,
-                             "\n");
+            kmer_and_ext.count = 0;
+            DBG_INS_CTG_KMER("set to purge conflict: prev ", left_ext, ", ", right_ext, " new ", kmer_and_ext.left, ", ",
+                             kmer_and_ext.right, "\n");
           } else {
             // multiple occurrences of the same kmer derived from different contigs or parts of contigs
             // The only way this kmer could have been already found in the contigs only is if it came from a localassm
             // extension. In which case, all such kmers should not be counted again for each contig, because each
             // contig can use the same reads independently, and the depth will be oversampled.
-            kmer_and_exts.count = min(kmer_and_exts.count, kmer->count);
-            DBG_INS_CTG_KMER("increase count of existing ctg kmer from ", kmer->count, " to ", kmer_and_exts.count, "\n");
+            kmer_and_ext.count = min(kmer_and_ext.count, kmer_counts->count);
+            DBG_INS_CTG_KMER("increase count of existing ctg kmer from ", kmer_counts->count, " to ", kmer_and_ext.count, "\n");
           }
         }
       }
     }
     if (insert) {
-      kmer_count_t count = kmer_and_exts.count;
+      kmer_count_t count = kmer_and_ext.count;
       KmerCounts kmer_counts = {
           .left_exts = {0}, .right_exts = {0}, .uutig_frag = nullptr, .count = count, .left = 'X', .right = 'X', .from_ctg = true};
-      char left_ext = kmer_and_exts.left_exts.get_ext(count);
-      char right_ext = kmer_and_exts.right_exts.get_ext(count);
-      kmer_counts.left_exts.inc(left_ext, count);
-      kmer_counts.right_exts.inc(right_ext, count);
-      (*kmers)[kmer_and_exts.kmer] = kmer_counts;
+      kmer_counts.left_exts.inc(kmer_and_ext.left, count);
+      kmer_counts.right_exts.inc(kmer_and_ext.right, count);
+      (*kmers)[kmer_and_ext.kmer] = kmer_counts;
     }
   }
 
  public:
-  KmerDHT(uint64_t my_num_kmers, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool local_kmer_counting,
-          bool useHHSS, bool use_minimizers)
+  KmerDHT(uint64_t my_num_kmers, int max_kmer_store_bytes, int max_rpcs_in_flight, bool force_bloom, bool useHHSS,
+          bool use_minimizers)
       : kmers({})
       , bloom_filter1({})
       , bloom_filter2({})
@@ -352,8 +344,6 @@ class KmerDHT {
       , max_rpcs_in_flight(max_rpcs_in_flight)
       , bloom1_cardinality(0)
       , estimated_error_rate(0.0)
-      , local_kmer_counting(local_kmer_counting)
-      , num_cache_updates(0)
       , use_minimizers(use_minimizers) {
     // main purpose of the timer here is to track memory usage
     BarrierTimer timer(__FILEFUNC__);
@@ -411,9 +401,6 @@ class KmerDHT {
       double init_free_mem = get_free_mem();
       if (my_adjusted_num_kmers <= 0) DIE("no kmers to reserve space for");
       kmers->reserve(my_adjusted_num_kmers);
-      // FIXME: I have no idea what this should be
-      if (!use_bloom && local_kmer_counting) kmer_cache.reserve(my_adjusted_num_kmers * KCOUNT_KMER_CACHE_FRACTION);
-      SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
       barrier();
     }
     start_t = CLOCK_NOW();
@@ -421,10 +408,6 @@ class KmerDHT {
 
   void clear() {
     kmers->clear();
-    if (!use_bloom && local_kmer_counting) {
-      kmer_cache.clear();
-      HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
-    }
     KmerMap().swap(*kmers);
     clear_stores();
   }
@@ -461,8 +444,6 @@ class KmerDHT {
                  node0_cores * initial_kmer_dht_reservation, " entries on node 0\n");
     double init_free_mem = get_free_mem();
     kmers->reserve(initial_kmer_dht_reservation);
-    if (!use_bloom && local_kmer_counting) kmer_cache.reserve(initial_kmer_dht_reservation * KCOUNT_KMER_CACHE_FRACTION);
-    SLOG_VERBOSE("Kmer tables actually used ", get_size_str(init_free_mem - get_free_mem()), " on node 0\n");
     barrier();
   }
 
@@ -542,71 +523,30 @@ class KmerDHT {
       left_ext = comp_nucleotide(left_ext);
       right_ext = comp_nucleotide(right_ext);
     }
+    auto target_rank = get_kmer_target_rank(kmer, &kmer_rc);
     if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
       if (count) {
-        kmer_store_bloom.update(get_kmer_target_rank(kmer, &kmer_rc), kmer);
+        kmer_store_bloom.update(target_rank, kmer);
         bytes_sent += sizeof(kmer);
       }
-    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !local_kmer_counting) {
-      KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
-      kmer_and_exts.left_exts.inc(left_ext, count);
-      kmer_and_exts.right_exts.inc(right_ext, count);
-      kmer_store.update(get_kmer_target_rank(kmer, &kmer_rc), kmer_and_exts);
-      bytes_sent += sizeof(kmer_and_exts);
     } else {
-      auto prev_bucket_count = kmer_cache.bucket_count();
-      // only cache kmers from reads - we don't expect local aggregation of ctg kmers since they don't benefit from read shuffling
-      auto it = kmer_cache.find(kmer);
-      if (it == kmer_cache.end()) {
-        KmerAndExts kmer_and_exts = {.kmer = kmer, .left_exts = {0}, .right_exts = {0}, .count = count};
-        kmer_and_exts.left_exts.inc(left_ext, count);
-        kmer_and_exts.right_exts.inc(right_ext, count);
-        kmer_cache.insert({kmer, kmer_and_exts});
-      } else {
-        it->second.left_exts.inc(left_ext, count);
-        it->second.right_exts.inc(right_ext, count);
-        it->second.count += count;
+      KmerAndExt kmer_and_ext = {.kmer = kmer, .count = count, .left = left_ext, .right = right_ext};
+      if (target_rank == rank_me() && (pass_type == NO_BLOOM_PASS || pass_type == CTG_KMERS_PASS)) {
         _num_kmers_counted_locally++;
+        update_count(kmer_and_ext, kmers, bloom_filter1);
+      } else {
+        kmer_store.update(target_rank, kmer_and_ext);
+        bytes_sent += sizeof(kmer_and_ext);
       }
-      auto end_bucket_count = kmer_cache.bucket_count();
-      if (prev_bucket_count < end_bucket_count) WARN("Hash table was resized from ", prev_bucket_count, " to ", end_bucket_count);
-      if (kmer_cache.load_factor() > KCOUNT_KMER_CACHE_MAX_LOAD) update_and_clear_kmer_cache();
     }
-  }
-
-  void update_and_clear_kmer_cache() {
-    // auto avg_kmers_cached = reduce_one(kmer_cache.size(), op_fast_add, 0).wait() / rank_n();
-    // auto max_kmers_cached = reduce_one(kmer_cache.size(), op_fast_max, 0).wait();
-    int64_t tot_count = 0;
-    //      for (auto it = kmer_cache.begin(); it != kmer_cache.end(); it = kmer_cache.erase(it)) {
-    for (auto it = kmer_cache.begin(); it != kmer_cache.end(); ++it) {
-      progress();
-      tot_count += it->second.count;
-      auto target_rank = get_kmer_target_rank(it->first);
-      kmer_store.update(target_rank, it->second);
-      bytes_sent += sizeof(it->second);
-    }
-    SLOG("Cached ", perc_str(kmer_cache.size(), tot_count), " unique kmers on rank 0\n");
-    num_cache_updates++;
-    kmer_cache.clear();
-    // auto avg_tot_count = reduce_one(tot_count, op_fast_add, 0).wait() / rank_n();
-    // SLOG("Cached ", perc_str(avg_kmers_cached, avg_tot_count), " unique kmers per rank, max ", max_kmers_cached, "\n");
   }
 
   void flush_updates() {
     BarrierTimer timer(__FILEFUNC__);
-    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS) {
+    if (pass_type == BLOOM_SET_PASS || pass_type == CTG_BLOOM_SET_PASS)
       kmer_store_bloom.flush_updates();
-    } else if (pass_type == BLOOM_COUNT_PASS || pass_type == CTG_KMERS_PASS || !local_kmer_counting) {
+    else
       kmer_store.flush_updates();
-    } else {
-      update_and_clear_kmer_cache();
-      HASH_TABLE<Kmer<MAX_K>, KmerAndExts>().swap(kmer_cache);
-      kmer_store.flush_updates();
-      auto all_cache_updates = reduce_one(num_cache_updates, op_fast_add, 0).wait();
-      auto max_cache_updates = reduce_one(num_cache_updates, op_fast_max, 0).wait();
-      SLOG("Avg number of cache updates per rank ", all_cache_updates / rank_n(), " max ", max_cache_updates, "\n");
-    }
     auto all_bytes_sent = reduce_one(bytes_sent, op_fast_add, 0).wait();
     auto max_bytes_sent = reduce_one(bytes_sent, op_fast_max, 0).wait();
     SLOG("Total bytes sent ", get_size_str(all_bytes_sent), " balance ", (double)all_bytes_sent / (rank_n() * max_bytes_sent),

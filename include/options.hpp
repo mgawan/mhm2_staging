@@ -113,7 +113,6 @@ class Options {
   bool restart = false;
   bool shuffle_reads = false;
   bool use_minimizers = true;
-  bool local_kmer_counting = false;
 
   Options();
   ~Options();
