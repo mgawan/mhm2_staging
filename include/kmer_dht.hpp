@@ -449,8 +449,13 @@ class KmerDHT {
 
   bool get_use_bloom() { return use_bloom; }
 
+  pair<int64_t, int64_t> get_bytes_sent() {
+    auto all_bytes_sent = reduce_one(bytes_sent, op_fast_add, 0).wait();
+    auto max_bytes_sent = reduce_one(bytes_sent, op_fast_max, 0).wait();
+    return {all_bytes_sent, max_bytes_sent};
+  }
+
   void set_pass(PASS_TYPE pass_type) {
-    bytes_sent = 0;
     _num_kmers_counted = 0;
     _num_kmers_counted_locally = 0;
     this->pass_type = pass_type;
@@ -547,10 +552,6 @@ class KmerDHT {
       kmer_store_bloom.flush_updates();
     else
       kmer_store.flush_updates();
-    auto all_bytes_sent = reduce_one(bytes_sent, op_fast_add, 0).wait();
-    auto max_bytes_sent = reduce_one(bytes_sent, op_fast_max, 0).wait();
-    SLOG("Total bytes sent ", get_size_str(all_bytes_sent), " balance ", (double)all_bytes_sent / (rank_n() * max_bytes_sent),
-         "\n");
     auto avg_kmers_processed = reduce_one(_num_kmers_counted, op_fast_add, 0).wait() / rank_n();
     auto max_kmers_processed = reduce_one(_num_kmers_counted, op_fast_max, 0).wait();
     auto avg_local_kmers = reduce_one(_num_kmers_counted_locally, op_fast_add, 0).wait() / rank_n();

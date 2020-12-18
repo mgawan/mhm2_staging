@@ -258,5 +258,6 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 #endif
   barrier();
   kmer_dht->clear_stores();
-  // kmer_dht->purge_fx_kmers();
+  auto [bytes_sent, max_bytes_sent] = kmer_dht->get_bytes_sent();
+  SLOG("Total bytes sent ", get_size_str(bytes_sent), " balance ", (double)bytes_sent / (rank_n() * max_bytes_sent), "\n");
 };
