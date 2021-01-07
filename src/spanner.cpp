@@ -304,6 +304,10 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
     return true;
   };
 
+  assert(aln1.read_id.size() == aln2.read_id.size());
+  assert(aln1.read_id.substr(0, aln1.read_id.size()-1).compare(aln2.read_id.substr(0,aln2.read_id.size()-1)) == 0);
+  assert(aln1.read_id[aln1.read_id.size()-1] != aln2.read_id[aln2.read_id.size()-1]);
+
   // check for inappropriate self-linkage
   if (aln1.cid == aln2.cid) return ProcessPairResult::FAIL_SELF_LINK;
   int end_distance = insert_avg + 3 * insert_stddev;
@@ -368,8 +372,9 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
                           &reject_3_trunc, &reject_uninf)) {
       if (!prev_best_aln.read_id.empty()) {
         read_len = best_aln.rlen;
-        auto read_id_len = best_aln.read_id.length();
-        if (best_aln.read_id.compare(0, read_id_len - 2, prev_best_aln.read_id, 0, read_id_len - 2) == 0) {
+        auto best_read_id_len = best_aln.read_id.length();
+        auto prev_read_id_len = prev_best_aln.read_id.length();
+        if (best_read_id_len == prev_read_id_len && best_aln.read_id.compare(0, best_read_id_len - 1, prev_best_aln.read_id, 0, prev_read_id_len - 1) == 0) {
           if (best_aln.cid == prev_best_aln.cid) {
             result_counts[(int)ProcessPairResult::FAIL_SELF_LINK]++;
           } else {
@@ -383,7 +388,6 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
           prev_read_status = "";
           prev_type_status = "";
           continue;
-          //}
         }
       }
     }
