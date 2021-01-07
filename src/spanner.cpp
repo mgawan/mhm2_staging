@@ -307,6 +307,7 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
   assert(aln1.read_id.size() == aln2.read_id.size());
   assert(aln1.read_id.substr(0, aln1.read_id.size()-1).compare(aln2.read_id.substr(0,aln2.read_id.size()-1)) == 0);
   assert(aln1.read_id[aln1.read_id.size()-1] != aln2.read_id[aln2.read_id.size()-1]);
+  assert(aln1.read_id != aln2.read_id);
 
   // check for inappropriate self-linkage
   if (aln1.cid == aln2.cid) return ProcessPairResult::FAIL_SELF_LINK;
@@ -356,6 +357,7 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   int64_t reject_3_trunc = 0;
   int64_t reject_uninf = 0;
   int64_t result_counts[(int)ProcessPairResult::SUCCESS + 1] = {0};
+int64_t num_best_alns = 0;
   int64_t num_pairs = 0;
   int64_t aln_i = 0;
   int read_len = 0;
@@ -399,7 +401,11 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   barrier();
   t_get_alns.done_all();
 
+
+  auto tot_alignments = reduce_one(alns.size(), op_fast_add, 0).wait();
+  auto tot_num_best_alns = reduce_one(num_best_alns, op_fast_add, 0).wait();
   auto tot_num_pairs = reduce_one(num_pairs, op_fast_add, 0).wait();
+SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs (out of ", tot_alignments, " alignments ", tot_num_best_alns, " with best)\n");
   SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs\n");
   SLOG_VERBOSE("Rejected pairs:\n");
   SLOG_VERBOSE("  small:     ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SMALL], op_fast_add, 0).wait(), "\n");
