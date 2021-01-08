@@ -1,9 +1,10 @@
 #!/bin/bash
 
 mhm2_install_dir=$(dirname $(dirname $(realpath $0) ) )
-if [ -n "$1" ] || [ ! -x ${mhm2_install_dir}/bin/ci_asm_qual_test.sh ]
+if [ -n "$1" -a -d "$1" ] || [ ! -x ${mhm2_install_dir}/bin/ci_asm_qual_test.sh ]
 then
   mhm2_install_dir=$(realpath $1)
+  shift
 fi
 
 refs=arcticsynth-refs.fa
@@ -20,7 +21,7 @@ fi
 wd=`pwd`
 test_dir=$wd/test-arctic-sample0
 rm -rf $test_dir
-$mhm2_install_dir/bin/mhm2.py -r $reads -o $test_dir --checkpoint=no --post-asm-align --post-asm-abd
+$mhm2_install_dir/bin/mhm2.py $@ -r $reads -o $test_dir --checkpoint=no --post-asm-align --post-asm-abd
 status=$?
 if [ $status -ne 0 ]
 then

@@ -187,7 +187,7 @@ static bool get_best_span_aln(int insert_avg, int insert_stddev, vector<Aln> &al
   read_status = "";
   // sort in order of highest to lowest aln scores
   sort(alns.begin(), alns.end(), [](auto &aln1, auto &aln2) { return aln1.score1 > aln2.score1; });
-  for (const auto & aln : alns) {
+  for (const auto &aln : alns) {
     // Assess alignment for completeness (do this before scaffold coordinate conversion!)
     // Important: Truncations are performed before reverse complementation
     // and apply to the end of the actual read
@@ -304,9 +304,10 @@ ProcessPairResult process_pair(int insert_avg, int insert_stddev, Aln &aln1, Aln
     return true;
   };
 
+  DBG_VERBOSE("process_pair: ", aln1.to_string(), " vs ", aln2.to_string(), "\n");
   assert(aln1.read_id.size() == aln2.read_id.size());
-  assert(aln1.read_id.substr(0, aln1.read_id.size()-1).compare(aln2.read_id.substr(0,aln2.read_id.size()-1)) == 0);
-  assert(aln1.read_id[aln1.read_id.size()-1] != aln2.read_id[aln2.read_id.size()-1]);
+  assert(aln1.read_id.substr(0, aln1.read_id.size() - 1).compare(aln2.read_id.substr(0, aln2.read_id.size() - 1)) == 0);
+  assert(aln1.read_id[aln1.read_id.size() - 1] != aln2.read_id[aln2.read_id.size() - 1]);
   assert(aln1.read_id != aln2.read_id);
 
   // check for inappropriate self-linkage
@@ -357,7 +358,6 @@ void get_spans_from_alns(int insert_avg, int insert_stddev, int kmer_len, Alns &
   int64_t reject_3_trunc = 0;
   int64_t reject_uninf = 0;
   int64_t result_counts[(int)ProcessPairResult::SUCCESS + 1] = {0};
-int64_t num_best_alns = 0;
   int64_t num_pairs = 0;
   int64_t aln_i = 0;
   int read_len = 0;
@@ -376,7 +376,8 @@ int64_t num_best_alns = 0;
         read_len = best_aln.rlen;
         auto best_read_id_len = best_aln.read_id.length();
         auto prev_read_id_len = prev_best_aln.read_id.length();
-        if (best_read_id_len == prev_read_id_len && best_aln.read_id.compare(0, best_read_id_len - 1, prev_best_aln.read_id, 0, prev_read_id_len - 1) == 0) {
+        if (best_read_id_len == prev_read_id_len &&
+            best_aln.read_id.compare(0, best_read_id_len - 1, prev_best_aln.read_id, 0, prev_read_id_len - 1) == 0) {
           if (best_aln.cid == prev_best_aln.cid) {
             result_counts[(int)ProcessPairResult::FAIL_SELF_LINK]++;
           } else {
@@ -401,12 +402,9 @@ int64_t num_best_alns = 0;
   barrier();
   t_get_alns.done_all();
 
-
   auto tot_alignments = reduce_one(alns.size(), op_fast_add, 0).wait();
-  auto tot_num_best_alns = reduce_one(num_best_alns, op_fast_add, 0).wait();
   auto tot_num_pairs = reduce_one(num_pairs, op_fast_add, 0).wait();
-SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs (out of ", tot_alignments, " alignments ", tot_num_best_alns, " with best)\n");
-  SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs\n");
+  SLOG_VERBOSE("Processed ", tot_num_pairs, " pairs (out of ", tot_alignments, " alignments)\n");
   SLOG_VERBOSE("Rejected pairs:\n");
   SLOG_VERBOSE("  small:     ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SMALL], op_fast_add, 0).wait(), "\n");
   SLOG_VERBOSE("  self link: ", reduce_one(result_counts[(int)ProcessPairResult::FAIL_SELF_LINK], op_fast_add, 0).wait(), "\n");

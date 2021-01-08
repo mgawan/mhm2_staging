@@ -533,7 +533,7 @@ def main():
                     pass
                 sys.stdout.write(line)
                 sys.stdout.flush()
-                if '  output = ' in line:
+                if len(_output_dir) == 0 and ('  output = ' in line or 'Using output dir: ' in line):
                     _output_dir = line.split()[3]
                     onlyascii = ''.join([s for s in _output_dir if ord(s) < 127 and ord(s) >= 32])
                     _output_dir = onlyascii
@@ -544,10 +544,10 @@ def main():
                     # get rid of any leftover error logs if not restarting
                     try:
                         # always rename the error log if it already exists
-                        new_err_log = _output_dir + 'err.log' + str(datetime.datetime.now().isoformat())
+                        new_err_log = _output_dir + 'err.log-' + str(datetime.datetime.now().isoformat())
                         os.rename(_output_dir + 'err.log', new_err_log)
                         print("Renamed old err.log to ", new_err_log)
-                        os.unlink(_output_dir + '/rank_path/err.log')
+                        os.unlink(_output_dir + '/per_rank/err.log')
                     except:
                         pass
 

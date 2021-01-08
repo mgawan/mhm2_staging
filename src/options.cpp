@@ -172,8 +172,6 @@ void Options::setup_output_dir() {
       } else {
         SDIE("Could not create output directory '", output_dir, "': ", strerror(errno), "\n");
       }
-    } else {
-      cout << "Created " << output_dir << "\n";
     }
 
     // always ensure striping is set or reset wide when lustre is available
@@ -234,6 +232,8 @@ void Options::setup_output_dir() {
     sprintf(basepath, "%s/00000000/%08d", per_rank.c_str(), 0);
     status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
     if (status != 0 && errno != EEXIST) SDIE("Could not mkdir rank 0 per thread directory '", basepath, "'! ", strerror(errno));
+
+    cout << "Using output dir: " << output_dir << "\n";  // required for mhm2.py to find the output_dir when not verbose!
 
     cout.flush();
     cerr.flush();
@@ -510,14 +510,15 @@ bool Options::load(int argc, char **argv) {
     // all have logs in per_rank
     if (rank_me() == 0 && restart) {
       auto ret = rename("mhm2.log", "per_rank/00000000/00000000/mhm2.log");
-      if (ret != 0) SWARN("For this restart, could not rename mhm2.log to per_rank/00000000/00000000/mhm2.log\n");
+      if (ret != 0)
+        SWARN("For this restart, could not rename mhm2.log to per_rank/00000000/00000000/mhm2.log: ", strerror(errno), "\n");
     }
     init_logger("mhm2.log", verbose, true);
     // if not restarting, hardlink just the rank0 log to the output dir
     // this ensures a stripe count of 1 even when the output dir is striped wide
     if (rank_me() == 0) {
       auto ret = link("per_rank/00000000/00000000/mhm2.log", "mhm2.log");
-      if (ret != 0) SWARN("Could not hard link mhm2.log from per_rank/00000000/00000000/mhm2.log\n");
+      if (ret != 0) SWARN("Could not hard link mhm2.log from per_rank/00000000/00000000/mhm2.log: ", strerror(errno), "\n");
     }
   }
 
