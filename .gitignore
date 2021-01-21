@@ -7,3 +7,4 @@ scripts
 nbproject
 install
 .vscode
+contrib/collect_comm_stats
