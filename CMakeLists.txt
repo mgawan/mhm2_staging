@@ -178,7 +178,7 @@ message(STATUS "Building for ${CMAKE_BUILD_TYPE}: CMAKE_CXX_FLAGS=${CMAKE_CXX_FL
 
 find_package(Threads REQUIRED)
 find_package(ZLIB 1.2.3 REQUIRED)
-include_directories(BEFORE ${ZLIB_INCLUDE_DIRECTORIES})
+include_directories(BEFORE ${ZLIB_INCLUDE_DIRS})
 get_filename_component(ZLIB_BASEPATH ${ZLIB_INCLUDE_DIRS} PATH)
 link_directories(${ZLIB_BASEPATH}/lib64 ${ZLIB_BASEPATH}/lib)
 message("Adding ZLIB for -I${ZLIB_INCLUDE_DIRS} and -L${ZLIB_BASEPATH}/lib64 -L${ZLIB_BASEPATH}/lib)")
