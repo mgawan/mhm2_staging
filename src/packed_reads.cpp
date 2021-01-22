@@ -70,26 +70,28 @@ using std::max;
 PackedRead::PackedRead()
     : read_id(0)
     , read_len(0)
-    , packed_read(nullptr) {}
+    , bytes(nullptr) {}
 
 PackedRead::PackedRead(const string &id_str, string_view seq, string_view quals, int qual_offset) {
   read_id = strtol(id_str.c_str() + 1, nullptr, 10) + 1;
+  if (id_str[id_str.length() - 1] == '1') read_id *= -1;
+  // read_id = strtol(id_str.c_str() + 1, nullptr, 10);
   // this uses from_chars because it's the fastest option out there
   // auto res = std::from_chars(id_str.data() + 2, id_str.data() + id_str.size() - 2, read_id);
   // if (res.ec != std::errc()) DIE("Failed to convert string to int64_t, ", res.ec);
   // negative if first of the pair
-  if (id_str[id_str.length() - 1] == '1') read_id *= -1;
+  // if (id_str[id_str.length() - 1] == '1') read_id *= -1;
   // packed is same length as sequence. Set first 3 bits to represent A,C,G,T,N
   // set next five bits to represent quality (from 0 to 32). This doesn't cover the full quality range (only up to 32)
   // but it's all we need since once quality is greater than the qual_thres (20), we treat the base as high quality
-  packed_read = new unsigned char[seq.length()];
+  bytes = new unsigned char[seq.length()];
   for (unsigned i = 0; i < seq.length(); i++) {
     switch (seq[i]) {
-      case 'A': packed_read[i] = 0; break;
-      case 'C': packed_read[i] = 1; break;
-      case 'G': packed_read[i] = 2; break;
-      case 'T': packed_read[i] = 3; break;
-      case 'N': packed_read[i] = 4; break;
+      case 'A': bytes[i] = 0; break;
+      case 'C': bytes[i] = 1; break;
+      case 'G': bytes[i] = 2; break;
+      case 'T': bytes[i] = 3; break;
+      case 'N': bytes[i] = 4; break;
       case 'U':
       case 'R':
       case 'Y':
@@ -100,26 +102,26 @@ PackedRead::PackedRead(const string &id_str, string_view seq, string_view quals,
       case 'B':
       case 'D':
       case 'H':
-      case 'V': packed_read[i] = 4; break;
+      case 'V': bytes[i] = 4; break;
       default: DIE("Illegal char in comp nucleotide of '", seq[i], "'\n");
     }
-    packed_read[i] |= ((unsigned char)std::min(quals[i] - qual_offset, 31) << 3);
+    bytes[i] |= ((unsigned char)std::min(quals[i] - qual_offset, 31) << 3);
   }
   read_len = (uint16_t)seq.length();
 }
 
 PackedRead::PackedRead(const PackedRead &copy)
     : read_id(copy.read_id)
-    , packed_read(new unsigned char[read_len])
+    , bytes(new unsigned char[read_len])
     , read_len(copy.read_len) {
-  memcpy(packed_read, copy.packed_read, read_len);
+  memcpy(bytes, copy.bytes, read_len);
 }
 
 PackedRead::PackedRead(PackedRead &&move)
     : read_id(move.read_id)
-    , packed_read(move.packed_read)
+    , bytes(move.bytes)
     , read_len(move.read_len) {
-  move.packed_read = nullptr;
+  move.bytes = nullptr;
   move.clear();
 }
 
@@ -138,33 +140,65 @@ PackedRead &PackedRead::operator=(PackedRead &&move) {
 PackedRead::~PackedRead() { clear(); }
 
 void PackedRead::clear() {
-  if (packed_read) delete[] packed_read;
-  packed_read = nullptr;
+  if (bytes) delete[] bytes;
+  bytes = nullptr;
   read_len = 0;
   read_id = 0;
 }
 
 void PackedRead::unpack(string &read_id_str, string &seq, string &quals, int qual_offset) const {
+  assert(bytes != nullptr);
   char pair_id = (read_id < 0 ? '1' : '2');
   read_id_str = "@r" + to_string(labs(read_id)) + '/' + pair_id;
   seq.resize(read_len);
   quals.resize(read_len);
   for (int i = 0; i < read_len; i++) {
-    seq[i] = nucleotide_map[packed_read[i] & 7];
-    quals[i] = qual_offset + (packed_read[i] >> 3);
+    seq[i] = nucleotide_map[bytes[i] & 7];
+    quals[i] = qual_offset + (bytes[i] >> 3);
   }
   assert(seq.length() == read_len);
   assert(quals.length() == read_len);
 }
+
+int64_t PackedRead::get_id() { return read_id; }
+
+string PackedRead::get_str_id() {
+  char pair_id = (read_id < 0 ? '1' : '2');
+  return "@r" + to_string(labs(read_id)) + '/' + pair_id;
+}
+
+int64_t PackedRead::to_packed_id(const string &id_str) {
+  assert(id_str[0] == '@');
+  int64_t read_id = strtol(id_str.c_str() + 2, nullptr, 10);
+  if (id_str[id_str.length() - 1] == '1') read_id *= -1;
+  return read_id;
+}
+
+uint16_t PackedRead::get_read_len() { return read_len; }
 
 PackedReads::PackedReads(int qual_offset, const string &fname, bool str_ids)
     : qual_offset(qual_offset)
     , fname(fname)
     , str_ids(str_ids) {}
 
+PackedReads::PackedReads(int qual_offset, vector<PackedRead> &new_packed_reads)
+    : packed_reads(new_packed_reads)
+    , index(0)
+    , qual_offset(qual_offset)
+    , fname("")
+    , str_ids(false) {
+  max_read_len = 0;
+  // assert(!packed_reads.size());
+  for (auto &packed_read : new_packed_reads) {
+    // packed_reads.push_back(packed_read);
+    max_read_len = max((unsigned)packed_read.get_read_len(), max_read_len);
+  }
+}
+
 PackedReads::~PackedReads() { clear(); }
 
 bool PackedReads::get_next_read(string &id, string &seq, string &quals) {
+  assert(qual_offset == 33 || qual_offset == 64);
   if (index == packed_reads.size()) return false;
   packed_reads[index].unpack(id, seq, quals, qual_offset);
   if (str_ids) id = read_id_idx_to_str[index];
@@ -242,6 +276,7 @@ upcxx::future<> PackedReads::load_reads_nb() {
   fqr.reset();
   ProgressBar progbar(fqr.my_file_size(), "Loading reads from " + fname + " " + get_size_str(fqr.my_file_size()));
   tot_bytes_read = 0;
+  int lines = 0;
   while (true) {
     size_t bytes_read = fqr.get_next_fq_record(id, seq, quals);
     if (!bytes_read) break;
@@ -281,4 +316,9 @@ void PackedReads::report_size() {
   LOG_MEM("Loaded Packed Reads");
   SLOG_VERBOSE("Estimated memory for PackedReads: ",
                get_size_str(all_num_records * sizeof(PackedRead) + all_num_bases + all_num_names), "\n");
+}
+
+PackedRead &PackedReads::operator[](int index) {
+  if (index >= packed_reads.size()) DIE("Array index out of bound ", index, " >= ", packed_reads.size());
+  return packed_reads[index];
 }

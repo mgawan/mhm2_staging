@@ -161,10 +161,6 @@ int main(int argc, char **argv) {
   });
 #endif
 
-#ifdef USE_MINIMIZERS
-  SLOG_VERBOSE("Using minimizers for kmer analysis and deBruijn graph traversal\n");
-#endif
-
   Contigs ctgs;
   int max_kmer_len = 0;
   int max_expected_ins_size = 0;
@@ -334,6 +330,7 @@ int main(int argc, char **argv) {
     SLOG("    ", stage_timers.alignments->get_final(), "\n");
     SLOG("      -> ", stage_timers.kernel_alns->get_final(), "\n");
     SLOG("    ", stage_timers.localassm->get_final(), "\n");
+    if (options->shuffle_reads) SLOG("    ", stage_timers.shuffle_reads->get_final(), "\n");
     SLOG("    ", stage_timers.cgraph->get_final(), "\n");
     SLOG("    FASTQ total read time: ", FastqReader::get_io_time(), "\n");
     SLOG("    merged FASTQ write time: ", elapsed_write_io_t, "\n");

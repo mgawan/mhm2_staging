@@ -60,11 +60,13 @@ class PackedRead {
   static inline const std::array<char, 5> nucleotide_map = {'A', 'C', 'G', 'T', 'N'};
   // read_id is not packed as it is already reduced to an index number
   // the pair number is indicated in the read id - negative means pair 1, positive means pair 2
-  int64_t read_id : 48;
+  // int64_t read_id : 48;
+  int64_t read_id;
   // the read is not going to be larger than 65536 in length, but possibly larger than 256
-  uint64_t read_len : 16;
+  // uint64_t read_len : 16;
+  uint16_t read_len;
   // each cached read packs the nucleotide into 3 bits (ACGTN), and the quality score into 5 bits
-  unsigned char *packed_read;
+  unsigned char *bytes;
 
   // overall, we expect the compression to be around 50%. E.g. a read of 150bp would be
   // 16+150=166 vs 13+300=313
@@ -82,6 +84,35 @@ class PackedRead {
 
   void unpack(string &read_id_str, string &seq, string &quals, int qual_offset) const;
   void clear();
+
+  int64_t get_id();
+  string get_str_id();
+  static int64_t to_packed_id(const string &id_str);
+
+  uint16_t get_read_len();
+
+  struct upcxx_serialization {
+    template <typename Writer>
+    static void serialize(Writer &writer, PackedRead const &packed_read) {
+      writer.write(packed_read.read_id);
+      writer.write(packed_read.read_len);
+      for (int i = 0; i < packed_read.read_len; i++) {
+        writer.write(packed_read.bytes[i]);
+      }
+    }
+
+    template <typename Reader>
+    static PackedRead *deserialize(Reader &reader, void *storage) {
+      PackedRead *packed_read = new (storage) PackedRead();
+      packed_read->read_id = reader.template read<int64_t>();
+      packed_read->read_len = reader.template read<uint16_t>();
+      packed_read->bytes = new unsigned char[packed_read->read_len];
+      for (int i = 0; i < packed_read->read_len; i++) {
+        packed_read->bytes[i] = reader.template read<unsigned char>();
+      }
+      return packed_read;
+    }
+  };
 };
 
 class PackedReads {
@@ -92,18 +123,21 @@ class PackedReads {
   uint64_t index = 0;
   uint64_t bases = 0;
   uint64_t name_bytes = 0;
-  unsigned qual_offset;
+  int qual_offset;
   string fname;
   bool str_ids;
 
  public:
   using PackedReadsList = vector<PackedReads *>;
   PackedReads(int qual_offset, const string &fname, bool str_ids = false);
+  PackedReads(int qual_offset, vector<PackedRead> &packed_reads);
   ~PackedReads();
 
   bool get_next_read(string &id, string &seq, string &quals);
   uint64_t get_read_index() const;
   void get_read(uint64_t index, string &id, string &seq, string &quals) const;
+
+  PackedRead &operator[](int index);
 
   void reset();
 

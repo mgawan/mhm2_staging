@@ -115,16 +115,12 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
             num_Ns++;
           continue;
         }
-        int count = 1;
-#ifdef KCOUNT_FILTER_BAD_QUAL_IN_READ
-        if (pass_type != BLOOM_SET_PASS && i + kmer_len > found_bad_qual_pos) count = 0;
-#endif
         char left_base = seq[i - 1];
         if (quals[i - 1] < qual_offset + qual_cutoff) left_base = '0';
         char right_base = seq[i + kmer_len];
         if (quals[i + kmer_len] < qual_offset + qual_cutoff) right_base = '0';
-        kmer_dht->add_kmer(kmers[i], left_base, right_base, count);
-        DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", count, "\n");
+        kmer_dht->add_kmer(kmers[i], left_base, right_base, 1);
+        DBG_ADD_KMER("kcount add_kmer ", kmers[i].to_string(), " count ", 1, "\n");
         num_kmers++;
       }
       progress();
@@ -132,9 +128,9 @@ static void count_kmers(unsigned kmer_len, int qual_offset, vector<PackedReads *
     progbar.done();
   }
   kmer_dht->flush_updates();
+  auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   DBG("This rank processed ", num_reads, " reads\n");
   auto all_num_reads = reduce_one(num_reads, op_fast_add, 0).wait();
-  auto all_num_kmers = reduce_one(num_kmers, op_fast_add, 0).wait();
   auto all_num_bad_quals = reduce_one(num_bad_quals, op_fast_add, 0).wait();
   auto all_num_Ns = reduce_one(num_Ns, op_fast_add, 0).wait();
   auto all_distinct_kmers = kmer_dht->get_num_kmers();
@@ -197,9 +193,9 @@ static void add_ctg_kmers(unsigned kmer_len, unsigned prev_kmer_len, Contigs &ct
       if (kmers.size() != ctg->seq.length() - kmer_len + 1)
         DIE("kmers size mismatch ", kmers.size(), " != ", (ctg->seq.length() - kmer_len + 1), " '", ctg->seq, "'");
       for (int i = 1; i < (int)(ctg->seq.length() - kmer_len); i++) {
-        uint16_t depth = ctg->depth;
+        kmer_count_t depth = ctg->depth;
 #ifdef USE_KMER_DEPTHS
-        uint16_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
+        kmer_count_t kmer_depth = ctg->get_kmer_depth(i, kmer_len, prev_kmer_len);
         tot_depth_diff += (double)(kmer_depth - depth) / depth;
         max_depth_diff = max(max_depth_diff, (double)abs(kmer_depth - depth));
         depth = kmer_depth;
@@ -262,5 +258,6 @@ void analyze_kmers(unsigned kmer_len, unsigned prev_kmer_len, int qual_offset, v
 #endif
   barrier();
   kmer_dht->clear_stores();
-  // kmer_dht->purge_fx_kmers();
+  auto [bytes_sent, max_bytes_sent] = kmer_dht->get_bytes_sent();
+  SLOG("Total bytes sent ", get_size_str(bytes_sent), " balance ", (double)bytes_sent / (rank_n() * max_bytes_sent), "\n");
 };

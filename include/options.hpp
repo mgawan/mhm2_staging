@@ -111,6 +111,8 @@ class Options {
   string output_dir;
   string setup_time;
   bool restart = false;
+  bool shuffle_reads = false;
+  bool use_minimizers = true;
 
   Options();
   ~Options();

@@ -50,7 +50,7 @@ inline bool _verbose = false;
 
 struct StageTimers {
   IntermittentTimer *merge_reads, *cache_reads, *load_ctgs, *analyze_kmers, *dbjg_traversal, *alignments, *kernel_alns, *localassm,
-      *cgraph, *dump_ctgs, *compute_kmer_depths;
+      *cgraph, *dump_ctgs, *compute_kmer_depths, *shuffle_reads;
 };
 
 inline StageTimers stage_timers = {
@@ -64,4 +64,5 @@ inline StageTimers stage_timers = {
     .localassm = new IntermittentTimer(__FILENAME__ + string(":") + "Local assembly", "Locally extending ends of contigs"),
     .cgraph = new IntermittentTimer(__FILENAME__ + string(":") + "Traverse contig graph", "Traversing contig graph"),
     .dump_ctgs = new IntermittentTimer(__FILENAME__ + string(":") + "Dump contigs", "Dumping contigs"),
-    .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths")};
+    .compute_kmer_depths = new IntermittentTimer(__FILENAME__ + string(":") + "Compute kmer depths", "Computing kmer depths"),
+    .shuffle_reads = new IntermittentTimer(__FILENAME__ + string(":") + "Shuffle reads", "Shuffling reads")};

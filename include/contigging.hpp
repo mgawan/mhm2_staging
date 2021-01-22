@@ -47,11 +47,11 @@
 #include "packed_reads.hpp"
 
 template <int MAX_K>
-void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, std::vector<PackedReads *> packed_reads_list, Contigs &ctgs,
+void contigging(int kmer_len, int prev_kmer_len, int rlen_limit, std::vector<PackedReads *> &packed_reads_list, Contigs &ctgs,
                 int &max_expected_ins_size, int &ins_avg, int &ins_stddev, std::shared_ptr<Options> options);
 
-#define __MACRO_CONTIGGING__(KMER_LEN, MODIFIER)                                                                \
-  MODIFIER void contigging<KMER_LEN>(int, int, int, std::vector<PackedReads *>, Contigs &, int &, int &, int &, \
+#define __MACRO_CONTIGGING__(KMER_LEN, MODIFIER)                                                                  \
+  MODIFIER void contigging<KMER_LEN>(int, int, int, std::vector<PackedReads *> &, Contigs &, int &, int &, int &, \
                                      std::shared_ptr<Options>);
 
 // Reduce compile time by instantiating templates of common types
