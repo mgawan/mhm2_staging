@@ -22,10 +22,10 @@ __inline__ __device__ short gpu_bsw::warpReduceMax_with_index_reverse(short val,
       ind = newInd;
       ind2 = newInd2;
       myMax = val;
-    } else if ((val == tempVal))  // this is kind of redundant and has been done purely to match the results
-                                  // with SSW to get the smallest alignment with highest score. Theoreticaly
-                                  // all the alignmnts with same score are same.
-    {
+    } else if ((val == tempVal)) {
+      // this is kind of redundant and has been done purely to match the results
+      // with SSW to get the smallest alignment with highest score. Theoreticaly
+      // all the alignmnts with same score are same.
       if (newInd2 > ind2) {
         ind = newInd;
         ind2 = newInd2;
@@ -57,10 +57,10 @@ __inline__ __device__ short gpu_bsw::warpReduceMax_with_index(short val, short& 
       ind = newInd;
       ind2 = newInd2;
       myMax = val;
-    } else if ((val == tempVal))  // this is kind of redundant and has been done purely to match the results
-                                  // with SSW to get the smallest alignment with highest score. Theoreticaly
-                                  // all the alignmnts with same score are same.
-    {
+    } else if ((val == tempVal)) {
+      // this is kind of redundant and has been done purely to match the results
+      // with SSW to get the smallest alignment with highest score. Theoreticaly
+      // all the alignmnts with same score are same.
       if (newInd < ind) {
         ind = newInd;
         ind2 = newInd2;
@@ -90,8 +90,7 @@ __device__ short gpu_bsw::blockShuffleReduce_with_index_reverse(short myVal, sho
   __syncthreads();
   unsigned check = ((32 + blockDim.x - 1) / 32);  // mimicing the ceil function for floats
                                                   // float check = ((float)blockDim.x / 32);
-  if (threadIdx.x < check)                        /////******//////
-  {
+  if (threadIdx.x < check) {
     myVal = locTots[threadIdx.x];
     myInd = locInds[threadIdx.x];
     myInd2 = locInds2[threadIdx.x];
@@ -128,8 +127,7 @@ __device__ short gpu_bsw::blockShuffleReduce_with_index(short myVal, short& myIn
   __syncthreads();
   unsigned check = ((32 + blockDim.x - 1) / 32);  // mimicing the ceil function for floats
                                                   // float check = ((float)blockDim.x / 32);
-  if (threadIdx.x < check)                        /////******//////
-  {
+  if (threadIdx.x < check) {
     myVal = locTots[threadIdx.x];
     myInd = locInds[threadIdx.x];
     myInd2 = locInds2[threadIdx.x];
@@ -281,8 +279,8 @@ __global__ void gpu_bsw::sequence_dna_kernel(char* seqA_array, char* seqB_array,
       short valheShfl = __shfl_sync(mask, _prev_H, laneId - 1, 32);
       short eVal = 0, heVal = 0;
 
-      if (diag >= maxSize)  // when the previous thread has phased out, get value from shmem
-      {
+      if (diag >= maxSize) {
+        // when the previous thread has phased out, get value from shmem
         eVal = local_spill_prev_E[thread_Id - 1] + extendGap;
         heVal = local_spill_prev_H[thread_Id - 1] + startGap;
       } else {
@@ -290,8 +288,8 @@ __global__ void gpu_bsw::sequence_dna_kernel(char* seqA_array, char* seqB_array,
         heVal = ((warpId != 0 && laneId == 0) ? sh_prev_H[warpId - 1] : valheShfl) + startGap;
       }
 
-      if (warpId == 0 && laneId == 0)  // make sure that values for lane 0 in warp 0 is not undefined
-      {
+      if (warpId == 0 && laneId == 0) {
+        // make sure that values for lane 0 in warp 0 is not undefined
         eVal = 0;
         heVal = 0;
       }
@@ -318,8 +316,8 @@ __global__ void gpu_bsw::sequence_dna_kernel(char* seqA_array, char* seqB_array,
   }
   __syncthreads();
 
-  thread_max =
-      blockShuffleReduce_with_index(thread_max, thread_max_i, thread_max_j, minSize);  // thread 0 will have the correct values
+  // thread 0 will have the correct values
+  thread_max = blockShuffleReduce_with_index(thread_max, thread_max_i, thread_max_j, minSize);
 
   if (thread_Id == 0) {
     if (lengthSeqA < lengthSeqB) {
@@ -646,8 +644,7 @@ __global__ void gpu_bsw::sequence_aa_kernel(char* seqA_array, char* seqB_array, 
 
       short eVal = 0, heVal = 0;
 
-      if (diag >= maxSize)  // when the previous thread has phased out, get value from shmem
-      {
+      if (diag >= maxSize) {  // when the previous thread has phased out, get value from shmem
         eVal = local_spill_prev_E[thread_Id - 1] + extendGap;
         heVal = local_spill_prev_H[thread_Id - 1] + startGap;
       } else {
@@ -655,8 +652,7 @@ __global__ void gpu_bsw::sequence_aa_kernel(char* seqA_array, char* seqB_array, 
         heVal = ((warpId != 0 && laneId == 0) ? sh_prev_H[warpId - 1] : valheShfl) + startGap;
       }
 
-      if (warpId == 0 && laneId == 0)  // make sure that values for lane 0 in warp 0 is not undefined
-      {
+      if (warpId == 0 && laneId == 0) {  // make sure that values for lane 0 in warp 0 is not undefined
         eVal = 0;
         heVal = 0;
       }
@@ -888,8 +884,8 @@ __global__ void gpu_bsw::sequence_aa_reverse(char* seqA_array, char* seqB_array,
   }
   __syncthreads();
 
-  thread_max = blockShuffleReduce_with_index_reverse(thread_max, thread_max_i, thread_max_j,
-                                                     minSize);  // thread 0 will have the correct values
+  // thread 0 will have the correct values
+  thread_max = blockShuffleReduce_with_index_reverse(thread_max, thread_max_i, thread_max_j, minSize);
   if (thread_Id == 0) {
     if (newlengthSeqA < newlengthSeqB) {
       seqB_align_begin[block_Id] = /*newlengthSeqB - */ (thread_max_i);

@@ -33,10 +33,10 @@ size_t adept_sw::get_avail_gpu_mem_per_rank(int totRanks, int num_devices) {
 }
 
 std::string adept_sw::get_device_name(int device_id) {
-    char dev_id[256];
-    cudaErrchk( cudaDeviceGetPCIBusId ( dev_id, 256, device_id ) );
-    return std::string(dev_id);
-}  
+  char dev_id[256];
+  cudaErrchk(cudaDeviceGetPCIBusId(dev_id, 256, device_id));
+  return std::string(dev_id);
+}
 
 size_t adept_sw::get_tot_gpu_mem() {
   cudaDeviceProp prop;
@@ -51,29 +51,29 @@ int adept_sw::get_num_node_gpus() {
   return deviceCount;
 }
 
-bool adept_sw::initialize_gpu(double &time_to_initialize, int &device_count, size_t &total_mem) {
-    using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
-    double *first_touch;
+bool adept_sw::initialize_gpu(double& time_to_initialize, int& device_count, size_t& total_mem) {
+  using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
+  double* first_touch;
 
-    timepoint_t t = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed;
+  timepoint_t t = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed;
 
-    device_count = get_num_node_gpus();
-    if (device_count > 0) {
-        total_mem = get_tot_gpu_mem();
-        cudaErrchk(cudaMallocHost(&first_touch, sizeof (double)));
-        cudaErrchk(cudaFreeHost(first_touch));
-    }
-    elapsed = std::chrono::high_resolution_clock::now() - t;
-    time_to_initialize = elapsed.count();
-    return device_count > 0;
+  device_count = get_num_node_gpus();
+  if (device_count > 0) {
+    total_mem = get_tot_gpu_mem();
+    cudaErrchk(cudaMallocHost(&first_touch, sizeof(double)));
+    cudaErrchk(cudaFreeHost(first_touch));
+  }
+  elapsed = std::chrono::high_resolution_clock::now() - t;
+  time_to_initialize = elapsed.count();
+  return device_count > 0;
 }
 
 bool adept_sw::initialize_gpu() {
   double t;
   int c;
   size_t m;
-  return initialize_gpu(t,c,m);
+  return initialize_gpu(t, c, m);
 }
 
 struct gpu_alignments {
@@ -196,60 +196,60 @@ struct adept_sw::DriverState {
 };
 
 double adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short match_score, short mismatch_score,
-                               short gap_opening_score, short gap_extending_score, int max_rlen) {
+                                 short gap_opening_score, short gap_extending_score, int max_rlen) {
   using timepoint_t = std::chrono::time_point<std::chrono::high_resolution_clock>;
   timepoint_t t = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed;
   driver_state = new DriverState();
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " new=" << elapsed.count();
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " new=" << elapsed.count();
   driver_state->matchScore = match_score;
   driver_state->misMatchScore = mismatch_score;
   driver_state->startGap = gap_opening_score;
   driver_state->extendGap = gap_extending_score;
-  
+
   driver_state->device_count = get_num_node_gpus();
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " get_num_gpus=" << elapsed.count();
-  
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " get_num_gpus=" << elapsed.count();
+
   cudaErrchk(cudaMallocHost(&(alignments.ref_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&(alignments.ref_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&(alignments.query_begin), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&(alignments.query_end), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&(alignments.top_scores), sizeof(short) * KLIGN_GPU_BLOCK_SIZE));
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost=" << elapsed.count();
-  
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost=" << elapsed.count();
+
   driver_state->my_gpu_id = upcxx_rank_me % driver_state->device_count;
   cudaErrchk(cudaSetDevice(driver_state->my_gpu_id));
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " set_device=" << elapsed.count();
-  
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " set_device=" << elapsed.count();
+
   for (int stm = 0; stm < NSTREAMS; stm++) {
     cudaErrchk(cudaStreamCreate(&driver_state->streams_cuda[stm]));
   }
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " streamcreate=" << elapsed.count();
-  
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " streamcreate=" << elapsed.count();
+
   cudaErrchk(cudaMallocHost(&driver_state->offsetA_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&driver_state->offsetB_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE));
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost2=" << elapsed.count();
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost2=" << elapsed.count();
 
   // FIXME: hack for max contig and read size
   cudaErrchk(cudaMalloc(&driver_state->strA_d, max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
   cudaErrchk(cudaMalloc(&driver_state->strB_d, max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocs=" << elapsed.count();
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocs=" << elapsed.count();
 
   cudaErrchk(cudaMallocHost(&driver_state->strA, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&driver_state->strB, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost3=" << elapsed.count();
-  
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost3=" << elapsed.count();
+
   driver_state->gpu_data = new gpu_alignments(KLIGN_GPU_BLOCK_SIZE);  // gpu mallocs
-  //elapsed =  std::chrono::high_resolution_clock::now() - t; os << " final=" << elapsed.count();
-  
-  elapsed =  std::chrono::high_resolution_clock::now() - t;
+  // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " final=" << elapsed.count();
+
+  elapsed = std::chrono::high_resolution_clock::now() - t;
   return elapsed.count();
 }
 
 adept_sw::GPUDriver::~GPUDriver() {
   // won't have been allocated if there was no GPU present
   if (!alignments.ref_begin) return;
-  
+
   cudaErrchk(cudaFreeHost(alignments.ref_begin));
   cudaErrchk(cudaFreeHost(alignments.ref_end));
   cudaErrchk(cudaFreeHost(alignments.query_begin));
@@ -274,8 +274,8 @@ bool adept_sw::GPUDriver::kernel_is_done() {
 }
 
 void adept_sw::GPUDriver::kernel_block() {
-    cudaErrchk(cudaEventSynchronize(driver_state->event));
-    cudaErrchk(cudaEventDestroy(driver_state->event));
+  cudaErrchk(cudaEventSynchronize(driver_state->event));
+  cudaErrchk(cudaEventDestroy(driver_state->event));
 }
 
 void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, std::vector<std::string>& contigs,
