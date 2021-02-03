@@ -26,7 +26,6 @@ export PATH=/global/common/software/m2865/upcxx-2020.10.0-ibv-cmem/bin:$PATH
 export UPCXX_NETWORK=ibv
 export GASNET_PHYSMEM_MAX=16G
 export GASNET_PHYSMEM_PROBE=0
-export GASNET_ODP_VERBOSE=0
 export GASNET_TMPDIR=$SCRATCH/tmp
 mkdir -p $GASNET_TMPDIR
 
