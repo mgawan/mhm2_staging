@@ -51,10 +51,10 @@ using std::shared_ptr;
 using std::string;
 using std::to_string;
 
-using upcxx::rank_me;
-using upcxx::rank_n;
 using upcxx::dist_object;
 using upcxx::promise;
+using upcxx::rank_me;
+using upcxx::rank_n;
 
 using upcxx_utils::IntermittentTimer;
 
@@ -77,6 +77,7 @@ class FastqReader {
   struct PromStartStop {
     promise<int64_t> start_prom, stop_prom;
     future<> set(FastqReader &fqr) {
+      DBG("Setting fqr ", fqr.fname, " start=", fqr.start_read, " end=", fqr.end_read, "\n");
       auto set_start = start_prom.get_future().then([&fqr](int64_t start) { fqr.start_read = start; });
       auto set_end = stop_prom.get_future().then([&fqr](int64_t stop) { fqr.end_read = stop; });
       return when_all(set_start, set_end);
