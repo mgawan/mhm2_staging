@@ -103,7 +103,8 @@ then
   [ -d ${UPCXXDIR} ] || tar -xvzf $codedir/${UPCXXTAR}
   [ -d ${UPCXXDIR} ] || mv upcxx-*/ ${UPCXXDIR}
   cd ${UPCXXDIR}
-  CC=$CC CXX=$CXX ./configure --prefix=$installdir ${upcxx_opts} && (make -j ${BUILD_THREADS} || make) && make install
+set -x
+  CC=$CC CXX=$CXX ./configure --prefix=$installdir ${upcxx_opts} "${with_pmirun_cmd}" && (make -j ${BUILD_THREADS} || make) && make install
 #  ./install $installdir
 else
   echo "upcxx is already installed $installdir/bin/upcxx"

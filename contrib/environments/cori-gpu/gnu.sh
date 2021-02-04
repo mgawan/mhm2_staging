@@ -27,3 +27,6 @@ export MHM2_CMAKE_EXTRAS="-DCMAKE_CXX_COMPILER=$(which g++) -DCMAKE_C_COMPILER=$
 
 # example execute on 2 nodes, with 8 GPUs per node
 # sbatch -C gpu -t 30  --exclusive -A m342 -G 16 -N 2 --wrap="./mhm2-builds/FixCoriGPUBuild/build-gpu-gnu-RelWithDebug/install/bin/mhm2.py -r arctic_sample_0.fq  -v"
+
+# export GASNET_AM_CREDITS_PP=24
+
