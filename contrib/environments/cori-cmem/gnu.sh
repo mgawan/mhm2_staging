@@ -20,7 +20,7 @@ module load git
 
 # use custom build of upcxx
 # (temporary) --disable-ibv-odp
-# pmirun_cmd='srun %V -K0 -W60 -n %N %C' upcxx-utils/contrib/install_upcxx.sh /global/common/software/m2865/upcxx-2020.10.0-ibv-cmem --enable-ibv-multirail --with-ibv-max-hcas=4 --without-cross --disable-ibv-odp --with-ibv-physmem-max=0.5 --with-default-network=ibv --with-pmi-home=/opt/esslurm --with-ibv-spawner=pmi --with-pmirun-cmd=\${pmirun_cmd}
+# CC=$(which gcc) CXX=$(which g++) pmirun_cmd='srun %V -K0 -W60 -n %N %C' upcxx-utils/contrib/install_upcxx.sh /global/common/software/m2865/upcxx-2020.10.0-ibv-cmem --enable-ibv-multirail --with-ibv-max-hcas=4 --without-cross --disable-ibv-odp --with-ibv-physmem-max=0.5 --with-default-network=ibv --with-pmi-home=/opt/esslurm --with-ibv-spawner=pmi --with-pmirun-cmd=\${pmirun_cmd}
 export PATH=/global/common/software/m2865/upcxx-2020.10.0-ibv-cmem/bin:$PATH
 
 # use ibv and do not probe for shared heap size
