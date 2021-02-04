@@ -57,10 +57,10 @@
 #include "utils.hpp"
 
 using namespace upcxx_utils;
-using std::ostringstream;
-using std::string;
 using std::make_shared;
+using std::ostringstream;
 using std::shared_ptr;
+using std::string;
 
 using upcxx::future;
 using upcxx::local_team;
@@ -172,8 +172,7 @@ int64_t FastqReader::get_fptr_for_next_record(int64_t offset) {
               case ('C'):
               case ('G'):
               case ('T'):
-              case ('N'):
-                break;  // okay
+              case ('N'): break;  // okay
               case ('\n'):
                 // newline.  okay if last char
                 record_found = k == seqlen - 1;
@@ -416,14 +415,18 @@ upcxx::future<> FastqReader::continue_open(int fd) {
   io_t.stop();
   if (rank_me() == 0) {
     // special for first rank set start as 0
+    DBG_VERBOSE("setting 0 for rank 0\n");
     dist_prom->start_prom.fulfill_result(0);
-  } else if (rank_me() == rank_n() - 1) {
+  }
+  if (rank_me() == rank_n() - 1) {
     // special for last rank set end as file size
+    DBG_VERBOSE("Setting file_size=", file_size, " for last rank\n");
     dist_prom->stop_prom.fulfill_result(file_size);
   }
   // have all other local ranks delay their seeks and I/O until these seeks are finished.
   promise wait_prom(1);
   if (local_team().rank_me() == local_team().rank_n() - 1) {
+    DBG_VERBOSE("Fseeking for the team\n");
     // do all the fseeking for the local team
     using DPSS = dist_object<PromStartStop>;
     int64_t read_block = INT_CEIL(file_size, rank_n());
@@ -437,7 +440,9 @@ upcxx::future<> FastqReader::continue_open(int fd) {
       assert(rank > 0);
       start_read = read_block * rank;
       auto pos = get_fptr_for_next_record(start_read);
+      DBG_VERBOSE("Notifying with rank=", rank, " pos=", pos, " after start_read=", start_read, "\n");
       wait_prom.get_future().then([rank, pos, &dist_prom = this->dist_prom]() {
+        DBG_VERBOSE("Sending pos=", pos, " to stop ", rank - 1, " and start ", rank, "\n");
         // send end to prev rank
         rpc_ff(rank - 1, [](DPSS &dpss, int64_t end_pos) { dpss->stop_prom.fulfill_result(end_pos); }, dist_prom, pos);
         // send start to rank
