@@ -104,7 +104,12 @@ then
   [ -d ${UPCXXDIR} ] || mv upcxx-*/ ${UPCXXDIR}
   cd ${UPCXXDIR}
 set -x
-  CC=$CC CXX=$CXX ./configure --prefix=$installdir ${upcxx_opts} "${with_pmirun_cmd}" && (make -j ${BUILD_THREADS} || make) && make install
+if [ -z "${with_pmirun_cmd}" ]
+then
+  CC=$CC CXX=$CXX ./configure --prefix=$installdir ${upcxx_opts} && (make -j ${BUILD_THREADS} || make) && make install
+else
+  CC=$CC CXX=$CXX ./configure --prefix=$installdir ${upcxx_opts} --with-pmirun-cmd="${with_pmirun_cmd}"  && (make -j ${BUILD_THREADS} || make) && make install
+fi
 #  ./install $installdir
 else
   echo "upcxx is already installed $installdir/bin/upcxx"
