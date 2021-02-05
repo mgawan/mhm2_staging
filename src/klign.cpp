@@ -368,9 +368,9 @@ class KmerCtgDHT {
     for (int i = 0; i < abd.kernel_alns.size(); i++) {
       // progress();
       Aln &aln = abd.kernel_alns[i];
-      aln.rstop = aln.rstart + aln_results.query_end[i];
+      aln.rstop = aln.rstart + aln_results.query_end[i] + 1;
       aln.rstart += aln_results.query_begin[i];
-      aln.cstop = aln.cstart + aln_results.ref_end[i];
+      aln.cstop = aln.cstart + aln_results.ref_end[i] + 1;
       aln.cstart += aln_results.ref_begin[i];
       if (aln.orient == '-') switch_orient(aln.rstart, aln.rstop, aln.rlen);
       aln.score1 = aln_results.top_scores[i];
