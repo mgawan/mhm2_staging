@@ -55,6 +55,9 @@
 #include "upcxx_utils/three_tier_aggr_store.hpp"
 #include "upcxx_utils/limit_outstanding.hpp"
 #include "utils.hpp"
+//#ifdef ENABLE_GPUS
+#include "gpu_loc_assem/driver.hpp"
+//#endif
 
 using namespace std;
 using namespace upcxx;
@@ -177,6 +180,7 @@ struct CtgWithReads {
   int64_t cid;
   string seq;
   double depth;
+  unsigned max_reads;
   vector<ReadSeq> reads_left;
   vector<ReadSeq> reads_right;
 };
@@ -201,6 +205,7 @@ struct CtgReadData {
   UPCXX_SERIALIZED_FIELDS(cid, side, read_seq);
 #endif
 };
+
 
 class CtgsWithReadsDHT {
  public:
@@ -305,6 +310,109 @@ class CtgsWithReadsDHT {
     return ctg;
   }
 };
+
+
+//#ifdef ENABLE_GPUS
+
+
+vector<ReadSeq> reads_to_reads(vector<loc_assem_helper::ReadSeq> read_in){
+  vector<ReadSeq> reads_out;
+  for(int i = 0; i < read_in.size(); i++){
+    loc_assem_helper::ReadSeq temp_seq_in = read_in[i];
+    ReadSeq temp_seq_out;
+    
+    temp_seq_out.read_id = temp_seq_in.read_id;
+    temp_seq_out.seq = temp_seq_in.seq;
+    temp_seq_out.quals = temp_seq_in.quals;
+    reads_out.push_back(temp_seq_out);
+  }
+  return reads_out;
+}
+
+vector<loc_assem_helper::ReadSeq> reads_to_reads(vector<ReadSeq> read_in){
+  vector<loc_assem_helper::ReadSeq> reads_out;
+  for(int i = 0; i < read_in.size(); i++){
+    ReadSeq temp_seq_in = read_in[i];
+    loc_assem_helper::ReadSeq temp_seq_out;
+    
+    temp_seq_out.read_id = temp_seq_in.read_id;
+    temp_seq_out.seq = temp_seq_in.seq;
+    temp_seq_out.quals = temp_seq_in.quals;
+    reads_out.push_back(temp_seq_out);
+  }
+  return reads_out;
+}
+
+loc_assem_helper::CtgWithReads ctgs_to_ctgs(CtgWithReads ctg_in){
+  loc_assem_helper::CtgWithReads ctg_out;
+  ctg_out.cid = ctg_in.cid;
+  ctg_out.seq = ctg_in.seq;
+  ctg_out.depth = ctg_in.depth;
+  ctg_out.max_reads = ctg_in.max_reads;
+  vector<loc_assem_helper::ReadSeq> temp_reads = reads_to_reads(ctg_in.reads_left);
+  ctg_out.reads_left = temp_reads;
+  temp_reads = reads_to_reads(ctg_in.reads_right);
+  ctg_out.reads_right = temp_reads;
+  return ctg_out;
+}
+
+CtgWithReads ctgs_to_ctgs(loc_assem_helper::CtgWithReads ctg_in){
+  CtgWithReads ctg_out;
+  ctg_out.cid = ctg_in.cid;
+  ctg_out.seq = ctg_in.seq;
+  ctg_out.depth = ctg_in.depth;
+  ctg_out.max_reads = ctg_in.max_reads;
+  vector<ReadSeq> temp_reads = reads_to_reads(ctg_in.reads_left);
+  ctg_out.reads_left = temp_reads;
+  temp_reads = reads_to_reads(ctg_in.reads_right);
+  ctg_out.reads_right = temp_reads;
+  return ctg_out;
+}
+
+void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht){
+  //accum_data sizes_mid, sizes_outliers;
+  // uint32_t mid_l_max = 0, mid_r_max = 0, outlier_l_max = 0, outlier_r_max = 0, mid_max_contig_sz = 0;
+  // uint32_t outliers_max_contig_sz = 0;
+  unsigned max_read_size = 300;
+ for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
+    //progbar.update();
+   // Contig ext_contig;
+   // for(int i = 0; i < data_in.size(); i++){
+        loc_assem_helper::CtgWithReads temp_in = ctgs_to_ctgs(*ctg);//data_in[i];
+        temp_in.max_reads = temp_in.reads_left.size() > temp_in.reads_right.size() ? temp_in.reads_left.size() : temp_in.reads_right.size();
+        if(temp_in.max_reads == 0){
+            zero_slice.ctg_vec.push_back(temp_in);
+        }else if(temp_in.max_reads > 0 && temp_in.max_reads < 10){
+            mid_slice.ctg_vec.push_back(temp_in);
+            uint32_t temp_ht_size = temp_in.max_reads * max_read_size;
+            mid_slice.sizes_vec.ht_sizes.push_back(temp_ht_size);
+            mid_slice.sizes_vec.ctg_sizes.push_back(temp_in.seq.size());
+            mid_slice.sizes_vec.l_reads_count.push_back(temp_in.reads_left.size());
+            mid_slice.sizes_vec.r_reads_count.push_back(temp_in.reads_right.size());
+            if(mid_slice.l_max < temp_in.reads_left.size())
+                mid_slice.l_max = temp_in.reads_left.size();
+            if(mid_slice.r_max < temp_in.reads_right.size())
+                mid_slice.r_max = temp_in.reads_right.size();
+            if(mid_slice.max_contig_sz < temp_in.seq.size())
+                mid_slice.max_contig_sz = temp_in.seq.size();
+        }
+        else{
+            outlier_slice.ctg_vec.push_back(temp_in);
+            uint32_t temp_ht_size = temp_in.max_reads * max_read_size;
+            outlier_slice.sizes_vec.ht_sizes.push_back(temp_ht_size);
+            outlier_slice.sizes_vec.ctg_sizes.push_back(temp_in.seq.size());
+            outlier_slice.sizes_vec.l_reads_count.push_back(temp_in.reads_left.size());
+            outlier_slice.sizes_vec.r_reads_count.push_back(temp_in.reads_right.size());
+            if(outlier_slice.l_max < temp_in.reads_left.size())
+                outlier_slice.l_max = temp_in.reads_left.size();
+            if(outlier_slice.r_max < temp_in.reads_right.size())
+                outlier_slice.r_max = temp_in.reads_right.size();
+            if(outlier_slice.max_contig_sz < temp_in.seq.size())
+                outlier_slice.max_contig_sz = temp_in.seq.size();
+        }
+    }
+}
+//#endif
 
 struct MerFreqs {
   // how many times this kmer has occurred: don't need to count beyond 65536

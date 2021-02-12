@@ -127,10 +127,11 @@ set(MHM2_LINK_LIBRARIES Threads::Threads SSW_LIBRARY ${ZLIB_LIBRARIES} MHM2_VERS
 
 if(ENABLE_CUDA)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-    include_directories("adept-sw")
+    include_directories("adept-sw" "gpu_loc_assem")
     add_subdirectory(adept-sw)
+    add_subdirectory(gpu_loc_assem)
     set_property(TARGET mhm2 PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS OFF) # just to be sure. It should be off in parent dir
-    set(MHM2_LINK_LIBRARIES ${MHM2_LINK_LIBRARIES} ADEPT_SW_LIBRARY_static)
+    set(MHM2_LINK_LIBRARIES ${MHM2_LINK_LIBRARIES} ADEPT_SW_LIBRARY_static GPU_LOC_STATIC)#GPU_LOC_STATIC
     target_link_libraries(mhm2
         ${MHM2_LINK_LIBRARIES}
         ${UPCXX_LIBRARIES} ${UPCXX_UTILS_LIBRARIES})
