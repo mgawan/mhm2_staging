@@ -55,9 +55,9 @@
 #include "upcxx_utils/three_tier_aggr_store.hpp"
 #include "upcxx_utils/limit_outstanding.hpp"
 #include "utils.hpp"
-//#ifdef ENABLE_GPUS
+#ifdef ENABLE_GPUS
 #include "gpu_loc_assem/driver.hpp"
-//#endif
+#endif
 
 using namespace std;
 using namespace upcxx;
@@ -312,7 +312,7 @@ class CtgsWithReadsDHT {
 };
 
 
-//#ifdef ENABLE_GPUS
+#ifdef ENABLE_GPUS
 
 
 vector<ReadSeq> reads_to_reads(vector<loc_assem_helper::ReadSeq> read_in){
@@ -369,50 +369,46 @@ CtgWithReads ctgs_to_ctgs(loc_assem_helper::CtgWithReads ctg_in){
   return ctg_out;
 }
 
-void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht){
-  //accum_data sizes_mid, sizes_outliers;
-  // uint32_t mid_l_max = 0, mid_r_max = 0, outlier_l_max = 0, outlier_r_max = 0, mid_max_contig_sz = 0;
-  // uint32_t outliers_max_contig_sz = 0;
+void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht, IntermittentTimer &ctg_buckets_timer){
+  ctg_buckets_timer.start();
   unsigned max_read_size = 300;
- for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
-    //progbar.update();
-   // Contig ext_contig;
-   // for(int i = 0; i < data_in.size(); i++){
-        loc_assem_helper::CtgWithReads temp_in = ctgs_to_ctgs(*ctg);//data_in[i];
-        temp_in.max_reads = temp_in.reads_left.size() > temp_in.reads_right.size() ? temp_in.reads_left.size() : temp_in.reads_right.size();
-        if(temp_in.max_reads == 0){
-            zero_slice.ctg_vec.push_back(temp_in);
-        }else if(temp_in.max_reads > 0 && temp_in.max_reads < 10){
-            mid_slice.ctg_vec.push_back(temp_in);
-            uint32_t temp_ht_size = temp_in.max_reads * max_read_size;
-            mid_slice.sizes_vec.ht_sizes.push_back(temp_ht_size);
-            mid_slice.sizes_vec.ctg_sizes.push_back(temp_in.seq.size());
-            mid_slice.sizes_vec.l_reads_count.push_back(temp_in.reads_left.size());
-            mid_slice.sizes_vec.r_reads_count.push_back(temp_in.reads_right.size());
-            if(mid_slice.l_max < temp_in.reads_left.size())
-                mid_slice.l_max = temp_in.reads_left.size();
-            if(mid_slice.r_max < temp_in.reads_right.size())
-                mid_slice.r_max = temp_in.reads_right.size();
-            if(mid_slice.max_contig_sz < temp_in.seq.size())
-                mid_slice.max_contig_sz = temp_in.seq.size();
-        }
-        else{
-            outlier_slice.ctg_vec.push_back(temp_in);
-            uint32_t temp_ht_size = temp_in.max_reads * max_read_size;
-            outlier_slice.sizes_vec.ht_sizes.push_back(temp_ht_size);
-            outlier_slice.sizes_vec.ctg_sizes.push_back(temp_in.seq.size());
-            outlier_slice.sizes_vec.l_reads_count.push_back(temp_in.reads_left.size());
-            outlier_slice.sizes_vec.r_reads_count.push_back(temp_in.reads_right.size());
-            if(outlier_slice.l_max < temp_in.reads_left.size())
-                outlier_slice.l_max = temp_in.reads_left.size();
-            if(outlier_slice.r_max < temp_in.reads_right.size())
-                outlier_slice.r_max = temp_in.reads_right.size();
-            if(outlier_slice.max_contig_sz < temp_in.seq.size())
-                outlier_slice.max_contig_sz = temp_in.seq.size();
-        }
+  for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()){
+    loc_assem_helper::CtgWithReads temp_in = ctgs_to_ctgs(*ctg);//data_in[i];
+    temp_in.max_reads = temp_in.reads_left.size() > temp_in.reads_right.size() ? temp_in.reads_left.size() : temp_in.reads_right.size();
+    if(temp_in.max_reads == 0){
+        zero_slice.ctg_vec.push_back(temp_in);
+    }else if(temp_in.max_reads > 0 && temp_in.max_reads < 10){
+        mid_slice.ctg_vec.push_back(temp_in);
+        uint32_t temp_ht_size = temp_in.max_reads * max_read_size;
+        mid_slice.sizes_vec.ht_sizes.push_back(temp_ht_size);
+        mid_slice.sizes_vec.ctg_sizes.push_back(temp_in.seq.size());
+        mid_slice.sizes_vec.l_reads_count.push_back(temp_in.reads_left.size());
+        mid_slice.sizes_vec.r_reads_count.push_back(temp_in.reads_right.size());
+        if(mid_slice.l_max < temp_in.reads_left.size())
+            mid_slice.l_max = temp_in.reads_left.size();
+        if(mid_slice.r_max < temp_in.reads_right.size())
+            mid_slice.r_max = temp_in.reads_right.size();
+        if(mid_slice.max_contig_sz < temp_in.seq.size())
+            mid_slice.max_contig_sz = temp_in.seq.size();
+    }else{
+          outlier_slice.ctg_vec.push_back(temp_in);
+          uint32_t temp_ht_size = temp_in.max_reads * max_read_size;
+          outlier_slice.sizes_vec.ht_sizes.push_back(temp_ht_size);
+          outlier_slice.sizes_vec.ctg_sizes.push_back(temp_in.seq.size());
+          outlier_slice.sizes_vec.l_reads_count.push_back(temp_in.reads_left.size());
+          outlier_slice.sizes_vec.r_reads_count.push_back(temp_in.reads_right.size());
+          if(outlier_slice.l_max < temp_in.reads_left.size())
+              outlier_slice.l_max = temp_in.reads_left.size();
+          if(outlier_slice.r_max < temp_in.reads_right.size())
+              outlier_slice.r_max = temp_in.reads_right.size();
+          if(outlier_slice.max_contig_sz < temp_in.seq.size())
+              outlier_slice.max_contig_sz = temp_in.seq.size();
     }
+  }
+
+  ctg_buckets_timer.stop();
 }
-//#endif
+#endif
 
 struct MerFreqs {
   // how many times this kmer has occurred: don't need to count beyond 65536
@@ -895,8 +891,46 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   WalkMetrics wm;
 
   IntermittentTimer count_mers_timer(__FILENAME__ + string(":") + "count_mers"),
-      walk_mers_timer(__FILENAME__ + string(":") + "walk_mers");
+      walk_mers_timer(__FILENAME__ + string(":") + "walk_mers"), 
+      ctg_buckets_timer(__FILENAME__ + string(":") + "bucket_ctgs"), 
+      loc_assem_kernel_timer(__FILENAME__ + string(":") + "GPU_locassem");
+
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
+
+#ifdef ENABLE_GPUS
+  locassm_driver::ctg_bucket zero_slice, mid_slice, outlier_slice;
+  bucket_ctgs(zero_slice, mid_slice, outlier_slice, ctgs_dht, ctg_buckets_timer);
+  ctg_buckets_timer.done_all();
+
+  loc_assem_kernel_timer.start();
+  unsigned max_read_size = 300;
+  local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, local_team().rank_n(),local_team().rank_me());
+  cout<<"first gpu call done from rank:"<<local_team().rank_me()<<endl;
+  local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, local_team().rank_n(),local_team().rank_me());
+  cout<<"second gpu call done from rank:"<<local_team().rank_me()<<endl;
+  loc_assem_kernel_timer.stop();
+  for(int j = 0; j < zero_slice.ctg_vec.size(); j++){
+    CtgWithReads temp_ctg = ctgs_to_ctgs(zero_slice.ctg_vec[j]);
+    ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
+  }
+//  zero_slice.clear();
+  for(int j = 0; j < mid_slice.ctg_vec.size(); j++){
+    CtgWithReads temp_ctg = ctgs_to_ctgs(mid_slice.ctg_vec[j]);
+    ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
+  }
+ // mid_slice.clear();
+  for(int j = 0; j < outlier_slice.ctg_vec.size(); j++){
+    CtgWithReads temp_ctg = ctgs_to_ctgs(outlier_slice.ctg_vec[j]);
+    ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
+  }
+ // outlier_slice.clear();
+  ctg_buckets_timer.done_all();
+  loc_assem_kernel_timer.done_all();
+  std::cout<<"contigs done from rank:"<<rank_me()<<std::endl;
+  barrier();
+#endif
+
+#ifndef ENABLE_GPUS
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()) {
     progbar.update();
     Contig ext_contig;
@@ -928,6 +962,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
                  (double)(tot_sum_ext + tot_sum_clen) / tot_sum_clen, "\n");
   if (tot_num_walks)
     SLOG_VERBOSE("Average walk length ", tot_sum_ext / tot_num_walks, ", max walk length ", tot_max_walk_len, "\n");
+
+#endif
 }
 
 void localassm(int max_kmer_len, int kmer_len, vector<PackedReads *> &packed_reads_list, int insert_avg, int insert_stddev,
