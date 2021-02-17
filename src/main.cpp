@@ -86,6 +86,8 @@ int main(int argc, char **argv) {
   if (!options->load(argc, argv)) return 127;
   SLOG_VERBOSE("Executed as: ", executed, "\n");
 
+  SLOG_VERBOSE(KLCYAN, "Timing reported as min/my/average/max, balance", KNORM, "\n");
+
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
