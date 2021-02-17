@@ -232,7 +232,7 @@ class CtgsWithReadsDHT {
       ctgs_map_t::value_type record = {
           .first = ctg_data.cid,
           .second = {
-              .cid = ctg_data.cid, .seq = std::move(ctg_data.seq), .depth = ctg_data.depth, .reads_left = {}, .reads_right = {}}};
+              .cid = ctg_data.cid, .seq = std::move(ctg_data.seq), .depth = ctg_data.depth, .max_reads = 0, .reads_left = {}, .reads_right = {}}};
       it = ctgs_map->insert(it, std::move(record));
       DBG_VERBOSE("Added contig cid=", it->first, ": ", it->second.seq, " depth=", it->second.depth, "\n");
     });
@@ -904,10 +904,12 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 
   loc_assem_kernel_timer.start();
   unsigned max_read_size = 300;
-  local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, local_team().rank_n(),local_team().rank_me());
-  cout<<"first gpu call done from rank:"<<local_team().rank_me()<<endl;
-  local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, local_team().rank_n(),local_team().rank_me());
-  cout<<"second gpu call done from rank:"<<local_team().rank_me()<<endl;
+  if(mid_slice.ctg_vec.size() > 0)
+     local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me());
+ // cout<<"first gpu call done from rank:"<<local_team().rank_me()<<endl;
+  if(outlier_slice.ctg_vec.size() > 0)
+     local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me());
+ // cout<<"second gpu call done from rank:"<<local_team().rank_me()<<endl;
   loc_assem_kernel_timer.stop();
   for(int j = 0; j < zero_slice.ctg_vec.size(); j++){
     CtgWithReads temp_ctg = ctgs_to_ctgs(zero_slice.ctg_vec[j]);
@@ -926,7 +928,6 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
  // outlier_slice.clear();
   ctg_buckets_timer.done_all();
   loc_assem_kernel_timer.done_all();
-  std::cout<<"contigs done from rank:"<<rank_me()<<std::endl;
   barrier();
 #endif
 

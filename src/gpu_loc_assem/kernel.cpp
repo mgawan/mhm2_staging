@@ -248,9 +248,9 @@ loc_ht_bool& ht_get(loc_ht_bool* thread_ht, cstr_type kmer_key, uint32_t max_siz
         }
         hash_val = (hash_val +1 ) %max_size;//hash_val = (hash_val + 1) & (HT_SIZE -1);
         if(hash_val == orig_hash){ // loop till you reach the same starting positions and then return error
-            printf("*****end reached, hashtable full*****\n"); // for debugging
-            printf("*****end reached, hashtable full*****\n");
-            printf("*****end reached, hashtable full*****\n");
+            printf("*****end reached, bool hashtable full*****\n"); // for debugging
+            printf("*****end reached, bool hashtable full*****\n");
+            printf("*****end reached, bool hashtable full*****\n");
            // return loc_ht(cstr_type(NULL,-1), MerFreqs());
         }
     }
@@ -438,13 +438,19 @@ uint32_t* rds_count_r_sum, double& loc_ctg_depth, int& mer_len, uint32_t& qual_o
             if (qual_diff >= LASSM_MIN_QUAL) temp_Mer.val.low_q_exts.inc(ext, 1);
             if (qual_diff >= LASSM_MIN_HI_QUAL) temp_Mer.val.hi_q_exts.inc(ext, 1);
 
-            temp_Mer.val.set_ext(loc_ctg_depth);
+        //    temp_Mer.val.set_ext(loc_ctg_depth);
         }
         __syncwarp();
        running_sum_len += read.length; // right before the for loop ends, update the prev_len to offset next read correctly
     }
     __syncwarp();
 
+	for(auto k = lane_id; k < max_ht_size; k+=32){
+	  if(thrd_loc_ht[k].key.length != EMPTY){
+	     thrd_loc_ht[k].val.set_ext(loc_ctg_depth);
+	   }
+	}
+   __syncwarp();
     // #ifdef DEBUG_PRINT_GPU
     // if(threadIdx.x == test){
     // for(int k = 0; k < max_ht_size; k++){

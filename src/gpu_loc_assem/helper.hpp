@@ -81,7 +81,9 @@ inline void revcomp(char* str, char* str_rc, int size) {
         str_rc[size_rc]= 'N';
         break;
       default:
-        print_vals("Illegal char", str[i], "in revcomp of ");
+        print_vals("Illegal char", str[i], "in revcomp of, printing string: ");
+	for(auto k = 0; k < size; k++) std::cout<<str[k];
+	std::cout<<std::endl;
     }
     size_rc++;
   }
@@ -100,9 +102,10 @@ inline std::string revcomp(std::string instr) {
         str_rc += 'N';
         break;
       default:
-        print_vals("Illegal char", instr[i], "in revcomp of ");
+        print_vals("Illegal char", instr[i], "in revcomp of(string) ");
     }
   }
+
   return str_rc;
 }
 }
