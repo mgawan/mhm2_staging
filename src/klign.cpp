@@ -753,7 +753,7 @@ class KmerCtgDHT {
   void log_ctg_bytes_fetched() {
     auto all_ctg_bytes_fetched = reduce_one(ctg_bytes_fetched, op_fast_add, 0).wait();
     auto max_ctg_bytes_fetched = reduce_one(ctg_bytes_fetched, op_fast_max, 0).wait();
-    SLOG("Contig bytes fetched ", get_size_str(all_ctg_bytes_fetched), " balance ",
+    SLOG_VERBOSE("Contig bytes fetched ", get_size_str(all_ctg_bytes_fetched), " balance ",
          (double)all_ctg_bytes_fetched / (rank_n() * max_ctg_bytes_fetched), "\n");
   }
 };
@@ -1002,7 +1002,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads 
   auto all_kmer_cache_hits = reduce_one(kmer_cache_hits, op_fast_add, 0).wait();
   auto all_lookups = reduce_one(num_lookups, op_fast_add, 0).wait();
 
-  SLOG("Got ", perc_str(all_kmer_cache_hits, all_lookups), " cache hits for ", all_lookups, " kmer lookups\n");
+  SLOG_VERBOSE("Got ", perc_str(all_kmer_cache_hits, all_lookups), " cache hits for ", all_lookups, " kmer lookups\n");
 
   // make sure to do any outstanding kernel block alignments
 
@@ -1031,7 +1031,7 @@ static double do_alignments(KmerCtgDHT<MAX_K> &kmer_ctg_dht, vector<PackedReads 
   auto all_kmer_bytes_sent = reduce_one(kmer_bytes_sent, op_fast_add, 0).wait();
   auto all_kmer_bytes_received = reduce_one(kmer_bytes_received, op_fast_add, 0).wait();
 
-  SLOG("Sent ", get_size_str(all_kmer_bytes_sent), " and received ", get_size_str(all_kmer_bytes_received), " of kmers\n");
+  SLOG_VERBOSE("Sent ", get_size_str(all_kmer_bytes_sent), " and received ", get_size_str(all_kmer_bytes_received), " of kmers\n");
 
   kmer_ctg_dht.log_ctg_bytes_fetched();
 

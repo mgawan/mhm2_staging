@@ -506,7 +506,8 @@ class KmerDHT {
   bool kmer_exists(Kmer<MAX_K> kmer) {
     Kmer<MAX_K> kmer_rc = kmer.revcomp();
     if (kmer_rc < kmer) kmer.swap(kmer_rc);
-    return rpc(get_kmer_target_rank(kmer, &kmer_rc),
+    return rpc(
+               get_kmer_target_rank(kmer, &kmer_rc),
                [](Kmer<MAX_K> kmer, dist_object<KmerMap> &kmers) -> bool {
                  const auto it = kmers->find(kmer);
                  if (it == kmers->end()) return false;
@@ -556,10 +557,10 @@ class KmerDHT {
     auto max_kmers_processed = reduce_one(_num_kmers_counted, op_fast_max, 0).wait();
     auto avg_local_kmers = reduce_one(_num_kmers_counted_locally, op_fast_add, 0).wait() / rank_n();
     auto max_local_kmers = reduce_one(_num_kmers_counted_locally, op_fast_max, 0).wait();
-    SLOG("Avg kmers processed per rank ", avg_kmers_processed, " (balance ", (double)avg_kmers_processed / max_kmers_processed,
-         ")\n");
-    SLOG("Avg local kmers processed per rank ", perc_str(avg_local_kmers, avg_kmers_processed), " (balance ",
-         (double)avg_local_kmers / max_local_kmers, ")\n");
+    SLOG_VERBOSE("Avg kmers processed per rank ", avg_kmers_processed, " (balance ",
+                 (double)avg_kmers_processed / max_kmers_processed, ")\n");
+    SLOG_VERBOSE("Avg local kmers processed per rank ", perc_str(avg_local_kmers, avg_kmers_processed), " (balance ",
+                 (double)avg_local_kmers / max_local_kmers, ")\n");
   }
 
   void purge_kmers(int threshold) {
