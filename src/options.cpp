@@ -320,9 +320,8 @@ void Options::cleanup() {
 
 bool Options::load(int argc, char **argv) {
   // MHM2 version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
-  string full_version_str = "MHM2 version " + string(MHM2_VERSION) + "-" + string(MHM2_BRANCH) + " " + string(MHM2_BUILD_TYPE) +
-                            " with upcxx-utils " + string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE) + ", " +
-                            WITH_CUDA + ", " + MAX_BUILD_KMER_STR;
+ string full_version_str = "MHM2 version " + string(MHM2_VERSION) + "-" + string(MHM2_BRANCH) + " with upcxx-utils " +
+                           string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
   // basic options - see user guide
   app.add_option("-r, --reads", reads_fnames,
