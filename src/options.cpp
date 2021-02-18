@@ -84,7 +84,10 @@ bool Options::extract_previous_lens(vector<unsigned> &lens, unsigned k) {
 
 bool Options::find_restart(string stage_type, int k) {
   string new_ctgs_fname(stage_type + "-" + to_string(k) + ".fasta");
-  if (!file_exists(new_ctgs_fname)) return false;
+  if (!file_exists(new_ctgs_fname)) {
+    SLOG("Could not find restart file: ", new_ctgs_fname, "\n");
+    return false;
+  }
   if (stage_type == "contigs") {
     if (k == kmer_lens.back() && stage_type == "contigs") {
       max_kmer_len = kmer_lens.back();
@@ -151,7 +154,8 @@ void Options::get_restart_options() {
   }
 }
 
-void Options::setup_output_dir() {
+double Options::setup_output_dir() {
+  auto t_start = chrono::high_resolution_clock::now();
   if (output_dir.empty()) DIE("Invalid empty ouput_dir");
   if (!upcxx::rank_me()) {
     // create the output directory (and possibly stripe it)
@@ -222,7 +226,7 @@ void Options::setup_output_dir() {
     // this should avoid contention on the filesystem when ranks start racing to creating these top levels
     char basepath[256];
     for (int i = 0; i < rank_n(); i += 1000) {
-      sprintf(basepath, "%s/%08d", per_rank.c_str(), i);
+      sprintf(basepath, "%s/%08d", per_rank.c_str(), i / 1000);
       status = mkdir(basepath, S_IRWXU | S_IRWXG | S_IRWXO | S_ISGID /*use default mode/umask */);
       if (status != 0 && errno != EEXIST) {
         SWARN("Could not create '", basepath, "'! ", strerror(errno));
@@ -265,9 +269,13 @@ void Options::setup_output_dir() {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
   upcxx::barrier();
+
+  chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - t_start;
+  return t_elapsed.count();
 }
 
-void Options::setup_log_file() {
+double Options::setup_log_file() {
+  auto t_start = chrono::high_resolution_clock::now();
   if (!upcxx::rank_me()) {
     // check to see if mhm2.log exists. If so, and not restarting, rename it
     if (file_exists("mhm2.log") && !restart) {
@@ -282,6 +290,8 @@ void Options::setup_log_file() {
     }
   }
   upcxx::barrier();
+  chrono::duration<double> t_elapsed = chrono::high_resolution_clock::now() - t_start;
+  return t_elapsed.count();
 }
 
 Options::Options() {
@@ -310,8 +320,8 @@ void Options::cleanup() {
 
 bool Options::load(int argc, char **argv) {
   // MHM2 version v0.1-a0decc6-master (Release) built on 2020-04-08T22:15:40 with g++
-  string full_version_str = "MHM2 version " + string(MHM2_VERSION) + "-" + string(MHM2_BRANCH) + " with upcxx-utils " +
-                            string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
+ string full_version_str = "MHM2 version " + string(MHM2_VERSION) + "-" + string(MHM2_BRANCH) + " with upcxx-utils " +
+                           string(UPCXX_UTILS_VERSION) + " built on " + string(MHM2_BUILD_DATE);
   CLI::App app(full_version_str);
   // basic options - see user guide
   app.add_option("-r, --reads", reads_fnames,
@@ -459,8 +469,9 @@ bool Options::load(int argc, char **argv) {
     output_dir_opt->default_val(output_dir);
   }
 
-  setup_output_dir();
-  setup_log_file();
+  double setup_time = 0;
+  setup_time += setup_output_dir();
+  setup_time += setup_log_file();
 
   // make sure we only use defaults for kmer lens if none of them were set by the user
   if (!*kmer_lens_opt && !*scaff_kmer_lens_opt) {
@@ -526,7 +537,8 @@ bool Options::load(int argc, char **argv) {
 
   barrier();
   chrono::duration<double> logger_t_elapsed = chrono::high_resolution_clock::now() - logger_t;
-  SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), "\n");
+  SLOG_VERBOSE("init_logger took ", setprecision(2), fixed, logger_t_elapsed.count(), " s at ", get_current_time(), " (",
+               setup_time, " s for io)\n");
 
 #ifdef DEBUG
   open_dbg("debug");
