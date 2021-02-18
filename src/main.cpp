@@ -64,7 +64,15 @@ void merge_reads(vector<string> reads_fname_list, int qual_offset, double &elaps
                  vector<PackedReads *> &packed_reads_list, bool checkpoint);
 
 int main(int argc, char **argv) {
+  BaseTimer init_timer("upcxx::init");
+  BaseTimer first_barrier("FirstBarrier");
+  init_timer.start();
   upcxx::init();
+  auto init_entry_msm_fut = init_timer.reduce_start();
+  init_timer.stop();
+  auto init_timings_fut = init_timer.reduce_timings();
+  upcxx::promise<> report_init_timings(1);
+
 #if defined(ENABLE_GASNET_STATS)
   const char *gasnet_stats_stage = getenv("GASNET_STATS_STAGE");
   const char *gasnet_statsfile = getenv("GASNET_STATSFILE");
@@ -73,10 +81,21 @@ int main(int argc, char **argv) {
     _gasnet_stats_stage = string(gasnet_stats_stage);
   }
 #endif
+
   // we wish to have all ranks start at the same time to determine actual timing
+  first_barrier.start();
   barrier();
+  first_barrier.stop();
+  when_all(report_init_timings.get_future(), init_entry_msm_fut, init_timings_fut, first_barrier.reduce_timings())
+      .then([](upcxx_utils::MinSumMax<double> entry_msm, upcxx_utils::ShTimings sh_timings,
+               upcxx_utils::ShTimings sh_first_barrier_timings) {
+        SLOG_VERBOSE("upcxx::init Before=", entry_msm.to_string(), "\n");
+        SLOG_VERBOSE("upcxx::init After=", sh_timings->to_string(), "\n");
+        SLOG_VERBOSE("upcxx::init FirstBarrier=", sh_first_barrier_timings->to_string(), "\n");
+      });
   auto start_t = std::chrono::high_resolution_clock::now();
   auto init_start_t = start_t;
+
   // keep the exact command line arguments before options may have modified anything
   string executed = argv[0];
   executed += ".py";  // assume the python wrapper was actually called
@@ -85,6 +104,7 @@ int main(int argc, char **argv) {
   // if we don't load, return "command not found"
   if (!options->load(argc, argv)) return 127;
   SLOG_VERBOSE("Executed as: ", executed, "\n");
+  report_init_timings.fulfill_anonymous(1);
 
   SLOG_VERBOSE(KLCYAN, "Timing reported as min/my/average/max, balance", KNORM, "\n");
 
