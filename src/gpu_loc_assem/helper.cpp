@@ -62,22 +62,22 @@ uint32_t& max_ctg_size, uint32_t& total_r_reads, uint32_t& total_l_reads, uint32
       //ctgs_map->insert({ctg_with_reads.cid, ctg_with_reads});
       data_in->push_back(temp_in);
     }
-    print_vals("inside max:", max_r_count);
+  //  print_vals("inside max:", max_r_count);
   }
 
   void print_loc_data(std::vector<loc_assem_helper::CtgWithReads> *data_in){
         for(int i = 0; i < (*data_in).size(); i++){
-        print_vals("contig_id: ", (*data_in)[i].cid, "\n seq: ", (*data_in)[i].seq, "\n depth: ", (*data_in)[i].depth, "\n right: ", (*data_in)[i].reads_right.size(), "\n left: ",(*data_in)[i].reads_left.size());
-        print_vals("**READS**");
+    //    print_vals("contig_id: ", (*data_in)[i].cid, "\n seq: ", (*data_in)[i].seq, "\n depth: ", (*data_in)[i].depth, "\n right: ", (*data_in)[i].reads_right.size(), "\n left: ",(*data_in)[i].reads_left.size());
+      //  print_vals("**READS**");
         for(int j = 0; j< (*data_in)[i].reads_left.size(); j++){
             loc_assem_helper::ReadSeq read = (*data_in)[i].reads_left[j];
-            print_vals(read.read_id, " ", read.seq, " ", read.quals);
-            print_vals("READ_SIZE:", read.seq.size(), "QUALS_SIZE:", read.quals.size());
+        //    print_vals(read.read_id, " ", read.seq, " ", read.quals);
+          //  print_vals("READ_SIZE:", read.seq.size(), "QUALS_SIZE:", read.quals.size());
         }
         for(int j = 0; j< (*data_in)[i].reads_right.size(); j++){
             loc_assem_helper::ReadSeq read = (*data_in)[i].reads_right[j];
-            print_vals(read.read_id, " ", read.seq, " ", read.quals);
-            print_vals("READ_SIZE:", read.seq.size(), "QUALS_SIZE:", read.quals.size());
+           // print_vals(read.read_id, " ", read.seq, " ", read.quals);
+           // print_vals("READ_SIZE:", read.seq.size(), "QUALS_SIZE:", read.quals.size());
         }
 
     }

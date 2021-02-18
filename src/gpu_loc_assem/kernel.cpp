@@ -279,9 +279,9 @@ loc_ht& ht_get_atomic(loc_ht* thread_ht, cstr_type kmer_key, uint32_t max_size){
         }
         hash_val = (hash_val +1 ) %max_size;//hash_val = (hash_val + 1) & (HT_SIZE -1);
         if(hash_val == orig_hash){ // loop till you reach the same starting positions and then return error
-            printf("*****end reached, hashtable full*****\n"); // for debugging
-            printf("*****end reached, hashtable full*****\n");
-            printf("*****end reached, hashtable full*****\n");
+            printf("*****end reached, hashtable full(atomic)*****\n"); // for debugging
+            printf("*****end reached, hashtable full(atomic)*****\n");
+            printf("*****end reached, hashtable full(atomic)*****\n");
         }
     }
 

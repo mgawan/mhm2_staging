@@ -9,22 +9,22 @@
 
 //templated functions needs to be in the same translation unit
 template<typename T>
-void print_log(T _log){
-    std::cout<<_log<<std::endl;
+void print_log(std::ofstream &file_n, T _log){
+    file_n<<_log<<std::endl;
 }
 
 template<typename T>
-void print_vals(T val){
-    print_log(val);
+void print_vals(std::ofstream &file_n, T val){
+    print_log(file_n, val);
 }
 
 template<typename T, typename... Types>
-void print_vals(T val, Types... val_){
+void print_vals(std::ofstream &file_n, T val, Types... val_){
     if(sizeof...(val_) == 0){
-        print_vals(val);
+        print_vals(file_n, val);
     }else{
-        print_vals(val);
-        print_vals(val_...);
+        print_vals(file_n, val);
+        print_vals(file_n, val_...);
         }
 }
 
@@ -81,9 +81,9 @@ inline void revcomp(char* str, char* str_rc, int size) {
         str_rc[size_rc]= 'N';
         break;
       default:
-        print_vals("Illegal char", str[i], "in revcomp of, printing string: ");
-	for(auto k = 0; k < size; k++) std::cout<<str[k];
-	std::cout<<std::endl;
+        std::cout<<"Illegal char:"<< str[i]<< " in revcomp of, printing string: \n";
+	//for(auto k = 0; k < size; k++) std::cout<<str[k];
+	//std::cout<<std::endl;
     }
     size_rc++;
   }
@@ -102,7 +102,7 @@ inline std::string revcomp(std::string instr) {
         str_rc += 'N';
         break;
       default:
-        print_vals("Illegal char", instr[i], "in revcomp of(string) ");
+        std::cout<<"Illegal char:"<<instr[i]<< "in revcomp of(string) \n";
     }
   }
 

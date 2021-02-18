@@ -898,18 +898,21 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
 
 #ifdef ENABLE_GPUS
+  std::ofstream gpu_debug_file("/gpfs/alpine/scratch/mgawan/bif115/debug/rank_"+std::to_string(rank_me()));
   locassm_driver::ctg_bucket zero_slice, mid_slice, outlier_slice;
   bucket_ctgs(zero_slice, mid_slice, outlier_slice, ctgs_dht, ctg_buckets_timer);
   ctg_buckets_timer.done_all();
 
   loc_assem_kernel_timer.start();
   unsigned max_read_size = 300;
-  if(mid_slice.ctg_vec.size() > 0)
-     local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me());
- // cout<<"first gpu call done from rank:"<<local_team().rank_me()<<endl;
-  if(outlier_slice.ctg_vec.size() > 0)
-     local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me());
- // cout<<"second gpu call done from rank:"<<local_team().rank_me()<<endl;
+  if(mid_slice.ctg_vec.size() > 0){
+     local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), gpu_debug_file, rank_me());
+     gpu_debug_file<<"first gpu call with:"<<mid_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
+   }
+  if(outlier_slice.ctg_vec.size() > 0){
+     local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), gpu_debug_file, rank_me());
+     gpu_debug_file<<"second gpu call with:"<< outlier_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
+   }
   loc_assem_kernel_timer.stop();
   for(int j = 0; j < zero_slice.ctg_vec.size(); j++){
     CtgWithReads temp_ctg = ctgs_to_ctgs(zero_slice.ctg_vec[j]);
