@@ -80,7 +80,7 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
 
 
     print_vals(gpu_debug_file, "Total GPU mem required (GBs):", (double)gpu_mem_req/(1024*1024*1024), "my_rank:",g_rank_me);                     
-    size_t gpu_mem_avail = get_device_mem((ranks/total_gpus_avail), my_gpu_id);
+    size_t gpu_mem_avail = get_device_mem((ranks/6), my_gpu_id);// FIXME: need to find a way to detect gpus per node on summit (fixing it to 6 here)
     float factor = 0.90;
     print_vals(gpu_debug_file, "GPU Mem avail(0.9) (MB):",((double)gpu_mem_avail*factor)/(1024*1024)); 
     int iterations = ceil(((double)gpu_mem_req)/((double)gpu_mem_avail*factor)); // 0.8 is to buffer for the extra mem that is used when allocating once and using again
