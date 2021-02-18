@@ -8,6 +8,12 @@
 enable_testing()
 add_subdirectory(googletest)
 
+if(ENABLE_CUDA)
+    add_definitions(-DENABLE_GPUS)
+    message(STATUS "Building tests for GPUs with CUDA")
+    include_directories(${CMAKE_SOURCE_DIR}/src)
+endif()
+
 set(BINARY mhm2_test)
 
 file(GLOB TEST_SOURCES LIST_DIRECTORIES false *.hpp *.cpp)

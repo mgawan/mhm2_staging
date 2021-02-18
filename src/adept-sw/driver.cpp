@@ -230,12 +230,12 @@ double adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short matc
   cudaErrchk(cudaMallocHost(&driver_state->offsetB_h, sizeof(int) * KLIGN_GPU_BLOCK_SIZE));
   // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost2=" << elapsed.count();
 
-  // FIXME: hack for max contig and read size
-  cudaErrchk(cudaMalloc(&driver_state->strA_d, max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
+  // FIXME: hack for max contig and read size -> multiplying max_rlen by 2 for contigs
+  cudaErrchk(cudaMalloc(&driver_state->strA_d, 2 * max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
   cudaErrchk(cudaMalloc(&driver_state->strB_d, max_rlen * KLIGN_GPU_BLOCK_SIZE * sizeof(char)));
   // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocs=" << elapsed.count();
 
-  cudaErrchk(cudaMallocHost(&driver_state->strA, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
+  cudaErrchk(cudaMallocHost(&driver_state->strA, 2 * sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
   cudaErrchk(cudaMallocHost(&driver_state->strB, sizeof(char) * max_rlen * KLIGN_GPU_BLOCK_SIZE));
   // elapsed =  std::chrono::high_resolution_clock::now() - t; os << " mallocHost3=" << elapsed.count();
 
@@ -249,7 +249,7 @@ double adept_sw::GPUDriver::init(int upcxx_rank_me, int upcxx_rank_n, short matc
 adept_sw::GPUDriver::~GPUDriver() {
   // won't have been allocated if there was no GPU present
   if (!alignments.ref_begin) return;
-
+  cudaErrchk(cudaSetDevice(driver_state->my_gpu_id)); // setting device mapping again
   cudaErrchk(cudaFreeHost(alignments.ref_begin));
   cudaErrchk(cudaFreeHost(alignments.ref_end));
   cudaErrchk(cudaFreeHost(alignments.query_begin));
@@ -280,6 +280,7 @@ void adept_sw::GPUDriver::kernel_block() {
 
 void adept_sw::GPUDriver::run_kernel_forwards(std::vector<std::string>& reads, std::vector<std::string>& contigs,
                                               unsigned maxReadSize, unsigned maxContigSize) {
+  cudaErrchk(cudaSetDevice(driver_state->my_gpu_id)); // setting device mapping again
   unsigned totalAlignments = contigs.size();  // assuming that read and contig vectors are same length
 
   short* alAend = alignments.ref_end;
@@ -413,10 +414,4 @@ void adept_sw::GPUDriver::run_kernel_backwards(std::vector<std::string>& reads, 
   asynch_mem_copies_dth(driver_state->gpu_data, alAbeg, alBbeg, top_scores_cpu, sequences_per_stream, sequences_stream_leftover,
                         driver_state->streams_cuda);
   cudaErrchk(cudaEventRecord(driver_state->event));
-
-  alAbeg += totalAlignments;
-  alBbeg += totalAlignments;
-  alAend += totalAlignments;
-  alBend += totalAlignments;
-  top_scores_cpu += totalAlignments;
 }

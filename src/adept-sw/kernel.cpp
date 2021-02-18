@@ -321,12 +321,12 @@ __global__ void gpu_bsw::sequence_dna_kernel(char* seqA_array, char* seqB_array,
 
   if (thread_Id == 0) {
     if (lengthSeqA < lengthSeqB) {
-      seqB_align_end[block_Id] = thread_max_i;
-      seqA_align_end[block_Id] = thread_max_j;
+      seqB_align_end[block_Id] = thread_max_i > 0 ? thread_max_i - 1 : 0; // translate from len to index
+      seqA_align_end[block_Id] = thread_max_j > 0 ? thread_max_j - 1 : 0; // translate from len to index
       top_scores[block_Id] = thread_max;
     } else {
-      seqA_align_end[block_Id] = thread_max_i;
-      seqB_align_end[block_Id] = thread_max_j;
+      seqA_align_end[block_Id] = thread_max_i > 0 ? thread_max_i - 1 : 0; // translate from len to index
+      seqB_align_end[block_Id] = thread_max_j > 0 ? thread_max_j - 1 : 0; // translate from len to index
       top_scores[block_Id] = thread_max;
     }
   }
