@@ -106,6 +106,8 @@ int main(int argc, char **argv) {
   SLOG_VERBOSE("Executed as: ", executed, "\n");
   report_init_timings.fulfill_anonymous(1);
 
+  SLOG_VERBOSE(KLCYAN, "Timing reported as min/my/average/max, balance", KNORM, "\n");
+
   ProgressBar::SHOW_PROGRESS = options->show_progress;
   auto max_kmer_store = options->max_kmer_store_mb * ONE_MB;
 
