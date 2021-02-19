@@ -68,7 +68,7 @@ struct CtgWithReads {
 };
 
 
-inline void revcomp(char* str, char* str_rc, int size) {
+inline void revcomp(char* str, char* str_rc, int size, int rank) {
   int size_rc = 0;
   for (int i = size - 1; i >= 0; i--) {
     switch (str[i]) {
@@ -81,15 +81,16 @@ inline void revcomp(char* str, char* str_rc, int size) {
         str_rc[size_rc]= 'N';
         break;
       default:
-        std::cout<<"Illegal char:"<< str[i]<< " in revcomp of, printing string: \n";
-	//for(auto k = 0; k < size; k++) std::cout<<str[k];
-	//std::cout<<std::endl;
+        std::cout<<"Illegal char:"<< str[i]<< " in revcomp from rank:"<<rank<<", printing string: \n";
+	for(auto k = 0; k < size; k++) std::cout<<str[k];
+	std::cout<<std::endl;
+	break;
     }
     size_rc++;
   }
 }
 
-inline std::string revcomp(std::string instr) {
+inline std::string revcomp(std::string instr, int rank) {
   std::string str_rc;
   for (int i = instr.size() - 1; i >= 0; i--) {
     switch (instr[i]) {
@@ -102,7 +103,9 @@ inline std::string revcomp(std::string instr) {
         str_rc += 'N';
         break;
       default:
-        std::cout<<"Illegal char:"<<instr[i]<< "in revcomp of(string) \n";
+        std::cout<<"Illegal char:"<<instr[i]<< "in revcomp of(string) from rank:"<<rank<<" \n";
+	std::cout<<"string:"<<instr<<std::endl;
+	break;
     }
   }
 

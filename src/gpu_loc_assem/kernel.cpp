@@ -258,7 +258,7 @@ loc_ht_bool& ht_get(loc_ht_bool* thread_ht, cstr_type kmer_key, uint32_t max_siz
 }
 
 __device__ 
-loc_ht& ht_get_atomic(loc_ht* thread_ht, cstr_type kmer_key, uint32_t max_size){
+loc_ht& ht_get_atomic(loc_ht* thread_ht, cstr_type kmer_key, uint32_t max_size, int idx){
     unsigned hash_val = MurmurHashAligned2(kmer_key, max_size);
     unsigned orig_hash = hash_val;
 
@@ -272,16 +272,13 @@ loc_ht& ht_get_atomic(loc_ht* thread_ht, cstr_type kmer_key, uint32_t max_size){
         }
         __syncwarp(mask);
         if(prev != EMPTY && thread_ht[hash_val].key == kmer_key){
-            //printf("key found, returning\n");// keep this for debugging
             return thread_ht[hash_val];
         }else if (prev == EMPTY){
             return thread_ht[hash_val];
         }
         hash_val = (hash_val +1 ) %max_size;//hash_val = (hash_val + 1) & (HT_SIZE -1);
         if(hash_val == orig_hash){ // loop till you reach the same starting positions and then return error
-            printf("*****end reached, hashtable full(atomic)*****\n"); // for debugging
-            printf("*****end reached, hashtable full(atomic)*****\n");
-            printf("*****end reached, hashtable full(atomic)*****\n");
+            printf("*****end reached, hashtable full(atomic) from: %d, thread:%d*****\n", idx, threadIdx.x); // for debugging
         }
     }
 
@@ -425,9 +422,9 @@ uint32_t* rds_count_r_sum, double& loc_ctg_depth, int& mer_len, uint32_t& qual_o
         int num_mers = read.length - mer_len;
         for( int start = lane_id; start < num_mers; start+=32){
             //TODO: on cpu side add a check that if a certain read contains 'N', 
-            cstr_type mer(read.start_ptr + start, mer_len);
-            loc_ht &temp_Mer = ht_get_atomic(thrd_loc_ht, mer, max_ht_size);
-            
+	    cstr_type mer(read.start_ptr + start, mer_len);
+            loc_ht &temp_Mer = ht_get_atomic(thrd_loc_ht, mer, max_ht_size, idx);
+           //TODO: is an additional synch needed here? 
             int ext_pos = start + mer_len;
           //  assert(ext_pos < (int)read.length); // TODO: verify that assert works on gpu, for now commenting it out and replacing with printf
           if(ext_pos >= (int) read.length)

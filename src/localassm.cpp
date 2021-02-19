@@ -372,6 +372,9 @@ CtgWithReads ctgs_to_ctgs(loc_assem_helper::CtgWithReads ctg_in){
 void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht, IntermittentTimer &ctg_buckets_timer){
   ctg_buckets_timer.start();
   unsigned max_read_size = 300;
+  zero_slice.l_max = 0, zero_slice.r_max = 0, zero_slice.max_contig_sz = 0;
+  mid_slice.l_max = 0, mid_slice.r_max = 0, mid_slice.max_contig_sz = 0;
+  outlier_slice.l_max = 0, outlier_slice.r_max = 0, outlier_slice.max_contig_sz = 0;
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()){
     loc_assem_helper::CtgWithReads temp_in = ctgs_to_ctgs(*ctg);//data_in[i];
     temp_in.max_reads = temp_in.reads_left.size() > temp_in.reads_right.size() ? temp_in.reads_left.size() : temp_in.reads_right.size();
@@ -907,11 +910,24 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   unsigned max_read_size = 300;
   if(mid_slice.ctg_vec.size() > 0){
      local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), gpu_debug_file, rank_me());
-     gpu_debug_file<<"first gpu call with:"<<mid_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
+     //gpu_debug_file<<"first gpu call with:"<<mid_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
    }
   if(outlier_slice.ctg_vec.size() > 0){
+     /*if(rank_me() == 1055){
+	std::ofstream data_dump("/gpfs/alpine/scratch/mgawan/bif115/debug/data_dump.dat");
+	for(auto l = 0; l < outlier_slice.ctg_vec.size(); l++){
+	   std::stringstream ss;
+	   CtgWithReads temp = ctgs_to_ctgs(outlier_slice.ctg_vec[l]);
+	   ss<<temp.cid<<" "<<temp.seq<<" "<<temp.depth<<" "<<temp.reads_left.size()<<" "<<temp.reads_right.size();
+	   for(int h = 0; h < temp.reads_left.size(); h++) ss<<" "<<temp.reads_left[h].read_id<<" "<<temp.reads_left[h].seq<<" "<<temp.reads_left[h].quals;
+	   for(int h = 0; h < temp.reads_right.size(); h++) ss<<" "<<temp.reads_right[h].read_id<<" "<<temp.reads_right[h].seq<<" "<<temp.reads_right[h].quals;
+	   data_dump<<ss.rdbuf()<<std::endl;
+	}
+	data_dump.flush();
+	data_dump.close();
+     }*/
      local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), gpu_debug_file, rank_me());
-     gpu_debug_file<<"second gpu call with:"<< outlier_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
+    // gpu_debug_file<<"second gpu call with:"<< outlier_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
    }
   loc_assem_kernel_timer.stop();
   for(int j = 0; j < zero_slice.ctg_vec.size(); j++){
