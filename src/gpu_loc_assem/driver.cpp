@@ -50,7 +50,7 @@ int locassm_driver::get_gpu_per_node() {
   return deviceCount;
 }
 
-void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithReads>& data_in, uint32_t max_ctg_size, uint32_t max_read_size, uint32_t max_r_count, uint32_t max_l_count, int mer_len, int max_kmer_len, accum_data& sizes_vecs, int walk_len_limit, int qual_offset, int ranks, int my_rank, std::ofstream &gpu_debug_file, int g_rank_me)
+void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithReads>& data_in, uint32_t max_ctg_size, uint32_t max_read_size, uint32_t max_r_count, uint32_t max_l_count, int mer_len, int max_kmer_len, accum_data& sizes_vecs, int walk_len_limit, int qual_offset, int ranks, int my_rank, int g_rank_me)
 {
 
     int total_gpus_avail = get_gpu_per_node();
