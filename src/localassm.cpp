@@ -317,7 +317,7 @@ class CtgsWithReadsDHT {
 
 vector<ReadSeq> reads_to_reads(vector<loc_assem_helper::ReadSeq> read_in){
   vector<ReadSeq> reads_out;
-  for(int i = 0; i < read_in.size(); i++){
+  for(int i = 0; i < min((int)read_in.size(), (int)LASSM_MAX_COUNT_MERS_READS); i++){
     loc_assem_helper::ReadSeq temp_seq_in = read_in[i];
     ReadSeq temp_seq_out;
     
@@ -331,7 +331,7 @@ vector<ReadSeq> reads_to_reads(vector<loc_assem_helper::ReadSeq> read_in){
 
 vector<loc_assem_helper::ReadSeq> reads_to_reads(vector<ReadSeq> read_in){
   vector<loc_assem_helper::ReadSeq> reads_out;
-  for(int i = 0; i < read_in.size(); i++){
+  for(int i = 0; i < min((int)read_in.size(), (int)LASSM_MAX_COUNT_MERS_READS); i++){
     ReadSeq temp_seq_in = read_in[i];
     loc_assem_helper::ReadSeq temp_seq_out;
     
@@ -369,7 +369,7 @@ CtgWithReads ctgs_to_ctgs(loc_assem_helper::CtgWithReads ctg_in){
   return ctg_out;
 }
 
-void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht, IntermittentTimer &ctg_buckets_timer){
+void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht, IntermittentTimer &ctg_buckets_timer, std::ofstream& log_file){
   ctg_buckets_timer.start();
   unsigned max_read_size = 300;
   zero_slice.l_max = 0, zero_slice.r_max = 0, zero_slice.max_contig_sz = 0;
@@ -408,6 +408,10 @@ void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_buc
               outlier_slice.max_contig_sz = temp_in.seq.size();
     }
   }
+  log_file << "inside bucket ctgs:\n";
+  log_file << "zeroes count:"<<zero_slice.ctg_vec.size()<<"\nmids count:"<<mid_slice.ctg_vec.size()<<"\noutliers count:"<<outlier_slice.ctg_vec.size()<<"\n";
+  log_file << "mid slice l max:"<<mid_slice.l_max<<"\nmid slice r max:"<<mid_slice.r_max<<"\n mid max contig size:"<<mid_slice.max_contig_sz<<"\n";
+  log_file << "outlier slice l max:"<<outlier_slice.l_max<<"\noutlier slice r max:"<<outlier_slice.r_max<<"\n outlier max contig size:"<<outlier_slice.max_contig_sz<<"\n";
 
   ctg_buckets_timer.stop();
 }
@@ -901,15 +905,16 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
   ProgressBar progbar(ctgs_dht.get_local_num_ctgs(), "Extending contigs");
 
 #ifdef ENABLE_GPUS
-//  std::ofstream gpu_debug_file("/gpfs/alpine/scratch/mgawan/bif115/debug/rank_"+std::to_string(rank_me()));
+  std::ofstream gpu_debug_file("/gpfs/alpine/scratch/mgawan/bif115/debug/rank_"+std::to_string(rank_me()));
   locassm_driver::ctg_bucket zero_slice, mid_slice, outlier_slice;
-  bucket_ctgs(zero_slice, mid_slice, outlier_slice, ctgs_dht, ctg_buckets_timer);
+  bucket_ctgs(zero_slice, mid_slice, outlier_slice, ctgs_dht, ctg_buckets_timer, gpu_debug_file);
   ctg_buckets_timer.done_all();
 
   loc_assem_kernel_timer.start();
   unsigned max_read_size = 300;
   if(mid_slice.ctg_vec.size() > 0){
-     local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me());
+     gpu_debug_file<<"first gpu call with:"<< mid_slice.ctg_vec.size()<<std::endl;
+     local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me(), gpu_debug_file);
      //gpu_debug_file<<"first gpu call with:"<<mid_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
    }
   if(outlier_slice.ctg_vec.size() > 0){
@@ -926,7 +931,8 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 	data_dump.flush();
 	data_dump.close();
      }*/
-     local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me());
+    gpu_debug_file<<"second gpu call with:"<< outlier_slice.ctg_vec.size()<<std::endl;
+    local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me(), gpu_debug_file);
     // gpu_debug_file<<"second gpu call with:"<< outlier_slice.ctg_vec.size()<<" done from rank:"<<rank_me()<<endl;
    }
   loc_assem_kernel_timer.stop();

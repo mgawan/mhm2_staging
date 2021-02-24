@@ -370,6 +370,7 @@ uint32_t* rds_count_r_sum, double& loc_ctg_depth, int& mer_len, uint32_t& qual_o
         printf("inside_count_mers, hash size:%d \n", max_ht_size);
     #endif
     for(int i = 0; i < r_rds_cnt; i++){
+	if(i >= 3000) break;
         #ifdef DEBUG_PRINT_GPU
         if(DEBUG_PRINT_GPU && idx == test)
             printf("read loop iter:%d, thread:%d, loop max:%d\n",i, threadIdx.x, r_rds_cnt);
@@ -465,7 +466,7 @@ uint32_t* rds_count_r_sum, double& loc_ctg_depth, int& mer_len, uint32_t& qual_o
 }
 
 //same kernel will be used for right and left walks
-__global__ void iterative_walks_kernel(uint32_t* cid, uint32_t* ctg_offsets, char* contigs, char* reads_r, char* quals_r,  uint32_t* reads_r_offset,  uint32_t* rds_count_r_sum, 
+__global__ void iterative_walks_kernel(uint64_t* cid, uint32_t* ctg_offsets, char* contigs, char* reads_r, char* quals_r,  uint32_t* reads_r_offset,  uint32_t* rds_count_r_sum, 
 double* ctg_depth, loc_ht* global_ht,  uint32_t* prefix_ht, loc_ht_bool* global_ht_bool, int kmer_len, uint32_t max_mer_len_off, uint32_t *term_counts, int64_t num_walks, int64_t max_walk_len, 
 int64_t sum_ext, int32_t max_read_size, int32_t max_read_count, uint32_t qual_offset, char* longest_walks, char* mer_walk_temp, uint32_t* final_walk_lens, int tot_ctgs)
 {

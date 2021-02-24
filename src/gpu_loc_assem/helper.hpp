@@ -59,7 +59,7 @@ struct ReadSeq {
 };
 
 struct CtgWithReads {
-  int32_t cid;
+  int64_t cid;
   std::string seq;
   double depth;
   int max_reads;
