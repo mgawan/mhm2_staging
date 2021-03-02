@@ -51,7 +51,7 @@ int locassm_driver::get_gpu_per_node() {
   return deviceCount;
 }
 
-void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithReads>& data_in, uint32_t max_ctg_size, uint32_t max_read_size, uint32_t max_r_count, uint32_t max_l_count, int mer_len, int max_kmer_len, accum_data& sizes_vecs, int walk_len_limit, int qual_offset, int ranks, int my_rank, int g_rank_me, std::ofstream& log_file)
+void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithReads>& data_in, uint32_t max_ctg_size, uint32_t max_read_size, uint32_t max_r_count, uint32_t max_l_count, int mer_len, int max_kmer_len, accum_data& sizes_vecs, int walk_len_limit, int qual_offset, int ranks, int my_rank, int g_rank_me)
 {
 
     int total_gpus_avail = get_gpu_per_node();
@@ -60,7 +60,6 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
     //print_vals(gpu_debug_file, "global rank:",g_rank_me, "gpu:", my_gpu_id, "local_rank:", my_rank);
     CUDA_CHECK(cudaSetDevice(my_gpu_id));
     int max_mer_len = max_kmer_len;//mer_len;// max_mer_len needs to come from macro (121) and mer_len is the mer_len for current go
-    log_file << "max_mer_len:"<<max_mer_len<<"\n";
     unsigned tot_extensions = data_in.size();
     uint32_t max_read_count = max_r_count>max_l_count ? max_r_count : max_l_count;
     int max_walk_len = walk_len_limit;
@@ -69,13 +68,6 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
     uint64_t total_l_reads = std::accumulate(sizes_vecs.l_reads_count.begin(), sizes_vecs.l_reads_count.end(), 0);
     uint64_t total_ctg_len = std::accumulate(sizes_vecs.ctg_sizes.begin(), sizes_vecs.ctg_sizes.end(), 0);
     
-    log_file << "tot_extensions:"<<tot_extensions<<"\n";
-    log_file << "max_read_count:"<<max_read_count<<"\n";
-    log_file << "max_walk_len:"<<max_walk_len<<"\n";
-    log_file << "tot_ht_size:"<< ht_tot_size<<"\n";
-    log_file << "total_r_reads:"<< total_r_reads<<"\n";
-    log_file << "total_l_reads:"<<total_l_reads<<"\n";
-    log_file << "total_ctg_len"<<total_ctg_len<<"\n";
     size_t gpu_mem_req = sizeof(int32_t) * tot_extensions * 6 + sizeof(int32_t) * total_l_reads
                            + sizeof(int32_t) * total_r_reads + sizeof(char) * total_ctg_len
                            + sizeof(char) * total_l_reads * max_read_size*2 + sizeof(char) * total_r_reads * max_read_size*2 // for quals included
@@ -94,18 +86,14 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
     //print_vals(gpu_debug_file, "GPU Mem avail(0.9) (MB):",((double)gpu_mem_avail*factor)/(1024*1024)); 
     unsigned iterations = ceil(((double)gpu_mem_req)/((double)gpu_mem_avail*factor)); // 0.8 is to buffer for the extra mem that is used when allocating once and using again
     //print_vals(gpu_debug_file, "Iterations:", iterations);
-    log_file << "iterations:"<<iterations<<"\n";
     assert(iterations > 0);
     unsigned slice_size = tot_extensions/iterations;
-    log_file << "slice_size:"<<slice_size<<"\n";
     assert(slice_size > 0);
     unsigned remaining = tot_extensions % iterations;
-    log_file << "remaining:"<<remaining<<"\n";
     std::vector<uint32_t> max_ht_sizes;
 //to get the largest ht size for any iteration and allocate GPU memory for that (once)
     uint64_t max_ht = 0, max_r_rds_its = 0, max_l_rds_its = 0, max_ctg_len_it = 0, test_sum = 0;
     for(int i = 0; i < iterations; i++){
-        log_file << "starting iteration for max_ht sizes:"<<i<<"\n";
         uint64_t temp_max_ht = 0, temp_max_r_rds = 0, temp_max_l_rds = 0, temp_max_ctg_len = 0;
         if(i < iterations -1 ){
             temp_max_ht = std::accumulate(sizes_vecs.ht_sizes.begin() + i*slice_size, sizes_vecs.ht_sizes.begin()+(i+1)*slice_size, 0 );
@@ -129,7 +117,6 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
             max_ctg_len_it = temp_max_ctg_len;
         test_sum += temp_max_ht;
     }
-    log_file << "max_ht:"<<max_ht<<"\n"<<"max_r_rds_its:"<<max_r_rds_its<<"\nmax_l_rds_its:"<<max_l_rds_its<<"\nmax_ctg_len_it:"<<max_ctg_len_it<<"\n";
     slice_size = slice_size + remaining; // this is the largest slice size, mostly the last iteration handles the leftovers
     //allocating maximum possible memory for a single iteration
    // print_vals(gpu_debug_file, "slice size maximum:", slice_size);
@@ -214,7 +201,6 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
     double data_mv_tim = 0;
     double packing_tim = 0;
     slice_size = tot_extensions/iterations;
-    log_file<< "slice_size before kernel loop:"<<slice_size<<"\niterations:"<<iterations;
  
     for(int slice = 0; slice < iterations; slice++){
         uint32_t left_over;
@@ -222,7 +208,6 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
             left_over = tot_extensions % iterations;
         else
             left_over = 0;
-        log_file <<"iteration or slice:"<<slice<< "\nleft_over:"<<left_over<<"\n";
         assert(slice_size > 0);
         assert(left_over >= 0);
         assert(slice >= 0);
@@ -279,7 +264,6 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
 
         uint32_t total_r_reads_slice = read_r_index;
         uint32_t total_l_reads_slice = read_l_index;
-        log_file << "tot_r_reads_slice:"<<total_r_reads_slice<<"\ntotal_l_reads_slice:"<<total_l_reads_slice;
         for(int i = 0; i < 3; i++){
             term_counts_h[i] = 0;
         }
@@ -432,6 +416,4 @@ void locassm_driver::local_assem_driver(std::vector<loc_assem_helper::CtgWithRea
 
     mem_timer.timer_end();
     cpu_mem_dealoc_time += mem_timer.get_total_time();
-    // print_vals(gpu_debug_file, "mem freed, from rank", g_rank_me);
-    log_file << "Mem freed, returning\n";
 }
