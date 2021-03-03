@@ -169,23 +169,7 @@ class ReadsToCtgsDHT {
         reads_to_ctgs_map, rank_me(), make_view(read_ids.begin(), read_ids.end()));
   }
 };
-/*
-struct ReadSeq {
-  string read_id;
-  string seq;
-  string quals;
-  UPCXX_SERIALIZED_FIELDS(read_id, seq, quals);
-};
 
-struct CtgWithReads {
-  int64_t cid;
-  string seq;
-  double depth;
-  unsigned max_reads;
-  vector<ReadSeq> reads_left;
-  vector<ReadSeq> reads_right;
-};
-*/
 struct CtgData {
   int64_t cid;
   string seq;
@@ -344,9 +328,6 @@ CtgWithReads ctgs_to_ctgs(CtgWithReads ctg_in){
 void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_bucket &mid_slice, locassm_driver::ctg_bucket &outlier_slice, CtgsWithReadsDHT &ctgs_dht, IntermittentTimer &ctg_buckets_timer){
   ctg_buckets_timer.start();
   unsigned max_read_size = 300;
-  zero_slice.l_max = 0, zero_slice.r_max = 0, zero_slice.max_contig_sz = 0;
-  mid_slice.l_max = 0, mid_slice.r_max = 0, mid_slice.max_contig_sz = 0;
-  outlier_slice.l_max = 0, outlier_slice.r_max = 0, outlier_slice.max_contig_sz = 0;
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()){
     CtgWithReads temp_in = ctgs_to_ctgs(*ctg);
     temp_in.max_reads = temp_in.reads_left.size() > temp_in.reads_right.size() ? temp_in.reads_left.size() : temp_in.reads_right.size();

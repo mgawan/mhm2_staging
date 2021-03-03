@@ -11,6 +11,7 @@ namespace locassm_driver{
         std::vector<CtgWithReads> ctg_vec;
         accum_data sizes_vec;
         uint32_t l_max, r_max, max_contig_sz;
+	ctg_bucket():l_max{0}, r_max{0}, max_contig_sz{0}{}
         void clear();
     };
 
