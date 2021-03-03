@@ -55,6 +55,7 @@
 #include "upcxx_utils/three_tier_aggr_store.hpp"
 #include "upcxx_utils/limit_outstanding.hpp"
 #include "utils.hpp"
+//#include "gpu_loc_assem/locassem_struct.hpp"
 #ifdef ENABLE_GPUS
 #include "gpu_loc_assem/driver.hpp"
 #endif
@@ -168,7 +169,7 @@ class ReadsToCtgsDHT {
         reads_to_ctgs_map, rank_me(), make_view(read_ids.begin(), read_ids.end()));
   }
 };
-
+/*
 struct ReadSeq {
   string read_id;
   string seq;
@@ -184,7 +185,7 @@ struct CtgWithReads {
   vector<ReadSeq> reads_left;
   vector<ReadSeq> reads_right;
 };
-
+*/
 struct CtgData {
   int64_t cid;
   string seq;
@@ -313,12 +314,10 @@ class CtgsWithReadsDHT {
 
 
 #ifdef ENABLE_GPUS
-
-
-vector<ReadSeq> reads_to_reads(vector<loc_assem_helper::ReadSeq> read_in){
+vector<ReadSeq> reads_to_reads(vector<ReadSeq> read_in){
   vector<ReadSeq> reads_out;
   for(int i = 0; i < min((int)read_in.size(), (int)LASSM_MAX_COUNT_MERS_READS); i++){
-    loc_assem_helper::ReadSeq temp_seq_in = read_in[i];
+    ReadSeq temp_seq_in = read_in[i];
     ReadSeq temp_seq_out;
     
     temp_seq_out.read_id = temp_seq_in.read_id;
@@ -329,34 +328,7 @@ vector<ReadSeq> reads_to_reads(vector<loc_assem_helper::ReadSeq> read_in){
   return reads_out;
 }
 
-vector<loc_assem_helper::ReadSeq> reads_to_reads(vector<ReadSeq> read_in){
-  vector<loc_assem_helper::ReadSeq> reads_out;
-  for(int i = 0; i < min((int)read_in.size(), (int)LASSM_MAX_COUNT_MERS_READS); i++){
-    ReadSeq temp_seq_in = read_in[i];
-    loc_assem_helper::ReadSeq temp_seq_out;
-    
-    temp_seq_out.read_id = temp_seq_in.read_id;
-    temp_seq_out.seq = temp_seq_in.seq;
-    temp_seq_out.quals = temp_seq_in.quals;
-    reads_out.push_back(temp_seq_out);
-  }
-  return reads_out;
-}
-
-loc_assem_helper::CtgWithReads ctgs_to_ctgs(CtgWithReads ctg_in){
-  loc_assem_helper::CtgWithReads ctg_out;
-  ctg_out.cid = ctg_in.cid;
-  ctg_out.seq = ctg_in.seq;
-  ctg_out.depth = ctg_in.depth;
-  ctg_out.max_reads = ctg_in.max_reads;
-  vector<loc_assem_helper::ReadSeq> temp_reads = reads_to_reads(ctg_in.reads_left);
-  ctg_out.reads_left = temp_reads;
-  temp_reads = reads_to_reads(ctg_in.reads_right);
-  ctg_out.reads_right = temp_reads;
-  return ctg_out;
-}
-
-CtgWithReads ctgs_to_ctgs(loc_assem_helper::CtgWithReads ctg_in){
+CtgWithReads ctgs_to_ctgs(CtgWithReads ctg_in){
   CtgWithReads ctg_out;
   ctg_out.cid = ctg_in.cid;
   ctg_out.seq = ctg_in.seq;
@@ -376,7 +348,7 @@ void bucket_ctgs(locassm_driver::ctg_bucket &zero_slice, locassm_driver::ctg_buc
   mid_slice.l_max = 0, mid_slice.r_max = 0, mid_slice.max_contig_sz = 0;
   outlier_slice.l_max = 0, outlier_slice.r_max = 0, outlier_slice.max_contig_sz = 0;
   for (auto ctg = ctgs_dht.get_first_local_ctg(); ctg != nullptr; ctg = ctgs_dht.get_next_local_ctg()){
-    loc_assem_helper::CtgWithReads temp_in = ctgs_to_ctgs(*ctg);//data_in[i];
+    CtgWithReads temp_in = ctgs_to_ctgs(*ctg);
     temp_in.max_reads = temp_in.reads_left.size() > temp_in.reads_right.size() ? temp_in.reads_left.size() : temp_in.reads_right.size();
     if(temp_in.max_reads == 0){
         zero_slice.ctg_vec.push_back(temp_in);
@@ -929,17 +901,17 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
    }
   loc_assem_kernel_timer.stop();
   for(int j = 0; j < zero_slice.ctg_vec.size(); j++){
-    CtgWithReads temp_ctg = ctgs_to_ctgs(zero_slice.ctg_vec[j]);
+    CtgWithReads temp_ctg = zero_slice.ctg_vec[j];
     ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
   }
 //  zero_slice.clear();
   for(int j = 0; j < mid_slice.ctg_vec.size(); j++){
-    CtgWithReads temp_ctg = ctgs_to_ctgs(mid_slice.ctg_vec[j]);
+    CtgWithReads temp_ctg = mid_slice.ctg_vec[j];
     ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
   }
  // mid_slice.clear();
   for(int j = 0; j < outlier_slice.ctg_vec.size(); j++){
-    CtgWithReads temp_ctg = ctgs_to_ctgs(outlier_slice.ctg_vec[j]);
+    CtgWithReads temp_ctg = outlier_slice.ctg_vec[j];
     ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
   }
  // outlier_slice.clear();

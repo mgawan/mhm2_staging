@@ -37,12 +37,12 @@ message(STATUS "ARCH_FLAGS=${ARCH_FLAGS}")
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wall ${ARCH_FLAGS}")
 message(STATUS "CMAKE_CUDA_FLAGS=${CMAKE_CUDA_FLAGS}")
 
-add_library(GPU_LOC_obj OBJECT kernel.cpp helper.cpp driver.cpp)
+add_library(GPU_LOC_obj OBJECT kernel.cpp driver.cpp)
 # if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.13)
 #   target_link_libraries(GPU_LOC_obj INTERFACE OpenMP::OpenMP_CXX)
 # endif()
 
-set_source_files_properties(kernel.cpp helper.cpp driver.cpp PROPERTIES LANGUAGE CUDA LINKER_LANGUAGE CUDA)
+set_source_files_properties(kernel.cpp driver.cpp PROPERTIES LANGUAGE CUDA LINKER_LANGUAGE CUDA)
 option(GPU_LOC_SHARED "GPU_LOC shared library" OFF)
 option(GPU_LOC_STATIC "GPU_LOC static library" ON)
 
