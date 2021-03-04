@@ -861,25 +861,28 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
 
   loc_assem_kernel_timer.start();
   unsigned max_read_size = 300;
+ 
+   future<> fut_outlier = upcxx_utils::execute_in_thread_pool([&outlier_slice, max_read_size, walk_len_limit, qual_offset, max_kmer_len, kmer_len](){	    
+		if(outlier_slice.ctg_vec.size() > 0)
+    			local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me());
+    		});
+   auto tot_mids{mid_slice.ctg_vec.size()};
+   while((!fut_outlier.ready() && mid_slice.ctg_vec.size() > 0) || (mid_slice.ctg_vec.size() <= 100 && mid_slice.ctg_vec.size() > 0)){
+	auto ctg = &mid_slice.ctg_vec.back();
+//	std::cout<<"Printing Cntig:"<<ctg->cid<<" "<< ctg->depth<<"\n";
+	extend_ctg(ctg, wm, insert_avg, insert_stddev, max_kmer_len, kmer_len, qual_offset, walk_len_limit, count_mers_timer, walk_mers_timer);
+	ctgs.add_contig({.id = ctg->cid, .seq = ctg->seq, .depth = ctg->depth});
+	mid_slice.ctg_vec.pop_back();
+	upcxx::progress();
+   }
+   auto cpu_exts{tot_mids - mid_slice.ctg_vec.size()};
+   LOG("Local Contig Extensions processed on CPU:", cpu_exts,"\n");
+   
+
   if(mid_slice.ctg_vec.size() > 0){
      local_assem_driver(mid_slice.ctg_vec, mid_slice.max_contig_sz, max_read_size, mid_slice.r_max,  mid_slice.l_max, kmer_len, max_kmer_len,  mid_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me());
    }
-  if(outlier_slice.ctg_vec.size() > 0){
-     /*if(rank_me() == 1055){
-	std::ofstream data_dump("/gpfs/alpine/scratch/mgawan/bif115/debug/data_dump.dat");
-	for(auto l = 0; l < outlier_slice.ctg_vec.size(); l++){
-	   std::stringstream ss;
-	   CtgWithReads temp = ctgs_to_ctgs(outlier_slice.ctg_vec[l]);
-	   ss<<temp.cid<<" "<<temp.seq<<" "<<temp.depth<<" "<<temp.reads_left.size()<<" "<<temp.reads_right.size();
-	   for(int h = 0; h < temp.reads_left.size(); h++) ss<<" "<<temp.reads_left[h].read_id<<" "<<temp.reads_left[h].seq<<" "<<temp.reads_left[h].quals;
-	   for(int h = 0; h < temp.reads_right.size(); h++) ss<<" "<<temp.reads_right[h].read_id<<" "<<temp.reads_right[h].seq<<" "<<temp.reads_right[h].quals;
-	   data_dump<<ss.rdbuf()<<std::endl;
-	}
-	data_dump.flush();
-	data_dump.close();
-     }*/
-    local_assem_driver(outlier_slice.ctg_vec, outlier_slice.max_contig_sz, max_read_size, outlier_slice.r_max,  outlier_slice.l_max, kmer_len, max_kmer_len,  outlier_slice.sizes_vec , walk_len_limit, qual_offset, local_team().rank_n(),local_team().rank_me(), rank_me());
-   }
+  
   loc_assem_kernel_timer.stop();
   for(int j = 0; j < zero_slice.ctg_vec.size(); j++){
     CtgWithReads temp_ctg = zero_slice.ctg_vec[j];
@@ -891,11 +894,14 @@ static void extend_ctgs(CtgsWithReadsDHT &ctgs_dht, Contigs &ctgs, int insert_av
     ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
   }
  // mid_slice.clear();
+ fut_outlier.wait();
   for(int j = 0; j < outlier_slice.ctg_vec.size(); j++){
     CtgWithReads temp_ctg = outlier_slice.ctg_vec[j];
     ctgs.add_contig({.id = temp_ctg.cid, .seq = temp_ctg.seq, .depth = temp_ctg.depth});
   }
  // outlier_slice.clear();
+  count_mers_timer.done_all();
+  walk_mers_timer.done_all();
   loc_assem_kernel_timer.done_all();
   barrier();
 #endif
