@@ -2,7 +2,7 @@
 #include "kernel.hpp"
 #include <numeric>
 #include <cassert>
-
+#include <memory>
 #define CUDA_CHECK(ans)                                                                  \
     {                                                                                    \
         gpuAssert((ans), __FILE__, __LINE__);                                            \
@@ -94,31 +94,27 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
     }
     slice_size = slice_size + remaining; // this is the largest slice size, mostly the last iteration handles the leftovers
     //allocating maximum possible memory for a single iteration
-    timer mem_timer;
-    double cpu_mem_aloc_time = 0, gpu_mem_aloc_time = 0, cpu_mem_dealoc_time = 0, gpu_mem_dealoc_time = 0;
 
-    mem_timer.timer_start();
-    char *ctg_seqs_h = new char[max_ctg_size * slice_size];
-    uint64_t *cid_h = new uint64_t[slice_size];
-    char * ctgs_seqs_rc_h = new char[max_ctg_size * slice_size];// revcomps not requried on GPU, ctg space will be re-used on GPU, but if we want to do right left extensions in parallel, then we need separate space on GPU
-    uint32_t *ctg_seq_offsets_h = new uint32_t[slice_size];
-    double *depth_h = new double[slice_size];
-    char *reads_left_h = new char[max_l_count * max_read_size * slice_size]; 
-    char *reads_right_h = new char[max_r_count * max_read_size * slice_size];
-    char *quals_right_h = new char[max_r_count * max_read_size * slice_size];
-    char *quals_left_h = new char[max_l_count * max_read_size * slice_size];
-    uint32_t *reads_l_offset_h = new uint32_t[max_l_count* slice_size];
-    uint32_t *reads_r_offset_h = new uint32_t[max_r_count * slice_size];
-    uint32_t *rds_l_cnt_offset_h = new uint32_t[slice_size];
-    uint32_t *rds_r_cnt_offset_h = new uint32_t[slice_size];
-    uint32_t *term_counts_h = new uint32_t[3];
-    char* longest_walks_r_h = new char[slice_size * max_walk_len * iterations];// reserve memory for all the walks
-    char* longest_walks_l_h = new char[slice_size * max_walk_len * iterations]; // not needed on device, will re-use right walk memory
-    uint32_t* final_walk_lens_r_h = new uint32_t[slice_size * iterations]; // reserve memory for all the walks.
-    uint32_t* final_walk_lens_l_h = new uint32_t[slice_size * iterations]; // not needed on device, will re use right walk memory
-    uint32_t* prefix_ht_size_h = new uint32_t[slice_size];
-    mem_timer.timer_end();
-    cpu_mem_aloc_time += mem_timer.get_total_time();
+    std::unique_ptr<char[]> ctg_seqs_h{new char[max_ctg_size * slice_size]};
+    std::unique_ptr<uint64_t[]> cid_h{new uint64_t[slice_size]};
+    std::unique_ptr<char[]> ctgs_seqs_rc_h{new char[max_ctg_size * slice_size]};// revcomps not requried on GPU, ctg space will be re-used on GPU, but if we want to do right left extensions in parallel, then we need separate space on GPU
+    std::unique_ptr<uint32_t[]> ctg_seq_offsets_h{new uint32_t[slice_size]};
+    std::unique_ptr<double[]> depth_h{new double[slice_size]};
+    std::unique_ptr<char[]> reads_left_h{new char[max_l_count * max_read_size * slice_size]}; 
+    std::unique_ptr<char[]> reads_right_h{new char[max_r_count * max_read_size * slice_size]};
+    std::unique_ptr<char[]> quals_right_h{new char[max_r_count * max_read_size * slice_size]};
+    std::unique_ptr<char[]> quals_left_h{new char[max_l_count * max_read_size * slice_size]};
+    std::unique_ptr<uint32_t[]> reads_l_offset_h{new uint32_t[max_l_count* slice_size]};
+    std::unique_ptr<uint32_t[]> reads_r_offset_h{new uint32_t[max_r_count * slice_size]};
+    std::unique_ptr<uint32_t[]> rds_l_cnt_offset_h{new uint32_t[slice_size]};
+    std::unique_ptr<uint32_t[]> rds_r_cnt_offset_h{new uint32_t[slice_size]};
+    std::unique_ptr<uint32_t[]> term_counts_h{new uint32_t[3]};
+    std::unique_ptr<char[]> longest_walks_r_h{new char[slice_size * max_walk_len * iterations]};// reserve memory for all the walks
+    std::unique_ptr<char[]> longest_walks_l_h{new char[slice_size * max_walk_len * iterations]}; // not needed on device, will re-use right walk memory
+    std::unique_ptr<uint32_t[]> final_walk_lens_r_h{new uint32_t[slice_size * iterations]}; // reserve memory for all the walks.
+    std::unique_ptr<uint32_t[]> final_walk_lens_l_h{new uint32_t[slice_size * iterations]}; // not needed on device, will re use right walk memory
+    std::unique_ptr<uint32_t[]> prefix_ht_size_h{new uint32_t[slice_size]};
+
     gpu_mem_req = sizeof(int32_t) * slice_size * 6 + sizeof(int32_t) * 3
                            + sizeof(int32_t) * max_l_rds_its
                            + sizeof(int32_t) * max_r_rds_its
@@ -141,7 +137,6 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
     loc_ht *d_ht;
     loc_ht_bool *d_ht_bool;
     uint32_t* final_walk_lens_d;
-    mem_timer.timer_start();
     //allocate GPU  memory
     CUDA_CHECK(cudaMalloc(&prefix_ht_size_d, sizeof(uint32_t) * slice_size));
     CUDA_CHECK(cudaMalloc(&cid_d, sizeof(uint64_t) * slice_size));
@@ -165,13 +160,7 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
     CUDA_CHECK(cudaMalloc(&mer_walk_temp_d, (max_mer_len + max_walk_len) * sizeof(char) * slice_size));
     CUDA_CHECK(cudaMalloc(&d_ht_bool, sizeof(loc_ht_bool) * slice_size * max_walk_len));
     CUDA_CHECK(cudaMalloc(&final_walk_lens_d, sizeof(uint32_t) * slice_size));
-    mem_timer.timer_end();
-    gpu_mem_aloc_time += mem_timer.get_total_time();
 
-    timer loop_time;
-    loop_time.timer_start();
-    double data_mv_tim = 0;
-    double packing_tim = 0;
     slice_size = tot_extensions/iterations;
  
     for(int slice = 0; slice < iterations; slice++){
@@ -192,14 +181,12 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
         uint32_t reads_r_offset_sum = 0;
         uint32_t reads_l_offset_sum = 0;
         uint32_t read_l_index = 0, read_r_index = 0;
-        timer tim_temp;
-        tim_temp.timer_start();
         for(auto i = 0; i < this_slice_size; i++){
             CtgWithReads temp_data = slice_iter[i];//slice_data[i];
             cid_h[i] = temp_data.cid;
             depth_h[i] = temp_data.depth;
             //convert string to c-string
-            char *ctgs_ptr = ctg_seqs_h + ctgs_offset_sum;
+            char *ctgs_ptr = ctg_seqs_h.get() + ctgs_offset_sum;
             memcpy(ctgs_ptr, temp_data.seq.c_str(), temp_data.seq.size());
             ctgs_offset_sum += temp_data.seq.size();
             ctg_seq_offsets_h[i] = ctgs_offset_sum;
@@ -207,8 +194,8 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
             prefix_ht_size_h[i] = prefix_ht_sum;
 
             for(auto j = 0; j < temp_data.reads_left.size(); j++){
-                char *reads_l_ptr = reads_left_h + reads_l_offset_sum;
-                char *quals_l_ptr = quals_left_h + reads_l_offset_sum;
+                char *reads_l_ptr = reads_left_h.get() + reads_l_offset_sum;
+                char *quals_l_ptr = quals_left_h.get() + reads_l_offset_sum;
                 memcpy(reads_l_ptr, temp_data.reads_left[j].seq.c_str(), temp_data.reads_left[j].seq.size());
                 //quals offsets will be same as reads offset because quals and reads have same length
                 memcpy(quals_l_ptr, temp_data.reads_left[j].quals.c_str(), temp_data.reads_left[j].quals.size());
@@ -219,8 +206,8 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
             rds_l_cnt_offset_h[i] = read_l_index; // running sum of left reads count
 
             for(auto j = 0; j < temp_data.reads_right.size(); j++){
-                char *reads_r_ptr = reads_right_h + reads_r_offset_sum;
-                char *quals_r_ptr = quals_right_h + reads_r_offset_sum;
+                char *reads_r_ptr = reads_right_h.get() + reads_r_offset_sum;
+                char *quals_r_ptr = quals_right_h.get() + reads_r_offset_sum;
                 memcpy(reads_r_ptr, temp_data.reads_right[j].seq.c_str(), temp_data.reads_right[j].seq.size());
                 //quals offsets will be same as reads offset because quals and reads have same length
                 memcpy(quals_r_ptr, temp_data.reads_right[j].quals.c_str(), temp_data.reads_right[j].quals.size());
@@ -230,8 +217,6 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
             }
             rds_r_cnt_offset_h[i] = read_r_index; // running sum of right reads count
         }// data packing for loop ends
-        tim_temp.timer_end();
-        packing_tim += tim_temp.get_total_time();
 
         uint32_t total_r_reads_slice = read_r_index;
         uint32_t total_l_reads_slice = read_l_index;
@@ -239,24 +224,20 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
             term_counts_h[i] = 0;
         }
 
-        tim_temp.timer_start();
-
-        CUDA_CHECK(cudaMemcpy(prefix_ht_size_d, prefix_ht_size_h, sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(cid_d, cid_h, sizeof(uint64_t) * vec_size, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(ctg_seq_offsets_d, ctg_seq_offsets_h, sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(reads_l_offset_d, reads_l_offset_h, sizeof(uint32_t) * total_l_reads_slice, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(reads_r_offset_d, reads_r_offset_h, sizeof(uint32_t) * total_r_reads_slice, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(rds_l_cnt_offset_d, rds_l_cnt_offset_h, sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(rds_r_cnt_offset_d, rds_r_cnt_offset_h, sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(ctg_seqs_d, ctg_seqs_h, sizeof(char) * ctgs_offset_sum, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(reads_left_d, reads_left_h, sizeof(char) * reads_l_offset_sum, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(reads_right_d, reads_right_h, sizeof(char) * reads_r_offset_sum, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(depth_d, depth_h, sizeof(double) * vec_size, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(quals_right_d, quals_right_h, sizeof(char) * reads_r_offset_sum, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(quals_left_d, quals_left_h, sizeof(char) * reads_l_offset_sum, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(term_counts_d, term_counts_h, sizeof(uint32_t)*3, cudaMemcpyHostToDevice));
-        tim_temp.timer_end();
-        data_mv_tim += tim_temp.get_total_time();
+        CUDA_CHECK(cudaMemcpy(prefix_ht_size_d, prefix_ht_size_h.get(), sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(cid_d, cid_h.get(), sizeof(uint64_t) * vec_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(ctg_seq_offsets_d, ctg_seq_offsets_h.get(), sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(reads_l_offset_d, reads_l_offset_h.get(), sizeof(uint32_t) * total_l_reads_slice, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(reads_r_offset_d, reads_r_offset_h.get(), sizeof(uint32_t) * total_r_reads_slice, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(rds_l_cnt_offset_d, rds_l_cnt_offset_h.get(), sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(rds_r_cnt_offset_d, rds_r_cnt_offset_h.get(), sizeof(uint32_t) * vec_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(ctg_seqs_d, ctg_seqs_h.get(), sizeof(char) * ctgs_offset_sum, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(reads_left_d, reads_left_h.get(), sizeof(char) * reads_l_offset_sum, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(reads_right_d, reads_right_h.get(), sizeof(char) * reads_r_offset_sum, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(depth_d, depth_h.get(), sizeof(double) * vec_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(quals_right_d, quals_right_h.get(), sizeof(char) * reads_r_offset_sum, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(quals_left_d, quals_left_h.get(), sizeof(char) * reads_l_offset_sum, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(term_counts_d, term_counts_h.get(), sizeof(uint32_t)*3, cudaMemcpyHostToDevice));
             //call kernel here, one thread per contig
         unsigned total_threads = vec_size*32;// we need one warp (32 threads) per extension, vec_size = extensions
         unsigned thread_per_blk = 512;
@@ -275,35 +256,29 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
             char* curr_seq_rc;
             if(j == 0){
                 size_lst = ctg_seq_offsets_h[j];
-                curr_seq = ctg_seqs_h;
-                curr_seq_rc = ctgs_seqs_rc_h;
+                curr_seq = ctg_seqs_h.get();
+                curr_seq_rc = ctgs_seqs_rc_h.get();
             }
             else{
                 size_lst = ctg_seq_offsets_h[j] - ctg_seq_offsets_h[j-1];
-                curr_seq = ctg_seqs_h + ctg_seq_offsets_h[j - 1];
-                curr_seq_rc = ctgs_seqs_rc_h + ctg_seq_offsets_h[j - 1];
+                curr_seq = ctg_seqs_h.get() + ctg_seq_offsets_h[j - 1];
+                curr_seq_rc = ctgs_seqs_rc_h.get() + ctg_seq_offsets_h[j - 1];
             }
-            loc_assem_helper::revcomp(curr_seq, curr_seq_rc, size_lst, g_rank_me);
+            locassm_driver::revcomp(curr_seq, curr_seq_rc, size_lst);
         }
-        tim_temp.timer_start();
-        CUDA_CHECK(cudaMemcpy(longest_walks_r_h + slice * max_walk_len * slice_size, longest_walks_d, sizeof(char) * vec_size * max_walk_len, cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(final_walk_lens_r_h + slice * slice_size, final_walk_lens_d, sizeof(int32_t) * vec_size, cudaMemcpyDeviceToHost)); 
+        CUDA_CHECK(cudaMemcpy(longest_walks_r_h.get() + slice * max_walk_len * slice_size, longest_walks_d, sizeof(char) * vec_size * max_walk_len, cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(final_walk_lens_r_h.get() + slice * slice_size, final_walk_lens_d, sizeof(int32_t) * vec_size, cudaMemcpyDeviceToHost)); 
 
         //cpying rev comped ctgs to device on same memory as previous ctgs
-        CUDA_CHECK(cudaMemcpy(ctg_seqs_d, ctgs_seqs_rc_h, sizeof(char) * ctgs_offset_sum, cudaMemcpyHostToDevice));
-        tim_temp.timer_end();
-        data_mv_tim += tim_temp.get_total_time();
-        iterative_walks_kernel<<<blocks,thread_per_blk>>>(cid_d, ctg_seq_offsets_d, ctg_seqs_d, reads_left_d, quals_left_d, reads_l_offset_d, rds_l_cnt_offset_d, 
+        CUDA_CHECK(cudaMemcpy(ctg_seqs_d, ctgs_seqs_rc_h.get(), sizeof(char) * ctgs_offset_sum, cudaMemcpyHostToDevice));
+        
+	iterative_walks_kernel<<<blocks,thread_per_blk>>>(cid_d, ctg_seq_offsets_d, ctg_seqs_d, reads_left_d, quals_left_d, reads_l_offset_d, rds_l_cnt_offset_d, 
         depth_d, d_ht, prefix_ht_size_d, d_ht_bool, mer_len, max_mer_len, term_counts_d, num_walks, max_walk_len, sum_ext, max_read_size, max_read_count, qual_offset_, longest_walks_d, mer_walk_temp_d, final_walk_lens_d, vec_size);
    
-        tim_temp.timer_start();
-        CUDA_CHECK(cudaMemcpy(longest_walks_l_h + slice * max_walk_len * slice_size , longest_walks_d, sizeof(char) * vec_size * max_walk_len, cudaMemcpyDeviceToHost)); // copy back left walks
-        CUDA_CHECK(cudaMemcpy(final_walk_lens_l_h + slice * slice_size , final_walk_lens_d, sizeof(int32_t) * vec_size, cudaMemcpyDeviceToHost)); 
-        tim_temp.timer_end();
-        data_mv_tim += tim_temp.get_total_time();
+        CUDA_CHECK(cudaMemcpy(longest_walks_l_h.get() + slice * max_walk_len * slice_size , longest_walks_d, sizeof(char) * vec_size * max_walk_len, cudaMemcpyDeviceToHost)); // copy back left walks
+        CUDA_CHECK(cudaMemcpy(final_walk_lens_l_h.get() + slice * slice_size , final_walk_lens_d, sizeof(int32_t) * vec_size, cudaMemcpyDeviceToHost)); 
     }// the for loop over all slices ends here
 
-    loop_time.timer_end();
     //once all the alignments are on cpu, then go through them and stitch them with contigs in front and back.
     int loc_left_over = tot_extensions % iterations;
     for(int j = 0; j < iterations; j++){
@@ -312,19 +287,18 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
         //TODO: a lot of multiplications in below loop can be optimized (within indices)
         for(int i = 0; i< loc_size; i++){
             if(final_walk_lens_l_h[j*slice_size + i] > 0){
-                std::string left(&longest_walks_l_h[j*slice_size*max_walk_len + max_walk_len*i],final_walk_lens_l_h[j*slice_size + i]);
-                std::string left_rc = loc_assem_helper::revcomp(left, g_rank_me);
+                std::string left(longest_walks_l_h.get() + j*slice_size*max_walk_len + max_walk_len*i,final_walk_lens_l_h[j*slice_size + i]);
+                std::string left_rc = locassm_driver::revcomp(left);
                 data_in[j*slice_size + i].seq.insert(0,left_rc);  
             }
             if(final_walk_lens_r_h[j*slice_size + i] > 0){
-                std::string right(&longest_walks_r_h[j*slice_size*max_walk_len + max_walk_len*i],final_walk_lens_r_h[j*slice_size + i]);
+                std::string right(longest_walks_r_h.get() + j*slice_size*max_walk_len + max_walk_len*i,final_walk_lens_r_h[j*slice_size + i]);
                 data_in[j*slice_size + i].seq += right;
             }
         }
     }
 
 
-    mem_timer.timer_start();  
     CUDA_CHECK(cudaFree(prefix_ht_size_d));
     CUDA_CHECK(cudaFree(term_counts_d));
     CUDA_CHECK(cudaFree(cid_d));
@@ -344,31 +318,4 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
     CUDA_CHECK(cudaFree(mer_walk_temp_d));
     CUDA_CHECK(cudaFree(d_ht_bool));
     CUDA_CHECK(cudaFree(final_walk_lens_d));
-
-    mem_timer.timer_end();
-    gpu_mem_dealoc_time += mem_timer.get_total_time();
-   
-    mem_timer.timer_start();
-    delete[] ctg_seqs_h;
-    delete[] cid_h;
-    delete[] ctgs_seqs_rc_h;// revcomps not requried on GPU, ctg space will be re-used on GPU, but if we want to do right left extensions in parallel, then we need separate space on GPU
-    delete[] ctg_seq_offsets_h;
-    delete[] depth_h;
-    delete[] reads_left_h; 
-    delete[] reads_right_h;
-    delete[] quals_right_h;
-    delete[] quals_left_h;
-    delete[] reads_l_offset_h;
-    delete[] reads_r_offset_h;
-    delete[] rds_l_cnt_offset_h;
-    delete[] rds_r_cnt_offset_h;
-    delete[] term_counts_h;
-    delete[] longest_walks_r_h;// reserve memory for all the walks
-    delete[] longest_walks_l_h; // not needed on device, will re-use right walk memory
-    delete[] final_walk_lens_r_h; // reserve memory for all the walks.
-    delete[] final_walk_lens_l_h; // not needed on device, will re use right walk memory
-    delete[] prefix_ht_size_h;
-
-    mem_timer.timer_end();
-    cpu_mem_dealoc_time += mem_timer.get_total_time();
 }

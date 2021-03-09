@@ -1,25 +1,6 @@
 #include<stdio.h>
 #include <iostream>
 #define EMPTY 0xFFFFFFFF
-
-//TODO: add this in a separate file for definitions
-#ifdef DEBUG_GPU
-#define DEBUG_PRINT_GPU 1
-#endif
-
-#ifdef DEBUG_CPU
-#define DEBUG_PRINT_CPU 1
-#endif
-
-#define LASSM_MIN_QUAL 10
-#define LASSM_MIN_HI_QUAL 20
-#define LASSM_MIN_VIABLE_DEPTH 0.2
-#define LASSM_MIN_EXPECTED_DEPTH 0.3
-#define LASSM_RATING_THRES 0
-//#define MAX_WALK_LEN 121+(2*251)
-#define LASSM_MIN_KMER_LEN 21
-#define LASSM_SHIFT_SIZE 8
-#define LASSM_MAX_KMER_LEN 121
 #define FULL_MASK 0xffffffff
 
 
@@ -64,19 +45,15 @@ struct ExtCounts {
     switch (ext) {
       case 'A':
         atomicAdd(&count_A,count);
-        // count_A = (count_A > 65535) ? 65535 : count_A;
         break;
       case 'C':
         atomicAdd(&count_C,count);
-        // count_C = (count_C > 65535) ? 65535 : count_C;
         break;
       case 'G':
         atomicAdd(&count_G,count);
-        // count_G = (count_G > 65535) ? 65535 : count_G;
         break;
       case 'T':
         atomicAdd(&count_T,count);
-        // count_T = (count_T > 65535) ? 65535 : count_T;
         break;
     }
   }
@@ -173,7 +150,7 @@ struct MerFreqs {
     //the commented stuff above is handled by the assertion below on GPU
    // assert(top_rating >= runner_up_rating);// for now finding a way around for assertion
     if(top_rating < runner_up_rating)
-      printf("******* ASSERTION FAILED IN sort_merbase************");
+      printf("******* POSSIBLE ERROR IN sort_merbase************");
     int top_rated_base = mer_bases[0].base;
     ext = 'X';
     count = 0;

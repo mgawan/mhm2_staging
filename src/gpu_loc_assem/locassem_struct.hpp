@@ -1,7 +1,9 @@
 #if defined(__NVCC__) && !defined(UPCXX_SERIALIZED_FIELDS)
 #    define UPCXX_SERIALIZED_FIELDS(...)
 #endif
-#include "helper.hpp"
+#include <string>
+#include <vector>
+#include <iostream>
 
 struct ReadSeq {
   std::string read_id;

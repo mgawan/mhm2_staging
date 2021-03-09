@@ -175,39 +175,6 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 }
 
 
-// __device__ void ht_insert(loc_ht* thread_ht, cstr_type kmer_key, MerFreqs mer_val, uint32_t max_size){
-//     unsigned hash_val = hash_func(kmer_key, max_size);
-//     //int count = 0; // for debugging
-//     while(true){
-//         int if_empty = thread_ht[hash_val].key.length; // length is set to some unimaginable number to indicate if its empty
-//         if(if_empty == EMPTY){ //the case where there is a key but no val, will not happen
-
-//             thread_ht[hash_val].key = kmer_key;
-//             thread_ht[hash_val].val = mer_val;
-//             return;
-//         }
-//         hash_val = (hash_val +1 ) % max_size;//(hash_val + 1) & (HT_SIZE-1);
-
-//     }
-// }
-//overload for bool vals
-// __device__ void ht_insert(loc_ht_bool* thread_ht, cstr_type kmer_key, bool bool_val, uint32_t max_size){
-//     unsigned hash_val = hash_func(kmer_key, max_size);
-//     //int count = 0; // for debugging
-//     while(true){
-//         int if_empty = thread_ht[hash_val].key.length; // length is set to some unimaginable number to indicate if its empty
-//         if(if_empty == EMPTY){ //the case where there is a key but no val, will not happen
-//             thread_ht[hash_val].key = kmer_key;
-//             thread_ht[hash_val].val = bool_val;
-//             return;
-//         }
-//         hash_val = (hash_val +1 ) % max_size;//(hash_val + 1) & (HT_SIZE-1);
-//         //count++; //for debugging
-
-//     }
-// }
-
-
 __device__ 
 loc_ht& ht_get(loc_ht* thread_ht, cstr_type kmer_key, uint32_t max_size){
     unsigned hash_val = MurmurHashAligned2(kmer_key, max_size);
@@ -224,9 +191,6 @@ loc_ht& ht_get(loc_ht* thread_ht, cstr_type kmer_key, uint32_t max_size){
         hash_val = (hash_val +1 ) %max_size;//hash_val = (hash_val + 1) & (HT_SIZE -1);
         if(hash_val == orig_hash){ // loop till you reach the same starting positions and then return error
             printf("*****end reached, hashtable full*****\n"); // for debugging
-            printf("*****end reached, hashtable full*****\n");
-            printf("*****end reached, hashtable full*****\n");
-           // return loc_ht(cstr_type(NULL,-1), MerFreqs());
         }
     }
 
@@ -249,8 +213,6 @@ loc_ht_bool& ht_get(loc_ht_bool* thread_ht, cstr_type kmer_key, uint32_t max_siz
         hash_val = (hash_val +1 ) %max_size;//hash_val = (hash_val + 1) & (HT_SIZE -1);
         if(hash_val == orig_hash){ // loop till you reach the same starting positions and then return error
             printf("*****end reached, bool hashtable full*****\n"); // for debugging
-            printf("*****end reached, bool hashtable full*****\n");
-            printf("*****end reached, bool hashtable full*****\n");
            // return loc_ht(cstr_type(NULL,-1), MerFreqs());
         }
     }
@@ -449,20 +411,6 @@ uint32_t* rds_count_r_sum, double& loc_ctg_depth, int& mer_len, uint32_t& qual_o
 	   }
 	}
    __syncwarp();
-    // #ifdef DEBUG_PRINT_GPU
-    // if(threadIdx.x == test){
-    // for(int k = 0; k < max_ht_size; k++){
-    // //if(DEBUG_PRINT_GPU && idx == test && lane_id == 0){
-    //     if( thrd_loc_ht[k].key.length != EMPTY){
-    //     printf("from ht:\n");
-    //     print_mer(thrd_loc_ht[k].key);
-    //     printf("MerFreq.ext:%c, MerFreq.count:%d\n",thrd_loc_ht[k].val.ext,thrd_loc_ht[k].val.count);
-    //     thrd_loc_ht[k].val.hi_q_exts.print();
-    //     thrd_loc_ht[k].val.low_q_exts.print();
-    // }
-    // }
-    // }
-    // #endif
 }
 
 //same kernel will be used for right and left walks
@@ -629,16 +577,5 @@ int64_t sum_ext, int32_t max_read_size, int32_t max_read_count, uint32_t qual_of
     }
     }
 
-    #ifdef DEBUG_PRINT_GPU
-    if(idx == test){
-       // printf("walk:\n");
-       // print_mer(walk);
-       // printf("walk len:%d\n", walk.length);
-       // printf("mer_walk after:\n");
-       // print_mer(loc_mer_walk);
-       // printf("mer_walk after, len:%d\n", loc_mer_walk.length);
-        }
-        //printf("walk result:%c\n", walk_res);
-    #endif
 }//end if to check if idx exceeds contigs
 }
