@@ -66,11 +66,10 @@ struct CtgInfo {
   int64_t cid;
   char orient;
   char side;
-#if UPCXX_VERSION <= 20201100L
-  char pad[6];  // FIXME necessary in upcxx <= 2020.10 see upcxx Issue #427
+#if UPCXX_VERSION < 20210300L
+  char pad[6];  // necessary in upcxx < 2021.03 see upcxx Issue #427
   UPCXX_SERIALIZED_FIELDS(cid, orient, side, pad);
 #else
-#error "Not fixed in any version yet"
   UPCXX_SERIALIZED_FIELDS(cid, orient, side);
 #endif
 };
@@ -191,12 +190,11 @@ struct CtgData {
 struct CtgReadData {
   int64_t cid;
   char side;
-#if UPCXX_VERSION <= 20201100L
-  char pad[7];  // FIXME necessary in upcxx <= 2020.10 see upcxx Issue #427
+#if UPCXX_VERSION < 20210300L
+  char pad[7];  // necessary in upcxx <= 2021.03 see upcxx Issue #427
   ReadSeq read_seq;
   UPCXX_SERIALIZED_FIELDS(cid, side, pad, read_seq);
 #else
-#error "Not fixed in any version yet"
   ReadSeq read_seq;
   UPCXX_SERIALIZED_FIELDS(cid, side, read_seq);
 #endif
