@@ -88,7 +88,10 @@ def main():
     num_mismatches = 0
     for key, val in quals.items():
         if key not in new_quals:
-            print("ERROR: '" + key + "' not found")
+            if 'rRNA' in key:
+                print("WARN: '" + key + "' not found")
+            else:
+                print("ERROR: '" + key + "' not found")
         else:
             d = 0
             thres = options.thres
