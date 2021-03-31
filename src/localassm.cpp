@@ -69,22 +69,16 @@ struct CtgInfo {
   CtgInfo()
       : cid{}
       , orient{}
-      , side{} {
-    init();
-  }
+      , side{} {}
   CtgInfo(int64_t _cid, char _orient, char _side)
       : cid(_cid)
       , orient(_orient)
-      , side(_side) {
-    init();
-  }
+      , side(_side) {}
 #if UPCXX_VERSION < 20210300L
   char pad[6];  // necessary in upcxx < 2021.03 see upcxx Issue #427
   UPCXX_SERIALIZED_FIELDS(cid, orient, side, pad);
-  void init() { pad = {}; }
 #else
   UPCXX_SERIALIZED_FIELDS(cid, orient, side);
-  void init() {}
 #endif
 };
 struct ReadCtgInfo {
@@ -204,15 +198,11 @@ struct CtgReadData {
   CtgReadData()
       : cid{}
       , side{}
-      , read_seq{} {
-    init();
-  }
+      , read_seq{} {}
   CtgReadData(int64_t _cid, char _side, const ReadSeq _read_seq)
       : cid(_cid)
       , side(_side)
-      , read_seq(_read_seq) {
-    init();
-  }
+      , read_seq(_read_seq) {}
   int64_t cid;
   char side;
 #if UPCXX_VERSION < 20210300L
@@ -220,12 +210,10 @@ struct CtgReadData {
   ReadSeq read_seq;
 
   UPCXX_SERIALIZED_FIELDS(cid, side, pad, read_seq);
-  void init() { pad = {}; }
 #else
   ReadSeq read_seq;
 
   UPCXX_SERIALIZED_FIELDS(cid, side, read_seq);
-  void init() {}
 #endif
 };
 
