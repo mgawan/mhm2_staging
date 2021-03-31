@@ -76,7 +76,7 @@ class FastqReader {
   IntermittentTimer io_t;
   struct PromStartStop {
     promise<int64_t> start_prom, stop_prom;
-    future<> set(FastqReader &fqr) {
+    upcxx::future<> set(FastqReader &fqr) {
       DBG("Setting fqr ", fqr.fname, " start=", fqr.start_read, " end=", fqr.end_read, "\n");
       auto set_start = start_prom.get_future().then([&fqr](int64_t start) { fqr.start_read = start; });
       auto set_end = stop_prom.get_future().then([&fqr](int64_t stop) { fqr.end_read = stop; });
@@ -117,11 +117,11 @@ class FastqReader {
 
   void reset();
 
-  future<> get_open_fut() const { return open_fut; }
+  upcxx::future<> get_open_fut() const { return open_fut; }
 
   bool is_paired() const { return _is_paired; }
 
-  static future<> set_matching_pair(FastqReader &fqr1, FastqReader &fqr2, dist_object<PromStartStop> &dist_start_stop1,
+  static upcxx::future<> set_matching_pair(FastqReader &fqr1, FastqReader &fqr2, dist_object<PromStartStop> &dist_start_stop1,
                                     dist_object<PromStartStop> &dist_start_stop2);
 };
 
