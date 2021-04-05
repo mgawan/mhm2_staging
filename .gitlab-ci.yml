@@ -10,7 +10,7 @@ variables:
   APPLICATION: mhm2
   TEST_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:latest
   RELEASE_IMAGE: $REGISTRY/$REGISTRY_USER/$APPLICATION:$CI_BUILD_REF_NAME
-  HULK_UPCXX_VER: 2020.3.8
+  HULK_UPCXX_VER: 2021.3.0
 
 stages:
   - build
@@ -232,7 +232,7 @@ HULK:build:
     - echo "Verifing and/or downloading test arctic data set"
     - export ARCTIC_URL=https://portal.nersc.gov/project/hipmer/MetaHipMer_datasets_12_2019/ArcticSynth/samples/
     - bash -c "[ -f ${HIPMER_DATA}/arcticsynth-refs.fa ] || ( curl -LO ${ARCTIC_URL}/arcticsynth-refs.fa.gz && gunzip arcticsynth-refs.fa.gz && mv arcticsynth-refs.fa ${HIPMER_DATA}/arcticsynth-refs.fa )"
-    - bash -c "[ -f ${HIPMER_DATA}/arctic_sample_0.fq ] || ( curl -LO ${ARCTIC_URL}/arctic_sample_0.fq.gz && gunzip arctic_sample_0.fq.gz && mv arctic_sample_0.fq ${HIPMER_DATA}/arctic_sample_0.fq )"
+    - bash -c "for i in 0 1 2 3 4 5 6 7 8 9 10 11 ; do [ -f ${HIPMER_DATA}/arctic_sample_\$i.fq ] || ( curl -LO ${ARCTIC_URL}/arctic_sample_\$i.fq.gz && gunzip arctic_sample_\$i.fq.gz && mv arctic_sample_\$i.fq ${HIPMER_DATA}/arctic_sample_\$i.fq ) ; done"
     - echo "Establishing all tests under BASE=$BASE and SCRATCH=$SCRATCH"
     - rm -rf ${SCRATCH}
     - mkdir -p ${SCRATCH}
@@ -317,8 +317,8 @@ HULK:validation:
     - export RWDI=${INSTALL_PREFIX}/mhm2-rwdi/bin/
     - export REL=${INSTALL_PREFIX}/mhm2-rel/bin/
     - echo "Starting RelWithDebInfo mhm2 on Arctic $reads"
-    - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; fi
-    - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
+    - if [ ! -f arctic_sample_0.fq -a -f $reads ] ; then ln -s $reads ; fi
+    - if [ ! -f arcticsynth-refs.fa -a -f ${HIPMER_DATA}/arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
     - ${RWDI}/ci_asm_qual_test.sh || FAILED="${FAILED} Could not run ci_asm_qual_test"
     - if [ ! -f ./test-arctic-sample0/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta for rwdi in test-arctic-sample0" ; fi
     - mv test-arctic-sample0 ${RUN_PREFIX}/rwdi-test-arctic-sample0
@@ -360,14 +360,27 @@ HULK:accuracy:
     - upcxx --version
     - cd ${SCRATCH}
     - FAILED=""
-    - reads=${HIPMER_DATA}/arctic_sample_0.fq 
     - export REL=${INSTALL_PREFIX}/mhm2-rel/bin/
-    - echo "Starting Release mhm2 on Arctic $reads"
-    - if [ ! -f arctic_sample_0.fq ] ; then ln -s $reads ; fi
-    - if [ ! -f arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
+    - echo "Starting Release mhm2 on Arctic"
+    - if [ ! -f arctic_sample_0.fq -a -f ${HIPMER_DATA}/arctic_sample_0.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_0.fq ; fi
+    - if [ ! -f arctic_sample_1.fq -a -f ${HIPMER_DATA}/arctic_sample_1.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_1.fq ; fi
+    - if [ ! -f arctic_sample_2.fq -a -f ${HIPMER_DATA}/arctic_sample_2.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_2.fq ; fi
+    - if [ ! -f arctic_sample_3.fq -a -f ${HIPMER_DATA}/arctic_sample_3.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_3.fq ; fi
+    - if [ ! -f arctic_sample_4.fq -a -f ${HIPMER_DATA}/arctic_sample_4.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_4.fq ; fi
+    - if [ ! -f arctic_sample_5.fq -a -f ${HIPMER_DATA}/arctic_sample_5.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_5.fq ; fi
+    - if [ ! -f arctic_sample_6.fq -a -f ${HIPMER_DATA}/arctic_sample_6.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_6.fq ; fi
+    - if [ ! -f arctic_sample_7.fq -a -f ${HIPMER_DATA}/arctic_sample_7.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_7.fq ; fi
+    - if [ ! -f arctic_sample_8.fq -a -f ${HIPMER_DATA}/arctic_sample_8.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_8.fq ; fi
+    - if [ ! -f arctic_sample_9.fq -a -f ${HIPMER_DATA}/arctic_sample_9.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_9.fq ; fi
+    - if [ ! -f arctic_sample_10.fq -a -f ${HIPMER_DATA}/arctic_sample_10.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_10.fq ; fi
+    - if [ ! -f arctic_sample_11.fq -a -f ${HIPMER_DATA}/arctic_sample_11.fq ] ; then ln -s ${HIPMER_DATA}/arctic_sample_11.fq ; fi
+    - if [ ! -f arcticsynth-refs.fa -a -f ${HIPMER_DATA}/arcticsynth-refs.fa ] ; then ln -s ${HIPMER_DATA}/arcticsynth-refs.fa ; fi
     - ${REL}/ci_asm_qual_test.sh || FAILED="${FAILED} Could not run ci_asm_qual_test"
     - if [ ! -f ./test-arctic-sample0/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel" ; fi
     - mv test-arctic-sample0 ${RUN_PREFIX}/rel-test-arctic-sample0
+    - ${REL}/ci_asm_qual_test-full.sh || FAILED="${FAILED} Could not run ci_asm_qual_test-full"
+    - if [ ! -f ./test-arctic-samples/final_assembly.fasta ] ; then FAILED="${FAILED} Did not find final_assembly.fasta on rel" ; fi
+    - mv test-arctic-samples ${RUN_PREFIX}/rel-test-arctic-samples
     - if [ -z "$FAILED" ] ; then  true ; else echo "Something failed somehow - ${FAILED}"; false ; fi
     - echo "Completed"
 

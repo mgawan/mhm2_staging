@@ -76,6 +76,7 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
   int64_t sum_insert_size = 0;
   int64_t num_large = 0;
   int64_t num_small = 0;
+  int64_t num_repetitive_conflicts = 0;
   int min_insert_size = 1000000;
   int max_insert_size = 0;
   vector<string> large_alns;
@@ -101,9 +102,12 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
       if (read_id == prev_read_id && prev_aln->cid == aln.cid) {
         if (prev_pair_num != '1' || pair_num != '2') {
 #ifdef DEBUG
-          WARN("pair nums wrong: ", prev_pair_num, " ", pair_num);
+          // i.e. when one read mate has two mappings to the same contig (i.e. repetitive region)
+          // OR this can happen when the mapping is wildly wrong.  Keep a count an report it.
+          LOG("pair nums wrong: ", prev_pair_num, " ", pair_num, ", aln:", aln.to_string(), "\n");
 #endif
           prev_aln = nullptr;
+          num_repetitive_conflicts++;
           continue;
         }
         if (bad_alignment(prev_aln) || bad_alignment(&aln)) {
@@ -153,11 +157,14 @@ pair<int, int> calculate_insert_size(Alns &alns, int expected_ins_avg, int expec
     outf.close();  // syncs and write stats
   }
 
+  auto all_num_repetitive_conflicts = reduce_one(num_repetitive_conflicts, op_fast_add, 0).wait();
   auto all_num_overlap_rejected = reduce_one(num_overlap_rejected, op_fast_add, 0).wait();
   auto all_num_valid_pairs = reduce_all(num_valid_pairs, op_fast_add).wait();
   auto all_num_alns = reduce_one(alns.size(), op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", perc_str(all_num_valid_pairs, all_num_alns), " pairs with valid alignments to the same contig\n");
   SLOG_VERBOSE("Rejected ", perc_str(all_num_overlap_rejected, all_num_alns), " possible candidates with bad overlaps\n");
+  SLOG_VERBOSE("Repetitive Conflicts: ", perc_str(all_num_repetitive_conflicts, all_num_alns),
+               " pairs with multiple mappings of the same mate to the same contig\n");
   auto all_num_large = reduce_one(num_large, op_fast_add, 0).wait();
   auto all_num_small = reduce_one(num_small, op_fast_add, 0).wait();
   SLOG_VERBOSE("Found ", perc_str(all_num_large, all_num_alns), " large (> ", max_expected_ins_size, ") and ",
