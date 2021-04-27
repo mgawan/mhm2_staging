@@ -80,7 +80,7 @@ add_definitions(-DKLIGN_UNALIGNED_THRES=1)
 add_definitions(-DKLIGN_GPU_BLOCK_SIZE=20000)
 
 # number of GPUs on nodes, for Summit = 6, Cori = 8
-add_definitions(-DGPUS_PER_NODE=6)
+add_definitions(-DGPUS_PER_NODE=8)
 
 # controls depth matching in cgraph
 add_definitions(-DCGRAPH_DEPTH_DIFF_THRES=0.1)
