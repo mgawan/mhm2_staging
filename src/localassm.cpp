@@ -132,6 +132,7 @@ class ReadsToCtgsDHT {
   void flush_updates() {
     rtc_store.flush_updates();
     rtc_store.clear();
+
   }
 
   int64_t get_num_mappings() { return reduce_one(reads_to_ctgs_map->size(), op_fast_add, 0).wait(); }

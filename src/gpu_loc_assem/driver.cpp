@@ -57,7 +57,8 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
                            + (max_mer_len + max_walk_len) * sizeof(char) * tot_extensions
                            + sizeof(loc_ht_bool) * tot_extensions * max_walk_len;
 
-    size_t gpu_mem_avail = get_device_mem((ranks/6), my_gpu_id);// FIXME: need to find a way to detect gpus per node on summit (fixing it to 6 here)
+    size_t gpu_mem_avail = get_device_mem((ranks/GPUS_PER_NODE), my_gpu_id);// FIXME: need to find a way to detect gpus per node on summit (fixing it to 6 here)
+    std::cout <<"GPUS_PER_NODE:"<<GPUS_PER_NODE<<std::endl;
     float factor = 0.80;
     assert(gpu_mem_avail > 0);
     unsigned iterations = ceil(((double)gpu_mem_req)/((double)gpu_mem_avail*factor)); // 0.8 is to buffer for the extra mem that is used when allocating once and using again
@@ -141,21 +142,19 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
     CUDA_CHECK(cudaMalloc(&prefix_ht_size_d, sizeof(uint32_t) * slice_size));
     CUDA_CHECK(cudaMalloc(&cid_d, sizeof(uint64_t) * slice_size));
     CUDA_CHECK(cudaMalloc(&ctg_seq_offsets_d, sizeof(uint32_t) * slice_size));
-    CUDA_CHECK(cudaMalloc(&reads_l_offset_d, sizeof(uint32_t) * max_l_rds_its));// changed this with new max
-    CUDA_CHECK(cudaMalloc(&reads_r_offset_d, sizeof(uint32_t) * max_r_rds_its)); // changed this with new max
+    CUDA_CHECK(cudaMalloc(&reads_l_offset_d, sizeof(uint32_t) * max_l_rds_its));
+    CUDA_CHECK(cudaMalloc(&reads_r_offset_d, sizeof(uint32_t) * max_r_rds_its));
     CUDA_CHECK(cudaMalloc(&rds_l_cnt_offset_d, sizeof(uint32_t) * slice_size));
     CUDA_CHECK(cudaMalloc(&rds_r_cnt_offset_d, sizeof(uint32_t) * slice_size));
-    CUDA_CHECK(cudaMalloc(&ctg_seqs_d, sizeof(char) * max_ctg_len_it)); // changed this with new max
-    CUDA_CHECK(cudaMalloc(&reads_left_d, sizeof(char) * max_read_size * max_l_rds_its)); // changed
-    CUDA_CHECK(cudaMalloc(&reads_right_d, sizeof(char) * max_read_size * max_r_rds_its));//changed
+    CUDA_CHECK(cudaMalloc(&ctg_seqs_d, sizeof(char) * max_ctg_len_it));
+    CUDA_CHECK(cudaMalloc(&reads_left_d, sizeof(char) * max_read_size * max_l_rds_its));
+    CUDA_CHECK(cudaMalloc(&reads_right_d, sizeof(char) * max_read_size * max_r_rds_its));
     CUDA_CHECK(cudaMalloc(&depth_d, sizeof(double) * slice_size));
-    CUDA_CHECK(cudaMalloc(&quals_right_d, sizeof(char) *max_read_size * max_r_rds_its));//changed this
-    CUDA_CHECK(cudaMalloc(&quals_left_d, sizeof(char) * max_read_size * max_l_rds_its));//changed this with new
+    CUDA_CHECK(cudaMalloc(&quals_right_d, sizeof(char) *max_read_size * max_r_rds_its));
+    CUDA_CHECK(cudaMalloc(&quals_left_d, sizeof(char) * max_read_size * max_l_rds_its));
     CUDA_CHECK(cudaMalloc(&term_counts_d, sizeof(uint32_t)*3));
-    // if we separate out kernels for right and left walks then we can use r_count/l_count separately but for now use the max of two
-    // also subtract the appropriate kmer length from max_read_size to reduce memory footprint of global ht_loc.
     // one local hashtable for each thread, so total hash_tables equal to vec_size i.e. total contigs
-    CUDA_CHECK(cudaMalloc(&d_ht, sizeof(loc_ht)*max_ht)); //**changed for new modifications
+    CUDA_CHECK(cudaMalloc(&d_ht, sizeof(loc_ht)*max_ht)); 
     CUDA_CHECK(cudaMalloc(&longest_walks_d, sizeof(char)*slice_size * max_walk_len));
     CUDA_CHECK(cudaMalloc(&mer_walk_temp_d, (max_mer_len + max_walk_len) * sizeof(char) * slice_size));
     CUDA_CHECK(cudaMalloc(&d_ht_bool, sizeof(loc_ht_bool) * slice_size * max_walk_len));
@@ -216,7 +215,7 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
                 read_r_index++;
             }
             rds_r_cnt_offset_h[i] = read_r_index; // running sum of right reads count
-        }// data packing for loop ends
+         }// data packing for loop ends
 
         uint32_t total_r_reads_slice = read_r_index;
         uint32_t total_l_reads_slice = read_l_index;
@@ -284,7 +283,7 @@ void locassm_driver::local_assem_driver(std::vector<CtgWithReads>& data_in, uint
     for(int j = 0; j < iterations; j++){
         int loc_size = (j == iterations - 1) ? slice_size + loc_left_over : slice_size;
 
-        //TODO: a lot of multiplications in below loop can be optimized (within indices)
+        
         for(int i = 0; i< loc_size; i++){
             if(final_walk_lens_l_h[j*slice_size + i] > 0){
                 std::string left(longest_walks_l_h.get() + j*slice_size*max_walk_len + max_walk_len*i,final_walk_lens_l_h[j*slice_size + i]);

@@ -29,21 +29,8 @@ __device__ void cstr_copy(cstr_type& str1, cstr_type& str2){
     str1.length = str2.length;
 }
 
-__device__ unsigned hash_func(cstr_type key, uint32_t max_size){
-    unsigned hash, i;
-    for(hash = i = 0; i < key.length; ++i)
-    {
-        hash += key.start_ptr[i];
-        hash += (hash << 10);
-        hash ^= (hash >> 6);
-    }
-    hash += (hash << 3);
-    hash ^= (hash >> 11);
-    hash += (hash << 15);
-    return hash%max_size;//(hash & (HT_SIZE - 1));
-}
+//below code is from: https://clickhouse.tech/codebrowser/html_report/ClickHouse/contrib/murmurhash/src/murmurhash2.cpp.html
 #define MIX(h,k,m) { k *= m; k ^= k >> r; k *= m; h *= m; h ^= k; }
-
 __device__
 uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 {
@@ -59,14 +46,12 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 
   int align = (uint64_t)data & 3;
 
-  if(align && (len >= 4))
-  {
+  if(align && (len >= 4)){
     /* Pre-load the temp registers  */
 
     uint32_t t = 0, d = 0;
 
-    switch(align)
-    {
+    switch(align){
       case 1: t |= data[2] << 16;
       case 2: t |= data[1] << 8;
       case 3: t |= data[0];
@@ -82,8 +67,7 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 
     /* Mix */
 
-    while(len >= 4)
-    {
+    while(len >= 4){
       d = *(uint32_t *)data;
       t = (t >> sr) | (d << sl);
 
@@ -101,10 +85,8 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 
     d = 0;
 
-    if(len >= align)
-    {
-      switch(align)
-      {
+    if(len >= align){
+      switch(align){
       case 3: d |= data[2] << 16;
       case 2: d |= data[1] << 8;
       case 1: d |= data[0];
@@ -118,18 +100,15 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 
       /* Handle tail bytes  */
 
-      switch(len)
-      {
+      switch(len){
       case 3: h ^= data[2] << 16;
       case 2: h ^= data[1] << 8;
       case 1: h ^= data[0];
           h *= m;
       };
     }
-    else
-    {
-      switch(len)
-      {
+    else {
+      switch(len){
       case 3: d |= data[2] << 16;
       case 2: d |= data[1] << 8;
       case 1: d |= data[0];
@@ -144,10 +123,8 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 
     return h%max_size;
   }
-  else
-  {
-    while(len >= 4)
-    {
+  else{
+    while(len >= 4){
       uint32_t k = *(uint32_t *)data;
 
       MIX(h,k,m);
@@ -158,8 +135,7 @@ uint32_t MurmurHashAligned2 (cstr_type key_in, uint32_t max_size)
 
     /* Handle tail bytes  */
 
-    switch(len)
-    {
+    switch(len){
     case 3: h ^= data[2] << 16;
     case 2: h ^= data[1] << 8;
     case 1: h ^= data[0];
@@ -397,8 +373,6 @@ uint32_t* rds_count_r_sum, double& loc_ctg_depth, int& mer_len, uint32_t& qual_o
             int qual_diff = qual.start_ptr[ext_pos] - qual_offset;
             if (qual_diff >= LASSM_MIN_QUAL) temp_Mer.val.low_q_exts.inc(ext, 1);
             if (qual_diff >= LASSM_MIN_HI_QUAL) temp_Mer.val.hi_q_exts.inc(ext, 1);
-
-        //    temp_Mer.val.set_ext(loc_ctg_depth);
         }
         __syncwarp();
        running_sum_len += read.length; // right before the for loop ends, update the prev_len to offset next read correctly
@@ -524,21 +498,15 @@ int64_t sum_ext, int32_t max_read_size, int32_t max_read_count, uint32_t qual_of
                 printf("GPU: walk.len:%d, longest.len:%d, idx:%d\n", walk.length, longest_walk_thread.length, warp_id_glb);
             }
             #endif
-            //int walk_len = walk.length
             if (walk.length > longest_walk_thread.length){ // this walk is longer than longest then copy it to longest walk
                 cstr_copy(longest_walk_thread, walk);
             }
             if (walk_res == 'X') {
-               // atomicAdd(&term_counts[0], 1);
                 // walk reaches a dead-end, downshift, unless we were upshifting
                 if (shift == LASSM_SHIFT_SIZE) 
                     break;
                 shift = -LASSM_SHIFT_SIZE;
             }else {
-                //if (walk_res == 'F') 
-                   // atomicAdd(&term_counts[1], 1);
-                //else 
-                    //atomicAdd(&term_counts[2], 1);
                 // otherwise walk must end with a fork or repeat, so upshift
                 if (shift == -LASSM_SHIFT_SIZE){
                     #ifdef DEBUG_PRINT_GPU
@@ -566,16 +534,12 @@ int64_t sum_ext, int32_t max_read_size, int32_t max_read_count, uint32_t qual_of
 
     }
     if(lane_id == 0){
-    if(longest_walk_thread.length > 0){
+      if(longest_walk_thread.length > 0){
         final_walk_lens[warp_id_glb] = longest_walk_thread.length;
-        // printf("final longest walk len:%d/n", longest_walk_thread.length);
-        // print_mer(longest_walk_thread);
-       // atomicAdd(num_walks, 1);
-     //   atomicAdd(sum_ext, longest_walk_thread.length);
-    }else{
+      }else{
         final_walk_lens[warp_id_glb] = 0;
-    }
+      }
     }
 
-}//end if to check if idx exceeds contigs
+  }//end if to check if idx exceeds contigs
 }

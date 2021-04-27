@@ -27,43 +27,43 @@ struct cstr_type{
 };
 
 __device__ void cstr_copy(cstr_type& str1, cstr_type& str2);
+
 namespace gpu_loc_assem{
 
-struct ExtCounts {
-  uint32_t count_A;
-  uint32_t count_C;
-  uint32_t count_G;
-  uint32_t count_T;
+  struct ExtCounts{
+     uint32_t count_A;
+     uint32_t count_C;
+     uint32_t count_G;
+     uint32_t count_T;
 
-  __device__ void print(){
-    printf("count_A:%d, count_C:%d, count_G:%d, count_T:%d\n", count_A, count_C, count_G, count_T);
-  }
+     __device__ void print(){//for debugging
+     printf("count_A:%d, count_C:%d, count_G:%d, count_T:%d\n", count_A, count_C, count_G, count_T);
+     }
 
-//TODO: replacing numeric_limits by either a suitable constant/predefined value or find a device alternate, check if this is correct with Steve
-  __device__
-  void inc(char ext, int count) {
-    switch (ext) {
-      case 'A':
-        atomicAdd(&count_A,count);
-        break;
-      case 'C':
-        atomicAdd(&count_C,count);
-        break;
-      case 'G':
-        atomicAdd(&count_G,count);
-        break;
-      case 'T':
-        atomicAdd(&count_T,count);
-        break;
-    }
-  }
-};
+    //TODO: replace  numeric_limits by either a suitable constant/predefined value or find a device alternate
+      __device__ void inc(char ext, int count) {
+        switch (ext) {
+          case 'A':
+            atomicAdd(&count_A,count);
+            break;
+          case 'C':
+            atomicAdd(&count_C,count);
+            break;
+          case 'G':
+            atomicAdd(&count_G,count);
+            break;
+          case 'T':
+            atomicAdd(&count_T,count);
+            break;
+        }
+       }
+  };
 
 
   struct MerBase {
     char base;
     uint32_t nvotes_hi_q, nvotes, rating;
-    __device__ void print(){
+    __device__ void print(){// for debuggin
       printf("base:%c, nvotes_hiq_q:%d, nvotes:%d, rating:%d\n", base, nvotes_hi_q, nvotes, rating);
     }
 
@@ -82,7 +82,7 @@ struct ExtCounts {
     }
   };
 
-struct MerFreqs {
+  struct MerFreqs {
 
   // how many times this kmer has occurred: don't need to count beyond 65536
   // count of high quality extensions and low quality extensions - structure comes from kmer_dht.hpp
@@ -91,20 +91,6 @@ struct MerFreqs {
   char ext;
   // the count of the final extension
   int count;
-  //   __device__ MerFreqs(){
-  //   ext = 'o';
-  //   count = -1;
-  //   hi_q_exts.count_A = 0;
-  //   hi_q_exts.count_C = 0;
-  //   hi_q_exts.count_T = 0;
-  //   hi_q_exts.count_G = 0;
-
-  //   low_q_exts.count_A = 0;
-  //   low_q_exts.count_C = 0;
-  //   low_q_exts.count_T = 0;
-  //   low_q_exts.count_G = 0;
-  // }
-// MerBase was defined here previously, moving it out for simplicity but check on why it was here before?
     __device__
     bool comp_merbase(MerBase& elem1, MerBase& elem2){
         if(elem1.rating != elem2.rating)
@@ -145,9 +131,6 @@ struct MerFreqs {
 
     int top_rating = mer_bases[0].rating;
     int runner_up_rating = mer_bases[1].rating;
-    //if (top_rating < runner_up_rating) 
-    //DIE("top_rating ", top_rating, " < ", runner_up_rating, "\n");
-    //the commented stuff above is handled by the assertion below on GPU
    // assert(top_rating >= runner_up_rating);// for now finding a way around for assertion
     if(top_rating < runner_up_rating)
       printf("******* POSSIBLE ERROR IN sort_merbase************");
