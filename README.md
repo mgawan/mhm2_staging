@@ -12,3 +12,5 @@ Information about building, installing and running MHM2 can be found in the [use
 
 Information about the latest release can be found in the  and the [change log](ChangeLog.md)
 
+## Reproducing SC21 submission results
+Set _GPUS_PER_NODE_ variable in _CMakeDefinitions.txt_ to the number of GPUs available on each node of your system. Then follow the instructions available in user guide for installation. 
